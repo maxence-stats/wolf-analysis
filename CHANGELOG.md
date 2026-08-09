@@ -6,24 +6,11 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 ## [Non publié]
 
 ### Ajouté
+- **Médiane P/FCF sur 20 ans** affichée sur l'onglet Valorisation (colonne BH, à titre
+  informatif, n'entre dans aucune formule).
 - **Filtre secteur sur l'onglet Classement** : les deux classements (rendement du
   dividende, opportunité de valorisation) peuvent être restreints à un secteur GICS
   précis via un sélecteur, réutilisant `normalizeSector()`/`GICS_SECTORS`.
-
-### Corrigé
-- **Cerveau numérique : création de chaîne de valeur impossible.** Le bouton
-  « + Nouvelle chaîne de valeur » appelait `prompt()` deux fois ; dans certains
-  contextes navigateur (fenêtres sans chrome, extensions de sécurité, environnements
-  automatisés) `window.prompt()` lève une exception au lieu de retourner une valeur,
-  ce qui interrompait le clic avant toute création — d'où l'impression de blocage total
-  signalée par l'utilisateur (rien ne se passe, impossible de revenir en arrière faute
-  d'avoir jamais progressé dans le flux). Remplacé par un formulaire en ligne (nom +
-  phases, boutons Créer/Annuler) qui ne dépend d'aucune boîte de dialogue native.
-- **Médiane P/FCF sur 20 ans** affichée sur l'onglet Valorisation (colonne BH, à titre
-  informatif, n'entre dans aucune formule).
-- **Cours de bourse : widget TradingView** en remplacement du fetch Yahoo Finance/Stooq +
-  Chart.js maison (code entièrement retiré). Symbole modifiable directement par
-  l'utilisateur dans le widget si le mapping automatique se trompe.
 - **Onglet Classement** : meilleur rendement du dividende + meilleure opportunité de
   valorisation (écart de valeur), deux listes triées, clic → fiche entreprise.
 - **Onglet Watchlist** : 4 listes (Liste d'achat / Idée du moment / À surveiller / À
@@ -32,6 +19,21 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
   par l'utilisateur (nom + phases libres) → entreprises assignées par phase → fiche par
   entité avec entrées datées (texte + images + croquis à main levée). Stockage IndexedDB
   (images en base64, trop volumineux pour `localStorage`) + socle `data/cerveau.json`.
+
+### Corrigé
+- **Cours de bourse : retour à Yahoo Finance + repli Stooq**, en remplacement d'un widget
+  TradingView introduit puis abandonné dans cette même série de changements : le widget
+  public/anonyme TradingView ne dessert pas les données Euronext Paris (ni probablement
+  d'autres bourses non-américaines), ce qui affichait le graphique de repli AAPL pour la
+  majorité du portefeuille (européen). Aucune connexion à un compte TradingView ne peut
+  résoudre ce point : ce widget d'embed n'a pas de mécanisme d'authentification.
+- **Cerveau numérique : création de chaîne de valeur impossible.** Le bouton
+  « + Nouvelle chaîne de valeur » appelait `prompt()` deux fois ; dans certains contextes
+  navigateur `window.prompt()` lève une exception au lieu de retourner une valeur, ce qui
+  interrompait le clic avant toute création — d'où l'impression de blocage total signalée
+  par l'utilisateur (rien ne se passe, impossible de revenir en arrière faute d'avoir
+  jamais progressé dans le flux). Remplacé par un formulaire en ligne (nom + phases,
+  boutons Créer/Annuler) qui ne dépend d'aucune boîte de dialogue native.
 
 ## [0.4.0] — 2026-08-09
 

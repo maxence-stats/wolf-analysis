@@ -313,6 +313,12 @@
   .chart-card h3{font-family:var(--font-display);font-size:14.5px;font-weight:600;margin:0 0 2px;color:var(--text);}
   .chart-card p{margin:0 0 12px;font-size:12px;color:var(--text-faint);}
   .chart-holder{position:relative;height:220px;}
+  .range-buttons{display:flex;gap:6px;margin:10px 0 14px;flex-wrap:wrap;}
+  .range-buttons button{font-family:var(--font-mono);font-size:11px;font-weight:600;padding:5px 11px;border-radius:14px;border:1px solid var(--hair);background:var(--panel-2);color:var(--text-dim);cursor:pointer;}
+  .range-buttons button:hover{border-color:var(--gold);color:var(--text);}
+  .range-buttons button.active{background:linear-gradient(135deg, var(--gold-2) 0%, var(--gold) 100%);color:#1a1305;border-color:var(--gold);box-shadow:0 4px 14px -6px rgba(217,164,65,0.55);}
+  .stock-status{font-size:12px;color:var(--text-faint);padding:6px 0;display:none;}
+  .stock-source{font-size:10.5px;color:var(--text-faint);font-family:var(--font-mono);margin-top:8px;}
   .chart-card-actions{display:flex;align-items:center;gap:8px;flex-shrink:0;}
   .chart-badge{font-family:var(--font-mono);font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:12px;border:1px solid var(--hair);color:var(--text-dim);white-space:nowrap;}
   .chart-badge.pos{color:var(--green);border-color:rgba(79,209,165,0.35);box-shadow:0 0 12px -5px rgba(79,209,165,0.5);}
@@ -320,8 +326,6 @@
   .zoom-btn{background:var(--panel-2);border:1px solid var(--hair);color:var(--text-dim);width:26px;height:26px;border-radius:8px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1;}
   .zoom-btn:hover{border-color:var(--gold);color:var(--text);}
 
-  /* ---------- STOCK CHART (widget TradingView) ---------- */
-  #tvChartHolder{margin-top:10px;border-radius:10px;overflow:hidden;}
 
   /* ---------- ZOOM MODAL ---------- */
   #zoomModal{display:none;position:fixed;inset:0;background:rgba(4,5,7,0.78);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);z-index:999;align-items:center;justify-content:center;padding:30px;}

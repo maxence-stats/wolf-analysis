@@ -119,13 +119,13 @@ différents du même fichier — les deux sont codés en dur en haut de `app.js`
    résoudre/rejeter, y compris avec `AbortController`). D'où la double méthode ci-dessus.
    Une fois le site vraiment hébergé (http/https), `fetch()` seul suffira, mais garder le
    repli gviz ne coûte rien et sécurise les tests locaux.
-3. *(historique, code retiré)* **Cours de bourse via fetch Yahoo Finance/Stooq +
-   Chart.js maison** : abandonné au profit du widget TradingView (voir "Cours de bourse"
-   plus bas). Leçon conservée au cas où un fetch de séries boursières serait réintroduit
-   un jour : **Yahoo Finance sous-échantillonne silencieusement `range=max`** — même avec
-   `interval=1d`, l'API renvoie sans prévenir des points mensuels sur un très long
-   historique. Le fix qui fonctionnait : timestamps explicites `period1`/`period2` (jamais
-   `range=`) + rééchantillonnage manuel côté client.
+3. **Cours de bourse via fetch Yahoo Finance/Stooq.** Solution active (voir "Cours de
+   bourse" plus bas) — a brièvement été remplacée par un widget TradingView, revenue en
+   arrière suite à une limitation de données bloquante (voir point 8). **Yahoo Finance
+   sous-échantillonne silencieusement `range=max`** — même avec `interval=1d`, l'API
+   renvoie sans prévenir des points mensuels sur un très long historique. Fix en place :
+   timestamps explicites `period1`/`period2` (jamais `range=`) + rééchantillonnage manuel
+   côté client (`resampleWeekly()`).
 4. **Cache navigateur agressif sur `<script src="js/app.js">` en `file://`.** Pendant le
    développement local, Chrome peut continuer à exécuter une version en cache de `app.js`
    après une modification, même après un rechargement complet de la page (F5, re-navigation,
@@ -161,23 +161,24 @@ différents du même fichier — les deux sont codés en dur en haut de `app.js`
    navigation. **Ne plus utiliser `prompt()`/`confirm()` pour des flux applicatifs** —
    préférer un petit formulaire en ligne ou une modale custom (voir `cerveauNewChain`
    dans `app.js` pour le pattern retenu : formulaire inline avec boutons Créer/Annuler).
-8. **Le widget TradingView "Advanced Chart" (embed public/anonyme) ne dessert pas les
-   données Euronext Paris**, même pour des symboles pourtant valides et retrouvés par sa
-   propre recherche de symbole (`EURONEXT:TTE`, `EURONEXT:AI` confirmés inexistants pour
-   le widget alors qu'ils existent bien sur tradingview.com et dans sa recherche interne).
-   Message renvoyé par le widget : *« Ce symbole n'existe pas »* + notification
-   *« Symbole disponible uniquement sur TradingView »* — un message de restriction de
-   licence de données, pas une erreur de mapping. Confirmé **indépendamment de
-   l'hébergement** (reproduit à la fois en `file://` et servi en HTTP réel sur
-   `localhost`, donc pas lié au problème `page-uri`/référent). `NASDAQ:MSFT` fonctionne
-   sans erreur dans le même widget — la restriction semble spécifique aux bourses
-   non-américaines (Euronext testé, probablement d'autres). Impact direct : la plupart
-   des entreprises du portefeuille (europeénnes) afficheront la lueur de repli AAPL du
-   widget plutôt que leur propre cours. **Décision en attente avec l'utilisateur** :
-   revenir au fetch Yahoo Finance/Stooq (solution précédente, fonctionnelle, voir point 3
-   ci-dessus pour le piège associé) ou une autre approche — ne pas considérer le widget
-   TradingView comme la solution définitive pour ce portefeuille tant que ce n'est pas
-   tranché.
+8. *(historique, essai abandonné)* **Le widget TradingView "Advanced Chart" (embed
+   public/anonyme) ne dessert pas les données Euronext Paris**, même pour des symboles
+   pourtant valides et retrouvés par sa propre recherche de symbole (`EURONEXT:TTE`,
+   `EURONEXT:AI` confirmés inexistants pour le widget alors qu'ils existent bien sur
+   tradingview.com et dans sa recherche interne). Message renvoyé par le widget :
+   *« Ce symbole n'existe pas »* + notification *« Symbole disponible uniquement sur
+   TradingView »* — un message de restriction de licence de données, pas une erreur de
+   mapping. Confirmé **indépendamment de l'hébergement** (reproduit à la fois en `file://`
+   et servi en HTTP réel sur `localhost`, donc pas lié au problème `page-uri`/référent).
+   `NASDAQ:MSFT` fonctionne sans erreur dans le même widget — la restriction semble
+   spécifique aux bourses non-américaines. **Un compte TradingView (même Pro) ne change
+   rien** : ce widget d'embed n'a aucun mécanisme d'authentification dans sa configuration
+   (pas de champ identifiants) et ne partage pas la session du site principal
+   tradingview.com — impossible à résoudre côté utilisateur. Comme la majorité du
+   portefeuille est européenne, **décision prise avec l'utilisateur : retour au fetch
+   Yahoo Finance/Stooq** (point 3 ci-dessus), qui couvre toutes les bourses du
+   portefeuille. Ne pas réintroduire le widget TradingView pour le cours de bourse
+   principal sans un moyen de contourner cette limitation de données.
 
 ## Design system
 
@@ -278,8 +279,9 @@ en intensité si retour utilisateur, mais **ne pas revenir à des opacités ~0.0
 - Jauge de valorisation + verdict (Survalorisée / Équitable / Zone d'achat)
 - 8 ratios clés (prix juste, prix cible, écart, rendement dividende, rendement estimé
   5 ans, FCFPEG, médiane P/FCF, payout ratio)
-- Graphique cours de bourse : **widget TradingView** embarqué (voir "Cours de bourse"
-  ci-dessous), symbole modifiable directement par l'utilisateur dans le widget
+- Graphique cours de bourse hebdomadaire + moyenne mobile 200 semaines + sélecteur de
+  plage (1a/2a/3a/5a/10a/20a/Max) — Yahoo Finance en source principale, repli automatique
+  sur Stooq (voir "Cours de bourse" ci-dessous)
 - 8 graphiques historiques : Dividende (barres) + Payout ratio (courbe), CA (courbe),
   Marge op.+ROIC (courbes), FCF/action (barres), P/FCF (barres) + Médiane P/FCF (courbe),
   Actions en circulation (courbe), Dette/OCF (barres), Trésorerie+investissements (barres)
@@ -416,18 +418,23 @@ datées (texte + images uploadées/collées + croquis à main levée).
 séries de données. Vert/rouge restent réservés au sémantique positif/négatif : badges
 CAGR (classes CSS `.pos`/`.neg`) et jauge de valorisation (marqueurs CIBLE/JUSTE/ACTUEL).
 
-### Cours de bourse — widget TradingView (fait)
-Remplace l'ancien fetch Yahoo Finance/Stooq + Chart.js maison (code entièrement retiré,
-voir "Pièges techniques" point 3). `loadTradingViewChart(ticker)` injecte dynamiquement
-le script officiel `embed-widget-advanced-chart.js` dans `#tvChartHolder`, avec
-`mapTickerToTradingView()` pour convertir le format `BOURSE:TICKER` du Sheet vers les
-codes bourse TradingView : `EPA`/`PAR`/`AMS` → `EURONEXT`, `NASDAQ`/`NYSE` inchangés,
-`NYSEARCA` → `AMEX`, `LON`/`LSE` → `LSE`, `ETR`/`XETR` → `XETR`, `FRA` → `FWB`,
-`BME`/`MIL` inchangés, `SWX` → `SIX`, `TSE` → `TSE`. `allow_symbol_change:true` laisse
-l'utilisateur corriger lui-même le symbole si le mapping se trompe — pas de fallback
-applicatif nécessaire. Aucune clé API, aucun CORS à gérer (le widget est un iframe
-TradingView). Le conteneur est vidé et reconstruit (`holder.innerHTML = ''`) à chaque
-changement d'entreprise pour repartir d'un widget propre.
+### Cours de bourse — Yahoo Finance + repli Stooq (fait)
+`loadStockChart(ticker)` tente `fetchYahooWeekly()` en premier — qui malgré son nom
+récupère du **quotidien** via `period1`/`period2` explicites (pas `range=max`, voir
+"Pièges techniques" point 3) puis rééchantillonne en hebdomadaire côté client
+(`resampleWeekly()`). Mapping `mapTickerToYahoo` : `.PA` Paris, pas de suffixe
+Nasdaq/NYSE, `.L` Londres, `.DE` Francfort, `.AS` Amsterdam, `.MC` Madrid, `.MI` Milan,
+`.SW` Suisse, `.T` Tokyo. En cas d'échec (Yahoo n'a pas d'API officielle, CORS non
+garanti), repli automatique sur `fetchStooqWeekly()` (mapping `mapTickerToStooq`). La
+source active et le symbole utilisé sont affichés sous le graphique
+(`#stockSourceNote`). En cas d'échec des deux sources, message d'erreur explicite et
+actionnable dans `#stockStatus` (jamais d'échec silencieux). Sélecteur de plage
+(1a/2a/3a/5a/10a/20a/Max, `#rangeButtons`) recalcule l'affichage sans refaire de fetch.
+
+*(Historique : un widget TradingView a brièvement remplacé cette solution, abandonné
+suite à une limitation de données bloquante pour les bourses non-américaines — voir
+"Pièges techniques" point 8. Ne pas le réintroduire pour le cours de bourse principal
+sans un moyen de contourner cette limitation.)*
 
 ### Bugs corrigés
 - **Onglet Secteur inerte** : les boutons `.page-nav-btn` (Analyse/Secteur) n'avaient

@@ -101,9 +101,23 @@
     <div class="chart-grid">
       <div class="chart-card wide" id="stockCard">
         <div class="chart-card-head">
-          <div><h3>Cours de bourse</h3><p>Widget TradingView — symbole modifiable directement dans le graphique</p></div>
+          <div><h3>Cours de bourse (hebdomadaire)</h3><p>Clôture hebdomadaire et moyenne mobile 200 semaines</p></div>
+          <div class="chart-card-actions">
+            <button class="zoom-btn" onclick="openZoom('stock',&quot;Cours de bourse&quot;)" aria-label="Agrandir">⤢</button>
+          </div>
         </div>
-        <div id="tvChartHolder" style="height:480px;"></div>
+        <div class="range-buttons" id="rangeButtons">
+          <button data-range="1">1a</button>
+          <button data-range="2">2a</button>
+          <button data-range="3">3a</button>
+          <button data-range="5">5a</button>
+          <button data-range="10">10a</button>
+          <button data-range="20">20a</button>
+          <button data-range="max" class="active">Max</button>
+        </div>
+        <div class="chart-holder" style="height:320px;"><canvas id="chartStock"></canvas></div>
+        <div class="stock-status" id="stockStatus"></div>
+        <div class="stock-source" id="stockSourceNote">Source : Yahoo Finance (repli automatique sur Stooq si indisponible)</div>
       </div>
 
       <div class="chart-card">

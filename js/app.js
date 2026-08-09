@@ -496,7 +496,7 @@ function renderCompany(nom){
   setBadge('badgeFcf', 'CAGR FCF 10a', latest.cagrFcf10);
   setBadge('badgeActions', 'CAGR actions 20a', latest.cagrActions);
 
-  loadTradingViewChart(latest.ticker);
+  loadStockChart(latest.ticker);
   renderValorisation(nom);
 
   const series = k => hist.map(r => r[k]);
@@ -591,59 +591,221 @@ function cloneChartConfig(config){
 }
 
 /* ============================================================
-   COURS DE BOURSE — widget TradingView (remplace l'ancien fetch
-   Yahoo Finance/Stooq + Chart.js maison). Pas de clé API, pas de
-   CORS à gérer. allow_symbol_change permet à l'utilisateur de
-   corriger lui-même le symbole si le mapping automatique se trompe.
+   COURS DE BOURSE — Yahoo Finance en priorité, repli sur Stooq
+   si le fetch échoue (CORS non garanti côté Yahoo, pas d'API
+   officielle). Hebdomadaire + SMA200.
+   (Remplace un essai de widget TradingView : le widget public/anonyme
+   ne dessert pas les données Euronext Paris, même pour des symboles
+   valides — voir "Pièges techniques" point 8 dans CLAUDE.md. Ce fetch
+   maison couvre toutes les bourses du portefeuille.)
    ============================================================ */
-function mapTickerToTradingView(ticker){
+let stockFull = null;   // { dates, closes, sma }
+let stockRange = 'max';
+let stockRequestId = 0;
+
+function mapTickerToYahoo(ticker){
   if (!ticker) return null;
   const parts = ticker.split(':');
   if (parts.length !== 2) return ticker;
   const [exch, sym] = parts;
   const map = {
-    EPA:'EURONEXT', PAR:'EURONEXT', NASDAQ:'NASDAQ', NYSE:'NYSE', NYSEARCA:'AMEX',
-    LON:'LSE', LSE:'LSE', ETR:'XETR', FRA:'FWB', XETR:'XETR',
-    AMS:'EURONEXT', BME:'BME', MIL:'MIL', SWX:'SIX', TSE:'TSE'
+    EPA:'.PA', PAR:'.PA', NASDAQ:'', NYSE:'', NYSEARCA:'',
+    LON:'.L', LSE:'.L', ETR:'.DE', FRA:'.DE', XETR:'.DE',
+    AMS:'.AS', BME:'.MC', MIL:'.MI', SWX:'.SW', TSE:'.T'
   };
-  const prefix = map[exch.toUpperCase()] || exch.toUpperCase();
-  return prefix + ':' + sym;
+  const suffix = map[exch.toUpperCase()];
+  return sym + (suffix != null ? suffix : '');
 }
 
-function loadTradingViewChart(ticker){
-  const holder = document.getElementById('tvChartHolder');
-  if (!holder) return;
-  holder.innerHTML = '';
-  const symbol = mapTickerToTradingView(ticker) || 'NASDAQ:AAPL';
-
-  const container = document.createElement('div');
-  container.className = 'tradingview-widget-container';
-  container.style.height = '100%';
-  container.style.width = '100%';
-  const widgetDiv = document.createElement('div');
-  widgetDiv.className = 'tradingview-widget-container__widget';
-  container.appendChild(widgetDiv);
-  holder.appendChild(container);
-
-  const script = document.createElement('script');
-  script.type = 'text/javascript';
-  script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
-  script.async = true;
-  script.text = JSON.stringify({
-    autosize: true,
-    symbol: symbol,
-    interval: 'W',
-    timezone: 'Etc/UTC',
-    theme: 'dark',
-    style: '1',
-    locale: 'fr',
-    backgroundColor: 'rgba(21, 26, 31, 1)',
-    gridColor: 'rgba(38, 46, 54, 1)',
-    allow_symbol_change: true,
-    support_host: 'https://www.tradingview.com'
-  });
-  container.appendChild(script);
+function mapTickerToStooq(ticker){
+  if (!ticker) return null;
+  const parts = ticker.split(':');
+  if (parts.length !== 2) return ticker.toLowerCase();
+  const [exch, sym] = parts;
+  const map = {
+    EPA:'.fr', PAR:'.fr', NASDAQ:'.us', NYSE:'.us', NYSEARCA:'.us',
+    LON:'.uk', LSE:'.uk', ETR:'.de', FRA:'.de', XETR:'.de',
+    AMS:'.nl', BME:'.mc', MIL:'.mi', SWX:'.sw', TSE:'.jp'
+  };
+  const suffix = map[exch.toUpperCase()] || '.us';
+  return sym.toLowerCase() + suffix;
 }
+
+function average(arr){ return arr.reduce((a,b) => a+b, 0) / arr.length; }
+
+function isoWeekKey(dateStr){
+  const d = new Date(dateStr + 'T00:00:00Z');
+  const day = (d.getUTCDay() + 6) % 7; // lundi = 0
+  d.setUTCDate(d.getUTCDate() - day + 3);
+  const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  const week = 1 + Math.round(((d - firstThursday) / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
+  return d.getUTCFullYear() + '-W' + week;
+}
+
+// Regroupe des clôtures quotidiennes en clôtures hebdomadaires (dernier jour coté de
+// chaque semaine ISO). Nécessaire car l'API Yahoo Finance renvoie silencieusement des
+// données mensuelles quand on demande interval=1wk sur un très long historique (range=max)
+// — le point d'entrée le plus fiable reste donc le quotidien, rééchantillonné nous-mêmes.
+function resampleWeekly(dailyDates, dailyCloses){
+  const dates = [], closes = [];
+  let currentKey = null, lastDate = null, lastClose = null;
+  for (let i = 0; i < dailyDates.length; i++){
+    const key = isoWeekKey(dailyDates[i]);
+    if (currentKey !== null && key !== currentKey){
+      dates.push(lastDate);
+      closes.push(lastClose);
+    }
+    currentKey = key;
+    lastDate = dailyDates[i];
+    lastClose = dailyCloses[i];
+  }
+  if (lastDate != null){
+    dates.push(lastDate);
+    closes.push(lastClose);
+  }
+  return { dates, closes };
+}
+
+async function fetchYahooWeekly(symbol){
+  // period1/period2 explicites plutôt que range=max : Yahoo sous-échantillonne
+  // silencieusement (mensuel au lieu de quotidien) quand range=max est combiné à un
+  // très long historique, ce qui faussait la moyenne mobile 200 semaines.
+  const period1 = Math.floor(new Date('1990-01-01T00:00:00Z').getTime() / 1000);
+  const period2 = Math.floor(Date.now() / 1000);
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=1d`;
+  const controller = new AbortController();
+  const hardTimeout = setTimeout(() => controller.abort(), 8000);
+  try{
+    const res = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    const result = json && json.chart && json.chart.result && json.chart.result[0];
+    if (!result) throw new Error((json && json.chart && json.chart.error && json.chart.error.description) || 'réponse Yahoo Finance invalide');
+    const ts = result.timestamp;
+    const closes = result.indicators && result.indicators.quote && result.indicators.quote[0] && result.indicators.quote[0].close;
+    if (!ts || !closes) throw new Error('données Yahoo Finance incomplètes');
+
+    const dailyDates = [], dailyCloses = [];
+    for (let i = 0; i < ts.length; i++){
+      if (closes[i] == null) continue;
+      dailyDates.push(new Date(ts[i] * 1000).toISOString().slice(0, 10));
+      dailyCloses.push(closes[i]);
+    }
+    if (dailyCloses.length < 50) throw new Error('pas assez de données renvoyées par Yahoo Finance');
+    const { dates, closes: vals } = resampleWeekly(dailyDates, dailyCloses);
+    return { dates, closes: vals };
+  } finally {
+    clearTimeout(hardTimeout);
+  }
+}
+
+async function fetchStooqWeekly(symbol){
+  const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(symbol)}&i=w&_=${Date.now()}`;
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const text = await res.text();
+  if (!text || text.trim().toLowerCase().startsWith('<')) throw new Error('réponse invalide');
+
+  const parsed = Papa.parse(text.trim(), { header: true, skipEmptyLines: true });
+  const rows = (parsed.data || []).filter(r => r.Date && r.Close && !isNaN(parseFloat(r.Close)));
+  if (rows.length < 10) throw new Error('pas assez de données renvoyées');
+
+  return { dates: rows.map(r => r.Date), closes: rows.map(r => parseFloat(r.Close)) };
+}
+
+function setStockSourceNote(text){
+  const el = document.getElementById('stockSourceNote');
+  if (el) el.textContent = text;
+}
+
+async function loadStockChart(ticker){
+  const statusEl = document.getElementById('stockStatus');
+  const myId = ++stockRequestId;
+  stockFull = null;
+  if (chartInstances.stock){ chartInstances.stock.destroy(); delete chartInstances.stock; }
+
+  if (!ticker){
+    statusEl.textContent = 'Ticker manquant pour cette entreprise, impossible de charger le cours.';
+    statusEl.style.display = 'block';
+    return;
+  }
+  statusEl.textContent = 'Chargement du cours…';
+  statusEl.style.display = 'block';
+
+  const ySymbol = mapTickerToYahoo(ticker);
+  try{
+    const { dates, closes } = await fetchYahooWeekly(ySymbol);
+    if (myId !== stockRequestId) return;
+    const sma = closes.map((_, i) => i < 199 ? null : average(closes.slice(i - 199, i + 1)));
+    stockFull = { dates, closes, sma };
+    statusEl.style.display = 'none';
+    setStockSourceNote('Source : Yahoo Finance (symbole ' + ySymbol + ')');
+    renderStockChart();
+    return;
+  }catch(e){
+    if (myId !== stockRequestId) return;
+    // Yahoo Finance indisponible (CORS non garanti) — on tente le repli Stooq.
+  }
+
+  const sSymbol = mapTickerToStooq(ticker);
+  try{
+    const res = await fetchStooqWeekly(sSymbol);
+    if (myId !== stockRequestId) return;
+    const sma = res.closes.map((_, i) => i < 199 ? null : average(res.closes.slice(i - 199, i + 1)));
+    stockFull = { dates: res.dates, closes: res.closes, sma };
+    statusEl.style.display = 'none';
+    setStockSourceNote('Source : Stooq (repli, Yahoo Finance indisponible pour ce ticker — symbole ' + sSymbol + ')');
+    renderStockChart();
+  }catch(e){
+    if (myId !== stockRequestId) return;
+    stockFull = null;
+    statusEl.textContent = "Cours indisponible pour ce ticker, ni via Yahoo Finance (" + ySymbol + ") ni via Stooq (" + sSymbol + "). Le mapping automatique de la bourse d'origine ne couvre pas forcément tous les cas — dis-moi le bon symbole si besoin.";
+    statusEl.style.display = 'block';
+  }
+}
+
+function renderStockChart(){
+  if (!stockFull) return;
+  const { dates, closes, sma } = stockFull;
+  let startIdx = 0;
+  if (stockRange !== 'max'){
+    const years = parseInt(stockRange, 10);
+    const cutoff = new Date();
+    cutoff.setFullYear(cutoff.getFullYear() - years);
+    const found = dates.findIndex(d => new Date(d) >= cutoff);
+    startIdx = found === -1 ? 0 : found;
+  }
+
+  const labels = dates.slice(startIdx);
+  const dataClose = closes.slice(startIdx);
+  const dataSma = sma.slice(startIdx);
+
+  if (chartInstances.stock) chartInstances.stock.destroy();
+
+  const config = {
+    type:'line',
+    data:{ labels, datasets:[
+      { label:'Clôture hebdo', data:dataClose, borderColor:THEME.gold, backgroundColor:'rgba(217,164,65,0.08)', fill:true, tension:0.12, pointRadius:0, borderWidth:1.5 },
+      { label:'Moyenne mobile 200 sem.', data:dataSma, borderColor:THEME.blue, borderWidth:1.5, pointRadius:0, spanGaps:true, tension:0.12 }
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true}}},
+      scales:{
+        x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:8}, border:{color:THEME.hair} },
+        y:{ grid:baseGrid, ticks:{color:THEME.dim} }
+      }
+    }
+  };
+  chartInstances.stock = makeChart('stock', 'chartStock', config);
+}
+
+document.getElementById('rangeButtons').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-range]');
+  if (!btn) return;
+  stockRange = btn.dataset.range;
+  document.querySelectorAll('#rangeButtons button').forEach(b => b.classList.toggle('active', b === btn));
+  renderStockChart();
+});
 
 function openZoom(key, title){
   const config = chartConfigs[key];
