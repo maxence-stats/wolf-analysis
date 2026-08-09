@@ -28,7 +28,8 @@ Le HTML référence les fichiers externes via :
 Dépendances CDN (chargées directement dans `index.html` / dynamiquement par `app.js`, pas de npm) :
 - **Chart.js 4.4.4** — chargé dynamiquement avec repli sur 3 CDN (cdnjs → jsdelivr → unpkg), voir section "Pièges techniques"
 - **PapaParse 5.4.1** (cdnjs) — parsing CSV
-- **Google Fonts** : Space Grotesk (titres), Inter (corps), JetBrains Mono (chiffres/labels)
+- **Google Fonts** : Space Grotesk (titres/marque), Plus Jakarta Sans (corps, chiffres,
+  labels — voir "Design system", remplace Inter + JetBrains Mono depuis la 2e passe DA)
 
 Aucun framework, aucun bundler, aucun `npm install` requis. Le site s'ouvre tel quel
 dans un navigateur, ou se déploie sur n'importe quel hébergement statique.
@@ -147,50 +148,92 @@ différents du même fichier — les deux sont codés en dur en haut de `app.js`
    le bouton « Exporter » de l'onglet Valorisation (resté coincé à 26px de large). Fix :
    composer un sélecteur plus spécifique (`.objectifs-actions .objectifs-export`) plutôt
    que de compter sur l'ordre d'apparition dans le fichier.
+7. **Accentuation incohérente dans les colonnes texte du Sheet.** La colonne `secteur`
+   est saisie à la main, donc pas garantie cohérente : "Materiaux" (Air Liquide) vs
+   "Matériaux" (Verallia) selon la ligne, alors que c'est censé être le même secteur.
+   `normalizeSector()` comparait des mots-clés sans accent contre du texte parfois
+   accentué → certaines entreprises finissaient dans "Autre / non classé" au lieu de leur
+   vrai secteur. Fix : `stripAccents()` (normalisation Unicode NFD + suppression des
+   diacritiques) appliquée des deux côtés de la comparaison avant `includes()`. **Tout
+   nouveau matching de texte libre venant du Sheet devrait passer par `stripAccents()`**
+   plutôt que supposer une saisie homogène.
 
 ## Design system
 
-Thème sombre, esthétique "terminal financier professionnel" avec une couche de finition
-inspirée de Finary (dégradés discrets, cartes flottantes avec ombre, lueurs douces sur
-les éléments actifs/sémantiques) — ajoutée pour donner plus de profondeur et de "premium"
-sans renoncer à l'identité terminal existante.
+Thème sombre inspiré de Finary (captures fournies par l'utilisateur : page marketing +
+mockup de tableau de bord/téléphone), mais adapté à un site dense en données (9 graphiques
++ 8 cartes de ratios sur un seul écran, contre les écrans aérés de Finary).
+
+**Historique de la DA — ne pas régresser vers la v1.** Une première passe (dégradés
+discrets ~10% d'opacité, cartes bordées + ombre marquée, typo restée en JetBrains Mono)
+a été jugée **insuffisante** par l'utilisateur (« on n'y est pas du tout »), pas de
+demi-mesure. Décisions explicites prises pour la v2 (à ne pas re-discuter sans raison) :
+- Typo des chiffres/labels **changée** vers une police ronde (pas gardée en monospace,
+  malgré l'identité "terminal" documentée à l'origine — l'utilisateur a tranché en faveur
+  de Finary).
+- Fond dégradé **beaucoup plus marqué/saturé** (pas discret).
+- Cartes **aplaties** (quasi sans bordure), pas bordées+ombrées comme avant.
+- Densité de l'information **inchangée** (juste un nouvel habillage visuel, pas un
+  espacement à la Finary qui ajouterait du défilement).
 
 **Couleurs** (`:root` dans `style.css`) :
 - `--bg: #0D1013` (fond, pas noir pur)
 - `--panel: #151A1F`, `--panel-2: #1B2128` (cartes)
-- `--hair: #262E36` (bordures/séparateurs)
+- `--hair: #262E36` (bordures structurelles restantes : nav, inputs, petites puces —
+  **plus utilisée pour les grandes cartes**, voir `--card-border`)
 - `--text: #E9EBEE`, `--text-dim: #8B93A0`, `--text-faint: #5C6470`
 - `--gold: #D9A441` (accent principal — dividendes, énergie, signal), `--gold-2: #F0C877`
-  (variante claire, utilisée dans les dégradés des boutons/titre de marque)
-- `--blue: #4A9FE0` (accent secondaire — utilisé dans les séries de données des graphiques,
-  voir "Palette graphiques" ci-dessous)
-- `--violet: #8B7FE8` (accent décoratif uniquement — lueur de fond en haut à droite,
-  clin d'œil aux dégradés Finary ; jamais utilisé pour du sens/de la donnée)
-- `--green: #4FD1A5` (positif/sous-valorisé)
-- `--red: #E5636B` (négatif/survalorisé)
-- `--card-bg` : dégradé `panel-2 → panel` réutilisé sur toutes les cartes (header, gauge,
-  ratio-card, chart-card, sector-box, zoom-panel, écrans loading/error) pour un rendu
-  uniforme au lieu d'un simple fond plat
-- `--shadow-card` / `--shadow-card-hover` : ombre portée douce sous les cartes ; les
-  `ratio-card` et `chart-card` ont un léger effet de survol (lift + ombre plus marquée)
+  (variante claire, utilisée dans les dégradés des boutons)
+- `--blue: #4A9FE0` (accent secondaire — séries de données des graphiques, voir "Palette
+  graphiques" ci-dessous)
+- `--violet: #8B7FE8` (accent décoratif — désormais la couleur **dominante** du dégradé
+  de fond, en haut à droite, gros blob saturé façon Finary ; jamais utilisé pour du
+  sens/de la donnée)
+- `--green: #4FD1A5` (positif/sous-valorisé) — `--red: #E5636B` (négatif/survalorisé)
+- `--card-bg` : dégradé `panel-2 → panel`, appliqué sur toutes les grandes cartes (header,
+  gauge, ratio-card, chart-card, sector-box, scenario-card, objectifs-card, zoom-panel,
+  écrans loading/error)
+- `--card-border` : `1px solid rgba(255,255,255,0.05)` — quasi invisible, remplace
+  `1px solid var(--hair)` sur les grandes cartes (style Finary "plat", séparation par le
+  ton du fond plutôt que par un trait visible). Les petits éléments (puces `.tag`,
+  `.chart-badge`, boutons `.zoom-btn`/`.range-buttons button`, `.search-input`) gardent
+  `var(--hair)`, ils ont besoin de se détacher visuellement à cette taille.
+- `--shadow-card` : très légère (`0 1px 2px rgba(0,0,0,0.25)`) à l'état statique —
+  `--shadow-card-hover` : plus prononcée, seulement au survol (`ratio-card`, `chart-card`)
+
+**Fond de page** — dégradé volontairement voyant (pas un accent discret) :
+```css
+background:
+  radial-gradient(1500px 950px at 80% -12%, rgba(139,127,232,0.38), transparent 62%),
+  radial-gradient(1100px 750px at 8% -4%, rgba(74,159,224,0.22), transparent 58%),
+  radial-gradient(1000px 600px at 55% 105%, rgba(217,164,65,0.10), transparent 60%),
+  var(--bg);
+```
+Violet dominant en haut à droite, bleu en haut à gauche, touche d'or en bas — à ajuster
+en intensité si retour utilisateur, mais **ne pas revenir à des opacités ~0.07-0.10**
+(c'était la v1, explicitement rejetée).
 
 **Typographie** :
-- `Space Grotesk` (700/600) — titres, marque
-- `Inter` — corps de texte
-- `JetBrains Mono` — tous les chiffres, labels, badges (esprit "terminal")
+- `Space Grotesk` (700/600) — titres/marque uniquement (`--font-display`)
+- `Plus Jakarta Sans` — **tout le reste** : corps de texte, chiffres, labels, badges
+  (`--font-body` et `--font-mono` pointent tous les deux vers cette police ; les deux
+  variables sont conservées pour ne pas casser les usages existants dans `style.css`,
+  mais elles sont désormais identiques). Remplace Inter + JetBrains Mono. Chart.js
+  (`Chart.defaults.font.family`) et le texte SVG de la jauge (`drawGauge()`) suivent le
+  même changement — **si on ajoute un nouveau texte dessiné en Canvas/SVG, utiliser
+  `'Plus Jakarta Sans', sans-serif'`, pas `JetBrains Mono`**.
 
 **Composants clés** :
 - Barre de marque : logo Wolf Analysis (ombre douce dorée) + titre **en blanc uni**
-  (`var(--text)`, pas de dégradé — testé en dégradé or puis explicitement retiré à la
-  demande de l'utilisateur, « c'est moche »). Pas de sous-titre sous le titre (l'ancien
-  « Onglet Analyse » a été retiré, redondant avec les onglets juste en dessous) —
-  **ne pas réintroduire `.brand-sub`**.
+  (`var(--text)`, pas de dégradé — testé en dégradé or puis explicitement retiré,
+  « c'est moche »). Pas de sous-titre sous le titre (l'ancien « Onglet Analyse » a été
+  retiré, redondant avec les onglets juste en dessous) — **ne pas réintroduire `.brand-sub`**.
 - Barre de recherche avec autocomplétion (remplace une ancienne liste d'onglets par
   entreprise, retirée car pas scalable avec beaucoup d'entreprises)
 - Jauge de valorisation (SVG généré en JS) : positionne Prix Cible / Prix Juste / Prix
   Actuel sur une échelle colorée (zones vert/or/rouge) ; le badge de verdict a une légère
   lueur colorée assortie
-- Cartes de ratios clés (grille 4 colonnes desktop, 2 mobile)
+- Cartes de ratios clés (grille 4 colonnes desktop, 2 mobile), plates (voir `--card-border`)
 - Cartes de graphiques (Chart.js) : grille 3 colonnes desktop, bouton zoom (modale) sur
   chacune, badges CAGR sur 4 d'entre elles (lueur assortie pos/neg)
 - Quadrillage des graphiques : **vertical retiré, seul l'horizontal conservé** (demande
@@ -201,9 +244,11 @@ sans renoncer à l'identité terminal existante.
   "verre" plus premium qu'un simple overlay sombre. Pied de modale (`.zoom-footer`) aligné
   **à droite**, logo agrandi à 28px (au lieu de 16px centré comme au départ) — demande
   explicite pour renforcer l'image de marque sur les graphiques agrandis/partagés.
-- Cartes de scénario (onglet Valorisation) : bordure supérieure colorée par sémantique
-  (vert Optimiste / bleu Réaliste / rouge Pessimiste, réutilisant `--green`/`--blue`/`--red`
-  existants — pas de nouvelle couleur), sliders natifs `<input type=range>` stylés au thème.
+- Cartes de scénario (onglet Valorisation) : plates comme les autres cartes, mais
+  **gardent** une bordure supérieure colorée de 3px par sémantique (vert Optimiste / bleu
+  Réaliste / rouge Pessimiste, réutilisant `--green`/`--blue`/`--red` existants) — c'est
+  un marqueur sémantique volontaire, pas une "bordure" au sens Finary à retirer. Sliders
+  natifs `<input type=range>` stylés au thème.
 
 ## Fonctionnalités — état actuel
 
@@ -261,7 +306,10 @@ champs déjà présents dans `companies` (aucune nouvelle colonne `COL` nécessa
   point historique jusqu'au point de projection à horizon+5 ans, labellisé `AAAA (Est.)`).
 - **Historique des objectifs** : fiche par entreprise où l'utilisateur peut enregistrer
   (bouton « Enregistrer cet objectif ») un instantané daté des 3 scénarios (CAGR + multiple
-  de chacun). Persistance en `localStorage` (`wolfAnalysisObjectifs`), **pas d'écriture
+  de chacun). Chaque entrée a un bouton **« ↻ Charger »** (`applyObjectif(nom, idx)`) qui
+  réapplique ses valeurs aux sliders des 3 scénarios et recalcule tout instantanément —
+  demandé explicitement pour éviter de resaisir les curseurs à la main à chaque
+  reconnexion. Persistance en `localStorage` (`wolfAnalysisObjectifs`), **pas d'écriture
   vers le Google Sheet** (source en lecture seule, décision explicite de l'utilisateur).
   Au chargement, `loadObjectifsBaseline()` essaie de `fetch('data/objectifs.json')` (socle
   committé dans le dépôt, `{}` par défaut — échec silencieux si absent/bloqué, non
@@ -311,6 +359,10 @@ croisements prix/moyenne mobile 200 semaines tout au long de l'historique).
   déclarée plus loin dans `style.css`) écrasait le `width:auto` de `.objectifs-export` à
   spécificité CSS égale (voir "Pièges techniques" point 6). Corrigé en spécifiant
   `.objectifs-actions .objectifs-export`.
+- **Verallia mal classée dans l'onglet Secteur** (finissait dans "Autre / non classé" au
+  lieu de "Matériaux") : accentuation incohérente dans la colonne `secteur` du Sheet
+  ("Materiaux" vs "Matériaux" selon la ligne, voir "Pièges techniques" point 7). Corrigé
+  avec `stripAccents()` dans `normalizeSector()`.
 
 ### Demandé, non commencé — nécessite une décision d'architecture
 Ces 3 fonctionnalités ne sont **pas réalisables en site statique pur** sans backend :

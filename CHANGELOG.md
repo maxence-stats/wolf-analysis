@@ -6,6 +6,31 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 ## [Non publié]
 
 ### Ajouté
+- Bouton **« ↻ Charger »** sur chaque entrée de l'historique des objectifs (onglet
+  Valorisation) : réapplique instantanément les valeurs CAGR/multiple des 3 scénarios
+  aux sliders, sans ressaisie manuelle.
+
+### Corrigé
+- **Verallia mal classée dans l'onglet Secteur** (finissait dans "Autre / non classé") :
+  accentuation incohérente dans la colonne `secteur` du Sheet ("Materiaux" vs
+  "Matériaux" selon la ligne). `normalizeSector()` compare désormais du texte
+  sans accents des deux côtés (`stripAccents()`).
+
+### Modifié — 2e passe de direction artistique
+La 1re passe (dégradés discrets, cartes bordées, typo monospace conservée) a été jugée
+insuffisante par l'utilisateur au regard des captures Finary fournies. Changements :
+- Police des chiffres/labels : JetBrains Mono → **Plus Jakarta Sans** (police ronde),
+  Inter retirée. Space Grotesk conservée pour les titres/marque uniquement.
+- Fond dégradé violet/bleu **beaucoup plus marqué et saturé** (bien au-delà d'un simple
+  accent discret).
+- Cartes **aplaties** : bordures quasi supprimées (`--card-border`, remplace
+  `1px solid var(--hair)` sur les grandes cartes), ombre statique très réduite, séparation
+  par le ton du fond plutôt que par un trait visible.
+- Densité de l'information inchangée (demande explicite : pas d'espacement à la Finary).
+
+## [0.3.0] — 2026-08-09
+
+### Ajouté
 - **Onglet Valorisation** : simulations scénarisées (Optimiste/Réaliste/Pessimiste)
   avec sliders CAGR FCF prévu + médiane P/FCF, calculs en direct (Prix Juste Sim.,
   Prix Cible -20%, Prix Est. à 5 ans, Rendement à 5 ans), graphique par scénario

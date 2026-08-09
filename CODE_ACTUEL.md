@@ -29,7 +29,7 @@ system, fonctionnalités faites/en cours/à décider).
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Wolf Analysis</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <link rel="stylesheet" href="css/style.css">
 </head>
@@ -54,7 +54,7 @@ system, fonctionnalités faites/en cours/à décider).
       <button class="refresh-btn" id="refreshBtn">↻ Mettre à jour</button>
     </div>
   </div>
-  <div id="debugLine" style="display:none;font-family:'JetBrains Mono',monospace;font-size:11px;color:#5C6470;text-align:right;margin:-8px 0 12px;"></div>
+  <div id="debugLine" style="display:none;font-family:'Plus Jakarta Sans',sans-serif;font-size:11px;color:#5C6470;text-align:right;margin:-8px 0 12px;"></div>
 
   <div id="loadingScreen">
     <div class="spinner"></div>
@@ -304,18 +304,20 @@ system, fonctionnalités faites/en cours/à décider).
     --green:#4FD1A5;
     --red:#E5636B;
     --font-display:'Space Grotesk', sans-serif;
-    --font-body:'Inter', sans-serif;
-    --font-mono:'JetBrains Mono', monospace;
-    --shadow-card:0 12px 32px -16px rgba(0,0,0,0.55);
-    --shadow-card-hover:0 16px 40px -14px rgba(0,0,0,0.6);
+    --font-body:'Plus Jakarta Sans', sans-serif;
+    --font-mono:'Plus Jakarta Sans', sans-serif;
+    --card-border:1px solid rgba(255,255,255,0.05);
+    --shadow-card:0 1px 2px rgba(0,0,0,0.25);
+    --shadow-card-hover:0 20px 48px -18px rgba(0,0,0,0.55);
     --card-bg:linear-gradient(155deg, var(--panel-2) 0%, var(--panel) 100%);
   }
   *{box-sizing:border-box;}
   body{
     margin:0;
     background:
-      radial-gradient(1100px 480px at 12% -8%, rgba(217,164,65,0.10), transparent 60%),
-      radial-gradient(900px 520px at 92% 8%, rgba(139,127,232,0.07), transparent 55%),
+      radial-gradient(1500px 950px at 80% -12%, rgba(139,127,232,0.38), transparent 62%),
+      radial-gradient(1100px 750px at 8% -4%, rgba(74,159,224,0.22), transparent 58%),
+      radial-gradient(1000px 600px at 55% 105%, rgba(217,164,65,0.10), transparent 60%),
       var(--bg);
     background-attachment:fixed;
     color:var(--text);
@@ -370,7 +372,7 @@ system, fonctionnalités faites/en cours/à décider).
 
   /* ---------- SECTEUR VIEW ---------- */
   .sector-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));gap:14px;}
-  .sector-box{background:var(--card-bg);border:1px solid var(--hair);border-radius:14px;padding:16px 18px;min-height:120px;box-shadow:var(--shadow-card);}
+  .sector-box{background:var(--card-bg);border:var(--card-border);border-radius:14px;padding:16px 18px;min-height:120px;box-shadow:var(--shadow-card);}
   .sector-box h3{font-family:var(--font-display);font-size:14px;font-weight:600;margin:0 0 4px;color:var(--text);}
   .sector-box .count{font-family:var(--font-mono);font-size:11px;color:var(--text-faint);margin-bottom:12px;}
   .sector-companies{display:flex;flex-wrap:wrap;gap:8px;}
@@ -388,7 +390,7 @@ system, fonctionnalités faites/en cours/à décider).
 
   .scenario-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
   .scenario-card{
-    background:var(--card-bg);border:1px solid var(--hair);border-top:3px solid var(--hair);border-radius:14px;
+    background:var(--card-bg);border:var(--card-border);border-top:3px solid var(--hair);border-radius:14px;
     padding:20px;box-shadow:var(--shadow-card);
   }
   .scenario-card.optimiste{border-top-color:var(--green);}
@@ -427,17 +429,20 @@ system, fonctionnalités faites/en cours/à décider).
 
   .scenario-chart-holder{position:relative;height:180px;margin-top:4px;}
 
-  .objectifs-card{background:var(--card-bg);border:1px solid var(--hair);border-radius:14px;padding:20px 22px;box-shadow:var(--shadow-card);}
+  .objectifs-card{background:var(--card-bg);border:var(--card-border);border-radius:14px;padding:20px 22px;box-shadow:var(--shadow-card);}
   .objectifs-actions{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;}
   .objectifs-actions .objectifs-export{width:auto;height:auto;padding:9px 14px;font-family:var(--font-mono);font-size:11.5px;font-weight:600;gap:6px;}
   .objectifs-list{display:flex;flex-direction:column;gap:8px;}
   .objectifs-entry{
     display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;
-    background:var(--panel-2);border:1px solid var(--hair);border-radius:10px;padding:10px 14px;font-size:12.5px;
+    background:var(--panel-2);border:var(--card-border);border-radius:10px;padding:10px 14px;font-size:12.5px;
   }
   .objectifs-entry .date{font-family:var(--font-mono);color:var(--text-dim);white-space:nowrap;}
   .objectifs-entry .scen{color:var(--text-faint);}
   .objectifs-entry .scen b{color:var(--text);font-weight:600;}
+  .objectifs-entry-actions{display:flex;align-items:center;gap:10px;flex-shrink:0;}
+  .objectifs-entry .load{background:none;border:1px solid var(--hair);border-radius:12px;color:var(--text-dim);cursor:pointer;font-family:var(--font-mono);font-size:11px;font-weight:600;padding:4px 10px;white-space:nowrap;}
+  .objectifs-entry .load:hover{border-color:var(--gold);color:var(--text);}
   .objectifs-entry .del{background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;}
   .objectifs-entry .del:hover{color:var(--red);}
   .objectifs-empty{font-size:12.5px;color:var(--text-faint);font-style:italic;}
@@ -453,7 +458,7 @@ system, fonctionnalités faites/en cours/à décider).
 
   /* ---------- STATE SCREENS ---------- */
   #loadingScreen, #errorScreen{
-    padding:60px 26px;text-align:center;background:var(--card-bg);border:1px solid var(--hair);border-radius:14px;box-shadow:var(--shadow-card);
+    padding:60px 26px;text-align:center;background:var(--card-bg);border:var(--card-border);border-radius:14px;box-shadow:var(--shadow-card);
   }
   #loadingScreen p, #errorScreen p{color:var(--text-dim);font-size:13.5px;margin:10px auto 0;max-width:460px;line-height:1.6;}
   .spinner{width:26px;height:26px;border-radius:50%;border:3px solid var(--hair);border-top-color:var(--gold);margin:0 auto;animation:spin 0.8s linear infinite;}
@@ -467,7 +472,7 @@ system, fonctionnalités faites/en cours/à décider).
   .header{
     display:flex;align-items:center;gap:22px;padding:22px 26px;
     background:var(--card-bg);
-    border:1px solid var(--hair);border-radius:14px;flex-wrap:wrap;box-shadow:var(--shadow-card);
+    border:var(--card-border);border-radius:14px;flex-wrap:wrap;box-shadow:var(--shadow-card);
   }
   .logo-box{width:76px;height:76px;background:#fff;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:10px;flex-shrink:0;box-shadow:0 6px 18px -8px rgba(0,0,0,0.5);}
   .logo-box img{max-width:100%;max-height:100%;object-fit:contain;}
@@ -483,7 +488,7 @@ system, fonctionnalités faites/en cours/à décider).
   .price-year{font-size:11px;color:var(--text-faint);font-family:var(--font-mono);margin-top:4px;}
 
   /* ---------- GAUGE ---------- */
-  .gauge-card{margin-top:16px;padding:22px 26px 20px;background:var(--card-bg);border:1px solid var(--hair);border-radius:14px;box-shadow:var(--shadow-card);}
+  .gauge-card{margin-top:16px;padding:22px 26px 20px;background:var(--card-bg);border:var(--card-border);border-radius:14px;box-shadow:var(--shadow-card);}
   .gauge-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;flex-wrap:wrap;gap:8px;}
   .gauge-title{font-family:var(--font-display);font-weight:600;font-size:15px;color:var(--text);}
   .gauge-verdict{font-family:var(--font-mono);font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;}
@@ -499,7 +504,7 @@ system, fonctionnalités faites/en cours/à décider).
   .section-label{font-family:var(--font-mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-faint);margin:38px 0 14px;display:flex;align-items:center;gap:12px;}
   .section-label::after{content:"";flex:1;height:1px;background:var(--hair);}
   .ratio-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
-  .ratio-card{background:var(--card-bg);border:1px solid var(--hair);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow-card);transition:box-shadow .15s ease,transform .15s ease,border-color .15s ease;}
+  .ratio-card{background:var(--card-bg);border:var(--card-border);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow-card);transition:box-shadow .15s ease,transform .15s ease,border-color .15s ease;}
   .ratio-card:hover{box-shadow:var(--shadow-card-hover);transform:translateY(-2px);border-color:rgba(217,164,65,0.3);}
   .ratio-card .k{font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;font-weight:500;}
   .ratio-card .v{font-family:var(--font-mono);font-weight:700;font-size:24px;letter-spacing:-0.01em;color:var(--text);}
@@ -509,7 +514,7 @@ system, fonctionnalités faites/en cours/à décider).
 
   /* ---------- CHARTS ---------- */
   .chart-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
-  .chart-card{background:var(--card-bg);border:1px solid var(--hair);border-radius:14px;padding:18px 18px 8px;box-shadow:var(--shadow-card);transition:box-shadow .15s ease,border-color .15s ease;}
+  .chart-card{background:var(--card-bg);border:var(--card-border);border-radius:14px;padding:18px 18px 8px;box-shadow:var(--shadow-card);transition:box-shadow .15s ease,border-color .15s ease;}
   .chart-card:hover{box-shadow:var(--shadow-card-hover);border-color:rgba(217,164,65,0.22);}
   .chart-card.wide{grid-column:1 / -1;}
   .chart-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
@@ -533,7 +538,7 @@ system, fonctionnalités faites/en cours/à décider).
 
   /* ---------- ZOOM MODAL ---------- */
   #zoomModal{display:none;position:fixed;inset:0;background:rgba(4,5,7,0.78);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);z-index:999;align-items:center;justify-content:center;padding:30px;}
-  .zoom-panel{background:var(--card-bg);border:1px solid var(--hair);border-radius:16px;padding:22px 24px;width:min(1100px,92vw);max-height:88vh;display:flex;flex-direction:column;box-shadow:0 24px 60px -20px rgba(0,0,0,0.7);}
+  .zoom-panel{background:var(--card-bg);border:var(--card-border);border-radius:16px;padding:22px 24px;width:min(1100px,92vw);max-height:88vh;display:flex;flex-direction:column;box-shadow:0 24px 60px -20px rgba(0,0,0,0.7);}
   .zoom-panel-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
   .zoom-panel-head h3{font-family:var(--font-display);font-size:18px;font-weight:600;margin:0;}
   .zoom-close{background:none;border:1px solid var(--hair);color:var(--text-dim);width:32px;height:32px;border-radius:8px;cursor:pointer;font-size:15px;}
@@ -807,11 +812,18 @@ const GICS_SECTORS = [
   { key:'immobilier', label:'Immobilier', match:['immobil','real estate','reit'] }
 ];
 
+// Enlève les accents avant comparaison : la colonne "secteur" du Sheet est saisie à la
+// main et pas toujours accentuée de façon cohérente (ex. "Materiaux" vs "Matériaux"
+// selon la ligne), ce qui faisait échouer le classement GICS pour certaines entreprises.
+function stripAccents(s){
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
 function normalizeSector(raw){
   if (!raw) return null;
-  const s = raw.toLowerCase();
+  const s = stripAccents(raw.toLowerCase());
   for (const sec of GICS_SECTORS){
-    if (sec.match.some(kw => s.includes(kw))) return sec.key;
+    if (sec.match.some(kw => s.includes(stripAccents(kw)))) return sec.key;
   }
   return null;
 }
@@ -921,7 +933,7 @@ const THEME = {
   hair: css.getPropertyValue('--hair').trim()
 };
 function configureChartDefaults(){
-  Chart.defaults.font.family = "'JetBrains Mono', monospace";
+  Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
   Chart.defaults.font.size = 11;
   Chart.defaults.color = THEME.dim;
 }
@@ -1333,8 +1345,8 @@ function drawGauge(latest){
     return `
       <line x1="${xv}" y1="${top-4}" x2="${xv}" y2="${top+barH+4}" stroke="${color}" stroke-width="2"/>
       <circle cx="${xv}" cy="${top+barH/2}" r="4" fill="${color}"/>
-      <text x="${xv}" y="${top-10}" text-anchor="middle" fill="${color}" font-size="13" font-weight="700" font-family="JetBrains Mono, monospace">${label}</text>
-      <text x="${xv}" y="${top+barH+22}" text-anchor="middle" fill="${THEME.dim}" font-size="12" font-family="JetBrains Mono, monospace">${value.toFixed(1)} €</text>
+      <text x="${xv}" y="${top-10}" text-anchor="middle" fill="${color}" font-size="13" font-weight="700" font-family="Plus Jakarta Sans, sans-serif">${label}</text>
+      <text x="${xv}" y="${top+barH+22}" text-anchor="middle" fill="${THEME.dim}" font-size="12" font-family="Plus Jakarta Sans, sans-serif">${value.toFixed(1)} €</text>
     `;
   }
   html += marker(xCible, 'CIBLE', latest.prixCible, THEME.green);
@@ -1579,8 +1591,25 @@ function renderObjectifsHistory(nom){
       const v = e.scenarios[s.key];
       return v ? `<b>${s.label.replace('Scénario ', '')}</b> ${v.cagr}% / ${v.multiple}x` : '';
     }).filter(Boolean).join(' · ');
-    return `<div class="objectifs-entry"><span class="date">${e.date}</span><span class="scen">${parts}</span><button class="del" data-idx="${realIdx}" aria-label="Supprimer">✕</button></div>`;
+    return `<div class="objectifs-entry"><span class="date">${e.date}</span><span class="scen">${parts}</span><div class="objectifs-entry-actions"><button class="load" data-idx="${realIdx}">↻ Charger</button><button class="del" data-idx="${realIdx}" aria-label="Supprimer">✕</button></div></div>`;
   }).join('');
+}
+
+function applyObjectif(nom, idx){
+  const entry = (objectifsStore[nom] || [])[idx];
+  if (!entry) return;
+  SCENARIOS.forEach(s => {
+    const v = entry.scenarios[s.key];
+    if (!v) return;
+    scenarioValues[s.key] = { cagr: v.cagr, multiple: v.multiple };
+    const cagrInput = document.getElementById('vo-' + s.key + '-cagr');
+    const multInput = document.getElementById('vo-' + s.key + '-mult');
+    if (cagrInput) cagrInput.value = v.cagr;
+    if (multInput) multInput.value = v.multiple;
+  });
+  const hist = companies[nom];
+  const latest = hist[hist.length - 1];
+  SCENARIOS.forEach(s => updateScenarioCard(s, hist, latest.fcfParAction, latest.prixActuel));
 }
 
 function exportObjectifs(){
@@ -1637,11 +1666,16 @@ initSectorGrid();
 document.getElementById('saveObjectifBtn').addEventListener('click', () => { if (activeCompany) saveObjectif(activeCompany); });
 document.getElementById('exportObjectifsBtn').addEventListener('click', exportObjectifs);
 document.getElementById('objectifsList').addEventListener('click', e => {
-  const btn = e.target.closest('.del[data-idx]');
-  if (!btn || !activeCompany) return;
-  objectifsStore[activeCompany].splice(parseInt(btn.dataset.idx, 10), 1);
-  persistObjectifsLocal();
-  renderObjectifsHistory(activeCompany);
+  if (!activeCompany) return;
+  const delBtn = e.target.closest('.del[data-idx]');
+  if (delBtn){
+    objectifsStore[activeCompany].splice(parseInt(delBtn.dataset.idx, 10), 1);
+    persistObjectifsLocal();
+    renderObjectifsHistory(activeCompany);
+    return;
+  }
+  const loadBtn = e.target.closest('.load[data-idx]');
+  if (loadBtn) applyObjectif(activeCompany, parseInt(loadBtn.dataset.idx, 10));
 });
 loadObjectifsBaseline();
 

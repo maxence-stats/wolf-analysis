@@ -243,11 +243,18 @@ const GICS_SECTORS = [
   { key:'immobilier', label:'Immobilier', match:['immobil','real estate','reit'] }
 ];
 
+// Enlève les accents avant comparaison : la colonne "secteur" du Sheet est saisie à la
+// main et pas toujours accentuée de façon cohérente (ex. "Materiaux" vs "Matériaux"
+// selon la ligne), ce qui faisait échouer le classement GICS pour certaines entreprises.
+function stripAccents(s){
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
 function normalizeSector(raw){
   if (!raw) return null;
-  const s = raw.toLowerCase();
+  const s = stripAccents(raw.toLowerCase());
   for (const sec of GICS_SECTORS){
-    if (sec.match.some(kw => s.includes(kw))) return sec.key;
+    if (sec.match.some(kw => s.includes(stripAccents(kw)))) return sec.key;
   }
   return null;
 }
@@ -357,7 +364,7 @@ const THEME = {
   hair: css.getPropertyValue('--hair').trim()
 };
 function configureChartDefaults(){
-  Chart.defaults.font.family = "'JetBrains Mono', monospace";
+  Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
   Chart.defaults.font.size = 11;
   Chart.defaults.color = THEME.dim;
 }
@@ -769,8 +776,8 @@ function drawGauge(latest){
     return `
       <line x1="${xv}" y1="${top-4}" x2="${xv}" y2="${top+barH+4}" stroke="${color}" stroke-width="2"/>
       <circle cx="${xv}" cy="${top+barH/2}" r="4" fill="${color}"/>
-      <text x="${xv}" y="${top-10}" text-anchor="middle" fill="${color}" font-size="13" font-weight="700" font-family="JetBrains Mono, monospace">${label}</text>
-      <text x="${xv}" y="${top+barH+22}" text-anchor="middle" fill="${THEME.dim}" font-size="12" font-family="JetBrains Mono, monospace">${value.toFixed(1)} €</text>
+      <text x="${xv}" y="${top-10}" text-anchor="middle" fill="${color}" font-size="13" font-weight="700" font-family="Plus Jakarta Sans, sans-serif">${label}</text>
+      <text x="${xv}" y="${top+barH+22}" text-anchor="middle" fill="${THEME.dim}" font-size="12" font-family="Plus Jakarta Sans, sans-serif">${value.toFixed(1)} €</text>
     `;
   }
   html += marker(xCible, 'CIBLE', latest.prixCible, THEME.green);
@@ -1015,8 +1022,25 @@ function renderObjectifsHistory(nom){
       const v = e.scenarios[s.key];
       return v ? `<b>${s.label.replace('Scénario ', '')}</b> ${v.cagr}% / ${v.multiple}x` : '';
     }).filter(Boolean).join(' · ');
-    return `<div class="objectifs-entry"><span class="date">${e.date}</span><span class="scen">${parts}</span><button class="del" data-idx="${realIdx}" aria-label="Supprimer">✕</button></div>`;
+    return `<div class="objectifs-entry"><span class="date">${e.date}</span><span class="scen">${parts}</span><div class="objectifs-entry-actions"><button class="load" data-idx="${realIdx}">↻ Charger</button><button class="del" data-idx="${realIdx}" aria-label="Supprimer">✕</button></div></div>`;
   }).join('');
+}
+
+function applyObjectif(nom, idx){
+  const entry = (objectifsStore[nom] || [])[idx];
+  if (!entry) return;
+  SCENARIOS.forEach(s => {
+    const v = entry.scenarios[s.key];
+    if (!v) return;
+    scenarioValues[s.key] = { cagr: v.cagr, multiple: v.multiple };
+    const cagrInput = document.getElementById('vo-' + s.key + '-cagr');
+    const multInput = document.getElementById('vo-' + s.key + '-mult');
+    if (cagrInput) cagrInput.value = v.cagr;
+    if (multInput) multInput.value = v.multiple;
+  });
+  const hist = companies[nom];
+  const latest = hist[hist.length - 1];
+  SCENARIOS.forEach(s => updateScenarioCard(s, hist, latest.fcfParAction, latest.prixActuel));
 }
 
 function exportObjectifs(){
@@ -1073,11 +1097,16 @@ initSectorGrid();
 document.getElementById('saveObjectifBtn').addEventListener('click', () => { if (activeCompany) saveObjectif(activeCompany); });
 document.getElementById('exportObjectifsBtn').addEventListener('click', exportObjectifs);
 document.getElementById('objectifsList').addEventListener('click', e => {
-  const btn = e.target.closest('.del[data-idx]');
-  if (!btn || !activeCompany) return;
-  objectifsStore[activeCompany].splice(parseInt(btn.dataset.idx, 10), 1);
-  persistObjectifsLocal();
-  renderObjectifsHistory(activeCompany);
+  if (!activeCompany) return;
+  const delBtn = e.target.closest('.del[data-idx]');
+  if (delBtn){
+    objectifsStore[activeCompany].splice(parseInt(delBtn.dataset.idx, 10), 1);
+    persistObjectifsLocal();
+    renderObjectifsHistory(activeCompany);
+    return;
+  }
+  const loadBtn = e.target.closest('.load[data-idx]');
+  if (loadBtn) applyObjectif(activeCompany, parseInt(loadBtn.dataset.idx, 10));
 });
 loadObjectifsBaseline();
 
