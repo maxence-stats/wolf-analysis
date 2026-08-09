@@ -273,9 +273,18 @@ function renderSectorView(){
     const list = buckets[sec.key];
     const logosHtml = list.length === 0
       ? '<div class="sector-empty">Aucune entreprise</div>'
-      : list.map(c => `<div class="sector-logo" title="${c.nom.replace(/"/g,'&quot;')}" onclick="goToAnalyse(${JSON.stringify(c.nom)})"><img src="${c.logo || ''}" alt="${c.nom.replace(/"/g,'&quot;')}"></div>`).join('');
+      : list.map(c => `<div class="sector-logo" title="${c.nom.replace(/"/g,'&quot;')}" data-nom="${c.nom.replace(/"/g,'&quot;')}"><img src="${c.logo || ''}" alt="${c.nom.replace(/"/g,'&quot;')}"></div>`).join('');
     return `<div class="sector-box"><h3>${sec.label}</h3><div class="count">${list.length} entreprise${list.length>1?'s':''}</div><div class="sector-companies">${logosHtml}</div></div>`;
   }).join('');
+}
+
+function initSectorGrid(){
+  const grid = document.getElementById('sectorGrid');
+  if (!grid) return;
+  grid.addEventListener('click', e => {
+    const logo = e.target.closest('.sector-logo[data-nom]');
+    if (logo) goToAnalyse(logo.dataset.nom);
+  });
 }
 
 function goToAnalyse(nom){
@@ -428,8 +437,8 @@ function renderCompany(nom){
   });
 
   chartInstances.ca = makeChart('ca', 'chartCA', {
-    type:'bar',
-    data:{ labels:years, datasets:[{ label:'CA (Md€)', data:series('ca').map(v => v==null?null:+(v/1000).toFixed(1)), backgroundColor:THEME.gold, borderRadius:4, barPercentage:0.6 }]},
+    type:'line',
+    data:{ labels:years, datasets:[{ label:'CA (Md€)', data:series('ca').map(v => v==null?null:+(v/1000).toFixed(1)), borderColor:THEME.gold, backgroundColor:'rgba(217,164,65,0.15)', fill:true, tension:0.35, pointRadius:3, spanGaps:true }]},
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+' Md€'} } } }
   });
 
@@ -449,9 +458,12 @@ function renderCompany(nom){
   });
 
   chartInstances.pfcf = makeChart('pfcf', 'chartPFCF', {
-    type:'line',
-    data:{ labels:years, datasets:[{ label:'P/FCF (x)', data:series('pFcf'), borderColor:THEME.gold, backgroundColor:'rgba(217,164,65,0.15)', fill:true, tension:0.35, pointRadius:3, spanGaps:true }]},
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'x'} } } }
+    type:'bar',
+    data:{ labels:years, datasets:[
+      { label:'P/FCF (x)', data:series('pFcf'), backgroundColor:THEME.gold, borderRadius:4, barPercentage:0.6, order:2 },
+      { label:'Médiane P/FCF (x)', data:series('medianePFCF'), type:'line', borderColor:THEME.blue, backgroundColor:THEME.blue, tension:0, spanGaps:true, pointRadius:0, borderWidth:2, order:1 }
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true}}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'x'} } } }
   });
 
   chartInstances.actions = makeChart('actions', 'chartActions', {
@@ -500,11 +512,27 @@ function cloneChartConfig(config){
 }
 
 /* ============================================================
-   COURS DE BOURSE (Stooq, gratuit, sans clé) — hebdomadaire + SMA200
+   COURS DE BOURSE — Yahoo Finance en priorité, repli sur Stooq
+   si le fetch échoue (CORS non garanti côté Yahoo, pas d'API
+   officielle). Hebdomadaire + SMA200.
    ============================================================ */
 let stockFull = null;   // { dates, closes, sma }
 let stockRange = 'max';
 let stockRequestId = 0;
+
+function mapTickerToYahoo(ticker){
+  if (!ticker) return null;
+  const parts = ticker.split(':');
+  if (parts.length !== 2) return ticker;
+  const [exch, sym] = parts;
+  const map = {
+    EPA:'.PA', PAR:'.PA', NASDAQ:'', NYSE:'', NYSEARCA:'',
+    LON:'.L', LSE:'.L', ETR:'.DE', FRA:'.DE', XETR:'.DE',
+    AMS:'.AS', BME:'.MC', MIL:'.MI', SWX:'.SW', TSE:'.T'
+  };
+  const suffix = map[exch.toUpperCase()];
+  return sym + (suffix != null ? suffix : '');
+}
 
 function mapTickerToStooq(ticker){
   if (!ticker) return null;
@@ -522,45 +550,94 @@ function mapTickerToStooq(ticker){
 
 function average(arr){ return arr.reduce((a,b) => a+b, 0) / arr.length; }
 
+async function fetchYahooWeekly(symbol){
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=max&interval=1wk`;
+  const controller = new AbortController();
+  const hardTimeout = setTimeout(() => controller.abort(), 6000);
+  try{
+    const res = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    const result = json && json.chart && json.chart.result && json.chart.result[0];
+    if (!result) throw new Error((json && json.chart && json.chart.error && json.chart.error.description) || 'réponse Yahoo Finance invalide');
+    const ts = result.timestamp;
+    const closes = result.indicators && result.indicators.quote && result.indicators.quote[0] && result.indicators.quote[0].close;
+    if (!ts || !closes) throw new Error('données Yahoo Finance incomplètes');
+
+    const dates = [], vals = [];
+    for (let i = 0; i < ts.length; i++){
+      if (closes[i] == null) continue;
+      dates.push(new Date(ts[i] * 1000).toISOString().slice(0, 10));
+      vals.push(closes[i]);
+    }
+    if (vals.length < 10) throw new Error('pas assez de données renvoyées par Yahoo Finance');
+    return { dates, closes: vals };
+  } finally {
+    clearTimeout(hardTimeout);
+  }
+}
+
+async function fetchStooqWeekly(symbol){
+  const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(symbol)}&i=w&_=${Date.now()}`;
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const text = await res.text();
+  if (!text || text.trim().toLowerCase().startsWith('<')) throw new Error('réponse invalide');
+
+  const parsed = Papa.parse(text.trim(), { header: true, skipEmptyLines: true });
+  const rows = (parsed.data || []).filter(r => r.Date && r.Close && !isNaN(parseFloat(r.Close)));
+  if (rows.length < 10) throw new Error('pas assez de données renvoyées');
+
+  return { dates: rows.map(r => r.Date), closes: rows.map(r => parseFloat(r.Close)) };
+}
+
+function setStockSourceNote(text){
+  const el = document.getElementById('stockSourceNote');
+  if (el) el.textContent = text;
+}
+
 async function loadStockChart(ticker){
   const statusEl = document.getElementById('stockStatus');
   const myId = ++stockRequestId;
   stockFull = null;
   if (chartInstances.stock){ chartInstances.stock.destroy(); delete chartInstances.stock; }
 
-  const symbol = mapTickerToStooq(ticker);
-  if (!symbol){
+  if (!ticker){
     statusEl.textContent = 'Ticker manquant pour cette entreprise, impossible de charger le cours.';
     statusEl.style.display = 'block';
     return;
   }
-  statusEl.textContent = 'Chargement du cours (' + symbol + ')…';
+  statusEl.textContent = 'Chargement du cours…';
   statusEl.style.display = 'block';
 
+  const ySymbol = mapTickerToYahoo(ticker);
   try{
-    const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(symbol)}&i=w&_=${Date.now()}`;
-    const res = await fetch(url, { cache: 'no-store' });
-    if (myId !== stockRequestId) return; // une entreprise plus récente a été sélectionnée entre-temps
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const text = await res.text();
-    if (!text || text.trim().toLowerCase().startsWith('<')) throw new Error('réponse invalide');
-
-    const parsed = Papa.parse(text.trim(), { header: true, skipEmptyLines: true });
-    const rows = (parsed.data || []).filter(r => r.Date && r.Close && !isNaN(parseFloat(r.Close)));
-    if (rows.length < 10) throw new Error('pas assez de données renvoyées');
-
-    const dates = rows.map(r => r.Date);
-    const closes = rows.map(r => parseFloat(r.Close));
-    const sma = closes.map((_, i) => i < 199 ? null : average(closes.slice(i - 199, i + 1)));
-
+    const { dates, closes } = await fetchYahooWeekly(ySymbol);
     if (myId !== stockRequestId) return;
+    const sma = closes.map((_, i) => i < 199 ? null : average(closes.slice(i - 199, i + 1)));
     stockFull = { dates, closes, sma };
     statusEl.style.display = 'none';
+    setStockSourceNote('Source : Yahoo Finance (symbole ' + ySymbol + ')');
+    renderStockChart();
+    return;
+  }catch(e){
+    if (myId !== stockRequestId) return;
+    // Yahoo Finance indisponible (CORS non garanti) — on tente le repli Stooq.
+  }
+
+  const sSymbol = mapTickerToStooq(ticker);
+  try{
+    const res = await fetchStooqWeekly(sSymbol);
+    if (myId !== stockRequestId) return;
+    const sma = res.closes.map((_, i) => i < 199 ? null : average(res.closes.slice(i - 199, i + 1)));
+    stockFull = { dates: res.dates, closes: res.closes, sma };
+    statusEl.style.display = 'none';
+    setStockSourceNote('Source : Stooq (repli, Yahoo Finance indisponible pour ce ticker — symbole ' + sSymbol + ')');
     renderStockChart();
   }catch(e){
     if (myId !== stockRequestId) return;
     stockFull = null;
-    statusEl.textContent = "Cours indisponible pour ce ticker via Stooq (symbole essayé : " + symbol + "). Le mapping automatique de la bourse d'origine ne couvre pas forcément tous les cas — dis-moi le bon symbole Stooq si besoin.";
+    statusEl.textContent = "Cours indisponible pour ce ticker, ni via Yahoo Finance (" + ySymbol + ") ni via Stooq (" + sSymbol + "). Le mapping automatique de la bourse d'origine ne couvre pas forcément tous les cas — dis-moi le bon symbole si besoin.";
     statusEl.style.display = 'block';
   }
 }
@@ -706,7 +783,11 @@ async function ensureChartJs(){
 }
 
 document.getElementById('refreshBtn').addEventListener('click', loadData);
+document.querySelectorAll('.page-nav-btn').forEach(btn => {
+  btn.addEventListener('click', () => switchPage(btn.dataset.page));
+});
 initSearch();
+initSectorGrid();
 
 (async function init(){
   const ok = await ensureChartJs();

@@ -138,7 +138,7 @@ system, fonctionnalités faites/en cours/à décider).
         </div>
         <div class="chart-holder" style="height:320px;"><canvas id="chartStock"></canvas></div>
         <div class="stock-status" id="stockStatus"></div>
-        <div class="stock-source">Source : Stooq (gratuit, cotations non garanties pour tous les tickers)</div>
+        <div class="stock-source" id="stockSourceNote">Source : Yahoo Finance (repli automatique sur Stooq si indisponible)</div>
       </div>
 
       <div class="chart-card">
@@ -246,6 +246,10 @@ system, fonctionnalités faites/en cours/à décider).
       <button class="zoom-close" onclick="closeZoom()" aria-label="Fermer">✕</button>
     </div>
     <div class="zoom-canvas-holder"><canvas id="zoomCanvas"></canvas></div>
+    <div class="zoom-footer">
+      Données fournies par Wolf Analysis
+      <img src="https://i.postimg.cc/43WmYDB1/20260714-LOGO-WINTER-PNG.png" alt="Wolf Analysis">
+    </div>
   </div>
 </div>
 
@@ -269,19 +273,26 @@ system, fonctionnalités faites/en cours/à décider).
     --text-dim:#8B93A0;
     --text-faint:#5C6470;
     --gold:#D9A441;
+    --gold-2:#F0C877;
+    --violet:#8B7FE8;
     --blue:#4A9FE0;
     --green:#4FD1A5;
     --red:#E5636B;
     --font-display:'Space Grotesk', sans-serif;
     --font-body:'Inter', sans-serif;
     --font-mono:'JetBrains Mono', monospace;
+    --shadow-card:0 12px 32px -16px rgba(0,0,0,0.55);
+    --shadow-card-hover:0 16px 40px -14px rgba(0,0,0,0.6);
+    --card-bg:linear-gradient(155deg, var(--panel-2) 0%, var(--panel) 100%);
   }
   *{box-sizing:border-box;}
   body{
     margin:0;
     background:
-      radial-gradient(1200px 500px at 15% -10%, rgba(217,164,65,0.08), transparent 60%),
+      radial-gradient(1100px 480px at 12% -8%, rgba(217,164,65,0.10), transparent 60%),
+      radial-gradient(900px 520px at 92% 8%, rgba(139,127,232,0.07), transparent 55%),
       var(--bg);
+    background-attachment:fixed;
     color:var(--text);
     font-family:var(--font-body);
     -webkit-font-smoothing:antialiased;
@@ -290,8 +301,12 @@ system, fonctionnalités faites/en cours/à décider).
 
   /* ---------- BRAND BAR ---------- */
   .brand-bar{display:flex;align-items:center;gap:14px;margin-bottom:18px;}
-  .brand-logo{height:42px;width:auto;border-radius:8px;flex-shrink:0;}
-  .brand-title{font-family:var(--font-display);font-weight:700;font-size:19px;line-height:1.1;}
+  .brand-logo{height:42px;width:auto;border-radius:8px;flex-shrink:0;filter:drop-shadow(0 4px 14px rgba(217,164,65,0.25));}
+  .brand-title{
+    font-family:var(--font-display);font-weight:700;font-size:19px;line-height:1.1;
+    background:linear-gradient(135deg, var(--gold-2) 0%, var(--gold) 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
   .brand-sub{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-faint);margin-top:3px;}
 
   /* ---------- TOP BAR : recherche + statut sync ---------- */
@@ -302,10 +317,11 @@ system, fonctionnalités faites/en cours/à décider).
   .sync-dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0;}
   .sync-dot.stale{background:var(--text-faint);}
   .refresh-btn{
-    background:var(--gold);border:1px solid var(--gold);color:#1a1305;
+    background:linear-gradient(135deg, var(--gold-2) 0%, var(--gold) 100%);border:1px solid var(--gold);color:#1a1305;
     font-family:var(--font-mono);font-weight:700;font-size:11.5px;padding:7px 14px;border-radius:20px;cursor:pointer;
+    box-shadow:0 4px 16px -6px rgba(217,164,65,0.55);transition:box-shadow .15s ease,transform .15s ease;
   }
-  .refresh-btn:hover{filter:brightness(1.08);}
+  .refresh-btn:hover{box-shadow:0 6px 22px -6px rgba(217,164,65,0.7);transform:translateY(-1px);}
 
   /* ---------- SEARCH ---------- */
   .search-wrap{position:relative;flex:1;min-width:200px;max-width:320px;}
@@ -313,7 +329,7 @@ system, fonctionnalités faites/en cours/à décider).
   .search-input{width:100%;background:var(--panel);border:1px solid var(--hair);border-radius:20px;padding:8px 14px 8px 34px;color:var(--text);font-family:var(--font-body);font-size:13px;outline:none;}
   .search-input::placeholder{color:var(--text-faint);}
   .search-input:focus{border-color:var(--gold);}
-  .search-suggestions{position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--panel-2);border:1px solid var(--hair);border-radius:12px;overflow:hidden;z-index:20;display:none;}
+  .search-suggestions{position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--panel-2);border:1px solid var(--hair);border-radius:12px;overflow:hidden;z-index:20;display:none;box-shadow:var(--shadow-card-hover);}
   .search-suggestions.open{display:block;}
   .search-suggestion{padding:9px 14px;font-size:13px;color:var(--text);cursor:pointer;}
   .search-suggestion:hover{background:rgba(217,164,65,0.12);}
@@ -325,13 +341,13 @@ system, fonctionnalités faites/en cours/à décider).
     font-size:14px;padding:10px 2px 12px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;
   }
   .page-nav button:hover{color:var(--text-dim);}
-  .page-nav button.active{color:var(--text);border-bottom-color:var(--gold);font-weight:600;}
+  .page-nav button.active{color:var(--text);border-bottom-color:var(--gold);font-weight:600;box-shadow:0 1px 10px -2px rgba(217,164,65,0.5);}
   .page{display:none;}
   .page.active{display:block;}
 
   /* ---------- SECTEUR VIEW ---------- */
   .sector-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));gap:14px;}
-  .sector-box{background:var(--panel);border:1px solid var(--hair);border-radius:14px;padding:16px 18px;min-height:120px;}
+  .sector-box{background:var(--card-bg);border:1px solid var(--hair);border-radius:14px;padding:16px 18px;min-height:120px;box-shadow:var(--shadow-card);}
   .sector-box h3{font-family:var(--font-display);font-size:14px;font-weight:600;margin:0 0 4px;color:var(--text);}
   .sector-box .count{font-family:var(--font-mono);font-size:11px;color:var(--text-faint);margin-bottom:12px;}
   .sector-companies{display:flex;flex-wrap:wrap;gap:8px;}
@@ -345,7 +361,7 @@ system, fonctionnalités faites/en cours/à décider).
 
   /* ---------- STATE SCREENS ---------- */
   #loadingScreen, #errorScreen{
-    padding:60px 26px;text-align:center;background:var(--panel);border:1px solid var(--hair);border-radius:14px;
+    padding:60px 26px;text-align:center;background:var(--card-bg);border:1px solid var(--hair);border-radius:14px;box-shadow:var(--shadow-card);
   }
   #loadingScreen p, #errorScreen p{color:var(--text-dim);font-size:13.5px;margin:10px auto 0;max-width:460px;line-height:1.6;}
   .spinner{width:26px;height:26px;border-radius:50%;border:3px solid var(--hair);border-top-color:var(--gold);margin:0 auto;animation:spin 0.8s linear infinite;}
@@ -358,10 +374,10 @@ system, fonctionnalités faites/en cours/à décider).
   /* ---------- HEADER ---------- */
   .header{
     display:flex;align-items:center;gap:22px;padding:22px 26px;
-    background:linear-gradient(155deg, var(--panel-2) 0%, var(--panel) 100%);
-    border:1px solid var(--hair);border-radius:14px;flex-wrap:wrap;
+    background:var(--card-bg);
+    border:1px solid var(--hair);border-radius:14px;flex-wrap:wrap;box-shadow:var(--shadow-card);
   }
-  .logo-box{width:76px;height:76px;background:#fff;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:10px;flex-shrink:0;}
+  .logo-box{width:76px;height:76px;background:#fff;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:10px;flex-shrink:0;box-shadow:0 6px 18px -8px rgba(0,0,0,0.5);}
   .logo-box img{max-width:100%;max-height:100%;object-fit:contain;}
   .id-block{flex:1;min-width:220px;}
   .eyebrow{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);margin:0 0 4px;}
@@ -375,13 +391,13 @@ system, fonctionnalités faites/en cours/à décider).
   .price-year{font-size:11px;color:var(--text-faint);font-family:var(--font-mono);margin-top:4px;}
 
   /* ---------- GAUGE ---------- */
-  .gauge-card{margin-top:16px;padding:22px 26px 20px;background:var(--panel);border:1px solid var(--hair);border-radius:14px;}
+  .gauge-card{margin-top:16px;padding:22px 26px 20px;background:var(--card-bg);border:1px solid var(--hair);border-radius:14px;box-shadow:var(--shadow-card);}
   .gauge-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;flex-wrap:wrap;gap:8px;}
   .gauge-title{font-family:var(--font-display);font-weight:600;font-size:15px;color:var(--text);}
   .gauge-verdict{font-family:var(--font-mono);font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;}
-  .verdict-over{background:rgba(229,99,107,0.12);color:var(--red);border:1px solid rgba(229,99,107,0.3);}
-  .verdict-fair{background:rgba(217,164,65,0.12);color:var(--gold);border:1px solid rgba(217,164,65,0.3);}
-  .verdict-under{background:rgba(79,209,165,0.12);color:var(--green);border:1px solid rgba(79,209,165,0.3);}
+  .verdict-over{background:rgba(229,99,107,0.12);color:var(--red);border:1px solid rgba(229,99,107,0.3);box-shadow:0 0 18px -6px rgba(229,99,107,0.4);}
+  .verdict-fair{background:rgba(217,164,65,0.12);color:var(--gold);border:1px solid rgba(217,164,65,0.3);box-shadow:0 0 18px -6px rgba(217,164,65,0.4);}
+  .verdict-under{background:rgba(79,209,165,0.12);color:var(--green);border:1px solid rgba(79,209,165,0.3);box-shadow:0 0 18px -6px rgba(79,209,165,0.4);}
   svg.gauge{width:100%;height:auto;display:block;}
   .gauge-legend{display:flex;gap:22px;margin-top:10px;flex-wrap:wrap;}
   .gauge-legend div{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text-dim);font-family:var(--font-mono);}
@@ -391,7 +407,8 @@ system, fonctionnalités faites/en cours/à décider).
   .section-label{font-family:var(--font-mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-faint);margin:38px 0 14px;display:flex;align-items:center;gap:12px;}
   .section-label::after{content:"";flex:1;height:1px;background:var(--hair);}
   .ratio-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
-  .ratio-card{background:var(--panel);border:1px solid var(--hair);border-radius:12px;padding:16px 18px;}
+  .ratio-card{background:var(--card-bg);border:1px solid var(--hair);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow-card);transition:box-shadow .15s ease,transform .15s ease,border-color .15s ease;}
+  .ratio-card:hover{box-shadow:var(--shadow-card-hover);transform:translateY(-2px);border-color:rgba(217,164,65,0.3);}
   .ratio-card .k{font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;font-weight:500;}
   .ratio-card .v{font-family:var(--font-mono);font-weight:700;font-size:24px;letter-spacing:-0.01em;color:var(--text);}
   .ratio-card .v.pos{color:var(--green);}
@@ -400,7 +417,8 @@ system, fonctionnalités faites/en cours/à décider).
 
   /* ---------- CHARTS ---------- */
   .chart-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
-  .chart-card{background:var(--panel);border:1px solid var(--hair);border-radius:14px;padding:18px 18px 8px;}
+  .chart-card{background:var(--card-bg);border:1px solid var(--hair);border-radius:14px;padding:18px 18px 8px;box-shadow:var(--shadow-card);transition:box-shadow .15s ease,border-color .15s ease;}
+  .chart-card:hover{box-shadow:var(--shadow-card-hover);border-color:rgba(217,164,65,0.22);}
   .chart-card.wide{grid-column:1 / -1;}
   .chart-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
   .chart-card h3{font-family:var(--font-display);font-size:14.5px;font-weight:600;margin:0 0 2px;color:var(--text);}
@@ -408,8 +426,8 @@ system, fonctionnalités faites/en cours/à décider).
   .chart-holder{position:relative;height:220px;}
   .chart-card-actions{display:flex;align-items:center;gap:8px;flex-shrink:0;}
   .chart-badge{font-family:var(--font-mono);font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:12px;border:1px solid var(--hair);color:var(--text-dim);white-space:nowrap;}
-  .chart-badge.pos{color:var(--green);border-color:rgba(79,209,165,0.35);}
-  .chart-badge.neg{color:var(--red);border-color:rgba(229,99,107,0.35);}
+  .chart-badge.pos{color:var(--green);border-color:rgba(79,209,165,0.35);box-shadow:0 0 12px -5px rgba(79,209,165,0.5);}
+  .chart-badge.neg{color:var(--red);border-color:rgba(229,99,107,0.35);box-shadow:0 0 12px -5px rgba(229,99,107,0.5);}
   .zoom-btn{background:var(--panel-2);border:1px solid var(--hair);color:var(--text-dim);width:26px;height:26px;border-radius:8px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1;}
   .zoom-btn:hover{border-color:var(--gold);color:var(--text);}
 
@@ -417,18 +435,20 @@ system, fonctionnalités faites/en cours/à décider).
   .range-buttons{display:flex;gap:6px;margin:10px 0 14px;flex-wrap:wrap;}
   .range-buttons button{font-family:var(--font-mono);font-size:11px;font-weight:600;padding:5px 11px;border-radius:14px;border:1px solid var(--hair);background:var(--panel-2);color:var(--text-dim);cursor:pointer;}
   .range-buttons button:hover{border-color:var(--gold);color:var(--text);}
-  .range-buttons button.active{background:var(--gold);color:#1a1305;border-color:var(--gold);}
+  .range-buttons button.active{background:linear-gradient(135deg, var(--gold-2) 0%, var(--gold) 100%);color:#1a1305;border-color:var(--gold);box-shadow:0 4px 14px -6px rgba(217,164,65,0.55);}
   .stock-status{font-size:12px;color:var(--text-faint);padding:6px 0;display:none;}
   .stock-source{font-size:10.5px;color:var(--text-faint);font-family:var(--font-mono);margin-top:8px;}
 
   /* ---------- ZOOM MODAL ---------- */
-  #zoomModal{display:none;position:fixed;inset:0;background:rgba(4,5,7,0.78);z-index:999;align-items:center;justify-content:center;padding:30px;}
-  .zoom-panel{background:var(--panel);border:1px solid var(--hair);border-radius:16px;padding:22px 24px;width:min(1100px,92vw);max-height:88vh;display:flex;flex-direction:column;}
+  #zoomModal{display:none;position:fixed;inset:0;background:rgba(4,5,7,0.78);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);z-index:999;align-items:center;justify-content:center;padding:30px;}
+  .zoom-panel{background:var(--card-bg);border:1px solid var(--hair);border-radius:16px;padding:22px 24px;width:min(1100px,92vw);max-height:88vh;display:flex;flex-direction:column;box-shadow:0 24px 60px -20px rgba(0,0,0,0.7);}
   .zoom-panel-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
   .zoom-panel-head h3{font-family:var(--font-display);font-size:18px;font-weight:600;margin:0;}
   .zoom-close{background:none;border:1px solid var(--hair);color:var(--text-dim);width:32px;height:32px;border-radius:8px;cursor:pointer;font-size:15px;}
   .zoom-close:hover{border-color:var(--red);color:var(--red);}
   .zoom-canvas-holder{position:relative;flex:1;min-height:420px;}
+  .zoom-footer{margin-top:16px;text-align:center;font-size:11px;color:var(--text-faint);font-family:var(--font-mono);}
+  .zoom-footer img{height:16px;width:auto;vertical-align:middle;margin-left:6px;border-radius:3px;}
 
   footer{margin-top:40px;text-align:center;font-size:11px;color:var(--text-faint);font-family:var(--font-mono);}
 
@@ -725,9 +745,18 @@ function renderSectorView(){
     const list = buckets[sec.key];
     const logosHtml = list.length === 0
       ? '<div class="sector-empty">Aucune entreprise</div>'
-      : list.map(c => `<div class="sector-logo" title="${c.nom.replace(/"/g,'&quot;')}" onclick="goToAnalyse(${JSON.stringify(c.nom)})"><img src="${c.logo || ''}" alt="${c.nom.replace(/"/g,'&quot;')}"></div>`).join('');
+      : list.map(c => `<div class="sector-logo" title="${c.nom.replace(/"/g,'&quot;')}" data-nom="${c.nom.replace(/"/g,'&quot;')}"><img src="${c.logo || ''}" alt="${c.nom.replace(/"/g,'&quot;')}"></div>`).join('');
     return `<div class="sector-box"><h3>${sec.label}</h3><div class="count">${list.length} entreprise${list.length>1?'s':''}</div><div class="sector-companies">${logosHtml}</div></div>`;
   }).join('');
+}
+
+function initSectorGrid(){
+  const grid = document.getElementById('sectorGrid');
+  if (!grid) return;
+  grid.addEventListener('click', e => {
+    const logo = e.target.closest('.sector-logo[data-nom]');
+    if (logo) goToAnalyse(logo.dataset.nom);
+  });
 }
 
 function goToAnalyse(nom){
@@ -880,8 +909,8 @@ function renderCompany(nom){
   });
 
   chartInstances.ca = makeChart('ca', 'chartCA', {
-    type:'bar',
-    data:{ labels:years, datasets:[{ label:'CA (Md€)', data:series('ca').map(v => v==null?null:+(v/1000).toFixed(1)), backgroundColor:THEME.gold, borderRadius:4, barPercentage:0.6 }]},
+    type:'line',
+    data:{ labels:years, datasets:[{ label:'CA (Md€)', data:series('ca').map(v => v==null?null:+(v/1000).toFixed(1)), borderColor:THEME.gold, backgroundColor:'rgba(217,164,65,0.15)', fill:true, tension:0.35, pointRadius:3, spanGaps:true }]},
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+' Md€'} } } }
   });
 
@@ -901,9 +930,12 @@ function renderCompany(nom){
   });
 
   chartInstances.pfcf = makeChart('pfcf', 'chartPFCF', {
-    type:'line',
-    data:{ labels:years, datasets:[{ label:'P/FCF (x)', data:series('pFcf'), borderColor:THEME.gold, backgroundColor:'rgba(217,164,65,0.15)', fill:true, tension:0.35, pointRadius:3, spanGaps:true }]},
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'x'} } } }
+    type:'bar',
+    data:{ labels:years, datasets:[
+      { label:'P/FCF (x)', data:series('pFcf'), backgroundColor:THEME.gold, borderRadius:4, barPercentage:0.6, order:2 },
+      { label:'Médiane P/FCF (x)', data:series('medianePFCF'), type:'line', borderColor:THEME.blue, backgroundColor:THEME.blue, tension:0, spanGaps:true, pointRadius:0, borderWidth:2, order:1 }
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true}}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'x'} } } }
   });
 
   chartInstances.actions = makeChart('actions', 'chartActions', {
@@ -952,11 +984,27 @@ function cloneChartConfig(config){
 }
 
 /* ============================================================
-   COURS DE BOURSE (Stooq, gratuit, sans clé) — hebdomadaire + SMA200
+   COURS DE BOURSE — Yahoo Finance en priorité, repli sur Stooq
+   si le fetch échoue (CORS non garanti côté Yahoo, pas d'API
+   officielle). Hebdomadaire + SMA200.
    ============================================================ */
 let stockFull = null;   // { dates, closes, sma }
 let stockRange = 'max';
 let stockRequestId = 0;
+
+function mapTickerToYahoo(ticker){
+  if (!ticker) return null;
+  const parts = ticker.split(':');
+  if (parts.length !== 2) return ticker;
+  const [exch, sym] = parts;
+  const map = {
+    EPA:'.PA', PAR:'.PA', NASDAQ:'', NYSE:'', NYSEARCA:'',
+    LON:'.L', LSE:'.L', ETR:'.DE', FRA:'.DE', XETR:'.DE',
+    AMS:'.AS', BME:'.MC', MIL:'.MI', SWX:'.SW', TSE:'.T'
+  };
+  const suffix = map[exch.toUpperCase()];
+  return sym + (suffix != null ? suffix : '');
+}
 
 function mapTickerToStooq(ticker){
   if (!ticker) return null;
@@ -974,45 +1022,94 @@ function mapTickerToStooq(ticker){
 
 function average(arr){ return arr.reduce((a,b) => a+b, 0) / arr.length; }
 
+async function fetchYahooWeekly(symbol){
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=max&interval=1wk`;
+  const controller = new AbortController();
+  const hardTimeout = setTimeout(() => controller.abort(), 6000);
+  try{
+    const res = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    const result = json && json.chart && json.chart.result && json.chart.result[0];
+    if (!result) throw new Error((json && json.chart && json.chart.error && json.chart.error.description) || 'réponse Yahoo Finance invalide');
+    const ts = result.timestamp;
+    const closes = result.indicators && result.indicators.quote && result.indicators.quote[0] && result.indicators.quote[0].close;
+    if (!ts || !closes) throw new Error('données Yahoo Finance incomplètes');
+
+    const dates = [], vals = [];
+    for (let i = 0; i < ts.length; i++){
+      if (closes[i] == null) continue;
+      dates.push(new Date(ts[i] * 1000).toISOString().slice(0, 10));
+      vals.push(closes[i]);
+    }
+    if (vals.length < 10) throw new Error('pas assez de données renvoyées par Yahoo Finance');
+    return { dates, closes: vals };
+  } finally {
+    clearTimeout(hardTimeout);
+  }
+}
+
+async function fetchStooqWeekly(symbol){
+  const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(symbol)}&i=w&_=${Date.now()}`;
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const text = await res.text();
+  if (!text || text.trim().toLowerCase().startsWith('<')) throw new Error('réponse invalide');
+
+  const parsed = Papa.parse(text.trim(), { header: true, skipEmptyLines: true });
+  const rows = (parsed.data || []).filter(r => r.Date && r.Close && !isNaN(parseFloat(r.Close)));
+  if (rows.length < 10) throw new Error('pas assez de données renvoyées');
+
+  return { dates: rows.map(r => r.Date), closes: rows.map(r => parseFloat(r.Close)) };
+}
+
+function setStockSourceNote(text){
+  const el = document.getElementById('stockSourceNote');
+  if (el) el.textContent = text;
+}
+
 async function loadStockChart(ticker){
   const statusEl = document.getElementById('stockStatus');
   const myId = ++stockRequestId;
   stockFull = null;
   if (chartInstances.stock){ chartInstances.stock.destroy(); delete chartInstances.stock; }
 
-  const symbol = mapTickerToStooq(ticker);
-  if (!symbol){
+  if (!ticker){
     statusEl.textContent = 'Ticker manquant pour cette entreprise, impossible de charger le cours.';
     statusEl.style.display = 'block';
     return;
   }
-  statusEl.textContent = 'Chargement du cours (' + symbol + ')…';
+  statusEl.textContent = 'Chargement du cours…';
   statusEl.style.display = 'block';
 
+  const ySymbol = mapTickerToYahoo(ticker);
   try{
-    const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(symbol)}&i=w&_=${Date.now()}`;
-    const res = await fetch(url, { cache: 'no-store' });
-    if (myId !== stockRequestId) return; // une entreprise plus récente a été sélectionnée entre-temps
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const text = await res.text();
-    if (!text || text.trim().toLowerCase().startsWith('<')) throw new Error('réponse invalide');
-
-    const parsed = Papa.parse(text.trim(), { header: true, skipEmptyLines: true });
-    const rows = (parsed.data || []).filter(r => r.Date && r.Close && !isNaN(parseFloat(r.Close)));
-    if (rows.length < 10) throw new Error('pas assez de données renvoyées');
-
-    const dates = rows.map(r => r.Date);
-    const closes = rows.map(r => parseFloat(r.Close));
-    const sma = closes.map((_, i) => i < 199 ? null : average(closes.slice(i - 199, i + 1)));
-
+    const { dates, closes } = await fetchYahooWeekly(ySymbol);
     if (myId !== stockRequestId) return;
+    const sma = closes.map((_, i) => i < 199 ? null : average(closes.slice(i - 199, i + 1)));
     stockFull = { dates, closes, sma };
     statusEl.style.display = 'none';
+    setStockSourceNote('Source : Yahoo Finance (symbole ' + ySymbol + ')');
+    renderStockChart();
+    return;
+  }catch(e){
+    if (myId !== stockRequestId) return;
+    // Yahoo Finance indisponible (CORS non garanti) — on tente le repli Stooq.
+  }
+
+  const sSymbol = mapTickerToStooq(ticker);
+  try{
+    const res = await fetchStooqWeekly(sSymbol);
+    if (myId !== stockRequestId) return;
+    const sma = res.closes.map((_, i) => i < 199 ? null : average(res.closes.slice(i - 199, i + 1)));
+    stockFull = { dates: res.dates, closes: res.closes, sma };
+    statusEl.style.display = 'none';
+    setStockSourceNote('Source : Stooq (repli, Yahoo Finance indisponible pour ce ticker — symbole ' + sSymbol + ')');
     renderStockChart();
   }catch(e){
     if (myId !== stockRequestId) return;
     stockFull = null;
-    statusEl.textContent = "Cours indisponible pour ce ticker via Stooq (symbole essayé : " + symbol + "). Le mapping automatique de la bourse d'origine ne couvre pas forcément tous les cas — dis-moi le bon symbole Stooq si besoin.";
+    statusEl.textContent = "Cours indisponible pour ce ticker, ni via Yahoo Finance (" + ySymbol + ") ni via Stooq (" + sSymbol + "). Le mapping automatique de la bourse d'origine ne couvre pas forcément tous les cas — dis-moi le bon symbole si besoin.";
     statusEl.style.display = 'block';
   }
 }
@@ -1158,7 +1255,11 @@ async function ensureChartJs(){
 }
 
 document.getElementById('refreshBtn').addEventListener('click', loadData);
+document.querySelectorAll('.page-nav-btn').forEach(btn => {
+  btn.addEventListener('click', () => switchPage(btn.dataset.page));
+});
 initSearch();
+initSectorGrid();
 
 (async function init(){
   const ok = await ensureChartJs();
@@ -1169,5 +1270,4 @@ initSearch();
   configureChartDefaults();
   loadData();
 })();
-
 ```

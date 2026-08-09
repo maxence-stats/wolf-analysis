@@ -116,7 +116,7 @@
         </div>
         <div class="chart-holder" style="height:320px;"><canvas id="chartStock"></canvas></div>
         <div class="stock-status" id="stockStatus"></div>
-        <div class="stock-source">Source : Stooq (gratuit, cotations non garanties pour tous les tickers)</div>
+        <div class="stock-source" id="stockSourceNote">Source : Yahoo Finance (repli automatique sur Stooq si indisponible)</div>
       </div>
 
       <div class="chart-card">
@@ -224,6 +224,10 @@
       <button class="zoom-close" onclick="closeZoom()" aria-label="Fermer">✕</button>
     </div>
     <div class="zoom-canvas-holder"><canvas id="zoomCanvas"></canvas></div>
+    <div class="zoom-footer">
+      Données fournies par Wolf Analysis
+      <img src="https://i.postimg.cc/43WmYDB1/20260714-LOGO-WINTER-PNG.png" alt="Wolf Analysis">
+    </div>
   </div>
 </div>
 
