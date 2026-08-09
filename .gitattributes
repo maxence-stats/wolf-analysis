@@ -1,0 +1,12 @@
+# Normalise les fins de ligne en LF dans le dépôt, quelle que soit la
+# plateforme de la personne qui commite (évite les diffs bruités
+# Windows/Mac/Linux et les avertissements CRLF/LF de Git).
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary

@@ -1,0 +1,16 @@
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Éditeurs
+*.swp
+*.swp.bak
+.idea/
+
+# Outils de dev optionnels (si ajoutés plus tard : lint, serveur local...)
+node_modules/
+npm-debug.log*
+
+# Fichiers locaux/temporaires
+*.local
