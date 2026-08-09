@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wolf Analysis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="brand-bar">
+    <img src="https://i.postimg.cc/43WmYDB1/20260714-LOGO-WINTER-PNG.png" alt="Wolf Academy" class="brand-logo">
+    <div>
+      <div class="brand-title">Wolf Analysis</div>
+      <div class="brand-sub">Onglet Analyse</div>
+    </div>
+  </div>
+
+  <div class="topbar">
+    <div class="search-wrap">
+      <span class="search-icon">⌕</span>
+      <input type="text" id="companySearch" class="search-input" placeholder="Rechercher une entreprise…" autocomplete="off">
+      <div class="search-suggestions" id="searchSuggestions"></div>
+    </div>
+    <div class="active-company-label" id="activeCompanyLabel"></div>
+    <div class="sync-status">
+      <span class="sync-dot" id="syncDot"></span>
+      <span id="syncLabel">Connexion au Google Sheet…</span>
+      <button class="refresh-btn" id="refreshBtn">↻ Mettre à jour</button>
+    </div>
+  </div>
+  <div id="debugLine" style="display:none;font-family:'JetBrains Mono',monospace;font-size:11px;color:#5C6470;text-align:right;margin:-8px 0 12px;"></div>
+
+  <div id="loadingScreen">
+    <div class="spinner"></div>
+    <p>Récupération des données en direct depuis le Google Sheet…</p>
+  </div>
+
+  <div id="errorScreen" style="display:none;">
+    <h3>Impossible de lire le Google Sheet</h3>
+    <p id="errorDetail">Vérifie que le fichier est bien publié sur le web pour l'onglet « DATA BASE 20 ans », via <code>Fichier → Partager → Publier sur le web</code> (choisis bien cet onglet précis, pas "Document entier"), avec le format CSV.</p>
+    <p><button class="refresh-btn" onclick="loadData()">↻ Mettre à jour</button></p>
+  </div>
+
+  <div id="dashboard">
+
+    <div class="page-nav">
+      <button class="page-nav-btn active" data-page="pageAnalyse">Analyse</button>
+      <button class="page-nav-btn" data-page="pageSecteur">Secteur</button>
+    </div>
+
+    <div id="pageAnalyse" class="page active">
+    <div class="header">
+      <div class="logo-box"><img id="logoImg" alt="Logo entreprise"></div>
+      <div class="id-block">
+        <p class="eyebrow" id="tickerLbl">—</p>
+        <h1 class="company-name" id="companyName">—</h1>
+        <div class="tags">
+          <span class="tag" id="secteurTag">Secteur —</span>
+          <span class="tag" id="sousSecteurTag">Sous-secteur —</span>
+        </div>
+      </div>
+      <div class="price-block">
+        <div class="price-label">Prix actuel</div>
+        <div class="price-value" id="prixActuel">— <sup>€</sup></div>
+        <div class="price-year" id="priceYear"></div>
+      </div>
+    </div>
+
+    <div class="gauge-card">
+      <div class="gauge-top">
+        <div class="gauge-title">Positionnement sur l'échelle de valorisation</div>
+        <div class="gauge-verdict" id="verdictBadge">—</div>
+      </div>
+      <svg class="gauge" id="gaugeSvg" viewBox="0 0 1000 90"></svg>
+      <div class="gauge-legend">
+        <div><span class="dot" style="background:var(--green)"></span>Zone d'achat — sous le prix cible</div>
+        <div><span class="dot" style="background:var(--gold)"></span>Zone équitable — entre cible et juste valeur</div>
+        <div><span class="dot" style="background:var(--red)"></span>Zone chère — au-dessus de la juste valeur</div>
+      </div>
+    </div>
+
+    <div class="section-label">Ratios clés</div>
+    <div class="ratio-grid">
+      <div class="ratio-card"><div class="k">Prix juste</div><div class="v" id="rPrixJuste">—</div><div class="sub">valorisation intrinsèque</div></div>
+      <div class="ratio-card"><div class="k">Prix cible</div><div class="v" id="rPrixCible">—</div><div class="sub">seuil d'achat, marge de sécurité</div></div>
+      <div class="ratio-card"><div class="k">Écart de valeur</div><div class="v" id="rEcart">—</div><div class="sub">entre prix juste et prix cible</div></div>
+      <div class="ratio-card"><div class="k">Rendement du dividende</div><div class="v" id="rRendDiv">—</div><div class="sub">sur prix actuel</div></div>
+      <div class="ratio-card"><div class="k">Rendement total estimé, 5 ans</div><div class="v" id="rRend5">—</div><div class="sub">retour à la juste valeur + dividende</div></div>
+      <div class="ratio-card"><div class="k">FCF PEG</div><div class="v" id="rFcfpeg">—</div><div class="sub">prix / FCF rapporté à la croissance</div></div>
+      <div class="ratio-card"><div class="k">Médiane P/FCF</div><div class="v" id="rMedFcf">—</div><div class="sub">multiple médian historique</div></div>
+      <div class="ratio-card"><div class="k">Payout ratio</div><div class="v" id="rPayout">—</div><div class="sub">dernier exercice</div></div>
+    </div>
+
+    <div class="section-label">Historique</div>
+    <div class="chart-grid">
+      <div class="chart-card wide" id="stockCard">
+        <div class="chart-card-head">
+          <div><h3>Cours de bourse (hebdomadaire)</h3><p>Clôture hebdomadaire et moyenne mobile 200 semaines</p></div>
+          <div class="chart-card-actions">
+            <button class="zoom-btn" onclick="openZoom('stock',&quot;Cours de bourse&quot;)" aria-label="Agrandir">⤢</button>
+          </div>
+        </div>
+        <div class="range-buttons" id="rangeButtons">
+          <button data-range="1">1a</button>
+          <button data-range="2">2a</button>
+          <button data-range="3">3a</button>
+          <button data-range="5">5a</button>
+          <button data-range="10">10a</button>
+          <button data-range="20">20a</button>
+          <button data-range="max" class="active">Max</button>
+        </div>
+        <div class="chart-holder" style="height:320px;"><canvas id="chartStock"></canvas></div>
+        <div class="stock-status" id="stockStatus"></div>
+        <div class="stock-source">Source : Stooq (gratuit, cotations non garanties pour tous les tickers)</div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-card-head">
+          <div><h3>Dividende &amp; Payout ratio</h3><p>Croissance du dividende par action et part du résultat distribuée</p></div>
+          <div class="chart-card-actions">
+            <span class="chart-badge" id="badgeDiv">CAGR 10a —</span>
+            <button class="zoom-btn" onclick="openZoom('div',&quot;Dividende &amp; Payout ratio&quot;)" aria-label="Agrandir">⤢</button>
+          </div>
+        </div>
+        <div class="chart-holder"><canvas id="chartDiv"></canvas></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-card-head">
+          <div><h3>Chiffre d'affaires</h3><p>Évolution du CA, en milliards d'euros</p></div>
+          <div class="chart-card-actions">
+            <span class="chart-badge" id="badgeCA">CAGR 10a —</span>
+            <button class="zoom-btn" onclick="openZoom('ca',&quot;Chiffre d'affaires&quot;)" aria-label="Agrandir">⤢</button>
+          </div>
+        </div>
+        <div class="chart-holder"><canvas id="chartCA"></canvas></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-card-head">
+          <div><h3>Marge opérationnelle &amp; ROIC</h3><p>Rentabilité d'exploitation et retour sur capital investi</p></div>
+          <div class="chart-card-actions">
+            <button class="zoom-btn" onclick="openZoom('marges',&quot;Marge opérationnelle &amp; ROIC&quot;)" aria-label="Agrandir">⤢</button>
+          </div>
+        </div>
+        <div class="chart-holder"><canvas id="chartMarges"></canvas></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-card-head">
+          <div><h3>Free Cash Flow par action</h3><p>Cash réellement généré après investissements</p></div>
+          <div class="chart-card-actions">
+            <span class="chart-badge" id="badgeFcf">CAGR 10a —</span>
+            <button class="zoom-btn" onclick="openZoom('fcf',&quot;Free Cash Flow par action&quot;)" aria-label="Agrandir">⤢</button>
+          </div>
+        </div>
+        <div class="chart-holder"><canvas id="chartFCF"></canvas></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-card-head">
+          <div><h3>Multiple P/FCF payé par le marché</h3><p>Combien les investisseurs paient chaque euro de FCF</p></div>
+          <div class="chart-card-actions">
+            <button class="zoom-btn" onclick="openZoom('pfcf',&quot;Multiple P/FCF payé par le marché&quot;)" aria-label="Agrandir">⤢</button>
+          </div>
+        </div>
+        <div class="chart-holder"><canvas id="chartPFCF"></canvas></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-card-head">
+          <div><h3>Actions en circulation</h3><p>Dilution ou rachats d'actions au fil du temps</p></div>
+          <div class="chart-card-actions">
+            <span class="chart-badge" id="badgeActions">CAGR 20a —</span>
+            <button class="zoom-btn" onclick="openZoom('actions',&quot;Actions en circulation&quot;)" aria-label="Agrandir">⤢</button>
+          </div>
+        </div>
+        <div class="chart-holder"><canvas id="chartActions"></canvas></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-card-head">
+          <div><h3>Dette / OCF</h3><p>Multiple de dette nette rapporté au cash flow opérationnel</p></div>
+          <div class="chart-card-actions">
+            <button class="zoom-btn" onclick="openZoom('dette',&quot;Dette / OCF&quot;)" aria-label="Agrandir">⤢</button>
+          </div>
+        </div>
+        <div class="chart-holder"><canvas id="chartDette"></canvas></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-card-head">
+          <div><h3>Trésorerie &amp; investissements</h3><p>Cash disponible face au cash investi (capex/croissance)</p></div>
+          <div class="chart-card-actions">
+            <button class="zoom-btn" onclick="openZoom('cash',&quot;Trésorerie &amp; investissements&quot;)" aria-label="Agrandir">⤢</button>
+          </div>
+        </div>
+        <div class="chart-holder"><canvas id="chartCash"></canvas></div>
+      </div>
+    </div>
+    </div>
+
+    <div id="pageSecteur" class="page">
+      <div class="section-label">Répartition par secteur (GICS)</div>
+      <div class="sector-grid" id="sectorGrid"></div>
+    </div>
+
+    <footer>
+      Données fournies par Wolf Analysis
+      <img src="https://i.postimg.cc/43WmYDB1/20260714-LOGO-WINTER-PNG.png" alt="Wolf Analysis" style="height:16px;width:auto;vertical-align:middle;margin-left:6px;border-radius:3px;">
+    </footer>
+  </div>
+</div>
+
+<div id="zoomModal" onclick="if(event.target===this) closeZoom()">
+  <div class="zoom-panel">
+    <div class="zoom-panel-head">
+      <h3 id="zoomTitle">—</h3>
+      <button class="zoom-close" onclick="closeZoom()" aria-label="Fermer">✕</button>
+    </div>
+    <div class="zoom-canvas-holder"><canvas id="zoomCanvas"></canvas></div>
+  </div>
+</div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
+
