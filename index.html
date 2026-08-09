@@ -47,6 +47,7 @@
 
     <div class="page-nav">
       <button class="page-nav-btn active" data-page="pageAnalyse">Analyse</button>
+      <button class="page-nav-btn" data-page="pagePortfolio">Portfolio</button>
       <button class="page-nav-btn" data-page="pageSecteur">Secteur</button>
       <button class="page-nav-btn" data-page="pageValorisation">Valorisation</button>
       <button class="page-nav-btn" data-page="pageClassement">Classement</button>
@@ -207,6 +208,32 @@
         <div class="chart-holder"><canvas id="chartCash"></canvas></div>
       </div>
     </div>
+    </div>
+
+    <div id="pagePortfolio" class="page">
+      <div class="section-label">Aperçu du Wolf Portfolio</div>
+      <p class="valo-intro">Suivi global du capital et des performances face au marché.</p>
+
+      <div class="portfolio-summary">
+        <div class="ratio-card"><div class="k">Capital investi</div><div class="v" id="pfCapitalInvesti">—</div></div>
+        <div class="ratio-card"><div class="k">Valorisation actuelle</div><div class="v" id="pfValorisation">—</div></div>
+        <div class="ratio-card"><div class="k">Cash disponible</div><div class="v" id="pfCash">—</div></div>
+        <div class="ratio-card"><div class="k">Gains / pertes</div><div class="v" id="pfGainsEuros">—</div></div>
+        <div class="ratio-card"><div class="k">Performance</div><div class="v" id="pfGainsPct">—</div></div>
+      </div>
+
+      <div class="section-label">Composition</div>
+      <div class="portfolio-composition">
+        <div class="chart-card portfolio-donut-card">
+          <div class="chart-holder" style="height:300px;"><canvas id="chartPortfolioDonut"></canvas></div>
+        </div>
+        <div class="portfolio-holdings-list" id="portfolioHoldingsList"></div>
+      </div>
+
+      <div class="section-label">Wolf Portfolio vs S&amp;P 500</div>
+      <div class="chart-card wide">
+        <div class="chart-holder" style="height:280px;"><canvas id="chartPortfolioVsSpx"></canvas></div>
+      </div>
     </div>
 
     <div id="pageSecteur" class="page">

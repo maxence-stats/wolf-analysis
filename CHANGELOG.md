@@ -6,6 +6,13 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 ## [Non publié]
 
 ### Ajouté
+- **Nouvel onglet Portfolio** : lit l'onglet « Wolf portefeuille » du même Google Sheet
+  (gid dédié, `PORTFOLIO_GID`). 5 tuiles de résumé (capital investi, valorisation,
+  cash, gains €/%), composition en donut (Chart.js, palette or/bleu) + liste des
+  positions triée par poids avec logo/pourcentage/performance, graphique de
+  performance cumulée du portefeuille vs S&P 500 par mois. Chargé après les données
+  principales (séquentiel, pas en parallèle — voir "Pièges techniques" nouveau point
+  sur la collision gviz).
 - **Recherche dans la Watchlist** : champ de recherche au-dessus du pool pour trouver
   directement une entreprise sans faire défiler tous les logos.
 - **Export Watchlist et Export Alertes** (JSON), sur le même modèle que
@@ -29,6 +36,28 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
   tard), cases à cocher, persistant comme les autres onglets.
 
 ### Corrigé
+- **Canal de régression invisible sur le graphique boursier** : pas un bug du canal
+  lui-même (testé isolément, calculs corrects) — `renderStockChart()` s'arrête avant
+  d'y arriver si `stockFull` est vide, ce qui est le cas tant que le cours de bourse
+  ne charge pas (voir "Connu — pas encore résolu"). Les deux se règleront ensemble une
+  fois la source de données de cours fiabilisée.
+- **Chargement du Portfolio parfois pollué par les données de l'onglet principal** :
+  les deux chargements gviz partageaient le même point d'entrée global
+  `google.visualization.Query.setResponse` — si le script gviz principal était encore
+  en vol au moment où celui du Portfolio se déclenchait, celui-ci écrasait le
+  gestionnaire du premier, qui recevait alors les données du portefeuille (ou
+  inversement). Corrigé avec un `responseHandler` dédié (`tqx=...;responseHandler:
+  __handlePortfolioGviz`), qui n'entre plus en collision avec le chargement principal.
+- **Parsing du Portfolio par position de ligne fixe, alors que le Sheet a une mise en
+  page "tableau de bord"** (plusieurs lignes de titre avant chaque bloc, espacements
+  différents entre le bloc actifs/résumé/mensuel, et CSV vs gviz qui ne renvoient pas
+  les mêmes lignes vides pour ce même fichier) : un numéro de ligne codé en dur
+  fonctionnait par coïncidence sur un jeu de données de test et pas sur les vraies
+  données. Corrigé : chaque bloc est maintenant reconnu par son contenu (libellés
+  d'en-tête ignorés) plutôt que par sa position.
+- **Canvas du donut Portfolio à largeur nulle** : `.portfolio-donut-card` (flex
+  center) effondrait son enfant `.chart-holder` à 0px de large faute de largeur
+  explicite. Corrigé avec `width:100%` sur ce conteneur.
 - **Barre d'onglets non responsive sur petit écran** : `.page-nav` (6 onglets depuis
   l'ajout de Classement/Watchlist/Cerveau) n'avait ni retour à la ligne ni défilement —
   sur les fenêtres/écrans trop étroits pour les 6 onglets sur une ligne, les derniers

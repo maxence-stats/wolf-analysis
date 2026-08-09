@@ -23,6 +23,19 @@ let companies = {};   // { nomEntreprise: [ {annee, ...valeurs}, ... ] sorted as
 let activeCompany = null;
 let chartInstances = {};
 
+/* Onglet "Wolf portefeuille" — même fichier publié, gid différent */
+const PORTFOLIO_GID = "58524400";
+const PORTFOLIO_CSV_URL = `https://docs.google.com/spreadsheets/d/e/${PUBLISHED_ID}/pub?gid=${PORTFOLIO_GID}&single=true&output=csv`;
+const PCOL = {
+  actif:21, valorisation:22, investi:23, perf:24,             // V, W, X, Y
+  capitalInvesti:26, valorisationTotale:29,                    // AA, AD
+  gainsEuros:32, gainsPct:35,                                  // AG, AJ
+  cashEuros:38,                                                 // AM
+  moisDate:41, moisValo:43, moisRendement:45, rendementTotal:46, // AP, AR, AT, AU
+  spxPerfMensuelle:47, spxPerfTotale:48, spxValorisation:49     // AV, AW, AX
+};
+let portfolioData = { holdings:[], monthly:[], capitalInvesti:null, valorisationTotale:null, gainsEuros:null, gainsPct:null, cashEuros:null };
+
 /* ============================================================
    CHARGEMENT DES DONNÉES — 2 méthodes, avec repli automatique
    1) fetch() sur le CSV publié — la méthode standard une fois hébergé en ligne
@@ -234,6 +247,250 @@ function handleCsvRows(rows){
   document.getElementById('errorScreen').style.display = 'none';
   document.getElementById('dashboard').style.display = 'block';
   setSync('ok');
+
+  loadPortfolioData();
+}
+
+/* ============================================================
+   ONGLET PORTFOLIO — onglet "Wolf portefeuille" du même Sheet (gid
+   différent). Chargement séquentiel APRÈS les données principales
+   (pas en parallèle) : la méthode gviz réutilise le même point
+   d'entrée global `google.visualization.Query.setResponse`, donc
+   deux chargements gviz simultanés se marcheraient dessus — safe une
+   fois que le chargement principal est réglé (loadSettled déjà true).
+   Structure du Sheet : 3 blocs indépendants dans le même onglet, pas
+   forcément le même nombre de lignes chacun — parsés séparément :
+   - V/W/X/Y : un actif par ligne (actions + Cash), jusqu'à la 1re case
+     vide en V
+   - AA/AD/AG/AJ/AM : valeurs uniques du portefeuille (lues sur la
+     1re ligne de données)
+   - AP/AR/AT/AU/AV/AW/AX : un mois par ligne, jusqu'à la 1re case
+     vide en AP (AQ et AS sont vides, non utilisées)
+   ============================================================ */
+let portfolioLoadSettled = false;
+
+function loadPortfolioData(){
+  portfolioLoadSettled = false;
+  tryFetchPortfolioCSV();
+  tryGvizPortfolioScript();
+  setTimeout(() => { portfolioLoadSettled = true; }, 9000);
+}
+
+function tryFetchPortfolioCSV(){
+  const controller = new AbortController();
+  const hardTimeout = setTimeout(() => controller.abort(), 5000);
+  fetch(PORTFOLIO_CSV_URL + '&_=' + Date.now(), { signal: controller.signal, cache:'no-store' })
+    .then(async res => {
+      if (portfolioLoadSettled) return;
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const text = await res.text();
+      if (text.trim().toLowerCase().startsWith('<!doctype') || text.trim().toLowerCase().startsWith('<html')){
+        throw new Error('Réponse HTML au lieu de CSV');
+      }
+      const parsed = Papa.parse(text.trim(), { skipEmptyLines:true });
+      if (!parsed.data || parsed.data.length < 2) throw new Error('CSV vide ou illisible');
+      if (portfolioLoadSettled) return;
+      portfolioLoadSettled = true;
+      clearTimeout(hardTimeout);
+      handlePortfolioRows(parsed.data);
+    })
+    .catch(() => { clearTimeout(hardTimeout); });
+}
+
+// callback dédié (tqx=responseHandler:...) plutôt que le point d'entrée global
+// google.visualization.Query.setResponse partagé avec le chargement principal — sinon,
+// si le script gviz principal est encore en vol au moment où celui-ci se déclenche, les
+// deux se marchent dessus et le portefeuille peut se retrouver avec les données de
+// l'onglet "DATA BASE 20 ans" (bug constaté en test).
+function tryGvizPortfolioScript(){
+  const old = document.getElementById('gvizPortfolioScript');
+  if (old) old.remove();
+
+  window.__handlePortfolioGviz = function(data){
+    if (portfolioLoadSettled) return;
+    try{
+      if (!data || !data.table || !data.table.rows) throw new Error('table vide');
+      const rows = [data.table.cols.map(c => c.label)].concat(
+        data.table.rows.map(r => (r.c || []).map(cell => cell ? (cell.f != null ? cell.f : cell.v) : ''))
+      );
+      portfolioLoadSettled = true;
+      handlePortfolioRows(rows);
+    }catch(e){ /* silencieux : le repli CSV ou le timeout de secours prendront le relais */ }
+  };
+
+  const script = document.createElement('script');
+  script.id = 'gvizPortfolioScript';
+  script.src = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json;responseHandler:__handlePortfolioGviz&gid=${PORTFOLIO_GID}&headers=1&_=${Date.now()}`;
+  document.body.appendChild(script);
+}
+
+// Le Sheet a une mise en page "tableau de bord" : plusieurs lignes de titre avant
+// chaque bloc, avec des espacements différents entre le bloc V:Y (actifs), AA:AM
+// (résumé) et AP:AX (mensuel) alors qu'ils partagent la même ligne d'en-tête — et CSV
+// vs gviz ne renvoient pas les mêmes lignes vides pour ce même fichier (gviz compresse,
+// CSV les garde telles quelles). Donc aucun numéro de ligne fixe n'est fiable ici :
+// chaque bloc est reconnu par son contenu (libellés d'en-tête connus ignorés), jamais
+// par une position dans le tableau.
+function handlePortfolioRows(rows){
+  const holdings = [];
+  const monthly = [];
+  const summary = { capitalInvesti:null, valorisationTotale:null, gainsEuros:null, gainsPct:null, cashEuros:null };
+  let summaryFound = false;
+
+  for (let i = 0; i < rows.length; i++){
+    const c = rows[i];
+
+    const actif = parseStr(c[PCOL.actif]);
+    if (actif && actif.toUpperCase() !== 'ACTIF'){
+      holdings.push({
+        nom: actif,
+        valorisation: parseNum(c[PCOL.valorisation]),
+        investi: parseNum(c[PCOL.investi]),
+        perf: parseNum(c[PCOL.perf])
+      });
+    }
+
+    if (!summaryFound){
+      const capitalInvesti = parseNum(c[PCOL.capitalInvesti]);
+      if (capitalInvesti != null){
+        summary.capitalInvesti = capitalInvesti;
+        summary.valorisationTotale = parseNum(c[PCOL.valorisationTotale]);
+        summary.gainsEuros = parseNum(c[PCOL.gainsEuros]);
+        summary.gainsPct = parseNum(c[PCOL.gainsPct]);
+        summary.cashEuros = parseNum(c[PCOL.cashEuros]);
+        summaryFound = true;
+      }
+    }
+
+    const moisDate = parseStr(c[PCOL.moisDate]);
+    if (moisDate && moisDate.toUpperCase() !== 'MOIS'){
+      monthly.push({
+        mois: moisDate,
+        rendementMensuel: parseNum(c[PCOL.moisRendement]),
+        rendementTotal: parseNum(c[PCOL.rendementTotal]),
+        spxPerfMensuelle: parseNum(c[PCOL.spxPerfMensuelle]),
+        spxPerfTotale: parseNum(c[PCOL.spxPerfTotale])
+      });
+    }
+  }
+
+  portfolioData = Object.assign({ holdings, monthly }, summary);
+  renderPortfolio();
+}
+
+const PORTFOLIO_COLORS = ['#D9A441','#4A9FE0','#F0C877','#7DBEEA','#B8842E','#2E6FA3','#F5DDA3','#A8D4F0','#8A6420','#1F4E73'];
+
+function portfolioEntityLogo(nom){
+  const match = Object.keys(companies).find(n => stripAccents(n.toLowerCase()) === stripAccents(nom.toLowerCase()));
+  return match ? companies[match][companies[match].length - 1].lienImage : null;
+}
+
+let portfolioDonutChart = null;
+function renderPortfolioDonut(){
+  const holdings = portfolioData.holdings.filter(h => h.valorisation != null && h.valorisation > 0);
+  const canvas = document.getElementById('chartPortfolioDonut');
+  if (!canvas) return;
+  if (portfolioDonutChart) portfolioDonutChart.destroy();
+  if (!holdings.length) return;
+
+  const total = holdings.reduce((s, h) => s + h.valorisation, 0);
+  portfolioDonutChart = new Chart(canvas.getContext('2d'), {
+    type:'doughnut',
+    data:{
+      labels: holdings.map(h => h.nom),
+      datasets:[{
+        data: holdings.map(h => h.valorisation),
+        backgroundColor: holdings.map((_, i) => PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length]),
+        borderColor: THEME.hair, borderWidth:2
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false, cutout:'62%',
+      plugins:{
+        legend:{ display:false },
+        tooltip:{ callbacks:{ label: ctx => {
+          const pct = total ? (ctx.parsed / total * 100) : 0;
+          return ctx.label + ' : ' + ctx.parsed.toLocaleString('fr-FR',{maximumFractionDigits:0}) + ' € (' + pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%)';
+        } } }
+      }
+    }
+  });
+}
+
+function renderPortfolioHoldingsList(){
+  const box = document.getElementById('portfolioHoldingsList');
+  if (!box) return;
+  const holdings = portfolioData.holdings.filter(h => h.valorisation != null);
+  const total = holdings.reduce((s, h) => s + h.valorisation, 0);
+
+  box.innerHTML = holdings.length ? holdings
+    .slice().sort((a, b) => b.valorisation - a.valorisation)
+    .map((h, i) => {
+      const pct = total ? (h.valorisation / total * 100) : 0;
+      const logo = portfolioEntityLogo(h.nom);
+      const perfClass = h.perf == null ? '' : (h.perf >= 0 ? 'pos' : 'neg');
+      const swatch = PORTFOLIO_COLORS[holdings.indexOf(h) % PORTFOLIO_COLORS.length];
+      return `<div class="portfolio-holding-row">
+        <span class="portfolio-holding-swatch" style="background:${swatch}"></span>
+        <div class="portfolio-holding-logo">${logo ? `<img src="${logo}" alt="">` : `<span>${h.nom.charAt(0).toUpperCase()}</span>`}</div>
+        <div class="portfolio-holding-name">${h.nom}</div>
+        <div class="portfolio-holding-pct">${pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</div>
+        <div class="portfolio-holding-perf ${perfClass}">${h.perf != null ? (h.perf >= 0 ? '+' : '') + fmtPct(h.perf) : '—'}</div>
+      </div>`;
+    }).join('') : '<div class="objectifs-empty">Données du portefeuille indisponibles pour l\'instant.</div>';
+}
+
+let portfolioVsSpxChart = null;
+function renderPortfolioVsSpx(){
+  const canvas = document.getElementById('chartPortfolioVsSpx');
+  if (!canvas) return;
+  if (portfolioVsSpxChart) portfolioVsSpxChart.destroy();
+  // Le Sheet a des lignes de mois pré-remplies au-delà du mois courant (dates futures
+  // sans données) — on ne garde que les mois où au moins une des deux séries a une valeur.
+  const monthly = portfolioData.monthly.filter(m => m.rendementTotal != null || m.spxPerfTotale != null);
+  if (!monthly.length) return;
+
+  portfolioVsSpxChart = new Chart(canvas.getContext('2d'), {
+    type:'line',
+    data:{
+      labels: monthly.map(m => m.mois),
+      datasets:[
+        { label:'Wolf Portfolio', data: monthly.map(m => m.rendementTotal), borderColor:THEME.gold, backgroundColor:'rgba(217,164,65,0.08)', fill:true, tension:0.2, pointRadius:2, spanGaps:true },
+        { label:'S&P 500', data: monthly.map(m => m.spxPerfTotale), borderColor:THEME.blue, borderWidth:1.5, pointRadius:2, tension:0.2, spanGaps:true }
+      ]
+    },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true } } },
+      scales:{
+        x:{ grid:{display:false}, ticks:{color:THEME.dim}, border:{color:THEME.hair} },
+        y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'%'} }
+      }
+    }
+  });
+}
+
+function renderPortfolio(){
+  const fmtSigned = v => v == null ? 'N/D' : (v >= 0 ? '+' : '') + v.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' €';
+
+  document.getElementById('pfCapitalInvesti').textContent = portfolioData.capitalInvesti != null ? fmtEUR(portfolioData.capitalInvesti) : 'N/D';
+  document.getElementById('pfValorisation').textContent = portfolioData.valorisationTotale != null ? fmtEUR(portfolioData.valorisationTotale) : 'N/D';
+  document.getElementById('pfCash').textContent = portfolioData.cashEuros != null ? fmtEUR(portfolioData.cashEuros) : 'N/D';
+
+  const gainsEurosEl = document.getElementById('pfGainsEuros');
+  gainsEurosEl.className = 'v';
+  gainsEurosEl.textContent = fmtSigned(portfolioData.gainsEuros);
+  if (portfolioData.gainsEuros != null) gainsEurosEl.classList.add(portfolioData.gainsEuros >= 0 ? 'pos' : 'neg');
+
+  const gainsPctEl = document.getElementById('pfGainsPct');
+  gainsPctEl.className = 'v';
+  if (portfolioData.gainsPct != null){
+    gainsPctEl.textContent = (portfolioData.gainsPct >= 0 ? '+' : '') + fmtPct(portfolioData.gainsPct);
+    gainsPctEl.classList.add(portfolioData.gainsPct >= 0 ? 'pos' : 'neg');
+  } else gainsPctEl.textContent = 'N/D';
+
+  renderPortfolioDonut();
+  renderPortfolioHoldingsList();
+  renderPortfolioVsSpx();
 }
 
 /* ============================================================

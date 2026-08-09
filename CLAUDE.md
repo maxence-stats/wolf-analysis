@@ -185,6 +185,27 @@ différents du même fichier — les deux sont codés en dur en haut de `app.js`
    Yahoo Finance/Stooq** (point 3 ci-dessus), qui couvre toutes les bourses du
    portefeuille. Ne pas réintroduire le widget TradingView pour le cours de bourse
    principal sans un moyen de contourner cette limitation de données.
+9. **Deux chargements gviz simultanés se marchent dessus.** L'API Google Visualization
+   utilise par défaut un point d'entrée global unique (`google.visualization.Query.
+   setResponse`) — si un deuxième `<script>` gviz (ex. Portfolio) réassigne ce handler
+   pendant qu'un premier chargement (ex. données principales) est encore en vol, la
+   réponse du premier finit traitée par le mauvais code (constaté : données du
+   portefeuille polluées par celles de "DATA BASE 20 ans"). Fix : passer un
+   `responseHandler` dédié dans l'URL (`tqx=out:json;responseHandler:NOM_FONCTION`)
+   pour chaque source gviz supplémentaire, jamais réutiliser le handler par défaut
+   dès qu'il y a plus d'une source de données gviz sur la page.
+10. **Ne jamais coder en dur un numéro de ligne pour parser un onglet Google Sheet en
+    mise en page "tableau de bord"** (plusieurs blocs de données avec leurs propres
+    lignes de titre/espacement, contrairement à une simple table plate comme
+    "DATA BASE 20 ans"). Vu sur l'onglet "Wolf portefeuille" (voir "Onglet
+    Portfolio") : le bloc actifs, le bloc résumé et le bloc mensuel partagent la même
+    ligne d'en-tête mais démarrent leurs données à des lignes différentes — et **CSV
+    et gviz ne renvoient même pas les mêmes lignes vides pour le même fichier** (gviz
+    compresse certains blancs, CSV les garde). Un index codé en dur (`i === 1`, etc.)
+    peut sembler fonctionner sur un premier test puis renvoyer n'importe quoi en
+    pratique. Toujours parser par **reconnaissance de contenu** (ignorer les libellés
+    d'en-tête connus, chercher la première valeur qui parse comme un nombre) plutôt
+    que par position.
 
 ## Design system
 
@@ -300,6 +321,34 @@ en intensité si retour utilisateur, mais **ne pas revenir à des opacités ~0.0
 - Zoom modal réutilisable sur les 9 graphiques (dont le cours de bourse), avec mention
   "Données fournies par Wolf Analysis" + logo en pied de modale (branding)
 - Recherche d'entreprise avec autocomplétion
+
+### Onglet Portfolio (fait, fonctionnel)
+Lit un **deuxième onglet du même Google Sheet publié** : "Wolf portefeuille"
+(`PORTFOLIO_GID = "58524400"`, même `PUBLISHED_ID`/`SHEET_ID` que les données
+principales, seul le gid change). Chargement séquentiel **après** les données
+principales (`loadPortfolioData()` appelé en fin de `handleCsvRows()`), avec son
+propre `responseHandler` gviz dédié (voir "Pièges techniques" point 9 — collision
+avec le chargement principal sinon).
+
+- **Mapping des colonnes** (`PCOL` dans `app.js`) : `V/W/X/Y` = actif / valorisation /
+  investi / performance (une ligne par actif, dont "Cash") ; `AA/AD/AG/AJ/AM` = capital
+  investi / valorisation totale / gains € / gains % / cash disponible (valeurs uniques
+  du portefeuille, pas une par actif) ; `AP/AR/AT/AU` = mois / valorisation mensuelle /
+  rendement mensuel / rendement total cumulé du portefeuille ; `AV/AW/AX` = performance
+  mensuelle / performance totale cumulée / valorisation mensuelle du S&P 500 (`AQ`/`AS`
+  vides, non utilisées). Le portefeuille a démarré en mars 2026.
+- **Parsing par reconnaissance de contenu, jamais par position** (voir "Pièges
+  techniques" point 10) : `handlePortfolioRows()` ignore les libellés d'en-tête connus
+  ("ACTIF", "MOIS") et prend la première ligne où `capitalInvesti` parse comme un
+  nombre pour les valeurs uniques du résumé.
+- **Composition** : donut Chart.js (palette dédiée `PORTFOLIO_COLORS`, tons or/bleu
+  uniquement — jamais de violet, réservé au décoratif, voir "Design system") + liste
+  des positions triée par poids décroissant, avec logo (`portfolioEntityLogo()`,
+  correspondance par nom avec `companies`, repli sur une initiale sinon, même pattern
+  que `cerveauEntityChip()`), pourcentage du portefeuille et performance individuelle.
+- **Graphique Wolf Portfolio vs S&P 500** : courbes de rendement cumulé (`AU` vs `AW`)
+  par mois, en filtrant les mois futurs pré-remplis dans le Sheet sans données
+  (`rendementTotal`/`spxPerfTotale` tous les deux `null`).
 
 ### Onglet Secteur (fait, fonctionnel)
 - 11 secteurs GICS + bucket "Autre / non classé"
