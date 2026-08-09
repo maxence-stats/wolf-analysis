@@ -302,26 +302,45 @@ function classementRowHtml(nom, logo, rank, valueText, cls){
   </div>`;
 }
 
+function populateClassementSecteurFilter(){
+  const select = document.getElementById('classementSecteurFilter');
+  if (!select || select.dataset.filled) return;
+  select.dataset.filled = '1';
+  const allSectors = GICS_SECTORS.concat([{ key:'autre', label:'Autre / non classé' }]);
+  allSectors.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.key;
+    opt.textContent = s.label;
+    select.appendChild(opt);
+  });
+}
+
 function renderClassement(){
   const divBox = document.getElementById('classementDiv');
   const valoBox = document.getElementById('classementValo');
   if (!divBox || !valoBox) return;
+  populateClassementSecteurFilter();
+
+  const secteurFiltre = document.getElementById('classementSecteurFilter').value;
 
   const rows = Object.keys(companies).map(nom => {
     const latest = companies[nom][companies[nom].length - 1];
-    return { nom, logo: latest.lienImage, rendementDiv: latest.rendementDiv, ecartValeur: latest.ecartValeur };
-  });
+    return {
+      nom, logo: latest.lienImage, rendementDiv: latest.rendementDiv, ecartValeur: latest.ecartValeur,
+      secteurKey: normalizeSector(latest.secteur) || 'autre'
+    };
+  }).filter(r => !secteurFiltre || r.secteurKey === secteurFiltre);
 
   const byDiv = rows.filter(r => r.rendementDiv != null).sort((a, b) => b.rendementDiv - a.rendementDiv);
   const byValo = rows.filter(r => r.ecartValeur != null).sort((a, b) => a.ecartValeur - b.ecartValeur);
 
   divBox.innerHTML = byDiv.length
     ? byDiv.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.rendementDiv))).join('')
-    : '<div class="objectifs-empty">Aucune donnée disponible.</div>';
+    : '<div class="objectifs-empty">Aucune donnée disponible pour ce secteur.</div>';
 
   valoBox.innerHTML = byValo.length
     ? byValo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartValeur * 100), r.ecartValeur < 0 ? 'pos' : 'neg')).join('')
-    : '<div class="objectifs-empty">Aucune donnée disponible.</div>';
+    : '<div class="objectifs-empty">Aucune donnée disponible pour ce secteur.</div>';
 }
 
 function initClassement(){
@@ -333,6 +352,8 @@ function initClassement(){
       if (row) goToAnalyse(row.dataset.nom);
     });
   });
+  const filter = document.getElementById('classementSecteurFilter');
+  if (filter) filter.addEventListener('change', renderClassement);
 }
 
 function initSectorGrid(){
@@ -1156,9 +1177,21 @@ function renderCerveauSecteurs(box){
 function renderCerveauChaines(box){
   const secteur = cerveauView.secteur;
   const chains = cerveauData.chains[secteur] || [];
+  const creating = !!cerveauView.creatingChain;
   box.innerHTML = `
     <div class="cerveau-breadcrumb"><a data-back="secteurs">Secteurs</a> / ${cerveauSectorLabel(secteur)}</div>
-    <div class="cerveau-actions"><button class="refresh-btn" id="cerveauNewChain">+ Nouvelle chaîne de valeur</button></div>
+    <div class="cerveau-actions">${creating ? '' : '<button class="refresh-btn" id="cerveauNewChain">+ Nouvelle chaîne de valeur</button>'}</div>
+    ${creating ? `
+    <div class="cerveau-new-chain-form">
+      <label for="cerveauChainName">Nom de la chaîne de valeur</label>
+      <input type="text" id="cerveauChainName" placeholder="ex. Équipements électriques">
+      <label for="cerveauChainPhases">Phases (séparées par des virgules)</label>
+      <input type="text" id="cerveauChainPhases" value="Amont, Transformation, Distribution, Services">
+      <div class="cerveau-new-chain-actions">
+        <button class="refresh-btn" id="cerveauChainCreate">Créer</button>
+        <button class="cerveau-btn-cancel" id="cerveauChainCancel">Annuler</button>
+      </div>
+    </div>` : ''}
     <div class="cerveau-chain-grid">${chains.length
       ? chains.map(c => `<div class="sector-box cerveau-chain-box" data-chain="${c.id}"><h3>${c.nom}</h3><div class="count">${c.phases.length} phases</div></div>`).join('')
       : '<div class="objectifs-empty">Aucune chaîne de valeur pour ce secteur pour l\'instant.</div>'}</div>`;
@@ -1167,16 +1200,35 @@ function renderCerveauChaines(box){
   box.querySelectorAll('.cerveau-chain-box').forEach(el => {
     el.addEventListener('click', () => { cerveauView = { level:'phases', secteur, chainId: el.dataset.chain }; renderCerveau(); });
   });
-  document.getElementById('cerveauNewChain').addEventListener('click', () => {
-    const nom = prompt('Nom de la chaîne de valeur (ex. Équipements électriques) :');
-    if (!nom || !nom.trim()) return;
-    const phasesRaw = prompt('Phases, séparées par des virgules :', 'Amont, Transformation, Distribution, Services');
-    const phases = (phasesRaw || 'Amont, Transformation, Distribution, Services').split(',').map(p => p.trim()).filter(Boolean).map(p => ({ nom:p, entreprises:[] }));
-    const chain = { id:'c' + Date.now(), nom: nom.trim(), phases };
+
+  if (!creating){
+    document.getElementById('cerveauNewChain').addEventListener('click', () => {
+      cerveauView = { level:'chaines', secteur, creatingChain:true };
+      renderCerveau();
+    });
+    return;
+  }
+
+  const nameInput = document.getElementById('cerveauChainName');
+  nameInput.focus();
+  document.getElementById('cerveauChainCancel').addEventListener('click', () => {
+    cerveauView = { level:'chaines', secteur };
+    renderCerveau();
+  });
+  const submit = () => {
+    const nom = nameInput.value.trim();
+    if (!nom){ nameInput.focus(); return; }
+    const phasesRaw = document.getElementById('cerveauChainPhases').value;
+    const phases = phasesRaw.split(',').map(p => p.trim()).filter(Boolean).map(p => ({ nom:p, entreprises:[] }));
+    const chain = { id:'c' + Date.now(), nom, phases: phases.length ? phases : [{ nom:'Amont', entreprises:[] }] };
     cerveauData.chains[secteur].push(chain);
     persistCerveauData();
     cerveauView = { level:'phases', secteur, chainId: chain.id };
     renderCerveau();
+  };
+  document.getElementById('cerveauChainCreate').addEventListener('click', submit);
+  box.querySelectorAll('.cerveau-new-chain-form input').forEach(input => {
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
   });
 }
 

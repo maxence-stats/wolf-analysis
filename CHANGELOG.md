@@ -6,6 +6,19 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 ## [Non publié]
 
 ### Ajouté
+- **Filtre secteur sur l'onglet Classement** : les deux classements (rendement du
+  dividende, opportunité de valorisation) peuvent être restreints à un secteur GICS
+  précis via un sélecteur, réutilisant `normalizeSector()`/`GICS_SECTORS`.
+
+### Corrigé
+- **Cerveau numérique : création de chaîne de valeur impossible.** Le bouton
+  « + Nouvelle chaîne de valeur » appelait `prompt()` deux fois ; dans certains
+  contextes navigateur (fenêtres sans chrome, extensions de sécurité, environnements
+  automatisés) `window.prompt()` lève une exception au lieu de retourner une valeur,
+  ce qui interrompait le clic avant toute création — d'où l'impression de blocage total
+  signalée par l'utilisateur (rien ne se passe, impossible de revenir en arrière faute
+  d'avoir jamais progressé dans le flux). Remplacé par un formulaire en ligne (nom +
+  phases, boutons Créer/Annuler) qui ne dépend d'aucune boîte de dialogue native.
 - **Médiane P/FCF sur 20 ans** affichée sur l'onglet Valorisation (colonne BH, à titre
   informatif, n'entre dans aucune formule).
 - **Cours de bourse : widget TradingView** en remplacement du fetch Yahoo Finance/Stooq +

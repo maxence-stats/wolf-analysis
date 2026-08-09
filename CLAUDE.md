@@ -151,6 +151,33 @@ différents du même fichier — les deux sont codés en dur en haut de `app.js`
    diacritiques) appliquée des deux côtés de la comparaison avant `includes()`. **Tout
    nouveau matching de texte libre venant du Sheet devrait passer par `stripAccents()`**
    plutôt que supposer une saisie homogène.
+7. **`window.prompt()`/`confirm()` ne sont pas fiables pour un flux critique.** Dans
+   certains contextes navigateur (fenêtres sans chrome, PWA, extensions de sécurité,
+   environnements automatisés/CDP), `prompt()` **lève une exception** au lieu de
+   retourner `null` — un clic qui l'appelle plante silencieusement (rien ne se passe côté
+   utilisateur, aucune erreur visible sans ouvrir la console). Vu sur le bouton
+   « + Nouvelle chaîne de valeur » du Cerveau numérique (deux `prompt()` en cascade) :
+   l'utilisateur ne pouvait ni créer de chaîne ni, par conséquent, progresser dans la
+   navigation. **Ne plus utiliser `prompt()`/`confirm()` pour des flux applicatifs** —
+   préférer un petit formulaire en ligne ou une modale custom (voir `cerveauNewChain`
+   dans `app.js` pour le pattern retenu : formulaire inline avec boutons Créer/Annuler).
+8. **Le widget TradingView "Advanced Chart" (embed public/anonyme) ne dessert pas les
+   données Euronext Paris**, même pour des symboles pourtant valides et retrouvés par sa
+   propre recherche de symbole (`EURONEXT:TTE`, `EURONEXT:AI` confirmés inexistants pour
+   le widget alors qu'ils existent bien sur tradingview.com et dans sa recherche interne).
+   Message renvoyé par le widget : *« Ce symbole n'existe pas »* + notification
+   *« Symbole disponible uniquement sur TradingView »* — un message de restriction de
+   licence de données, pas une erreur de mapping. Confirmé **indépendamment de
+   l'hébergement** (reproduit à la fois en `file://` et servi en HTTP réel sur
+   `localhost`, donc pas lié au problème `page-uri`/référent). `NASDAQ:MSFT` fonctionne
+   sans erreur dans le même widget — la restriction semble spécifique aux bourses
+   non-américaines (Euronext testé, probablement d'autres). Impact direct : la plupart
+   des entreprises du portefeuille (europeénnes) afficheront la lueur de repli AAPL du
+   widget plutôt que leur propre cours. **Décision en attente avec l'utilisateur** :
+   revenir au fetch Yahoo Finance/Stooq (solution précédente, fonctionnelle, voir point 3
+   ci-dessus pour le piège associé) ou une autre approche — ne pas considérer le widget
+   TradingView comme la solution définitive pour ce portefeuille tant que ce n'est pas
+   tranché.
 
 ## Design system
 
@@ -330,6 +357,10 @@ Deux listes triées côte à côte, aucune donnée nouvelle (tout déjà mappé)
   l'utilisateur).
 `renderClassement()` reconstruit les deux listes à chaque chargement de données. Clic sur
 une ligne → `goToAnalyse(nom)`.
+- **Filtre secteur** : sélecteur `#classementSecteurFilter` (peuplé une fois via
+  `populateClassementSecteurFilter()`, réutilise `GICS_SECTORS` + "Autre / non classé"),
+  restreint les deux listes au secteur choisi via `normalizeSector()` sur `latest.secteur`
+  de chaque entreprise. "Tous les secteurs" (valeur vide) = comportement d'origine.
 
 ### Onglet Watchlist (fait, fonctionnel)
 4 colonnes (Liste d'achat / Idée du moment / À surveiller / À analyser) + un "pool" en
@@ -372,8 +403,12 @@ datées (texte + images uploadées/collées + croquis à main levée).
   (`<canvas>` avec dessin souris/tactile, couleur au choix, bouton Effacer) sauvegardé en
   PNG data URL à l'enregistrement de l'entrée.
 - **Navigation interne** : état `cerveauView` (`{level:'secteurs'}` /
-  `{level:'chaines', secteur}` / `{level:'phases', secteur, chainId}`), un seul
-  `renderCerveau()` qui redessine `#cerveauContent` selon le niveau, fil d'Ariane cliquable.
+  `{level:'chaines', secteur, creatingChain?}` / `{level:'phases', secteur, chainId}`), un
+  seul `renderCerveau()` qui redessine `#cerveauContent` selon le niveau, fil d'Ariane
+  cliquable.
+- **Création de chaîne** : formulaire en ligne (nom + phases, boutons Créer/Annuler),
+  affiché quand `cerveauView.creatingChain === true`. **Ne pas revenir à `prompt()`** pour
+  cette interaction — voir "Pièges techniques" point 7 (crash silencieux constaté).
 
 ### Palette graphiques (fait)
 `THEME` expose `blue` (`css.getPropertyValue('--blue').trim()`) en plus de `gold`. Les
@@ -415,6 +450,13 @@ changement d'entreprise pour repartir d'un widget propre.
   lieu de "Matériaux") : accentuation incohérente dans la colonne `secteur` du Sheet
   ("Materiaux" vs "Matériaux" selon la ligne, voir "Pièges techniques" point 6). Corrigé
   avec `stripAccents()` dans `normalizeSector()`.
+- **Cerveau numérique : impossible de créer une chaîne de valeur / impression d'être
+  bloqué sans retour arrière possible** : `prompt()` levait une exception dans certains
+  contextes navigateur au lieu de retourner une valeur (voir "Pièges techniques" point 7),
+  plantant le clic avant toute création — la navigation retour fonctionnait en réalité
+  très bien (testé indépendamment), mais l'utilisateur n'avait jamais rien à voir puisque
+  la création elle-même échouait silencieusement. Corrigé en remplaçant les deux
+  `prompt()` par un formulaire en ligne (nom + phases, boutons Créer/Annuler).
 
 ### Demandé, non commencé — nécessite une décision d'architecture
 Ces 3 fonctionnalités ne sont **pas réalisables en site statique pur** sans backend :
