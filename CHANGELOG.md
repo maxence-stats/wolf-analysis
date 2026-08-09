@@ -5,6 +5,13 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 
 ## [Non publié]
 
+### Corrigé
+- **Barre d'onglets non responsive sur petit écran** : `.page-nav` (6 onglets depuis
+  l'ajout de Classement/Watchlist/Cerveau) n'avait ni retour à la ligne ni défilement —
+  sur mobile, les onglets « Watchlist » et « Cerveau » sortaient de l'écran sans aucun
+  moyen de les atteindre. Ajout d'un défilement horizontal (`overflow-x:auto`, boutons
+  `flex-shrink:0`) sur la barre d'onglets.
+
 ### Ajouté
 - **Médiane P/FCF sur 20 ans** affichée sur l'onglet Valorisation (colonne BH, à titre
   informatif, n'entre dans aucune formule).
