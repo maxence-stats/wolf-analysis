@@ -16,7 +16,7 @@ const COL = {
   fcfpeg:35, fcfParAction:38, cagrFcf10:40, pFcf:13, medianePFCF:42,
   ca:44, cagrCA10:46, margeOp:48, roic:49,
   cash:52, cashInvesti:53, actions:54, cagrActions:55,
-  detteOCF:58
+  detteOCF:58, medianePFCF20:59
 };
 
 let companies = {};   // { nomEntreprise: [ {annee, ...valeurs}, ... ] sorted asc }
@@ -193,6 +193,7 @@ function handleCsvRows(rows){
       cagrFcf10: parseNum(c[COL.cagrFcf10]),
       pFcf: parseNum(c[COL.pFcf]),
       medianePFCF: parseNum(c[COL.medianePFCF]),
+      medianePFCF20: parseNum(c[COL.medianePFCF20]),
       ca: parseNum(c[COL.ca]),
       cagrCA10: parseNum(c[COL.cagrCA10]),
       margeOp: parseNum(c[COL.margeOp]),
@@ -219,6 +220,8 @@ function handleCsvRows(rows){
   if (!activeCompany || !companies[activeCompany]) activeCompany = names[0];
   renderCompany(activeCompany);
   renderSectorView();
+  renderClassement();
+  renderWatchlist();
 
   document.getElementById('loadingScreen').style.display = 'none';
   document.getElementById('errorScreen').style.display = 'none';
@@ -283,6 +286,53 @@ function renderSectorView(){
       : list.map(c => `<div class="sector-logo" title="${c.nom.replace(/"/g,'&quot;')}" data-nom="${c.nom.replace(/"/g,'&quot;')}"><img src="${c.logo || ''}" alt="${c.nom.replace(/"/g,'&quot;')}"></div>`).join('');
     return `<div class="sector-box"><h3>${sec.label}</h3><div class="count">${list.length} entreprise${list.length>1?'s':''}</div><div class="sector-companies">${logosHtml}</div></div>`;
   }).join('');
+}
+
+/* ============================================================
+   PAGE CLASSEMENT — meilleur rendement dividende / meilleure
+   opportunité de valorisation (écart de valeur, colonne K,
+   négatif = sous-valorisé = plus intéressant, tri croissant)
+   ============================================================ */
+function classementRowHtml(nom, logo, rank, valueText, cls){
+  return `<div class="classement-row" data-nom="${nom.replace(/"/g,'&quot;')}">
+    <span class="classement-rank">${rank}</span>
+    <div class="classement-logo"><img src="${logo || ''}" alt=""></div>
+    <span class="classement-name">${nom}</span>
+    <span class="classement-value${cls ? ' ' + cls : ''}">${valueText}</span>
+  </div>`;
+}
+
+function renderClassement(){
+  const divBox = document.getElementById('classementDiv');
+  const valoBox = document.getElementById('classementValo');
+  if (!divBox || !valoBox) return;
+
+  const rows = Object.keys(companies).map(nom => {
+    const latest = companies[nom][companies[nom].length - 1];
+    return { nom, logo: latest.lienImage, rendementDiv: latest.rendementDiv, ecartValeur: latest.ecartValeur };
+  });
+
+  const byDiv = rows.filter(r => r.rendementDiv != null).sort((a, b) => b.rendementDiv - a.rendementDiv);
+  const byValo = rows.filter(r => r.ecartValeur != null).sort((a, b) => a.ecartValeur - b.ecartValeur);
+
+  divBox.innerHTML = byDiv.length
+    ? byDiv.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.rendementDiv))).join('')
+    : '<div class="objectifs-empty">Aucune donnée disponible.</div>';
+
+  valoBox.innerHTML = byValo.length
+    ? byValo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartValeur * 100), r.ecartValeur < 0 ? 'pos' : 'neg')).join('')
+    : '<div class="objectifs-empty">Aucune donnée disponible.</div>';
+}
+
+function initClassement(){
+  ['classementDiv', 'classementValo'].forEach(id => {
+    const box = document.getElementById(id);
+    if (!box) return;
+    box.addEventListener('click', e => {
+      const row = e.target.closest('.classement-row[data-nom]');
+      if (row) goToAnalyse(row.dataset.nom);
+    });
+  });
 }
 
 function initSectorGrid(){
@@ -425,7 +475,7 @@ function renderCompany(nom){
   setBadge('badgeFcf', 'CAGR FCF 10a', latest.cagrFcf10);
   setBadge('badgeActions', 'CAGR actions 20a', latest.cagrActions);
 
-  loadStockChart(latest.ticker);
+  loadTradingViewChart(latest.ticker);
   renderValorisation(nom);
 
   const series = k => hist.map(r => r[k]);
@@ -520,217 +570,59 @@ function cloneChartConfig(config){
 }
 
 /* ============================================================
-   COURS DE BOURSE — Yahoo Finance en priorité, repli sur Stooq
-   si le fetch échoue (CORS non garanti côté Yahoo, pas d'API
-   officielle). Hebdomadaire + SMA200.
+   COURS DE BOURSE — widget TradingView (remplace l'ancien fetch
+   Yahoo Finance/Stooq + Chart.js maison). Pas de clé API, pas de
+   CORS à gérer. allow_symbol_change permet à l'utilisateur de
+   corriger lui-même le symbole si le mapping automatique se trompe.
    ============================================================ */
-let stockFull = null;   // { dates, closes, sma }
-let stockRange = 'max';
-let stockRequestId = 0;
-
-function mapTickerToYahoo(ticker){
+function mapTickerToTradingView(ticker){
   if (!ticker) return null;
   const parts = ticker.split(':');
   if (parts.length !== 2) return ticker;
   const [exch, sym] = parts;
   const map = {
-    EPA:'.PA', PAR:'.PA', NASDAQ:'', NYSE:'', NYSEARCA:'',
-    LON:'.L', LSE:'.L', ETR:'.DE', FRA:'.DE', XETR:'.DE',
-    AMS:'.AS', BME:'.MC', MIL:'.MI', SWX:'.SW', TSE:'.T'
+    EPA:'EURONEXT', PAR:'EURONEXT', NASDAQ:'NASDAQ', NYSE:'NYSE', NYSEARCA:'AMEX',
+    LON:'LSE', LSE:'LSE', ETR:'XETR', FRA:'FWB', XETR:'XETR',
+    AMS:'EURONEXT', BME:'BME', MIL:'MIL', SWX:'SIX', TSE:'TSE'
   };
-  const suffix = map[exch.toUpperCase()];
-  return sym + (suffix != null ? suffix : '');
+  const prefix = map[exch.toUpperCase()] || exch.toUpperCase();
+  return prefix + ':' + sym;
 }
 
-function mapTickerToStooq(ticker){
-  if (!ticker) return null;
-  const parts = ticker.split(':');
-  if (parts.length !== 2) return ticker.toLowerCase();
-  const [exch, sym] = parts;
-  const map = {
-    EPA:'.fr', PAR:'.fr', NASDAQ:'.us', NYSE:'.us', NYSEARCA:'.us',
-    LON:'.uk', LSE:'.uk', ETR:'.de', FRA:'.de', XETR:'.de',
-    AMS:'.nl', BME:'.mc', MIL:'.mi', SWX:'.sw', TSE:'.jp'
-  };
-  const suffix = map[exch.toUpperCase()] || '.us';
-  return sym.toLowerCase() + suffix;
+function loadTradingViewChart(ticker){
+  const holder = document.getElementById('tvChartHolder');
+  if (!holder) return;
+  holder.innerHTML = '';
+  const symbol = mapTickerToTradingView(ticker) || 'NASDAQ:AAPL';
+
+  const container = document.createElement('div');
+  container.className = 'tradingview-widget-container';
+  container.style.height = '100%';
+  container.style.width = '100%';
+  const widgetDiv = document.createElement('div');
+  widgetDiv.className = 'tradingview-widget-container__widget';
+  container.appendChild(widgetDiv);
+  holder.appendChild(container);
+
+  const script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
+  script.async = true;
+  script.text = JSON.stringify({
+    autosize: true,
+    symbol: symbol,
+    interval: 'W',
+    timezone: 'Etc/UTC',
+    theme: 'dark',
+    style: '1',
+    locale: 'fr',
+    backgroundColor: 'rgba(21, 26, 31, 1)',
+    gridColor: 'rgba(38, 46, 54, 1)',
+    allow_symbol_change: true,
+    support_host: 'https://www.tradingview.com'
+  });
+  container.appendChild(script);
 }
-
-function average(arr){ return arr.reduce((a,b) => a+b, 0) / arr.length; }
-
-function isoWeekKey(dateStr){
-  const d = new Date(dateStr + 'T00:00:00Z');
-  const day = (d.getUTCDay() + 6) % 7; // lundi = 0
-  d.setUTCDate(d.getUTCDate() - day + 3);
-  const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
-  const week = 1 + Math.round(((d - firstThursday) / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
-  return d.getUTCFullYear() + '-W' + week;
-}
-
-// Regroupe des clôtures quotidiennes en clôtures hebdomadaires (dernier jour coté de
-// chaque semaine ISO). Nécessaire car l'API Yahoo Finance renvoie silencieusement des
-// données mensuelles quand on demande interval=1wk sur un très long historique (range=max)
-// — le point d'entrée le plus fiable reste donc le quotidien, rééchantillonné nous-mêmes.
-function resampleWeekly(dailyDates, dailyCloses){
-  const dates = [], closes = [];
-  let currentKey = null, lastDate = null, lastClose = null;
-  for (let i = 0; i < dailyDates.length; i++){
-    const key = isoWeekKey(dailyDates[i]);
-    if (currentKey !== null && key !== currentKey){
-      dates.push(lastDate);
-      closes.push(lastClose);
-    }
-    currentKey = key;
-    lastDate = dailyDates[i];
-    lastClose = dailyCloses[i];
-  }
-  if (lastDate != null){
-    dates.push(lastDate);
-    closes.push(lastClose);
-  }
-  return { dates, closes };
-}
-
-async function fetchYahooWeekly(symbol){
-  // period1/period2 explicites plutôt que range=max : Yahoo sous-échantillonne
-  // silencieusement (mensuel au lieu de quotidien) quand range=max est combiné à un
-  // très long historique, ce qui faussait la moyenne mobile 200 semaines.
-  const period1 = Math.floor(new Date('1990-01-01T00:00:00Z').getTime() / 1000);
-  const period2 = Math.floor(Date.now() / 1000);
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=1d`;
-  const controller = new AbortController();
-  const hardTimeout = setTimeout(() => controller.abort(), 8000);
-  try{
-    const res = await fetch(url, { signal: controller.signal, cache: 'no-store' });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const json = await res.json();
-    const result = json && json.chart && json.chart.result && json.chart.result[0];
-    if (!result) throw new Error((json && json.chart && json.chart.error && json.chart.error.description) || 'réponse Yahoo Finance invalide');
-    const ts = result.timestamp;
-    const closes = result.indicators && result.indicators.quote && result.indicators.quote[0] && result.indicators.quote[0].close;
-    if (!ts || !closes) throw new Error('données Yahoo Finance incomplètes');
-
-    const dailyDates = [], dailyCloses = [];
-    for (let i = 0; i < ts.length; i++){
-      if (closes[i] == null) continue;
-      dailyDates.push(new Date(ts[i] * 1000).toISOString().slice(0, 10));
-      dailyCloses.push(closes[i]);
-    }
-    if (dailyCloses.length < 50) throw new Error('pas assez de données renvoyées par Yahoo Finance');
-    const { dates, closes: vals } = resampleWeekly(dailyDates, dailyCloses);
-    return { dates, closes: vals };
-  } finally {
-    clearTimeout(hardTimeout);
-  }
-}
-
-async function fetchStooqWeekly(symbol){
-  const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(symbol)}&i=w&_=${Date.now()}`;
-  const res = await fetch(url, { cache: 'no-store' });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  const text = await res.text();
-  if (!text || text.trim().toLowerCase().startsWith('<')) throw new Error('réponse invalide');
-
-  const parsed = Papa.parse(text.trim(), { header: true, skipEmptyLines: true });
-  const rows = (parsed.data || []).filter(r => r.Date && r.Close && !isNaN(parseFloat(r.Close)));
-  if (rows.length < 10) throw new Error('pas assez de données renvoyées');
-
-  return { dates: rows.map(r => r.Date), closes: rows.map(r => parseFloat(r.Close)) };
-}
-
-function setStockSourceNote(text){
-  const el = document.getElementById('stockSourceNote');
-  if (el) el.textContent = text;
-}
-
-async function loadStockChart(ticker){
-  const statusEl = document.getElementById('stockStatus');
-  const myId = ++stockRequestId;
-  stockFull = null;
-  if (chartInstances.stock){ chartInstances.stock.destroy(); delete chartInstances.stock; }
-
-  if (!ticker){
-    statusEl.textContent = 'Ticker manquant pour cette entreprise, impossible de charger le cours.';
-    statusEl.style.display = 'block';
-    return;
-  }
-  statusEl.textContent = 'Chargement du cours…';
-  statusEl.style.display = 'block';
-
-  const ySymbol = mapTickerToYahoo(ticker);
-  try{
-    const { dates, closes } = await fetchYahooWeekly(ySymbol);
-    if (myId !== stockRequestId) return;
-    const sma = closes.map((_, i) => i < 199 ? null : average(closes.slice(i - 199, i + 1)));
-    stockFull = { dates, closes, sma };
-    statusEl.style.display = 'none';
-    setStockSourceNote('Source : Yahoo Finance (symbole ' + ySymbol + ')');
-    renderStockChart();
-    return;
-  }catch(e){
-    if (myId !== stockRequestId) return;
-    // Yahoo Finance indisponible (CORS non garanti) — on tente le repli Stooq.
-  }
-
-  const sSymbol = mapTickerToStooq(ticker);
-  try{
-    const res = await fetchStooqWeekly(sSymbol);
-    if (myId !== stockRequestId) return;
-    const sma = res.closes.map((_, i) => i < 199 ? null : average(res.closes.slice(i - 199, i + 1)));
-    stockFull = { dates: res.dates, closes: res.closes, sma };
-    statusEl.style.display = 'none';
-    setStockSourceNote('Source : Stooq (repli, Yahoo Finance indisponible pour ce ticker — symbole ' + sSymbol + ')');
-    renderStockChart();
-  }catch(e){
-    if (myId !== stockRequestId) return;
-    stockFull = null;
-    statusEl.textContent = "Cours indisponible pour ce ticker, ni via Yahoo Finance (" + ySymbol + ") ni via Stooq (" + sSymbol + "). Le mapping automatique de la bourse d'origine ne couvre pas forcément tous les cas — dis-moi le bon symbole si besoin.";
-    statusEl.style.display = 'block';
-  }
-}
-
-function renderStockChart(){
-  if (!stockFull) return;
-  const { dates, closes, sma } = stockFull;
-  let startIdx = 0;
-  if (stockRange !== 'max'){
-    const years = parseInt(stockRange, 10);
-    const cutoff = new Date();
-    cutoff.setFullYear(cutoff.getFullYear() - years);
-    const found = dates.findIndex(d => new Date(d) >= cutoff);
-    startIdx = found === -1 ? 0 : found;
-  }
-
-  const labels = dates.slice(startIdx);
-  const dataClose = closes.slice(startIdx);
-  const dataSma = sma.slice(startIdx);
-
-  if (chartInstances.stock) chartInstances.stock.destroy();
-
-  const config = {
-    type:'line',
-    data:{ labels, datasets:[
-      { label:'Clôture hebdo', data:dataClose, borderColor:THEME.gold, backgroundColor:'rgba(217,164,65,0.08)', fill:true, tension:0.12, pointRadius:0, borderWidth:1.5 },
-      { label:'Moyenne mobile 200 sem.', data:dataSma, borderColor:THEME.blue, borderWidth:1.5, pointRadius:0, spanGaps:true, tension:0.12 }
-    ]},
-    options:{ responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true}}},
-      scales:{
-        x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:8}, border:{color:THEME.hair} },
-        y:{ grid:baseGrid, ticks:{color:THEME.dim} }
-      }
-    }
-  };
-  chartInstances.stock = makeChart('stock', 'chartStock', config);
-}
-
-document.getElementById('rangeButtons').addEventListener('click', e => {
-  const btn = e.target.closest('button[data-range]');
-  if (!btn) return;
-  stockRange = btn.dataset.range;
-  document.querySelectorAll('#rangeButtons button').forEach(b => b.classList.toggle('active', b === btn));
-  renderStockChart();
-});
 
 function openZoom(key, title){
   const config = chartConfigs[key];
@@ -861,6 +753,7 @@ function renderValorisation(nom){
   document.getElementById('voFcfActuel').textContent = fcfActuel != null ? fmtEUR(fcfActuel) : 'N/D';
   document.getElementById('voCagrHist').textContent = cagrHist != null ? fmtPct(cagrHist) : 'N/D';
   document.getElementById('voMedianeHist').textContent = medianeHist != null ? medianeHist.toLocaleString('fr-FR', {minimumFractionDigits:1}) + 'x' : 'N/D';
+  document.getElementById('voMediane20').textContent = latest.medianePFCF20 != null ? latest.medianePFCF20.toLocaleString('fr-FR', {minimumFractionDigits:1}) + 'x' : 'N/D';
 
   scenarioValues = {};
   SCENARIOS.forEach(s => {
@@ -1056,6 +949,397 @@ function exportObjectifs(){
 }
 
 /* ============================================================
+   ONGLET WATCHLIST — glisser-déposer natif HTML5, 4 listes.
+   Même pattern de persistance que l'historique des objectifs :
+   localStorage + export JSON + socle data/watchlist.json optionnel.
+   ============================================================ */
+const WATCHLIST_LISTS = ['achat', 'idee', 'surveiller', 'analyser'];
+const WATCHLIST_BASELINE_URL = 'data/watchlist.json';
+const WATCHLIST_LS_KEY = 'wolfAnalysisWatchlist';
+let watchlistStore = { achat:[], idee:[], surveiller:[], analyser:[] };
+
+function mergeWatchlist(extra){
+  WATCHLIST_LISTS.forEach(key => {
+    (extra[key] || []).forEach(nom => { if (!watchlistStore[key].includes(nom)) watchlistStore[key].push(nom); });
+  });
+}
+
+async function loadWatchlistBaseline(){
+  try{
+    const res = await fetch(WATCHLIST_BASELINE_URL, { cache:'no-store' });
+    if (res.ok){
+      const json = await res.json();
+      if (json && typeof json === 'object') mergeWatchlist(json);
+    }
+  }catch(e){ /* fichier absent ou fetch bloqué (ex. file://) — non bloquant */ }
+  try{
+    const raw = localStorage.getItem(WATCHLIST_LS_KEY);
+    if (raw) mergeWatchlist(JSON.parse(raw));
+  }catch(e){ /* localStorage indisponible ou JSON corrompu */ }
+  renderWatchlist();
+}
+
+function persistWatchlistLocal(){
+  try{ localStorage.setItem(WATCHLIST_LS_KEY, JSON.stringify(watchlistStore)); }catch(e){ /* quota / navigateur privé */ }
+}
+
+function watchlistLocationOf(nom){
+  return WATCHLIST_LISTS.find(key => watchlistStore[key].includes(nom)) || null;
+}
+
+function moveToWatchlist(nom, listKey){
+  WATCHLIST_LISTS.forEach(key => {
+    const idx = watchlistStore[key].indexOf(nom);
+    if (idx !== -1) watchlistStore[key].splice(idx, 1);
+  });
+  if (listKey) watchlistStore[listKey].push(nom);
+  persistWatchlistLocal();
+  renderWatchlist();
+}
+
+function watchlistChipHtml(nom, logo){
+  const safe = nom.replace(/"/g, '&quot;');
+  return `<div class="watchlist-chip" draggable="true" data-nom="${safe}" title="${safe}"><img src="${logo || ''}" alt=""></div>`;
+}
+
+function renderWatchlist(){
+  const pool = document.getElementById('watchlistPool');
+  if (!pool) return;
+
+  const unassigned = Object.keys(companies).filter(nom => !watchlistLocationOf(nom));
+  pool.innerHTML = unassigned.length
+    ? unassigned.map(nom => watchlistChipHtml(nom, companies[nom][companies[nom].length - 1].lienImage)).join('')
+    : '<div class="objectifs-empty">Toutes les entreprises sont déjà classées dans une liste.</div>';
+
+  WATCHLIST_LISTS.forEach(key => {
+    const zone = document.querySelector(`.watchlist-dropzone[data-list="${key}"]`);
+    if (!zone) return;
+    zone.innerHTML = watchlistStore[key]
+      .filter(nom => companies[nom])
+      .map(nom => watchlistChipHtml(nom, companies[nom][companies[nom].length - 1].lienImage))
+      .join('');
+  });
+}
+
+function initWatchlist(){
+  const page = document.getElementById('pageWatchlist');
+  if (!page) return;
+
+  page.addEventListener('dragstart', e => {
+    const chip = e.target.closest('.watchlist-chip[data-nom]');
+    if (!chip) return;
+    e.dataTransfer.setData('text/plain', chip.dataset.nom);
+    e.dataTransfer.effectAllowed = 'move';
+    chip.classList.add('dragging');
+  });
+  page.addEventListener('dragend', e => {
+    const chip = e.target.closest('.watchlist-chip');
+    if (chip) chip.classList.remove('dragging');
+  });
+
+  const dropTargets = [document.getElementById('watchlistPool'), ...page.querySelectorAll('.watchlist-dropzone')];
+  dropTargets.forEach(zone => {
+    if (!zone) return;
+    zone.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; zone.classList.add('dragover'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+    zone.addEventListener('drop', e => {
+      e.preventDefault();
+      zone.classList.remove('dragover');
+      const nom = e.dataTransfer.getData('text/plain');
+      if (!nom) return;
+      moveToWatchlist(nom, zone.dataset.list || null);
+    });
+  });
+
+  page.addEventListener('click', e => {
+    const chip = e.target.closest('.watchlist-chip[data-nom]');
+    if (chip) goToAnalyse(chip.dataset.nom);
+  });
+}
+
+/* ============================================================
+   ONGLET CERVEAU NUMÉRIQUE — 11 secteurs GICS → chaînes de valeur
+   définies par l'utilisateur (nom + phases libres) → entreprises
+   assignées par phase → fiche par entité (texte, images, croquis).
+   Stockage IndexedDB (pas localStorage : trop petit pour des images).
+   data/cerveau.json sert de socle optionnel, mis à jour par Claude
+   quand l'utilisateur exporte et transmet le fichier.
+   ============================================================ */
+const CERVEAU_DB_NAME = 'wolfAnalysisCerveau';
+const CERVEAU_STORE = 'state';
+let cerveauDB = null;
+let cerveauData = { chains:{}, notes:{} };
+let cerveauView = { level:'secteurs' };
+
+function openCerveauDB(){
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(CERVEAU_DB_NAME, 1);
+    req.onupgradeneeded = () => { req.result.createObjectStore(CERVEAU_STORE); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function loadCerveauData(){
+  GICS_SECTORS.forEach(s => { if (!cerveauData.chains[s.key]) cerveauData.chains[s.key] = []; });
+  if (!cerveauData.chains.autre) cerveauData.chains.autre = [];
+
+  try{
+    const res = await fetch('data/cerveau.json', { cache:'no-store' });
+    if (res.ok){
+      const json = await res.json();
+      if (json && json.chains) Object.assign(cerveauData.chains, json.chains);
+      if (json && json.notes) Object.assign(cerveauData.notes, json.notes);
+    }
+  }catch(e){ /* socle absent ou fetch bloqué (ex. file://) — non bloquant */ }
+
+  try{
+    cerveauDB = await openCerveauDB();
+    const stored = await new Promise((resolve, reject) => {
+      const req = cerveauDB.transaction(CERVEAU_STORE, 'readonly').objectStore(CERVEAU_STORE).get('state');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    if (stored){
+      if (stored.chains) Object.keys(stored.chains).forEach(k => { cerveauData.chains[k] = stored.chains[k]; });
+      if (stored.notes) Object.keys(stored.notes).forEach(k => { cerveauData.notes[k] = stored.notes[k]; });
+    }
+  }catch(e){ /* IndexedDB indisponible (navigation privée stricte...) — non bloquant */ }
+
+  renderCerveau();
+}
+
+function persistCerveauData(){
+  if (!cerveauDB) return;
+  try{ cerveauDB.transaction(CERVEAU_STORE, 'readwrite').objectStore(CERVEAU_STORE).put(cerveauData, 'state'); }
+  catch(e){ /* ignore */ }
+}
+
+function exportCerveau(){
+  const blob = new Blob([JSON.stringify(cerveauData, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'wolf-analysis-cerveau.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function cerveauSectorLabel(key){
+  return (GICS_SECTORS.find(s => s.key === key) || { label:'Autre / non classé' }).label;
+}
+
+function renderCerveau(){
+  const box = document.getElementById('cerveauContent');
+  if (!box) return;
+  if (cerveauView.level === 'chaines') return renderCerveauChaines(box);
+  if (cerveauView.level === 'phases') return renderCerveauPhases(box);
+  renderCerveauSecteurs(box);
+}
+
+function renderCerveauSecteurs(box){
+  const allSectors = GICS_SECTORS.concat([{ key:'autre', label:'Autre / non classé' }]);
+  box.innerHTML = `
+    <div class="cerveau-actions"><button class="zoom-btn objectifs-export" id="cerveauExportBtn">⭳ Exporter</button></div>
+    <div class="sector-grid">${allSectors.map(s => {
+      const n = (cerveauData.chains[s.key] || []).length;
+      return `<div class="sector-box cerveau-sector-box" data-secteur="${s.key}"><h3>${s.label}</h3><div class="count">${n} chaîne${n > 1 ? 's' : ''} de valeur</div></div>`;
+    }).join('')}</div>`;
+  document.getElementById('cerveauExportBtn').addEventListener('click', exportCerveau);
+  box.querySelectorAll('.cerveau-sector-box').forEach(el => {
+    el.addEventListener('click', () => { cerveauView = { level:'chaines', secteur: el.dataset.secteur }; renderCerveau(); });
+  });
+}
+
+function renderCerveauChaines(box){
+  const secteur = cerveauView.secteur;
+  const chains = cerveauData.chains[secteur] || [];
+  box.innerHTML = `
+    <div class="cerveau-breadcrumb"><a data-back="secteurs">Secteurs</a> / ${cerveauSectorLabel(secteur)}</div>
+    <div class="cerveau-actions"><button class="refresh-btn" id="cerveauNewChain">+ Nouvelle chaîne de valeur</button></div>
+    <div class="cerveau-chain-grid">${chains.length
+      ? chains.map(c => `<div class="sector-box cerveau-chain-box" data-chain="${c.id}"><h3>${c.nom}</h3><div class="count">${c.phases.length} phases</div></div>`).join('')
+      : '<div class="objectifs-empty">Aucune chaîne de valeur pour ce secteur pour l\'instant.</div>'}</div>`;
+
+  box.querySelector('[data-back="secteurs"]').addEventListener('click', () => { cerveauView = { level:'secteurs' }; renderCerveau(); });
+  box.querySelectorAll('.cerveau-chain-box').forEach(el => {
+    el.addEventListener('click', () => { cerveauView = { level:'phases', secteur, chainId: el.dataset.chain }; renderCerveau(); });
+  });
+  document.getElementById('cerveauNewChain').addEventListener('click', () => {
+    const nom = prompt('Nom de la chaîne de valeur (ex. Équipements électriques) :');
+    if (!nom || !nom.trim()) return;
+    const phasesRaw = prompt('Phases, séparées par des virgules :', 'Amont, Transformation, Distribution, Services');
+    const phases = (phasesRaw || 'Amont, Transformation, Distribution, Services').split(',').map(p => p.trim()).filter(Boolean).map(p => ({ nom:p, entreprises:[] }));
+    const chain = { id:'c' + Date.now(), nom: nom.trim(), phases };
+    cerveauData.chains[secteur].push(chain);
+    persistCerveauData();
+    cerveauView = { level:'phases', secteur, chainId: chain.id };
+    renderCerveau();
+  });
+}
+
+function cerveauEntityChip(nom){
+  const safe = nom.replace(/"/g, '&quot;');
+  const tracked = companies[nom];
+  const logo = tracked ? companies[nom][companies[nom].length - 1].lienImage : '';
+  const noteCount = (cerveauData.notes[nom] || []).length;
+  return `<div class="cerveau-entity-chip" data-nom="${safe}">
+    ${logo ? `<img src="${logo}" alt="">` : `<span class="cerveau-entity-initial">${nom.charAt(0).toUpperCase()}</span>`}
+    <span>${nom}</span>${noteCount ? `<span class="cerveau-note-badge">${noteCount}</span>` : ''}
+  </div>`;
+}
+
+function renderCerveauPhases(box){
+  const { secteur, chainId } = cerveauView;
+  const chain = (cerveauData.chains[secteur] || []).find(c => c.id === chainId);
+  if (!chain){ cerveauView = { level:'chaines', secteur }; renderCerveau(); return; }
+
+  box.innerHTML = `
+    <div class="cerveau-breadcrumb"><a data-back="secteurs">Secteurs</a> / <a data-back="chaines">${cerveauSectorLabel(secteur)}</a> / ${chain.nom}</div>
+    <div class="cerveau-phase-grid">${chain.phases.map((ph, i) => `
+      <div class="scenario-card cerveau-phase">
+        <h3 class="scenario-title">${ph.nom}</h3>
+        <div class="cerveau-entity-list" data-phase="${i}">${ph.entreprises.map(cerveauEntityChip).join('')}</div>
+        <div class="cerveau-add-entity"><input type="text" placeholder="Ajouter une entreprise, Entrée pour valider…" data-phase="${i}"></div>
+      </div>`).join('')}</div>`;
+
+  box.querySelector('[data-back="secteurs"]').addEventListener('click', () => { cerveauView = { level:'secteurs' }; renderCerveau(); });
+  box.querySelector('[data-back="chaines"]').addEventListener('click', () => { cerveauView = { level:'chaines', secteur }; renderCerveau(); });
+  box.querySelectorAll('.cerveau-entity-list').forEach(list => {
+    list.addEventListener('click', e => {
+      const chip = e.target.closest('.cerveau-entity-chip[data-nom]');
+      if (chip) openFiche(chip.dataset.nom);
+    });
+  });
+  box.querySelectorAll('.cerveau-add-entity input').forEach(input => {
+    input.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' || !input.value.trim()) return;
+      chain.phases[parseInt(input.dataset.phase, 10)].entreprises.push(input.value.trim());
+      persistCerveauData();
+      renderCerveau();
+    });
+  });
+}
+
+/* ---------- Fiche entité : journal daté (texte + images + croquis) ---------- */
+let ficheEntite = null;
+let fichePendingImages = [];
+let sketchDrawing = false;
+
+function openFiche(nom){
+  ficheEntite = nom;
+  fichePendingImages = [];
+  document.getElementById('ficheTitle').textContent = nom;
+  document.getElementById('ficheText').value = '';
+  document.getElementById('fichePendingImages').innerHTML = '';
+  document.getElementById('ficheSketchWrap').style.display = 'none';
+  clearSketchCanvas();
+  renderFicheEntries();
+  document.getElementById('ficheModal').style.display = 'flex';
+}
+function closeFiche(){
+  document.getElementById('ficheModal').style.display = 'none';
+  ficheEntite = null;
+}
+
+function renderFicheEntries(){
+  const box = document.getElementById('ficheEntries');
+  const entries = (cerveauData.notes[ficheEntite] || []).slice().reverse();
+  box.innerHTML = entries.length ? entries.map(e => `
+    <div class="fiche-entry">
+      <div class="date">${e.date}</div>
+      ${e.texte ? `<div class="txt">${e.texte.replace(/</g, '&lt;')}</div>` : ''}
+      <div class="media">${(e.images || []).concat(e.sketches || []).map(src => `<img src="${src}" alt="">`).join('')}</div>
+    </div>`).join('') : '<div class="objectifs-empty">Aucune entrée pour le moment.</div>';
+}
+
+function renderPendingImages(){
+  document.getElementById('fichePendingImages').innerHTML = fichePendingImages.map(src => `<img src="${src}" alt="">`).join('');
+}
+
+function readFileAsDataURL(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function clearSketchCanvas(){
+  const canvas = document.getElementById('ficheSketchCanvas');
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+function initFicheModal(){
+  const imageInput = document.getElementById('ficheImageInput');
+  imageInput.addEventListener('change', async () => {
+    for (const file of imageInput.files){
+      fichePendingImages.push(await readFileAsDataURL(file));
+    }
+    imageInput.value = '';
+    renderPendingImages();
+  });
+
+  document.getElementById('ficheSketchToggle').addEventListener('click', () => {
+    const wrap = document.getElementById('ficheSketchWrap');
+    const show = wrap.style.display === 'none';
+    wrap.style.display = show ? 'block' : 'none';
+    if (show) clearSketchCanvas();
+  });
+  document.getElementById('ficheSketchClear').addEventListener('click', clearSketchCanvas);
+
+  const canvas = document.getElementById('ficheSketchCanvas');
+  const ctx = canvas.getContext('2d');
+  function pos(e){
+    const rect = canvas.getBoundingClientRect();
+    const cx = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    const cy = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+    return { x: cx * (canvas.width / rect.width), y: cy * (canvas.height / rect.height) };
+  }
+  function start(e){ sketchDrawing = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); }
+  function move(e){
+    if (!sketchDrawing) return;
+    e.preventDefault();
+    const p = pos(e);
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = document.getElementById('ficheSketchColor').value;
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+  }
+  function end(){ sketchDrawing = false; }
+  canvas.addEventListener('mousedown', start);
+  canvas.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', end);
+  canvas.addEventListener('touchstart', start);
+  canvas.addEventListener('touchmove', move);
+  canvas.addEventListener('touchend', end);
+
+  document.getElementById('ficheSaveBtn').addEventListener('click', () => {
+    const texte = document.getElementById('ficheText').value.trim();
+    const wrap = document.getElementById('ficheSketchWrap');
+    const sketches = wrap.style.display === 'block' ? [document.getElementById('ficheSketchCanvas').toDataURL('image/png')] : [];
+    if (!texte && fichePendingImages.length === 0 && sketches.length === 0) return;
+
+    if (!cerveauData.notes[ficheEntite]) cerveauData.notes[ficheEntite] = [];
+    cerveauData.notes[ficheEntite].push({ date: new Date().toISOString().slice(0, 10), texte, images: fichePendingImages.slice(), sketches });
+    persistCerveauData();
+
+    document.getElementById('ficheText').value = '';
+    fichePendingImages = [];
+    renderPendingImages();
+    wrap.style.display = 'none';
+    renderFicheEntries();
+    renderCerveau();
+  });
+}
+
+/* ============================================================
    INIT — on s'assure d'abord que Chart.js est bien chargé
    (avec plusieurs sources de secours si la première est bloquée
    par un bloqueur de publicité ou une restriction réseau),
@@ -1093,6 +1377,7 @@ document.querySelectorAll('.page-nav-btn').forEach(btn => {
 });
 initSearch();
 initSectorGrid();
+initClassement();
 
 document.getElementById('saveObjectifBtn').addEventListener('click', () => { if (activeCompany) saveObjectif(activeCompany); });
 document.getElementById('exportObjectifsBtn').addEventListener('click', exportObjectifs);
@@ -1109,6 +1394,10 @@ document.getElementById('objectifsList').addEventListener('click', e => {
   if (loadBtn) applyObjectif(activeCompany, parseInt(loadBtn.dataset.idx, 10));
 });
 loadObjectifsBaseline();
+initWatchlist();
+loadWatchlistBaseline();
+initFicheModal();
+loadCerveauData();
 
 (async function init(){
   const ok = await ensureChartJs();

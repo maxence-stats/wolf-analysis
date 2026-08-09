@@ -6,6 +6,23 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 ## [Non publié]
 
 ### Ajouté
+- **Médiane P/FCF sur 20 ans** affichée sur l'onglet Valorisation (colonne BH, à titre
+  informatif, n'entre dans aucune formule).
+- **Cours de bourse : widget TradingView** en remplacement du fetch Yahoo Finance/Stooq +
+  Chart.js maison (code entièrement retiré). Symbole modifiable directement par
+  l'utilisateur dans le widget si le mapping automatique se trompe.
+- **Onglet Classement** : meilleur rendement du dividende + meilleure opportunité de
+  valorisation (écart de valeur), deux listes triées, clic → fiche entreprise.
+- **Onglet Watchlist** : 4 listes (Liste d'achat / Idée du moment / À surveiller / À
+  analyser), glisser-déposer des logos, persistance locale + socle `data/watchlist.json`.
+- **Onglet Cerveau numérique** : 11 secteurs GICS navigables → chaînes de valeur définies
+  par l'utilisateur (nom + phases libres) → entreprises assignées par phase → fiche par
+  entité avec entrées datées (texte + images + croquis à main levée). Stockage IndexedDB
+  (images en base64, trop volumineux pour `localStorage`) + socle `data/cerveau.json`.
+
+## [0.4.0] — 2026-08-09
+
+### Ajouté
 - Bouton **« ↻ Charger »** sur chaque entrée de l'historique des objectifs (onglet
   Valorisation) : réapplique instantanément les valeurs CAGR/multiple des 3 scénarios
   aux sliders, sans ressaisie manuelle.

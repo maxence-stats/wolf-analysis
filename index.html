@@ -49,6 +49,9 @@
       <button class="page-nav-btn active" data-page="pageAnalyse">Analyse</button>
       <button class="page-nav-btn" data-page="pageSecteur">Secteur</button>
       <button class="page-nav-btn" data-page="pageValorisation">Valorisation</button>
+      <button class="page-nav-btn" data-page="pageClassement">Classement</button>
+      <button class="page-nav-btn" data-page="pageWatchlist">Watchlist</button>
+      <button class="page-nav-btn" data-page="pageCerveau">Cerveau</button>
     </div>
 
     <div id="pageAnalyse" class="page active">
@@ -98,23 +101,9 @@
     <div class="chart-grid">
       <div class="chart-card wide" id="stockCard">
         <div class="chart-card-head">
-          <div><h3>Cours de bourse (hebdomadaire)</h3><p>Clôture hebdomadaire et moyenne mobile 200 semaines</p></div>
-          <div class="chart-card-actions">
-            <button class="zoom-btn" onclick="openZoom('stock',&quot;Cours de bourse&quot;)" aria-label="Agrandir">⤢</button>
-          </div>
+          <div><h3>Cours de bourse</h3><p>Widget TradingView — symbole modifiable directement dans le graphique</p></div>
         </div>
-        <div class="range-buttons" id="rangeButtons">
-          <button data-range="1">1a</button>
-          <button data-range="2">2a</button>
-          <button data-range="3">3a</button>
-          <button data-range="5">5a</button>
-          <button data-range="10">10a</button>
-          <button data-range="20">20a</button>
-          <button data-range="max" class="active">Max</button>
-        </div>
-        <div class="chart-holder" style="height:320px;"><canvas id="chartStock"></canvas></div>
-        <div class="stock-status" id="stockStatus"></div>
-        <div class="stock-source" id="stockSourceNote">Source : Yahoo Finance (repli automatique sur Stooq si indisponible)</div>
+        <div id="tvChartHolder" style="height:480px;"></div>
       </div>
 
       <div class="chart-card">
@@ -217,6 +206,7 @@
         <div class="ratio-card"><div class="k">FCF actuel</div><div class="v" id="voFcfActuel">—</div><div class="sub">dernier exercice, par action</div></div>
         <div class="ratio-card"><div class="k">CAGR FCF (historique)</div><div class="v" id="voCagrHist">—</div><div class="sub">croissance sur 10 ans</div></div>
         <div class="ratio-card"><div class="k">Médiane P/FCF (historique)</div><div class="v" id="voMedianeHist">—</div><div class="sub">multiple médian sur 10 ans</div></div>
+        <div class="ratio-card"><div class="k">Médiane P/FCF (20 ans)</div><div class="v" id="voMediane20">—</div><div class="sub">multiple médian sur 20 ans</div></div>
       </div>
 
       <div class="scenario-grid" id="scenarioGrid"></div>
@@ -231,6 +221,39 @@
         <p class="objectifs-note">Sauvegardé dans ce navigateur. Utilise « Exporter » pour transmettre le fichier
           et le rendre disponible sur tous tes appareils.</p>
       </div>
+    </div>
+
+    <div id="pageClassement" class="page">
+      <div class="section-label">Classement</div>
+      <div class="classement-grid">
+        <div class="classement-card">
+          <h3>Meilleur rendement du dividende</h3>
+          <div class="classement-list" id="classementDiv"></div>
+        </div>
+        <div class="classement-card">
+          <h3>Meilleure opportunité de valorisation</h3>
+          <div class="classement-list" id="classementValo"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="pageWatchlist" class="page">
+      <div class="section-label">Watchlist</div>
+      <p class="valo-intro">Glisse le logo d'une entreprise dans une liste. La déplacer d'une liste à l'autre la retire automatiquement de l'ancienne. Clic sur un logo → fiche entreprise.</p>
+
+      <div class="watchlist-pool" id="watchlistPool"></div>
+
+      <div class="watchlist-grid">
+        <div class="watchlist-column"><h3>Liste d'achat</h3><div class="watchlist-dropzone" data-list="achat"></div></div>
+        <div class="watchlist-column"><h3>Idée du moment</h3><div class="watchlist-dropzone" data-list="idee"></div></div>
+        <div class="watchlist-column"><h3>À surveiller</h3><div class="watchlist-dropzone" data-list="surveiller"></div></div>
+        <div class="watchlist-column"><h3>À analyser</h3><div class="watchlist-dropzone" data-list="analyser"></div></div>
+      </div>
+    </div>
+
+    <div id="pageCerveau" class="page">
+      <div class="section-label">Cerveau numérique</div>
+      <div id="cerveauContent"></div>
     </div>
 
     <footer>
@@ -250,6 +273,32 @@
     <div class="zoom-footer">
       Données fournies par Wolf Analysis
       <img src="https://i.postimg.cc/43WmYDB1/20260714-LOGO-WINTER-PNG.png" alt="Wolf Analysis">
+    </div>
+  </div>
+</div>
+
+<div id="ficheModal" onclick="if(event.target===this) closeFiche()">
+  <div class="zoom-panel fiche-panel">
+    <div class="zoom-panel-head">
+      <h3 id="ficheTitle">—</h3>
+      <button class="zoom-close" onclick="closeFiche()" aria-label="Fermer">✕</button>
+    </div>
+    <div class="fiche-entries" id="ficheEntries"></div>
+    <div class="fiche-editor">
+      <textarea id="ficheText" placeholder="Notes, observations, thèse d'investissement…" rows="3"></textarea>
+      <div class="fiche-editor-tools">
+        <label class="fiche-file-btn">+ Image<input type="file" id="ficheImageInput" accept="image/*" multiple hidden></label>
+        <button class="zoom-btn" id="ficheSketchToggle" title="Croquis">✎</button>
+        <button class="refresh-btn" id="ficheSaveBtn">Enregistrer l'entrée</button>
+      </div>
+      <div class="fiche-pending-images" id="fichePendingImages"></div>
+      <div class="fiche-sketch-wrap" id="ficheSketchWrap" style="display:none;">
+        <canvas id="ficheSketchCanvas" width="600" height="240"></canvas>
+        <div class="fiche-sketch-tools">
+          <input type="color" id="ficheSketchColor" value="#D9A441">
+          <button class="zoom-btn" id="ficheSketchClear">Effacer</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>

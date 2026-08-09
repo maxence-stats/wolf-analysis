@@ -8,16 +8,20 @@ connecte en direct à un Google Sheet publié comme source de données.
 
 ```
 wolf-analysis/
-├── index.html      # Structure de la page, contenu des 3 onglets (Analyse / Secteur / Valorisation)
+├── index.html      # Structure de la page, contenu des 6 onglets (Analyse / Secteur /
+│                   # Valorisation / Classement / Watchlist / Cerveau)
 ├── css/
 │   └── style.css    # Design system complet (tokens, layout, composants)
 ├── js/
 │   └── app.js        # Chargement des données, rendu, graphiques, interactions
 └── data/
-    └── objectifs.json  # Socle des objectifs de valorisation de l'utilisateur (voir "Onglet
-                         # Valorisation" plus bas) ; {} par défaut, mis à jour par Claude
-                         # quand l'utilisateur exporte et transmet le fichier généré par le site
+    ├── objectifs.json  # Socle des objectifs de valorisation (onglet Valorisation)
+    ├── watchlist.json  # Socle des 4 listes de suivi (onglet Watchlist)
+    └── cerveau.json    # Socle des chaînes de valeur + fiches entités (onglet Cerveau)
 ```
+Les 3 fichiers `data/*.json` valent `{}` par défaut et sont mis à jour par Claude (commit
++ push) quand l'utilisateur exporte depuis le site et transmet le fichier en conversation —
+voir "Conventions de code" pour le pattern général de persistance sans backend.
 
 Le HTML référence les fichiers externes via :
 ```html
@@ -28,6 +32,8 @@ Le HTML référence les fichiers externes via :
 Dépendances CDN (chargées directement dans `index.html` / dynamiquement par `app.js`, pas de npm) :
 - **Chart.js 4.4.4** — chargé dynamiquement avec repli sur 3 CDN (cdnjs → jsdelivr → unpkg), voir section "Pièges techniques"
 - **PapaParse 5.4.1** (cdnjs) — parsing CSV
+- **Widget TradingView** (`embed-widget-advanced-chart.js`, injecté dynamiquement) —
+  cours de bourse sur l'onglet Analyse, voir "Cours de bourse"
 - **Google Fonts** : Space Grotesk (titres/marque), Plus Jakarta Sans (corps, chiffres,
   labels — voir "Design system", remplace Inter + JetBrains Mono depuis la 2e passe DA)
 
@@ -75,6 +81,7 @@ dans un navigateur, ou se déploie sur n'importe quel hébergement statique.
 | actions (nb en circulation) | BC | 54 |
 | cagrActions | BD | 55 |
 | detteOCF (dette nette / OCF) | BG | 58 |
+| medianePFCF20 (médiane P/FCF, 20 ans) | BH | 59 |
 
 **IMPORTANT** : `ecartValeur` (colonne K) = `(Prix Juste / Prix Cible) - 1`, PAS l'écart
 entre prix actuel et prix juste. C'est un écart méthodologique (marge de sécurité entre
@@ -112,27 +119,14 @@ différents du même fichier — les deux sont codés en dur en haut de `app.js`
    résoudre/rejeter, y compris avec `AbortController`). D'où la double méthode ci-dessus.
    Une fois le site vraiment hébergé (http/https), `fetch()` seul suffira, mais garder le
    repli gviz ne coûte rien et sécurise les tests locaux.
-3. **Cours de bourse (Yahoo Finance en priorité, Stooq en repli)** : mapping automatique
-   du ticker vers les deux formats (`EPA:MC` → `MC.PA` pour Yahoo, → `mc.fr` pour Stooq)
-   pour les bourses courantes (Paris, Nasdaq/NYSE, Londres, Francfort, Amsterdam, Madrid,
-   Milan, Suisse, Tokyo). Couverture partielle, pas garantie pour tous les tickers sur
-   l'une ou l'autre source.
-4. **Yahoo Finance sous-échantillonne silencieusement `range=max`.** En demandant
-   `range=max&interval=1wk` (ou même `interval=1d`) sur un très long historique, l'API
-   renvoie sans prévenir des points **mensuels** au lieu de l'intervalle demandé — aucune
-   erreur, juste des `timestamp[]` espacés d'~30 jours au lieu de 7. Symptôme observé :
-   la « moyenne mobile 200 semaines » était en réalité une moyenne sur ~200 mois (~17 ans),
-   beaucoup trop lissée pour jamais croiser le cours (bug remonté par l'utilisateur : « le
-   prix ne passe jamais sous la moyenne mobile »). **Fix (`fetchYahooWeekly` dans
-   `app.js`)** : ne jamais utiliser `range=`, toujours des timestamps explicites
-   `period1`/`period2` (bornes Unix, ex. `1990-01-01` → maintenant) avec `interval=1d`,
-   qui renvoie bien du quotidien réel (vérifié : 6834 points sur 26 ans pour TTE.PA,
-   `meta.dataGranularity:"1d"`). Le JS rééchantillonne ensuite lui-même ces clôtures
-   quotidiennes en hebdomadaire (`resampleWeekly()`, dernier jour coté de chaque semaine
-   ISO) plutôt que de faire confiance à l'intervalle demandé à Yahoo. **Ne pas revenir à
-   `range=max&interval=1wk`** — ni à un `interval=1wk` explicite d'ailleurs, non vérifié
-   fiable non plus sur un historique long.
-5. **Cache navigateur agressif sur `<script src="js/app.js">` en `file://`.** Pendant le
+3. *(historique, code retiré)* **Cours de bourse via fetch Yahoo Finance/Stooq +
+   Chart.js maison** : abandonné au profit du widget TradingView (voir "Cours de bourse"
+   plus bas). Leçon conservée au cas où un fetch de séries boursières serait réintroduit
+   un jour : **Yahoo Finance sous-échantillonne silencieusement `range=max`** — même avec
+   `interval=1d`, l'API renvoie sans prévenir des points mensuels sur un très long
+   historique. Le fix qui fonctionnait : timestamps explicites `period1`/`period2` (jamais
+   `range=`) + rééchantillonnage manuel côté client.
+4. **Cache navigateur agressif sur `<script src="js/app.js">` en `file://`.** Pendant le
    développement local, Chrome peut continuer à exécuter une version en cache de `app.js`
    après une modification, même après un rechargement complet de la page (F5, re-navigation,
    nouvel onglet) — seul un `fetch()` direct de l'URL renvoie le contenu à jour. Symptôme :
@@ -140,7 +134,7 @@ différents du même fichier — les deux sont codés en dur en haut de `app.js`
    disque est correct. Contournement en session de test : ajouter temporairement un
    paramètre de cache-bust à l'URL du script (`js/app.js?_test=1`), vérifier, puis le
    retirer avant de committer. Ne pas laisser ce paramètre en prod.
-6. **Cascade CSS et ordre des règles.** Une classe utilitaire réutilisant un sélecteur
+5. **Cascade CSS et ordre des règles.** Une classe utilitaire réutilisant un sélecteur
    générique déjà stylé plus loin dans le fichier (ex. `.objectifs-export` combinée à
    `.zoom-btn`, qui fixe `width:26px` bien après dans `style.css`) peut se faire écraser
    silencieusement : à spécificité égale, c'est la règle déclarée en dernier dans le
@@ -148,7 +142,7 @@ différents du même fichier — les deux sont codés en dur en haut de `app.js`
    le bouton « Exporter » de l'onglet Valorisation (resté coincé à 26px de large). Fix :
    composer un sélecteur plus spécifique (`.objectifs-actions .objectifs-export`) plutôt
    que de compter sur l'ordre d'apparition dans le fichier.
-7. **Accentuation incohérente dans les colonnes texte du Sheet.** La colonne `secteur`
+6. **Accentuation incohérente dans les colonnes texte du Sheet.** La colonne `secteur`
    est saisie à la main, donc pas garantie cohérente : "Materiaux" (Air Liquide) vs
    "Matériaux" (Verallia) selon la ligne, alors que c'est censé être le même secteur.
    `normalizeSector()` comparait des mots-clés sans accent contre du texte parfois
@@ -257,9 +251,8 @@ en intensité si retour utilisateur, mais **ne pas revenir à des opacités ~0.0
 - Jauge de valorisation + verdict (Survalorisée / Équitable / Zone d'achat)
 - 8 ratios clés (prix juste, prix cible, écart, rendement dividende, rendement estimé
   5 ans, FCFPEG, médiane P/FCF, payout ratio)
-- Graphique cours de bourse hebdomadaire + moyenne mobile 200 semaines + sélecteur de
-  plage (1a/2a/3a/5a/10a/20a/Max) — **Yahoo Finance en source principale, repli
-  automatique sur Stooq si indisponible** (voir "Cours de bourse" ci-dessous)
+- Graphique cours de bourse : **widget TradingView** embarqué (voir "Cours de bourse"
+  ci-dessous), symbole modifiable directement par l'utilisateur dans le widget
 - 8 graphiques historiques : Dividende (barres) + Payout ratio (courbe), CA (courbe),
   Marge op.+ROIC (courbes), FCF/action (barres), P/FCF (barres) + Médiane P/FCF (courbe),
   Actions en circulation (courbe), Dette/OCF (barres), Trésorerie+investissements (barres)
@@ -283,10 +276,12 @@ Simulations scénarisées pour estimer un prix cible à 5 ans, sur le modèle
 champs déjà présents dans `companies` (aucune nouvelle colonne `COL` nécessaire).
 
 - **Données sources** (toutes déjà mappées) : `fcfParAction` (FCF actuel, colonne AM),
-  `cagrFcf10` (colonne AO), `medianePFCF` (colonne AQ), `prixActuel` par année (colonne H,
-  déjà présent pour chaque ligne de `hist` — c'est la même donnée que le prix actuel
-  affiché sur l'onglet Analyse, réutilisée telle quelle comme historique annuel de prix,
-  **pas de fetch Yahoo Finance/Stooq sur cet onglet**).
+  `cagrFcf10` (colonne AO), `medianePFCF` (10 ans, colonne AQ), `medianePFCF20` (20 ans,
+  colonne BH — affichée en 4e tuile du résumé à titre informatif, n'entre dans aucune
+  formule), `prixActuel` par année (colonne H, déjà présent pour chaque ligne de `hist`
+  — c'est la même donnée que le prix actuel affiché sur l'onglet Analyse, réutilisée
+  telle quelle comme historique annuel de prix, **pas de nouvel appel réseau sur cet
+  onglet**).
 - **Formules** (`computeScenario()` dans `app.js`) :
   - `Prix Juste Sim.` = FCF actuel × Médiane P/FCF
   - `Prix Cible (-20%)` = Prix Juste Sim. × 0,8
@@ -323,24 +318,81 @@ champs déjà présents dans `companies` (aucune nouvelle colonne `COL` nécessa
   explicitement après discussion des options avec l'utilisateur, voir aussi la contrainte
   "pas de backend" du projet).
 
+### Onglet Classement (fait, fonctionnel)
+Deux listes triées côte à côte, aucune donnée nouvelle (tout déjà mappé) :
+- Meilleur rendement du dividende : `rendementDiv` (colonne V), tri décroissant.
+- Meilleure opportunité de valorisation : `ecartValeur` (colonne K), tri **croissant**
+  (négatif = sous-valorisé = plus intéressant, positif = survalorisé — sémantique donnée
+  par l'utilisateur pour ce classement précis ; distincte de la lecture "marge de
+  sécurité" documentée plus haut pour la carte "Écart de valeur" de l'onglet Analyse,
+  qui elle reste inchangée. Les deux widgets affichent la même donnée brute mais avec
+  une intention de lecture différente — ne pas essayer d'unifier sans en reparler avec
+  l'utilisateur).
+`renderClassement()` reconstruit les deux listes à chaque chargement de données. Clic sur
+une ligne → `goToAnalyse(nom)`.
+
+### Onglet Watchlist (fait, fonctionnel)
+4 colonnes (Liste d'achat / Idée du moment / À surveiller / À analyser) + un "pool" en
+haut avec toutes les entreprises non classées. Glisser-déposer HTML5 natif
+(`draggable="true"`, `dragstart`/`dragover`/`drop`) : une entreprise appartient à 0 ou 1
+liste à la fois — la déplacer d'une liste à l'autre la retire automatiquement de
+l'ancienne (`moveToWatchlist(nom, listKey)`, `listKey=null` = retour au pool). Clic sur
+un logo (hors drag) → `goToAnalyse(nom)`. Persistance identique au pattern de l'onglet
+Valorisation : `localStorage` (`wolfAnalysisWatchlist`) + `data/watchlist.json` en socle
++ pas d'export dédié pour l'instant (données petites, JSON simple — à ajouter si demandé).
+
+### Onglet Cerveau numérique (fait, fonctionnel)
+Base de connaissances visuelle : 11 secteurs GICS (+ "Autre") navigables → chaînes de
+valeur créées librement par l'utilisateur (nom + phases personnalisées, ex. Amont/
+Transformation/Distribution/Services) → entreprises assignées par phase (texte libre,
+pas forcément des entreprises suivies dans le Sheet) → fiche par entité avec entrées
+datées (texte + images uploadées/collées + croquis à main levée).
+
+- **11 secteurs pré-structurés** au sens navigation seulement : les containers existent
+  dès le départ (réutilise `GICS_SECTORS`), mais les chaînes de valeur et leurs phases à
+  l'intérieur sont **vides et créées par l'utilisateur** — pas de taxonomie GICS
+  fabriquée automatiquement (décision explicite, l'utilisateur a le domaine d'expertise,
+  pas Claude).
+- **Stockage IndexedDB** (`wolfAnalysisCerveau`, un seul object store `state`, tout l'état
+  imbriqué dans un seul enregistrement `'state'`) — **pas `localStorage`**, volontairement,
+  car les images en base64 dépasseraient vite son quota (~5-10 Mo). `persistCerveauData()`
+  réécrit l'objet entier à chaque changement (`structuredClone` interne d'IndexedDB, pas
+  de coût de sérialisation JSON comme localStorage). `data/cerveau.json` sert de socle
+  optionnel (même pattern que les autres onglets), fusionné au chargement puis complété
+  par IndexedDB. Bouton « Exporter » sur la vue "Secteurs" (niveau racine).
+- **Modèle de données** : `cerveauData = { chains: { [secteurKey]: [{id, nom, phases:
+  [{nom, entreprises:[nomLibre,...]}]}] }, notes: { [nomEntite]: [{date, texte, images:
+  [dataURL,...], sketches:[dataURL,...]}] } }`. Les clés de `notes` sont des noms libres
+  (pas forcément dans `companies`) — `cerveauEntityChip()` affiche le vrai logo si
+  l'entité correspond à une entreprise suivie, sinon une initiale.
+- **Fiche entité** (`openFiche(nom)` / modale `#ficheModal`) : journal append-only (une
+  nouvelle entrée par sauvegarde, jamais d'édition rétroactive — même logique que
+  l'historique des objectifs). Éditeur : `<textarea>` + upload d'images (`<input
+  type=file multiple>`, converties en data URL via `FileReader`) + croquis à main levée
+  (`<canvas>` avec dessin souris/tactile, couleur au choix, bouton Effacer) sauvegardé en
+  PNG data URL à l'enregistrement de l'entrée.
+- **Navigation interne** : état `cerveauView` (`{level:'secteurs'}` /
+  `{level:'chaines', secteur}` / `{level:'phases', secteur, chainId}`), un seul
+  `renderCerveau()` qui redessine `#cerveauContent` selon le niveau, fil d'Ariane cliquable.
+
 ### Palette graphiques (fait)
 `THEME` expose `blue` (`css.getPropertyValue('--blue').trim()`) en plus de `gold`. Les
 9 graphiques Chart.js (dont le cours de bourse) utilisent uniquement or/bleu pour leurs
 séries de données. Vert/rouge restent réservés au sémantique positif/négatif : badges
 CAGR (classes CSS `.pos`/`.neg`) et jauge de valorisation (marqueurs CIBLE/JUSTE/ACTUEL).
 
-### Cours de bourse — Yahoo Finance + repli Stooq (fait)
-`loadStockChart(ticker)` tente `fetchYahooWeekly()` en premier — qui malgré son nom
-récupère du **quotidien** via `period1`/`period2` explicites (pas `range=max`, voir
-"Pièges techniques" point 4) puis rééchantillonne en hebdomadaire côté client
-(`resampleWeekly()`). Mapping `mapTickerToYahoo` : `.PA` Paris, pas de suffixe
-Nasdaq/NYSE, `.L` Londres, `.DE` Francfort, `.AS` Amsterdam, `.MC` Madrid, `.MI` Milan,
-`.SW` Suisse, `.T` Tokyo. En cas d'échec (Yahoo n'a pas d'API officielle, CORS non
-garanti), repli automatique sur `fetchStooqWeekly()` (mapping `mapTickerToStooq`
-existant, inchangé). La source active et le symbole utilisé sont affichés sous le
-graphique (`#stockSourceNote`). Donne un historique nettement plus profond que Stooq
-seul (ex. 1388 points hebdo réels de 2000 à 2026 pour TotalEnergies, avec de vrais
-croisements prix/moyenne mobile 200 semaines tout au long de l'historique).
+### Cours de bourse — widget TradingView (fait)
+Remplace l'ancien fetch Yahoo Finance/Stooq + Chart.js maison (code entièrement retiré,
+voir "Pièges techniques" point 3). `loadTradingViewChart(ticker)` injecte dynamiquement
+le script officiel `embed-widget-advanced-chart.js` dans `#tvChartHolder`, avec
+`mapTickerToTradingView()` pour convertir le format `BOURSE:TICKER` du Sheet vers les
+codes bourse TradingView : `EPA`/`PAR`/`AMS` → `EURONEXT`, `NASDAQ`/`NYSE` inchangés,
+`NYSEARCA` → `AMEX`, `LON`/`LSE` → `LSE`, `ETR`/`XETR` → `XETR`, `FRA` → `FWB`,
+`BME`/`MIL` inchangés, `SWX` → `SIX`, `TSE` → `TSE`. `allow_symbol_change:true` laisse
+l'utilisateur corriger lui-même le symbole si le mapping se trompe — pas de fallback
+applicatif nécessaire. Aucune clé API, aucun CORS à gérer (le widget est un iframe
+TradingView). Le conteneur est vidé et reconstruit (`holder.innerHTML = ''`) à chaque
+changement d'entreprise pour repartir d'un widget propre.
 
 ### Bugs corrigés
 - **Onglet Secteur inerte** : les boutons `.page-nav-btn` (Analyse/Secteur) n'avaient
@@ -351,17 +403,17 @@ croisements prix/moyenne mobile 200 semaines tout au long de l'historique).
   guillemets doubles, cassant le parsing dès qu'un nom d'entreprise contenait un
   caractère spécial. Remplacé par un attribut `data-nom` + délégation d'événements
   (`initSectorGrid()`), plus robuste (fonctionne aussi avec des noms du type « L'Oréal »).
-- **Moyenne mobile 200 semaines jamais franchie par le cours** : en réalité les données
-  Yahoo Finance récupérées étaient mensuelles et non hebdomadaires (voir "Pièges
-  techniques" point 4) — la "SMA 200" était donc lissée sur ~17 ans au lieu de ~4 ans.
-  Corrigé en passant par `period1`/`period2` + rééchantillonnage hebdomadaire manuel.
+- **(historique) Moyenne mobile 200 semaines jamais franchie par le cours** : les données
+  Yahoo Finance récupérées étaient mensuelles et non hebdomadaires — la "SMA 200" était
+  donc lissée sur ~17 ans au lieu de ~4 ans. Point sans objet depuis le passage au widget
+  TradingView (code retiré), conservé pour mémoire (voir "Pièges techniques" point 3).
 - **Bouton « Exporter » de l'onglet Valorisation trop étroit** : `.zoom-btn` (règle
   déclarée plus loin dans `style.css`) écrasait le `width:auto` de `.objectifs-export` à
-  spécificité CSS égale (voir "Pièges techniques" point 6). Corrigé en spécifiant
+  spécificité CSS égale (voir "Pièges techniques" point 5). Corrigé en spécifiant
   `.objectifs-actions .objectifs-export`.
 - **Verallia mal classée dans l'onglet Secteur** (finissait dans "Autre / non classé" au
   lieu de "Matériaux") : accentuation incohérente dans la colonne `secteur` du Sheet
-  ("Materiaux" vs "Matériaux" selon la ligne, voir "Pièges techniques" point 7). Corrigé
+  ("Materiaux" vs "Matériaux" selon la ligne, voir "Pièges techniques" point 6). Corrigé
   avec `stripAccents()` dans `normalizeSector()`.
 
 ### Demandé, non commencé — nécessite une décision d'architecture
@@ -400,7 +452,9 @@ Ces 3 fonctionnalités ne sont **pas réalisables en site statique pur** sans ba
   `chartConfigs`/`openZoom`** : les graphiques de scénario n'ont pas de bouton zoom
   (non demandé, cohérent avec la capture de référence fournie par l'utilisateur).
 - Pattern général pour toute donnée que l'utilisateur voudrait "garder en mémoire durablement,
-  disponible sur tous ses appareils" sans backend : `localStorage` pour l'usage immédiat sur
+  disponible sur tous ses appareils" sans backend : `localStorage` (données texte/JSON légères
+  — objectifs, watchlist) ou **IndexedDB** (données lourdes avec images en base64 — cerveau
+  numérique, `localStorage` saturerait vite son quota ~5-10 Mo) pour l'usage immédiat sur
   l'appareil courant + un bouton d'export JSON + un fichier socle dans `data/` que Claude
   met à jour (commit + push) quand l'utilisateur transmet l'export en conversation. Ne pas
   proposer d'écriture directe vers Google Sheets ou GitHub depuis le navigateur (identifiants
