@@ -322,7 +322,7 @@ en intensité si retour utilisateur, mais **ne pas revenir à des opacités ~0.0
   "Données fournies par Wolf Analysis" + logo en pied de modale (branding)
 - Recherche d'entreprise avec autocomplétion
 
-### Onglet Portfolio (fait, fonctionnel)
+### Onglet Wolf Portfolio (fait, fonctionnel)
 Lit un **deuxième onglet du même Google Sheet publié** : "Wolf portefeuille"
 (`PORTFOLIO_GID = "58524400"`, même `PUBLISHED_ID`/`SHEET_ID` que les données
 principales, seul le gid change). Chargement séquentiel **après** les données
@@ -341,11 +341,20 @@ avec le chargement principal sinon).
   techniques" point 10) : `handlePortfolioRows()` ignore les libellés d'en-tête connus
   ("ACTIF", "MOIS") et prend la première ligne où `capitalInvesti` parse comme un
   nombre pour les valeurs uniques du résumé.
-- **Composition** : donut Chart.js (palette dédiée `PORTFOLIO_COLORS`, tons or/bleu
-  uniquement — jamais de violet, réservé au décoratif, voir "Design system") + liste
-  des positions triée par poids décroissant, avec logo (`portfolioEntityLogo()`,
-  correspondance par nom avec `companies`, repli sur une initiale sinon, même pattern
-  que `cerveauEntityChip()`), pourcentage du portefeuille et performance individuelle.
+- **Composition** : donut Chart.js agrandi (`height:560px` desktop, palette dédiée
+  `PORTFOLIO_COLORS`, tons or/bleu uniquement — jamais de violet, réservé au décoratif,
+  voir "Design system") + liste des positions triée par poids décroissant, avec logo
+  (`portfolioEntityLogo()`, correspondance par nom avec `companies`, repli sur une
+  initiale sinon, même pattern que `cerveauEntityChip()`), pourcentage du portefeuille
+  et performance individuelle. **Logo Wolf Analysis au centre + logo de chaque position
+  directement sur son segment** : deux plugins Chart.js custom
+  (`portfolioCenterImagePlugin()`, `portfolioSegmentLogosPlugin()`, hooks `afterDraw`),
+  images préchargées et mises en cache (`loadImageCached()`/`portfolioImageCache`) —
+  **surtout pas de `img.crossOrigin='anonymous'`** ici : ces logos ne sont jamais relus
+  depuis le canvas (pas de `toDataURL`/`getImageData`), et l'exiger ferait échouer le
+  chargement de tout logo dont l'hébergeur ne renvoie pas d'en-tête CORS (constaté avec
+  le logo Air Liquide). Segment trop fin (< 2% du portefeuille) : pas de logo dessiné,
+  pour éviter un rendu illisible.
 - **Graphique Wolf Portfolio vs S&P 500** : courbes de rendement cumulé (`AU` vs `AW`)
   par mois, en filtrant les mois futurs pré-remplis dans le Sheet sans données
   (`rendementTotal`/`spxPerfTotale` tous les deux `null`).
@@ -519,15 +528,18 @@ sur une plage plus courte on ne voit qu'un extrait du même canal.
 **Piège confirmé — ni Yahoo ni Stooq n'ont de CORS.** Aucun des deux endpoints
 n'envoie `Access-Control-Allow-Origin` (vérifié directement), donc un `fetch()` direct
 depuis un navigateur est **toujours** bloqué, quel que soit l'hébergement — pas un
-problème de `file://`. Fix en place : relais via `corsProxy()` (allorigins.win) avec
-`fetchWithRetry()` (2 tentatives, 15s chacune). **Ce relais reste lui-même instable en
-pratique** — confirmé par tests répétés en conditions réelles (parfois <1s, parfois
-15-40s ou échec pur, y compris pour des requêtes identiques rapprochées à quelques
-secondes d'intervalle). Ne pas supposer que ça marche parce que ça a marché une fois.
-Piste de fix retenue mais pas encore implémentée : **Twelve Data**
-(`api.twelvedata.com`), qui envoie `Access-Control-Allow-Origin: *` en direct (vérifié,
-y compris pour du Euronext Paris), donc plus besoin de proxy — nécessite une clé API
-gratuite (inscription ~10s, sans CB) à obtenir par l'utilisateur.
+problème de `file://`. Fix en place : relais via `corsProxyUrls()`, qui renvoie
+**plusieurs** proxies (allorigins.win puis corsproxy.io) essayés en séquence par
+`fetchWithRetry()` (12s chacun). **Chaque relais pris isolément reste instable** —
+confirmé par tests répétés en conditions réelles (parfois <1s, parfois 15-40s ou échec
+pur), mais rarement les deux en même temps : essayer plusieurs proxies en chaîne est
+la vraie amélioration de fiabilité, pas juste augmenter le délai sur un seul. Si un
+échec total malgré la chaîne se reproduit souvent, ajouter un 3e proxy à
+`corsProxyUrls()` est plus simple que de tout réécrire. Piste alternative si le besoin
+de fiabilité totale se confirme un jour : **Twelve Data** (`api.twelvedata.com`), qui
+envoie `Access-Control-Allow-Origin: *` en direct (vérifié, y compris pour du Euronext
+Paris), donc plus besoin de proxy du tout — nécessite une clé API gratuite (inscription
+~10s, sans CB) à obtenir par l'utilisateur.
 
 *(Historique : un widget TradingView a brièvement remplacé cette solution, abandonné
 suite à une limitation de données bloquante pour les bourses non-américaines — voir

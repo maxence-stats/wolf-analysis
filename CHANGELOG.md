@@ -6,13 +6,19 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 ## [Non publié]
 
 ### Ajouté
-- **Nouvel onglet Portfolio** : lit l'onglet « Wolf portefeuille » du même Google Sheet
-  (gid dédié, `PORTFOLIO_GID`). 5 tuiles de résumé (capital investi, valorisation,
-  cash, gains €/%), composition en donut (Chart.js, palette or/bleu) + liste des
-  positions triée par poids avec logo/pourcentage/performance, graphique de
+- **Nouvel onglet « Wolf Portfolio »** : lit l'onglet « Wolf portefeuille » du même
+  Google Sheet (gid dédié, `PORTFOLIO_GID`). 5 tuiles de résumé (capital investi,
+  valorisation, cash, gains €/%), composition en donut Chart.js **agrandi** avec le
+  logo Wolf Analysis au centre et le logo de chaque position dessiné directement sur
+  son segment (deux plugins Chart.js custom, repli sur une initiale si pas de logo),
+  + liste des positions triée par poids avec pourcentage/performance, graphique de
   performance cumulée du portefeuille vs S&P 500 par mois. Chargé après les données
   principales (séquentiel, pas en parallèle — voir "Pièges techniques" nouveau point
   sur la collision gviz).
+- **Cours de bourse : relais CORS en chaîne** (allorigins.win puis corsproxy.io) au
+  lieu d'un seul — chacun pris isolément échoue parfois (confirmé par tests répétés),
+  mais rarement les deux en même temps. Nette amélioration de la fiabilité sans
+  dépendance à une clé API.
 - **Recherche dans la Watchlist** : champ de recherche au-dessus du pool pour trouver
   directement une entreprise sans faire défiler tous les logos.
 - **Export Watchlist et Export Alertes** (JSON), sur le même modèle que
@@ -78,16 +84,15 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 - **Onglet Idées : pas de bouton visible pour ajouter une idée** (seule la touche Entrée
   fonctionnait). Ajout d'un bouton « + Ajouter » à côté de chaque champ de saisie.
 
-### Connu — pas encore résolu
-- **Cours de bourse (Yahoo Finance/Stooq) instable.** Ni Yahoo Finance ni Stooq
-  n'autorisent les requêtes directes depuis un navigateur (CORS bloqué, confirmé). Un
-  relais gratuit (allorigins.win) a été mis en place avec 2 tentatives et un délai de 15s,
-  mais reste lui-même instable en pratique (parfois 200 OK en moins d'1s, parfois 15-40s
-  ou échec pur, y compris pour des requêtes identiques rapprochées) — confirmé par tests
-  répétés en conditions réelles, pas un problème d'environnement de test. Piste retenue :
-  passer à une API dédiée avec vrai support CORS (Twelve Data, `Access-Control-Allow-
-  Origin: *` confirmé, y compris pour Euronext Paris) — nécessite une clé API gratuite
-  (inscription ~10s, sans CB) que l'utilisateur doit fournir.
+### Connu — amélioré, pas garanti à 100%
+- **Cours de bourse (Yahoo Finance/Stooq) plus fiable mais pas infaillible.** Ni Yahoo
+  Finance ni Stooq n'autorisent les requêtes directes depuis un navigateur (CORS
+  bloqué, confirmé) — un relais est obligatoire. Passage d'un seul relais (allorigins.win)
+  à une **chaîne de deux** (allorigins.win puis corsproxy.io, voir version courante de
+  "Cours de bourse") : chacun échoue parfois isolément, mais rarement les deux au même
+  moment, ce qui a nettement amélioré le taux de succès en test. Reste un relais public
+  gratuit, donc pas de garantie absolue — si le besoin de fiabilité totale se confirme,
+  la piste Twelve Data (vrai CORS natif, clé API gratuite requise) reste disponible.
 
 ### Ajouté
 - **Médiane P/FCF sur 20 ans** affichée sur l'onglet Valorisation (colonne BH, à titre

@@ -379,14 +379,99 @@ function handlePortfolioRows(rows){
 }
 
 const PORTFOLIO_COLORS = ['#D9A441','#4A9FE0','#F0C877','#7DBEEA','#B8842E','#2E6FA3','#F5DDA3','#A8D4F0','#8A6420','#1F4E73'];
+const WOLF_LOGO_URL = 'https://i.postimg.cc/43WmYDB1/20260714-LOGO-WINTER-PNG.png';
 
 function portfolioEntityLogo(nom){
   const match = Object.keys(companies).find(n => stripAccents(n.toLowerCase()) === stripAccents(nom.toLowerCase()));
   return match ? companies[match][companies[match].length - 1].lienImage : null;
 }
 
+// Cache d'images pour le donut (logo central Wolf + logo de chaque position, dessinés
+// sur le canvas via des plugins Chart.js custom — Chart.js seul ne sait pas placer une
+// image sur un anneau). Une image manquante ou pas encore chargée ne bloque rien : le
+// plugin redessine simplement sans elle, puis se redessine dès qu'elle arrive.
+const portfolioImageCache = {};
+function loadImageCached(src){
+  if (!src) return Promise.resolve(null);
+  if (portfolioImageCache[src]) return Promise.resolve(portfolioImageCache[src]);
+  return new Promise(resolve => {
+    // Pas de crossOrigin ici : ces logos ne sont jamais relus depuis le canvas
+    // (pas de toDataURL/getImageData sur ce graphique), donc pas besoin d'un CORS
+    // explicite — l'exiger ferait juste échouer le chargement des logos dont
+    // l'hébergeur ne renvoie pas d'en-tête CORS (ex. Air Liquide).
+    const img = new Image();
+    img.onload = () => { portfolioImageCache[src] = img; resolve(img); };
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+function portfolioCenterImagePlugin(){
+  return {
+    id: 'portfolioCenterImage',
+    afterDraw(chart){
+      const img = portfolioImageCache[WOLF_LOGO_URL];
+      const meta = chart.getDatasetMeta(0);
+      if (!img || !meta.data[0]) return;
+      const arc = meta.data[0];
+      const inner = arc.innerRadius;
+      const size = inner * 1.55;
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(arc.x, arc.y, inner * 0.92, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(img, arc.x - size / 2, arc.y - size / 2, size, size);
+      ctx.restore();
+    }
+  };
+}
+
+function portfolioSegmentLogosPlugin(){
+  return {
+    id: 'portfolioSegmentLogos',
+    afterDraw(chart){
+      const meta = chart.getDatasetMeta(0);
+      const dataset = chart.data.datasets[0];
+      const total = dataset.data.reduce((a, b) => a + b, 0);
+      const ctx = chart.ctx;
+      meta.data.forEach((arc, i) => {
+        const pct = total ? dataset.data[i] / total : 0;
+        if (pct < 0.02) return; // segment trop fin pour un logo lisible
+        const angle = (arc.startAngle + arc.endAngle) / 2;
+        const r = (arc.innerRadius + arc.outerRadius) / 2;
+        const x = arc.x + Math.cos(angle) * r;
+        const y = arc.y + Math.sin(angle) * r;
+        const size = Math.min(30, Math.max(16, arc.outerRadius - arc.innerRadius - 10));
+        const src = dataset._logos && dataset._logos[i];
+        const img = src && portfolioImageCache[src];
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(x, y, size / 2, 0, Math.PI * 2);
+        ctx.fillStyle = '#fff';
+        ctx.fill();
+        if (img){
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(x, y, size / 2 - 1, 0, Math.PI * 2);
+          ctx.clip();
+          ctx.drawImage(img, x - size / 2, y - size / 2, size, size);
+          ctx.restore();
+        } else {
+          ctx.fillStyle = '#0D1013';
+          ctx.font = 'bold ' + Math.round(size * 0.42) + 'px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(String(chart.data.labels[i]).charAt(0).toUpperCase(), x, y);
+        }
+        ctx.restore();
+      });
+    }
+  };
+}
+
 let portfolioDonutChart = null;
-function renderPortfolioDonut(){
+async function renderPortfolioDonut(){
   const holdings = portfolioData.holdings.filter(h => h.valorisation != null && h.valorisation > 0);
   const canvas = document.getElementById('chartPortfolioDonut');
   if (!canvas) return;
@@ -394,6 +479,14 @@ function renderPortfolioDonut(){
   if (!holdings.length) return;
 
   const total = holdings.reduce((s, h) => s + h.valorisation, 0);
+  const logos = holdings.map(h => portfolioEntityLogo(h.nom));
+
+  // Précharge le logo central + ceux des positions avant de créer le graphique — pas
+  // bloquant si une image échoue (loadImageCached résout quand même, avec null).
+  Promise.all([WOLF_LOGO_URL, ...logos].map(loadImageCached)).then(() => {
+    if (portfolioDonutChart) portfolioDonutChart.update();
+  });
+
   portfolioDonutChart = new Chart(canvas.getContext('2d'), {
     type:'doughnut',
     data:{
@@ -401,11 +494,12 @@ function renderPortfolioDonut(){
       datasets:[{
         data: holdings.map(h => h.valorisation),
         backgroundColor: holdings.map((_, i) => PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length]),
-        borderColor: THEME.hair, borderWidth:2
+        borderColor: THEME.hair, borderWidth:2,
+        _logos: logos
       }]
     },
     options:{
-      responsive:true, maintainAspectRatio:false, cutout:'62%',
+      responsive:true, maintainAspectRatio:false, cutout:'58%',
       plugins:{
         legend:{ display:false },
         tooltip:{ callbacks:{ label: ctx => {
@@ -413,7 +507,8 @@ function renderPortfolioDonut(){
           return ctx.label + ' : ' + ctx.parsed.toLocaleString('fr-FR',{maximumFractionDigits:0}) + ' € (' + pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%)';
         } } }
       }
-    }
+    },
+    plugins:[portfolioCenterImagePlugin(), portfolioSegmentLogosPlugin()]
   });
 }
 
@@ -948,23 +1043,26 @@ function resampleWeekly(dailyDates, dailyCloses){
 // Ni Yahoo Finance ni Stooq n'envoient d'en-tête Access-Control-Allow-Origin sur ces
 // endpoints (vérifié directement) : un fetch() direct depuis un navigateur est donc
 // TOUJOURS bloqué par CORS, quel que soit l'hébergement (pas un problème de file:// ou
-// de referrer). On relaie via un proxy CORS public gratuit (allorigins.win) qui, lui,
-// répond avec Access-Control-Allow-Origin: *. Pas de clé, pas de backend à nous.
-function corsProxy(url){
-  return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
+// de referrer). On relaie via des proxies CORS publics gratuits. Pas de clé, pas de
+// backend à nous — mais chacun pris isolément est instable (confirmé par tests répétés :
+// tantôt <1s, tantôt 15-40s ou échec pur), donc on en essaie plusieurs à la suite plutôt
+// que de dépendre d'un seul (allorigins.win ET corsproxy.io fonctionnent tous les deux
+// depuis un vrai fetch() navigateur, mais pas toujours au même moment).
+function corsProxyUrls(url){
+  const enc = encodeURIComponent(url);
+  return [
+    'https://api.allorigins.win/raw?url=' + enc,
+    'https://corsproxy.io/?url=' + enc
+  ];
 }
 
-// Le proxy est parfois lent (jusqu'à ~15-18s observés) ou renvoie un échec ponctuel
-// (204/520/timeout) sans que la source réelle soit en cause — une seule tentative avec
-// un délai court donnait un faux "indisponible" à chaque fois. On retente une fois avec
-// un délai généreux avant d'abandonner pour de bon.
-async function fetchWithRetry(url, opts, timeoutMs, attempts){
+async function fetchWithRetry(targetUrl, opts, timeoutMs){
   let lastErr;
-  for (let i = 0; i < attempts; i++){
+  for (const proxyUrl of corsProxyUrls(targetUrl)){
     const controller = new AbortController();
     const hardTimeout = setTimeout(() => controller.abort(), timeoutMs);
     try{
-      const res = await fetch(url, Object.assign({}, opts, { signal: controller.signal }));
+      const res = await fetch(proxyUrl, Object.assign({}, opts, { signal: controller.signal }));
       clearTimeout(hardTimeout);
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return res;
@@ -1018,8 +1116,8 @@ async function fetchYahooWeekly(symbol){
   // très long historique, ce qui faussait la moyenne mobile 200 semaines.
   const period1 = Math.floor(new Date('1990-01-01T00:00:00Z').getTime() / 1000);
   const period2 = Math.floor(Date.now() / 1000);
-  const url = corsProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=1d`);
-  const res = await fetchWithRetry(url, { cache: 'no-store' }, 15000, 2);
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=1d`;
+  const res = await fetchWithRetry(url, { cache: 'no-store' }, 12000);
   const json = await res.json();
   const result = json && json.chart && json.chart.result && json.chart.result[0];
   if (!result) throw new Error((json && json.chart && json.chart.error && json.chart.error.description) || 'réponse Yahoo Finance invalide');
@@ -1039,8 +1137,8 @@ async function fetchYahooWeekly(symbol){
 }
 
 async function fetchStooqWeekly(symbol){
-  const url = corsProxy(`https://stooq.com/q/d/l/?s=${encodeURIComponent(symbol)}&i=w&_=${Date.now()}`);
-  const res = await fetchWithRetry(url, { cache: 'no-store' }, 15000, 1);
+  const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(symbol)}&i=w&_=${Date.now()}`;
+  const res = await fetchWithRetry(url, { cache: 'no-store' }, 12000);
   const text = await res.text();
   if (!text || text.trim().toLowerCase().startsWith('<')) throw new Error('réponse invalide');
 
