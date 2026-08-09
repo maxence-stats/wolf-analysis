@@ -419,6 +419,7 @@ function renderCompany(nom){
   setBadge('badgeActions', 'CAGR actions 20a', latest.cagrActions);
 
   loadStockChart(latest.ticker);
+  renderValorisation(nom);
 
   const series = k => hist.map(r => r[k]);
 
@@ -550,10 +551,48 @@ function mapTickerToStooq(ticker){
 
 function average(arr){ return arr.reduce((a,b) => a+b, 0) / arr.length; }
 
+function isoWeekKey(dateStr){
+  const d = new Date(dateStr + 'T00:00:00Z');
+  const day = (d.getUTCDay() + 6) % 7; // lundi = 0
+  d.setUTCDate(d.getUTCDate() - day + 3);
+  const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  const week = 1 + Math.round(((d - firstThursday) / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
+  return d.getUTCFullYear() + '-W' + week;
+}
+
+// Regroupe des clôtures quotidiennes en clôtures hebdomadaires (dernier jour coté de
+// chaque semaine ISO). Nécessaire car l'API Yahoo Finance renvoie silencieusement des
+// données mensuelles quand on demande interval=1wk sur un très long historique (range=max)
+// — le point d'entrée le plus fiable reste donc le quotidien, rééchantillonné nous-mêmes.
+function resampleWeekly(dailyDates, dailyCloses){
+  const dates = [], closes = [];
+  let currentKey = null, lastDate = null, lastClose = null;
+  for (let i = 0; i < dailyDates.length; i++){
+    const key = isoWeekKey(dailyDates[i]);
+    if (currentKey !== null && key !== currentKey){
+      dates.push(lastDate);
+      closes.push(lastClose);
+    }
+    currentKey = key;
+    lastDate = dailyDates[i];
+    lastClose = dailyCloses[i];
+  }
+  if (lastDate != null){
+    dates.push(lastDate);
+    closes.push(lastClose);
+  }
+  return { dates, closes };
+}
+
 async function fetchYahooWeekly(symbol){
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=max&interval=1wk`;
+  // period1/period2 explicites plutôt que range=max : Yahoo sous-échantillonne
+  // silencieusement (mensuel au lieu de quotidien) quand range=max est combiné à un
+  // très long historique, ce qui faussait la moyenne mobile 200 semaines.
+  const period1 = Math.floor(new Date('1990-01-01T00:00:00Z').getTime() / 1000);
+  const period2 = Math.floor(Date.now() / 1000);
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=1d`;
   const controller = new AbortController();
-  const hardTimeout = setTimeout(() => controller.abort(), 6000);
+  const hardTimeout = setTimeout(() => controller.abort(), 8000);
   try{
     const res = await fetch(url, { signal: controller.signal, cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -564,13 +603,14 @@ async function fetchYahooWeekly(symbol){
     const closes = result.indicators && result.indicators.quote && result.indicators.quote[0] && result.indicators.quote[0].close;
     if (!ts || !closes) throw new Error('données Yahoo Finance incomplètes');
 
-    const dates = [], vals = [];
+    const dailyDates = [], dailyCloses = [];
     for (let i = 0; i < ts.length; i++){
       if (closes[i] == null) continue;
-      dates.push(new Date(ts[i] * 1000).toISOString().slice(0, 10));
-      vals.push(closes[i]);
+      dailyDates.push(new Date(ts[i] * 1000).toISOString().slice(0, 10));
+      dailyCloses.push(closes[i]);
     }
-    if (vals.length < 10) throw new Error('pas assez de données renvoyées par Yahoo Finance');
+    if (dailyCloses.length < 50) throw new Error('pas assez de données renvoyées par Yahoo Finance');
+    const { dates, closes: vals } = resampleWeekly(dailyDates, dailyCloses);
     return { dates, closes: vals };
   } finally {
     clearTimeout(hardTimeout);
@@ -751,6 +791,247 @@ function drawGauge(latest){
 }
 
 /* ============================================================
+   ONGLET VALORISATION — simulations scénarisées
+   Prix Juste Sim.  = FCF actuel × Médiane P/FCF
+   Prix Cible       = Prix Juste Sim. × 0.8 (marge de sécurité 20%)
+   Prix Est. (5a)   = FCF actuel × (1 + CAGR FCF)^5 × Médiane P/FCF
+   Rendement (5a)   = (Prix Est. 5a / Prix actuel)^(1/5) - 1
+   Historique de prix : colonne H (prixActuel), déjà en mémoire par année,
+   PAS de nouvel appel réseau (ni Yahoo Finance, ni Stooq) pour ce graphique.
+   ============================================================ */
+const SCENARIOS = [
+  { key:'optimiste', label:'Scénario Optimiste', color:'green', deltaCagr:5, deltaMultiple:3 },
+  { key:'realiste', label:'Scénario Réaliste', color:'blue', deltaCagr:0, deltaMultiple:0 },
+  { key:'pessimiste', label:'Scénario Pessimiste', color:'red', deltaCagr:-5, deltaMultiple:-3 }
+];
+
+let scenarioValues = {};
+let scenarioCharts = {};
+
+function computeScenario(fcfActuel, prixActuel, cagr, multiple){
+  const prixJusteSim = fcfActuel * multiple;
+  const prixCible = prixJusteSim * 0.8;
+  const prixEst5A = fcfActuel * Math.pow(1 + cagr / 100, 5) * multiple;
+  const rendement5A = prixActuel > 0 ? (Math.pow(prixEst5A / prixActuel, 1 / 5) - 1) * 100 : null;
+  return { prixJusteSim, prixCible, prixEst5A, rendement5A };
+}
+
+function scenarioCardHtml(s){
+  return `
+    <div class="scenario-card ${s.key}" data-key="${s.key}">
+      <h3 class="scenario-title">${s.label}</h3>
+      <div class="scenario-row fixe">
+        <div class="scenario-row-head"><span>FCF Actuel (Fixe)</span><span class="val" id="vo-${s.key}-fcf">—</span></div>
+      </div>
+      <div class="scenario-row">
+        <div class="scenario-row-head"><span>CAGR FCF Prévu (%)</span><span class="val" id="vo-${s.key}-cagrVal">—</span></div>
+        <input type="range" class="scenario-slider" id="vo-${s.key}-cagr" min="-10" max="30" step="0.1">
+      </div>
+      <div class="scenario-row">
+        <div class="scenario-row-head"><span>Médiane FCF (Multiple)</span><span class="val" id="vo-${s.key}-multVal">—</span></div>
+        <input type="range" class="scenario-slider" id="vo-${s.key}-mult" min="1" max="50" step="0.1">
+      </div>
+      <div class="scenario-results">
+        <div><div class="r-k">Prix juste sim.</div><div class="r-v" id="vo-${s.key}-prixJuste">—</div></div>
+        <div><div class="r-k">Prix cible (-20%)</div><div class="r-v" id="vo-${s.key}-prixCible">—</div></div>
+        <div><div class="r-k">Prix est. (5a)</div><div class="r-v" id="vo-${s.key}-prixEst">—</div></div>
+        <div><div class="r-k">Rendement (5a)</div><div class="r-v" id="vo-${s.key}-rendement">—</div></div>
+      </div>
+      <div class="scenario-chart-holder"><canvas id="vo-${s.key}-chart"></canvas></div>
+    </div>
+  `;
+}
+
+function renderValorisation(nom){
+  const hist = companies[nom];
+  if (!hist) return;
+  const latest = hist[hist.length - 1];
+  const fcfActuel = latest.fcfParAction;
+  const prixActuel = latest.prixActuel;
+  const cagrHist = latest.cagrFcf10;
+  const medianeHist = latest.medianePFCF;
+
+  document.getElementById('voFcfActuel').textContent = fcfActuel != null ? fmtEUR(fcfActuel) : 'N/D';
+  document.getElementById('voCagrHist').textContent = cagrHist != null ? fmtPct(cagrHist) : 'N/D';
+  document.getElementById('voMedianeHist').textContent = medianeHist != null ? medianeHist.toLocaleString('fr-FR', {minimumFractionDigits:1}) + 'x' : 'N/D';
+
+  scenarioValues = {};
+  SCENARIOS.forEach(s => {
+    scenarioValues[s.key] = {
+      cagr: cagrHist != null ? +(cagrHist + s.deltaCagr).toFixed(1) : 0,
+      multiple: medianeHist != null ? +(medianeHist + s.deltaMultiple).toFixed(1) : 0
+    };
+  });
+
+  Object.values(scenarioCharts).forEach(ch => ch && ch.destroy());
+  scenarioCharts = {};
+
+  document.getElementById('scenarioGrid').innerHTML = SCENARIOS.map(scenarioCardHtml).join('');
+
+  SCENARIOS.forEach(s => wireScenarioCard(s, hist, fcfActuel, prixActuel));
+
+  renderObjectifsHistory(nom);
+}
+
+function wireScenarioCard(s, hist, fcfActuel, prixActuel){
+  const cagrInput = document.getElementById('vo-' + s.key + '-cagr');
+  const multInput = document.getElementById('vo-' + s.key + '-mult');
+  document.getElementById('vo-' + s.key + '-fcf').textContent = fcfActuel != null ? fmtEUR(fcfActuel) : 'N/D';
+
+  cagrInput.value = scenarioValues[s.key].cagr;
+  multInput.value = scenarioValues[s.key].multiple;
+
+  function update(){
+    scenarioValues[s.key].cagr = parseFloat(cagrInput.value);
+    scenarioValues[s.key].multiple = parseFloat(multInput.value);
+    updateScenarioCard(s, hist, fcfActuel, prixActuel);
+  }
+  cagrInput.addEventListener('input', update);
+  multInput.addEventListener('input', update);
+
+  updateScenarioCard(s, hist, fcfActuel, prixActuel);
+}
+
+function updateScenarioCard(s, hist, fcfActuel, prixActuel){
+  const { cagr, multiple } = scenarioValues[s.key];
+  document.getElementById('vo-' + s.key + '-cagrVal').textContent = cagr.toLocaleString('fr-FR', {minimumFractionDigits:1}) + '%';
+  document.getElementById('vo-' + s.key + '-multVal').textContent = multiple.toLocaleString('fr-FR', {minimumFractionDigits:1}) + 'x';
+
+  if (fcfActuel == null || prixActuel == null){
+    ['prixJuste','prixCible','prixEst','rendement'].forEach(k => { document.getElementById('vo-'+s.key+'-'+k).textContent = 'N/D'; });
+    return;
+  }
+
+  const { prixJusteSim, prixCible, prixEst5A, rendement5A } = computeScenario(fcfActuel, prixActuel, cagr, multiple);
+
+  document.getElementById('vo-'+s.key+'-prixJuste').textContent = fmtEUR(prixJusteSim);
+  document.getElementById('vo-'+s.key+'-prixCible').textContent = fmtEUR(prixCible);
+  document.getElementById('vo-'+s.key+'-prixEst').textContent = fmtEUR(prixEst5A);
+  const rendEl = document.getElementById('vo-'+s.key+'-rendement');
+  rendEl.textContent = (rendement5A >= 0 ? '+' : '') + rendement5A.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + '%';
+  rendEl.className = 'r-v ' + (rendement5A >= 0 ? 'pos' : 'neg');
+
+  renderScenarioChart(s, hist, prixJusteSim, prixEst5A);
+}
+
+function renderScenarioChart(s, hist, prixJusteSim, prixEst5A){
+  const years = hist.map(r => r.annee);
+  const prices = hist.map(r => r.prixActuel);
+  const targetYear = years[years.length - 1] + 5;
+  const labels = years.concat([targetYear + ' (Est.)']);
+
+  const histData = prices.concat([null]);
+  const prixJusteLine = labels.map(() => prixJusteSim);
+  const prixEstLine = labels.map(() => prixEst5A);
+  const projection = labels.map(() => null);
+  projection[labels.length - 2] = prices[prices.length - 1];
+  projection[labels.length - 1] = prixEst5A;
+
+  const accent = THEME[s.color];
+
+  if (scenarioCharts[s.key]) scenarioCharts[s.key].destroy();
+
+  scenarioCharts[s.key] = new Chart(document.getElementById('vo-' + s.key + '-chart').getContext('2d'), {
+    type:'line',
+    data:{ labels, datasets:[
+      { label:'Historique', data:histData, borderColor:THEME.blue, backgroundColor:'transparent', tension:0.15, pointRadius:2, borderWidth:1.5, spanGaps:false },
+      { label:'Prix juste', data:prixJusteLine, borderColor:THEME.gold, borderWidth:1, borderDash:[3,3], pointRadius:0 },
+      { label:'Prix est. (5a)', data:prixEstLine, borderColor:accent, borderWidth:1, borderDash:[3,3], pointRadius:0 },
+      { label:'Ligne projection', data:projection, borderColor:accent, borderWidth:1.5, borderDash:[6,4], pointRadius:2, spanGaps:true }
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'top', labels:{boxWidth:8, usePointStyle:true, font:{size:9.5}}}},
+      scales:{
+        x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:8, font:{size:9.5}}, border:{color:THEME.hair} },
+        y:{ grid:baseGrid, ticks:{color:THEME.dim, font:{size:9.5}, callback:v=>v+' €'} }
+      }
+    }
+  });
+}
+
+/* ============================================================
+   HISTORIQUE DES OBJECTIFS — fiche par entreprise (date + valeurs
+   des 3 scénarios), persistée dans le navigateur (localStorage).
+   Pas d'écriture vers le Google Sheet (source en lecture seule).
+   data/objectifs.json sert de socle optionnel, mis à jour par
+   Claude Code quand l'utilisateur exporte et transmet le fichier.
+   ============================================================ */
+const OBJECTIFS_BASELINE_URL = 'data/objectifs.json';
+const OBJECTIFS_LS_KEY = 'wolfAnalysisObjectifs';
+let objectifsStore = {};
+
+function mergeObjectifs(base, extra){
+  const merged = {};
+  Object.keys(base || {}).forEach(nom => { merged[nom] = (base[nom] || []).slice(); });
+  Object.keys(extra || {}).forEach(nom => {
+    merged[nom] = (merged[nom] || []).concat(extra[nom] || []);
+  });
+  return merged;
+}
+
+async function loadObjectifsBaseline(){
+  try{
+    const res = await fetch(OBJECTIFS_BASELINE_URL, { cache:'no-store' });
+    if (res.ok){
+      const json = await res.json();
+      if (json && typeof json === 'object') objectifsStore = mergeObjectifs(json, objectifsStore);
+    }
+  }catch(e){ /* fichier absent ou fetch bloqué (ex. file://) — non bloquant */ }
+  loadObjectifsLocal();
+  if (activeCompany) renderObjectifsHistory(activeCompany);
+}
+
+function loadObjectifsLocal(){
+  try{
+    const raw = localStorage.getItem(OBJECTIFS_LS_KEY);
+    if (raw) objectifsStore = mergeObjectifs(objectifsStore, JSON.parse(raw));
+  }catch(e){ /* localStorage indisponible ou JSON corrompu */ }
+}
+
+function persistObjectifsLocal(){
+  try{ localStorage.setItem(OBJECTIFS_LS_KEY, JSON.stringify(objectifsStore)); }catch(e){ /* quota / navigateur privé */ }
+}
+
+function saveObjectif(nom){
+  if (!objectifsStore[nom]) objectifsStore[nom] = [];
+  const snapshot = {};
+  SCENARIOS.forEach(s => { snapshot[s.key] = { cagr: scenarioValues[s.key].cagr, multiple: scenarioValues[s.key].multiple }; });
+  objectifsStore[nom].push({ date: new Date().toISOString().slice(0, 10), scenarios: snapshot });
+  persistObjectifsLocal();
+  renderObjectifsHistory(nom);
+}
+
+function renderObjectifsHistory(nom){
+  const box = document.getElementById('objectifsList');
+  if (!box) return;
+  const entries = (objectifsStore[nom] || []).slice().reverse();
+  if (entries.length === 0){
+    box.innerHTML = '<div class="objectifs-empty">Aucun objectif enregistré pour cette entreprise.</div>';
+    return;
+  }
+  box.innerHTML = entries.map((e, idx) => {
+    const realIdx = objectifsStore[nom].length - 1 - idx;
+    const parts = SCENARIOS.map(s => {
+      const v = e.scenarios[s.key];
+      return v ? `<b>${s.label.replace('Scénario ', '')}</b> ${v.cagr}% / ${v.multiple}x` : '';
+    }).filter(Boolean).join(' · ');
+    return `<div class="objectifs-entry"><span class="date">${e.date}</span><span class="scen">${parts}</span><button class="del" data-idx="${realIdx}" aria-label="Supprimer">✕</button></div>`;
+  }).join('');
+}
+
+function exportObjectifs(){
+  const blob = new Blob([JSON.stringify(objectifsStore, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'wolf-analysis-objectifs.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/* ============================================================
    INIT — on s'assure d'abord que Chart.js est bien chargé
    (avec plusieurs sources de secours si la première est bloquée
    par un bloqueur de publicité ou une restriction réseau),
@@ -788,6 +1069,17 @@ document.querySelectorAll('.page-nav-btn').forEach(btn => {
 });
 initSearch();
 initSectorGrid();
+
+document.getElementById('saveObjectifBtn').addEventListener('click', () => { if (activeCompany) saveObjectif(activeCompany); });
+document.getElementById('exportObjectifsBtn').addEventListener('click', exportObjectifs);
+document.getElementById('objectifsList').addEventListener('click', e => {
+  const btn = e.target.closest('.del[data-idx]');
+  if (!btn || !activeCompany) return;
+  objectifsStore[activeCompany].splice(parseInt(btn.dataset.idx, 10), 1);
+  persistObjectifsLocal();
+  renderObjectifsHistory(activeCompany);
+});
+loadObjectifsBaseline();
 
 (async function init(){
   const ok = await ensureChartJs();
