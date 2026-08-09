@@ -5,9 +5,12 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 
 ## [Non publié]
 
+### Ajouté
+- Palette graphiques bleu/or : `THEME.blue` exposé, les 9 graphiques Chart.js (dont le
+  cours de bourse) utilisent désormais or/bleu pour leurs séries. Vert/rouge restent
+  réservés au sémantique positif/négatif (badges CAGR, jauge de valorisation).
+
 ### À faire (voir `CLAUDE.md` pour le détail)
-- Palette graphiques bleu/jaune (exposer `--blue` dans `THEME`, remplacer vert/rouge
-  dans les séries de données des 9 graphiques).
 - Migration du cours de bourse de Stooq vers Yahoo Finance.
 - Décision d'architecture pour Superinvestors (13F), Résumé Hebdo, Macroéconomie.
 

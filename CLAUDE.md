@@ -166,13 +166,13 @@ Thème sombre, esthétique "terminal financier professionnel".
   Google Sheet séparé)
 - Logos cliquables → ramènent sur l'onglet Analyse avec l'entreprise sélectionnée
 
+### Palette graphiques (fait)
+`THEME` expose `blue` (`css.getPropertyValue('--blue').trim()`) en plus de `gold`. Les
+9 graphiques Chart.js (dont le cours de bourse) utilisent uniquement or/bleu pour leurs
+séries de données. Vert/rouge restent réservés au sémantique positif/négatif : badges
+CAGR (classes CSS `.pos`/`.neg`) et jauge de valorisation (marqueurs CIBLE/JUSTE/ACTUEL).
+
 ### Travail en cours / demandé mais pas terminé
-- **Palette graphiques bleu/jaune** : `--blue` ajouté au CSS mais `THEME` en JS ne
-  l'expose pas encore, et les datasets Chart.js utilisent encore vert/rouge (`THEME.green`,
-  `THEME.red`) au lieu de bleu/or. À corriger : ajouter `blue: css.getPropertyValue('--blue').trim()`
-  dans l'objet `THEME`, puis remplacer les couleurs de séries dans les 9 configs de
-  graphiques (garder vert/rouge uniquement pour le sémantique positif/négatif des badges
-  et de la jauge, pas pour les séries de données elles-mêmes).
 - **Cours de bourse via Yahoo Finance au lieu de Stooq** : demandé pour avoir plus de
   profondeur historique. Pas implémenté. Yahoo n'a pas d'API officielle publique ; l'accès
   se fait via `https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=max&interval=1wk`

@@ -341,6 +341,7 @@ function initSearch(){
 const css = getComputedStyle(document.documentElement);
 const THEME = {
   gold: css.getPropertyValue('--gold').trim(),
+  blue: css.getPropertyValue('--blue').trim(),
   green: css.getPropertyValue('--green').trim(),
   red: css.getPropertyValue('--red').trim(),
   dim: css.getPropertyValue('--text-dim').trim(),
@@ -418,7 +419,7 @@ function renderCompany(nom){
     type:'bar',
     data:{ labels:years, datasets:[
       { label:'Dividende (€)', data:series('dividende'), backgroundColor:THEME.gold, borderRadius:4, yAxisID:'y', order:2, barPercentage:0.55 },
-      { label:'Payout ratio (%)', data:series('payoutRatio'), type:'line', borderColor:THEME.red, backgroundColor:THEME.red, yAxisID:'y1', tension:0.35, spanGaps:true, pointRadius:3, order:1 }
+      { label:'Payout ratio (%)', data:series('payoutRatio'), type:'line', borderColor:THEME.blue, backgroundColor:THEME.blue, yAxisID:'y1', tension:0.35, spanGaps:true, pointRadius:3, order:1 }
     ]},
     options:{ responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true}}},
@@ -436,14 +437,14 @@ function renderCompany(nom){
     type:'line',
     data:{ labels:years, datasets:[
       { label:'Marge opérationnelle (%)', data:series('margeOp'), borderColor:THEME.gold, backgroundColor:THEME.gold, tension:0.35, pointRadius:3, spanGaps:true },
-      { label:'ROIC (%)', data:series('roic'), borderColor:THEME.green, backgroundColor:THEME.green, tension:0.35, pointRadius:3, spanGaps:true }
+      { label:'ROIC (%)', data:series('roic'), borderColor:THEME.blue, backgroundColor:THEME.blue, tension:0.35, pointRadius:3, spanGaps:true }
     ]},
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true}}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'%'} } } }
   });
 
   chartInstances.fcf = makeChart('fcf', 'chartFCF', {
     type:'bar',
-    data:{ labels:years, datasets:[{ label:'FCF / action (€)', data:series('fcfParAction'), backgroundColor:THEME.green, borderRadius:4, barPercentage:0.6 }]},
+    data:{ labels:years, datasets:[{ label:'FCF / action (€)', data:series('fcfParAction'), backgroundColor:THEME.blue, borderRadius:4, barPercentage:0.6 }]},
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+' €'} } } }
   });
 
@@ -455,20 +456,20 @@ function renderCompany(nom){
 
   chartInstances.actions = makeChart('actions', 'chartActions', {
     type:'line',
-    data:{ labels:years, datasets:[{ label:'Actions en circulation (M)', data:series('actions'), borderColor:THEME.red, backgroundColor:'rgba(229,99,107,0.12)', fill:true, tension:0.35, pointRadius:3, spanGaps:true }]},
+    data:{ labels:years, datasets:[{ label:'Actions en circulation (M)', data:series('actions'), borderColor:THEME.blue, backgroundColor:'rgba(74,159,224,0.12)', fill:true, tension:0.35, pointRadius:3, spanGaps:true }]},
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'M'} } } }
   });
 
   chartInstances.dette = makeChart('dette', 'chartDette', {
     type:'bar',
-    data:{ labels:years, datasets:[{ label:'Dette / OCF (x)', data:series('detteOCF'), backgroundColor:THEME.red, borderRadius:4, barPercentage:0.6 }]},
+    data:{ labels:years, datasets:[{ label:'Dette / OCF (x)', data:series('detteOCF'), backgroundColor:THEME.blue, borderRadius:4, barPercentage:0.6 }]},
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'x'} } } }
   });
 
   chartInstances.cash = makeChart('cash', 'chartCash', {
     type:'bar',
     data:{ labels:years, datasets:[
-      { label:'Cash (M€)', data:series('cash'), backgroundColor:THEME.green, borderRadius:4, barPercentage:0.55 },
+      { label:'Cash (M€)', data:series('cash'), backgroundColor:THEME.blue, borderRadius:4, barPercentage:0.55 },
       { label:'Cash investi (M€)', data:series('cashInvesti'), backgroundColor:THEME.gold, borderRadius:4, barPercentage:0.55 }
     ]},
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true}}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+' M€'} } } }
@@ -586,7 +587,7 @@ function renderStockChart(){
     type:'line',
     data:{ labels, datasets:[
       { label:'Clôture hebdo', data:dataClose, borderColor:THEME.gold, backgroundColor:'rgba(217,164,65,0.08)', fill:true, tension:0.12, pointRadius:0, borderWidth:1.5 },
-      { label:'Moyenne mobile 200 sem.', data:dataSma, borderColor:THEME.green, borderWidth:1.5, pointRadius:0, spanGaps:true, tension:0.12 }
+      { label:'Moyenne mobile 200 sem.', data:dataSma, borderColor:THEME.blue, borderWidth:1.5, pointRadius:0, spanGaps:true, tension:0.12 }
     ]},
     options:{ responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true}}},
