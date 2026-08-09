@@ -52,6 +52,8 @@
       <button class="page-nav-btn" data-page="pageClassement">Classement</button>
       <button class="page-nav-btn" data-page="pageWatchlist">Watchlist</button>
       <button class="page-nav-btn" data-page="pageCerveau">Cerveau</button>
+      <button class="page-nav-btn" data-page="pageAlertes">Alertes</button>
+      <button class="page-nav-btn" data-page="pageIdees">Idées</button>
     </div>
 
     <div id="pageAnalyse" class="page active">
@@ -69,6 +71,7 @@
         <div class="price-label">Prix actuel</div>
         <div class="price-value" id="prixActuel">— <sup>€</sup></div>
         <div class="price-year" id="priceYear"></div>
+        <div class="price-alert" id="priceAlertWidget"></div>
       </div>
     </div>
 
@@ -261,6 +264,14 @@
       <div class="section-label">Watchlist</div>
       <p class="valo-intro">Glisse le logo d'une entreprise dans une liste. La déplacer d'une liste à l'autre la retire automatiquement de l'ancienne. Clic sur un logo → fiche entreprise.</p>
 
+      <div class="watchlist-toprow">
+        <div class="search-wrap watchlist-search-wrap">
+          <span class="search-icon">⌕</span>
+          <input type="text" id="watchlistSearch" class="search-input" placeholder="Chercher une entreprise dans la liste…" autocomplete="off">
+        </div>
+        <button class="zoom-btn objectifs-export" id="watchlistExportBtn">⭳ Exporter</button>
+      </div>
+
       <div class="watchlist-pool" id="watchlistPool"></div>
 
       <div class="watchlist-grid">
@@ -276,6 +287,18 @@
       <div id="cerveauContent"></div>
     </div>
 
+    <div id="pageAlertes" class="page">
+      <div class="section-label">Alertes de prix</div>
+      <p class="valo-intro">Programme un seuil depuis l'onglet Analyse (sous le prix actuel d'une entreprise). Pas de notification ni d'email pour l'instant — cette liste se met simplement en évidence quand un seuil est atteint. Clic sur une ligne → fiche entreprise.</p>
+      <div class="cerveau-actions"><button class="zoom-btn objectifs-export" id="alertesExportBtn">⭳ Exporter</button></div>
+      <div class="alertes-list" id="alertesList"></div>
+    </div>
+
+    <div id="pageIdees" class="page">
+      <div class="section-label">Idées de développement</div>
+      <div id="ideesContent"></div>
+    </div>
+
     <footer>
       Données fournies par Wolf Analysis
       <img src="https://i.postimg.cc/43WmYDB1/20260714-LOGO-WINTER-PNG.png" alt="Wolf Analysis" style="height:16px;width:auto;vertical-align:middle;margin-left:6px;border-radius:3px;">
@@ -288,6 +311,10 @@
     <div class="zoom-panel-head">
       <h3 id="zoomTitle">—</h3>
       <button class="zoom-close" onclick="closeZoom()" aria-label="Fermer">✕</button>
+    </div>
+    <div class="zoom-controls-row" id="zoomControlsRow">
+      <div class="range-buttons" id="zoomRangeRow"></div>
+      <div class="zoom-cagr-row" id="zoomCagrRow"></div>
     </div>
     <div class="zoom-canvas-holder"><canvas id="zoomCanvas"></canvas></div>
     <div class="zoom-footer">

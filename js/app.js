@@ -11,10 +11,10 @@ const CSV_URL = `https://docs.google.com/spreadsheets/d/e/${PUBLISHED_ID}/pub?gi
 const COL = {
   nom:0, annee:1, lienImage:2, ticker:3, secteur:4, sousSecteur:5,
   prixActuel:7, prixJuste:8, prixCible:9, ecartValeur:10,
-  dividende:20, rendementDiv:21, cagrDiv10:23,
+  dividende:20, rendementDiv:21, cagrDiv5:22, cagrDiv10:23, cagrDiv20:24,
   payoutFCF:25, payoutRatio:26,
-  fcfpeg:35, fcfParAction:38, cagrFcf10:40, pFcf:13, medianePFCF:42,
-  ca:44, cagrCA10:46, margeOp:48, roic:49,
+  fcfpeg:35, fcfParAction:38, cagrFcf5:39, cagrFcf10:40, cagrFcf20:41, pFcf:13, medianePFCF:42,
+  ca:44, cagrCA5:45, cagrCA10:46, cagrCA20:47, margeOp:48, roic:49,
   cash:52, cashInvesti:53, actions:54, cagrActions:55,
   detteOCF:58, medianePFCF20:59
 };
@@ -186,16 +186,22 @@ function handleCsvRows(rows){
       ecartValeur: parseNum(c[COL.ecartValeur]),
       dividende: parseNum(c[COL.dividende]),
       rendementDiv: parseNum(c[COL.rendementDiv]),
+      cagrDiv5: parseNum(c[COL.cagrDiv5]),
       cagrDiv10: parseNum(c[COL.cagrDiv10]),
+      cagrDiv20: parseNum(c[COL.cagrDiv20]),
       payoutRatio: parseNum(c[COL.payoutRatio]),
       fcfpeg: parseNum(c[COL.fcfpeg]),
       fcfParAction: parseNum(c[COL.fcfParAction]),
+      cagrFcf5: parseNum(c[COL.cagrFcf5]),
       cagrFcf10: parseNum(c[COL.cagrFcf10]),
+      cagrFcf20: parseNum(c[COL.cagrFcf20]),
       pFcf: parseNum(c[COL.pFcf]),
       medianePFCF: parseNum(c[COL.medianePFCF]),
       medianePFCF20: parseNum(c[COL.medianePFCF20]),
       ca: parseNum(c[COL.ca]),
+      cagrCA5: parseNum(c[COL.cagrCA5]),
       cagrCA10: parseNum(c[COL.cagrCA10]),
+      cagrCA20: parseNum(c[COL.cagrCA20]),
       margeOp: parseNum(c[COL.margeOp]),
       roic: parseNum(c[COL.roic]),
       detteOCF: parseNum(c[COL.detteOCF]),
@@ -222,6 +228,7 @@ function handleCsvRows(rows){
   renderSectorView();
   renderClassement();
   renderWatchlist();
+  renderAlertesTab();
 
   document.getElementById('loadingScreen').style.display = 'none';
   document.getElementById('errorScreen').style.display = 'none';
@@ -457,6 +464,7 @@ function renderCompany(nom){
   const hist = companies[nom];
   const latest = hist[hist.length - 1];
   const years = hist.map(r => r.annee);
+  priceAlertEditing = false;
 
   document.getElementById('logoImg').src = latest.lienImage || '';
   document.getElementById('tickerLbl').textContent = latest.ticker || '—';
@@ -465,6 +473,7 @@ function renderCompany(nom){
   document.getElementById('sousSecteurTag').textContent = 'Sous-secteur — ' + (latest.sousSecteur || '—');
   document.getElementById('prixActuel').innerHTML = latest.prixActuel.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' <sup>€</sup>';
   document.getElementById('priceYear').textContent = 'Exercice ' + latest.annee;
+  renderPriceAlertWidget(nom, latest.prixActuel);
 
   document.getElementById('rPrixJuste').textContent = fmtEUR(latest.prixJuste);
   document.getElementById('rPrixCible').textContent = fmtEUR(latest.prixCible);
@@ -476,7 +485,15 @@ function renderCompany(nom){
   } else { ecartEl.textContent = 'N/D'; }
 
   document.getElementById('rRendDiv').textContent = fmtPct(latest.rendementDiv);
-  document.getElementById('rFcfpeg').textContent = latest.fcfpeg != null ? latest.fcfpeg.toLocaleString('fr-FR',{minimumFractionDigits:2}) : 'N/D';
+  const fcfpegEl = document.getElementById('rFcfpeg');
+  fcfpegEl.className = 'v';
+  if (latest.fcfpeg != null){
+    fcfpegEl.textContent = latest.fcfpeg.toLocaleString('fr-FR',{minimumFractionDigits:2});
+    // <1 = attractif (vert), 1 à 1,10 = zone grise (orange), >1,10 = cher (rouge)
+    if (latest.fcfpeg < 1) fcfpegEl.classList.add('pos');
+    else if (latest.fcfpeg <= 1.10) fcfpegEl.classList.add('warn');
+    else fcfpegEl.classList.add('neg');
+  } else { fcfpegEl.textContent = 'N/D'; }
   document.getElementById('rMedFcf').textContent = latest.medianePFCF != null ? latest.medianePFCF.toLocaleString('fr-FR',{minimumFractionDigits:1}) + 'x' : 'N/D';
   document.getElementById('rPayout').textContent = fmtPct(latest.payoutRatio);
 
@@ -579,12 +596,17 @@ function destroyCharts(){
   chartConfigs = {};
 }
 
-function cloneChartConfig(config){
+// Découpe un chartConfig sur les nYears dernières années (ou tout l'historique si
+// nYears est null) — remplace cloneChartConfig, utilisé pour le zoom avec sélecteur
+// de plage 5/10/20 ans sur les 8 graphiques historiques.
+function sliceChartConfigByYears(config, nYears){
+  const total = config.data.labels.length;
+  const startIdx = nYears == null ? 0 : Math.max(0, total - nYears);
   return {
     type: config.type,
     data: {
-      labels: config.data.labels.slice(),
-      datasets: config.data.datasets.map(ds => Object.assign({}, ds, { data: ds.data.slice() }))
+      labels: config.data.labels.slice(startIdx),
+      datasets: config.data.datasets.map(ds => Object.assign({}, ds, { data: ds.data.slice(startIdx) }))
     },
     options: config.options
   };
@@ -666,43 +688,102 @@ function resampleWeekly(dailyDates, dailyCloses){
   return { dates, closes };
 }
 
+// Ni Yahoo Finance ni Stooq n'envoient d'en-tête Access-Control-Allow-Origin sur ces
+// endpoints (vérifié directement) : un fetch() direct depuis un navigateur est donc
+// TOUJOURS bloqué par CORS, quel que soit l'hébergement (pas un problème de file:// ou
+// de referrer). On relaie via un proxy CORS public gratuit (allorigins.win) qui, lui,
+// répond avec Access-Control-Allow-Origin: *. Pas de clé, pas de backend à nous.
+function corsProxy(url){
+  return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
+}
+
+// Le proxy est parfois lent (jusqu'à ~15-18s observés) ou renvoie un échec ponctuel
+// (204/520/timeout) sans que la source réelle soit en cause — une seule tentative avec
+// un délai court donnait un faux "indisponible" à chaque fois. On retente une fois avec
+// un délai généreux avant d'abandonner pour de bon.
+async function fetchWithRetry(url, opts, timeoutMs, attempts){
+  let lastErr;
+  for (let i = 0; i < attempts; i++){
+    const controller = new AbortController();
+    const hardTimeout = setTimeout(() => controller.abort(), timeoutMs);
+    try{
+      const res = await fetch(url, Object.assign({}, opts, { signal: controller.signal }));
+      clearTimeout(hardTimeout);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res;
+    }catch(e){
+      clearTimeout(hardTimeout);
+      lastErr = e;
+    }
+  }
+  throw lastErr;
+}
+
+// Canal de régression linéaire (moyenne ± 1 et 2 écarts-types) calculé sur les
+// vingt dernières années de clôtures hebdo (ou tout l'historique dispo si plus court) —
+// permet de voir où se situe le prix actuel par rapport à sa tendance longue durée.
+// Toujours calculé sur cette fenêtre fixe (jusqu'à 20 ans), indépendamment de la plage
+// affichée par les boutons 1a/2a/.../Max : sur une plage plus courte on ne voit qu'un
+// extrait de ce même canal, sur "Max" au-delà de 20 ans le canal s'arrête (pas de repli
+// de tendance millénaire, pas de sens).
+function computeRegressionChannel(dates, closes){
+  const maxPoints = 20 * 52;
+  const startIdx = Math.max(0, closes.length - maxPoints);
+  const winDates = dates.slice(startIdx);
+  const winCloses = closes.slice(startIdx);
+  const n = winCloses.length;
+  if (n < 10) return null;
+
+  const xMean = (n - 1) / 2;
+  const yMean = winCloses.reduce((a, b) => a + b, 0) / n;
+  let num = 0, den = 0;
+  for (let i = 0; i < n; i++){
+    num += (i - xMean) * (winCloses[i] - yMean);
+    den += (i - xMean) ** 2;
+  }
+  const slope = den === 0 ? 0 : num / den;
+  const intercept = yMean - slope * xMean;
+
+  let sumSqResid = 0;
+  for (let i = 0; i < n; i++){
+    sumSqResid += (winCloses[i] - (slope * i + intercept)) ** 2;
+  }
+  const stdDev = Math.sqrt(sumSqResid / n);
+
+  const byDate = {};
+  winDates.forEach((d, i) => { byDate[d] = slope * i + intercept; });
+  return { byDate, stdDev };
+}
+
 async function fetchYahooWeekly(symbol){
   // period1/period2 explicites plutôt que range=max : Yahoo sous-échantillonne
   // silencieusement (mensuel au lieu de quotidien) quand range=max est combiné à un
   // très long historique, ce qui faussait la moyenne mobile 200 semaines.
   const period1 = Math.floor(new Date('1990-01-01T00:00:00Z').getTime() / 1000);
   const period2 = Math.floor(Date.now() / 1000);
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=1d`;
-  const controller = new AbortController();
-  const hardTimeout = setTimeout(() => controller.abort(), 8000);
-  try{
-    const res = await fetch(url, { signal: controller.signal, cache: 'no-store' });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const json = await res.json();
-    const result = json && json.chart && json.chart.result && json.chart.result[0];
-    if (!result) throw new Error((json && json.chart && json.chart.error && json.chart.error.description) || 'réponse Yahoo Finance invalide');
-    const ts = result.timestamp;
-    const closes = result.indicators && result.indicators.quote && result.indicators.quote[0] && result.indicators.quote[0].close;
-    if (!ts || !closes) throw new Error('données Yahoo Finance incomplètes');
+  const url = corsProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=1d`);
+  const res = await fetchWithRetry(url, { cache: 'no-store' }, 15000, 2);
+  const json = await res.json();
+  const result = json && json.chart && json.chart.result && json.chart.result[0];
+  if (!result) throw new Error((json && json.chart && json.chart.error && json.chart.error.description) || 'réponse Yahoo Finance invalide');
+  const ts = result.timestamp;
+  const closes = result.indicators && result.indicators.quote && result.indicators.quote[0] && result.indicators.quote[0].close;
+  if (!ts || !closes) throw new Error('données Yahoo Finance incomplètes');
 
-    const dailyDates = [], dailyCloses = [];
-    for (let i = 0; i < ts.length; i++){
-      if (closes[i] == null) continue;
-      dailyDates.push(new Date(ts[i] * 1000).toISOString().slice(0, 10));
-      dailyCloses.push(closes[i]);
-    }
-    if (dailyCloses.length < 50) throw new Error('pas assez de données renvoyées par Yahoo Finance');
-    const { dates, closes: vals } = resampleWeekly(dailyDates, dailyCloses);
-    return { dates, closes: vals };
-  } finally {
-    clearTimeout(hardTimeout);
+  const dailyDates = [], dailyCloses = [];
+  for (let i = 0; i < ts.length; i++){
+    if (closes[i] == null) continue;
+    dailyDates.push(new Date(ts[i] * 1000).toISOString().slice(0, 10));
+    dailyCloses.push(closes[i]);
   }
+  if (dailyCloses.length < 50) throw new Error('pas assez de données renvoyées par Yahoo Finance');
+  const { dates, closes: vals } = resampleWeekly(dailyDates, dailyCloses);
+  return { dates, closes: vals };
 }
 
 async function fetchStooqWeekly(symbol){
-  const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(symbol)}&i=w&_=${Date.now()}`;
-  const res = await fetch(url, { cache: 'no-store' });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const url = corsProxy(`https://stooq.com/q/d/l/?s=${encodeURIComponent(symbol)}&i=w&_=${Date.now()}`);
+  const res = await fetchWithRetry(url, { cache: 'no-store' }, 15000, 1);
   const text = await res.text();
   if (!text || text.trim().toLowerCase().startsWith('<')) throw new Error('réponse invalide');
 
@@ -729,7 +810,7 @@ async function loadStockChart(ticker){
     statusEl.style.display = 'block';
     return;
   }
-  statusEl.textContent = 'Chargement du cours…';
+  statusEl.textContent = 'Chargement du cours… (peut prendre jusqu\'à 20-30 secondes, via un relais)';
   statusEl.style.display = 'block';
 
   const ySymbol = mapTickerToYahoo(ticker);
@@ -780,16 +861,29 @@ function renderStockChart(){
   const dataClose = closes.slice(startIdx);
   const dataSma = sma.slice(startIdx);
 
+  const reg = computeRegressionChannel(dates, closes);
+  const regLine = (offset) => labels.map(d => (reg && reg.byDate[d] != null) ? reg.byDate[d] + offset * reg.stdDev : null);
+
   if (chartInstances.stock) chartInstances.stock.destroy();
+
+  const regStyle = (offset, label, showInLegend) => ({
+    label, data: regLine(offset),
+    borderColor: `rgba(233,235,238,${offset === 0 ? 0.55 : Math.abs(offset) === 1 ? 0.32 : 0.18})`,
+    borderWidth: offset === 0 ? 1.5 : 1,
+    borderDash: offset === 0 ? [6,4] : [3,4], pointRadius:0, spanGaps:false, tension:0, _legend: !!showInLegend
+  });
 
   const config = {
     type:'line',
     data:{ labels, datasets:[
-      { label:'Clôture hebdo', data:dataClose, borderColor:THEME.gold, backgroundColor:'rgba(217,164,65,0.08)', fill:true, tension:0.12, pointRadius:0, borderWidth:1.5 },
-      { label:'Moyenne mobile 200 sem.', data:dataSma, borderColor:THEME.blue, borderWidth:1.5, pointRadius:0, spanGaps:true, tension:0.12 }
+      { label:'Clôture hebdo', data:dataClose, borderColor:THEME.gold, backgroundColor:'rgba(217,164,65,0.08)', fill:true, tension:0.12, pointRadius:0, borderWidth:1.5, _legend:true },
+      { label:'Moyenne mobile 200 sem.', data:dataSma, borderColor:THEME.blue, borderWidth:1.5, pointRadius:0, spanGaps:true, tension:0.12, _legend:true },
+      regStyle(0, 'Régression linéaire (20 ans max)', true),
+      regStyle(1, '+1σ', false), regStyle(-1, '−1σ', false),
+      regStyle(2, '+2σ', false), regStyle(-2, '−2σ', false)
     ]},
     options:{ responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true}}},
+      plugins:{ legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true, filter: item => item.text && config.data.datasets[item.datasetIndex]._legend}} },
       scales:{
         x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:8}, border:{color:THEME.hair} },
         y:{ grid:baseGrid, ticks:{color:THEME.dim} }
@@ -807,18 +901,74 @@ document.getElementById('rangeButtons').addEventListener('click', e => {
   renderStockChart();
 });
 
+/* ---------- Zoom : sélecteur de plage (5/10/20 ans) + CAGR sur les graphiques
+   historiques (pas le cours de bourse, qui a déjà son propre sélecteur sur la carte
+   principale). CAGR affiché uniquement quand la période sélectionnée correspond à une
+   donnée réellement présente dans le Sheet — sinon case vide (« — »), jamais inventée. */
+const ZOOM_HISTORICAL_KEYS = ['div','ca','marges','fcf','pfcf','actions','dette','cash'];
+// Les 3 périodes sont toujours affichées ensemble (pas liées au sélecteur de plage
+// 5/10/20/Max, qui ne change que la fenêtre du graphique) : chaque champ manquant
+// (pas encore mappé depuis le Sheet) affiche « — » plutôt qu'une valeur inventée.
+const ZOOM_CAGR_META = {
+  div: [{ years:5, field:'cagrDiv5' }, { years:10, field:'cagrDiv10' }, { years:20, field:'cagrDiv20' }],
+  ca: [{ years:5, field:'cagrCA5' }, { years:10, field:'cagrCA10' }, { years:20, field:'cagrCA20' }],
+  fcf: [{ years:5, field:'cagrFcf5' }, { years:10, field:'cagrFcf10' }, { years:20, field:'cagrFcf20' }],
+  actions: [{ years:5, field:'cagrActions5' }, { years:10, field:'cagrActions10' }, { years:20, field:'cagrActions' }]
+};
+let zoomKey = null;
+let zoomRange = 'max';
+
+function renderZoomCagrRow(){
+  const box = document.getElementById('zoomCagrRow');
+  const metas = ZOOM_CAGR_META[zoomKey];
+  if (!metas || !activeCompany){ box.innerHTML = ''; return; }
+  const latest = companies[activeCompany][companies[activeCompany].length - 1];
+  box.innerHTML = metas.map(m => {
+    const val = latest[m.field];
+    const txt = val != null ? (val >= 0 ? '+' : '') + val.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%' : '—';
+    return `<div class="zoom-cagr-chip">CAGR ${m.years}a : <b>${txt}</b></div>`;
+  }).join('');
+}
+
+function renderZoomRangeRow(){
+  const row = document.getElementById('zoomRangeRow');
+  if (!ZOOM_HISTORICAL_KEYS.includes(zoomKey)){ row.innerHTML = ''; return; }
+  const ranges = [['5','5a'],['10','10a'],['20','20a'],['max','Max']];
+  row.innerHTML = ranges.map(([val,label]) => `<button data-zrange="${val}" class="${zoomRange===val?'active':''}">${label}</button>`).join('');
+}
+
+function renderZoomChart(){
+  const baseConfig = chartConfigs[zoomKey];
+  if (!baseConfig) return;
+  const nYears = (!ZOOM_HISTORICAL_KEYS.includes(zoomKey) || zoomRange === 'max') ? null : parseInt(zoomRange, 10);
+  if (window.__zoomChart) window.__zoomChart.destroy();
+  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), sliceChartConfigByYears(baseConfig, nYears));
+}
+
 function openZoom(key, title){
   const config = chartConfigs[key];
   if (!config) return;
+  zoomKey = key;
+  zoomRange = 'max';
   document.getElementById('zoomTitle').textContent = title;
-  if (window.__zoomChart) window.__zoomChart.destroy();
-  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), cloneChartConfig(config));
+  renderZoomRangeRow();
+  renderZoomCagrRow();
+  renderZoomChart();
   document.getElementById('zoomModal').style.display = 'flex';
 }
 function closeZoom(){
   document.getElementById('zoomModal').style.display = 'none';
   if (window.__zoomChart){ window.__zoomChart.destroy(); window.__zoomChart = null; }
+  zoomKey = null;
 }
+document.getElementById('zoomRangeRow').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-zrange]');
+  if (!btn) return;
+  zoomRange = btn.dataset.zrange;
+  renderZoomRangeRow();
+  renderZoomCagrRow();
+  renderZoomChart();
+});
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeZoom(); });
 
 function drawGauge(latest){
@@ -1166,6 +1316,18 @@ function persistWatchlistLocal(){
   try{ localStorage.setItem(WATCHLIST_LS_KEY, JSON.stringify(watchlistStore)); }catch(e){ /* quota / navigateur privé */ }
 }
 
+function exportWatchlist(){
+  const blob = new Blob([JSON.stringify(watchlistStore, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'wolf-analysis-watchlist.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function watchlistLocationOf(nom){
   return WATCHLIST_LISTS.find(key => watchlistStore[key].includes(nom)) || null;
 }
@@ -1185,6 +1347,16 @@ function watchlistChipHtml(nom, logo){
   return `<div class="watchlist-chip" draggable="true" data-nom="${safe}" title="${safe}"><img src="${logo || ''}" alt=""></div>`;
 }
 
+function applyWatchlistSearchFilter(){
+  const input = document.getElementById('watchlistSearch');
+  if (!input) return;
+  const q = stripAccents(input.value.trim().toLowerCase());
+  document.querySelectorAll('#watchlistPool .watchlist-chip[data-nom]').forEach(chip => {
+    const match = !q || stripAccents(chip.dataset.nom.toLowerCase()).includes(q);
+    chip.classList.toggle('filtered-out', !match);
+  });
+}
+
 function renderWatchlist(){
   const pool = document.getElementById('watchlistPool');
   if (!pool) return;
@@ -1193,6 +1365,7 @@ function renderWatchlist(){
   pool.innerHTML = unassigned.length
     ? unassigned.map(nom => watchlistChipHtml(nom, companies[nom][companies[nom].length - 1].lienImage)).join('')
     : '<div class="objectifs-empty">Toutes les entreprises sont déjà classées dans une liste.</div>';
+  applyWatchlistSearchFilter();
 
   WATCHLIST_LISTS.forEach(key => {
     const zone = document.querySelector(`.watchlist-dropzone[data-list="${key}"]`);
@@ -1238,6 +1411,148 @@ function initWatchlist(){
     const chip = e.target.closest('.watchlist-chip[data-nom]');
     if (chip) goToAnalyse(chip.dataset.nom);
   });
+
+  const searchInput = document.getElementById('watchlistSearch');
+  if (searchInput) searchInput.addEventListener('input', applyWatchlistSearchFilter);
+
+  const exportBtn = document.getElementById('watchlistExportBtn');
+  if (exportBtn) exportBtn.addEventListener('click', exportWatchlist);
+}
+
+/* ============================================================
+   ALERTES DE PRIX — pas de notification/email (choix explicite de
+   l'utilisateur : une vraie alerte en arrière-plan demanderait un
+   backend planifié, hors périmètre du site statique actuel). Seuil
+   programmé depuis l'onglet Analyse (widget sous le prix actuel),
+   liste consultable dans l'onglet Alertes, mise en évidence visuelle
+   quand le seuil est atteint. Persistance identique aux autres
+   onglets : localStorage + socle data/alertes.json.
+   ============================================================ */
+const ALERTES_LS_KEY = 'wolfAnalysisAlertes';
+const ALERTES_BASELINE_URL = 'data/alertes.json';
+let alertesStore = {}; // { [nom]: { seuil, direction: 'up'|'down' } }
+let priceAlertEditing = false;
+
+async function loadAlertesBaseline(){
+  try{
+    const res = await fetch(ALERTES_BASELINE_URL, { cache:'no-store' });
+    if (res.ok){
+      const json = await res.json();
+      if (json && typeof json === 'object') Object.assign(alertesStore, json);
+    }
+  }catch(e){ /* socle absent ou fetch bloqué (ex. file://) — non bloquant */ }
+  try{
+    const raw = localStorage.getItem(ALERTES_LS_KEY);
+    if (raw) Object.assign(alertesStore, JSON.parse(raw));
+  }catch(e){ /* localStorage indisponible ou JSON corrompu */ }
+  renderAlertesTab();
+  if (activeCompany) renderPriceAlertWidget(activeCompany, companies[activeCompany][companies[activeCompany].length - 1].prixActuel);
+}
+
+function persistAlertesLocal(){
+  try{ localStorage.setItem(ALERTES_LS_KEY, JSON.stringify(alertesStore)); }catch(e){ /* quota / navigateur privé */ }
+}
+
+function exportAlertes(){
+  const blob = new Blob([JSON.stringify(alertesStore, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'wolf-analysis-alertes.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function setAlerte(nom, seuil, prixActuelRef){
+  alertesStore[nom] = { seuil, direction: seuil <= prixActuelRef ? 'down' : 'up' };
+  persistAlertesLocal();
+}
+function removeAlerte(nom){
+  delete alertesStore[nom];
+  persistAlertesLocal();
+}
+function isAlerteTriggered(alerte, prixActuel){
+  if (!alerte || prixActuel == null) return false;
+  return alerte.direction === 'down' ? prixActuel <= alerte.seuil : prixActuel >= alerte.seuil;
+}
+
+function renderPriceAlertWidget(nom, prixActuel){
+  const box = document.getElementById('priceAlertWidget');
+  if (!box) return;
+  const alerte = alertesStore[nom];
+
+  if (priceAlertEditing){
+    box.innerHTML = `<div class="price-alert-form">
+      <input type="number" step="0.01" min="0" id="priceAlertInput" placeholder="Seuil en €" value="${alerte ? alerte.seuil : ''}">
+      <button id="priceAlertSave" aria-label="Enregistrer">✓</button>
+      <button id="priceAlertCancel" aria-label="Annuler">✕</button>
+    </div>`;
+    const input = document.getElementById('priceAlertInput');
+    input.focus();
+    const submit = () => {
+      const v = parseFloat(input.value);
+      if (isNaN(v) || v <= 0){ input.focus(); return; }
+      setAlerte(nom, v, prixActuel);
+      priceAlertEditing = false;
+      renderPriceAlertWidget(nom, prixActuel);
+      renderAlertesTab();
+    };
+    document.getElementById('priceAlertSave').addEventListener('click', submit);
+    document.getElementById('priceAlertCancel').addEventListener('click', () => { priceAlertEditing = false; renderPriceAlertWidget(nom, prixActuel); });
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+    return;
+  }
+
+  if (alerte){
+    const triggered = isAlerteTriggered(alerte, prixActuel);
+    box.innerHTML = `<div class="price-alert-badge${triggered ? ' triggered' : ''}">
+      🔔 Alerte à ${alerte.seuil.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})} €${triggered ? ' — atteinte' : ''}
+      <button class="price-alert-edit" id="priceAlertEditBtn" aria-label="Modifier">✎</button>
+      <button class="price-alert-del" id="priceAlertDelBtn" aria-label="Supprimer">✕</button>
+    </div>`;
+    document.getElementById('priceAlertEditBtn').addEventListener('click', () => { priceAlertEditing = true; renderPriceAlertWidget(nom, prixActuel); });
+    document.getElementById('priceAlertDelBtn').addEventListener('click', () => { removeAlerte(nom); renderPriceAlertWidget(nom, prixActuel); renderAlertesTab(); });
+  } else {
+    box.innerHTML = `<button class="price-alert-set-btn" id="priceAlertSetBtn">🔔 Programmer une alerte</button>`;
+    document.getElementById('priceAlertSetBtn').addEventListener('click', () => { priceAlertEditing = true; renderPriceAlertWidget(nom, prixActuel); });
+  }
+}
+
+function renderAlertesTab(){
+  const box = document.getElementById('alertesList');
+  if (!box) return;
+
+  const rows = Object.keys(alertesStore)
+    .filter(nom => companies[nom])
+    .map(nom => {
+      const latest = companies[nom][companies[nom].length - 1];
+      const alerte = alertesStore[nom];
+      return { nom, logo: latest.lienImage, prixActuel: latest.prixActuel, seuil: alerte.seuil, triggered: isAlerteTriggered(alerte, latest.prixActuel) };
+    })
+    .sort((a, b) => (b.triggered ? 1 : 0) - (a.triggered ? 1 : 0));
+
+  box.innerHTML = rows.length ? rows.map(r => `
+    <div class="alerte-row${r.triggered ? ' triggered' : ''}" data-nom="${r.nom.replace(/"/g, '&quot;')}">
+      <div class="alerte-logo"><img src="${r.logo || ''}" alt=""></div>
+      <div class="alerte-name">${r.nom}</div>
+      <div class="alerte-seuil">Seuil : ${r.seuil.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})} €</div>
+      <div class="alerte-prix">Actuel : ${r.prixActuel.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})} €</div>
+      <div class="alerte-status">${r.triggered ? '🔔 Déclenchée' : 'En attente'}</div>
+    </div>`).join('')
+    : '<div class="objectifs-empty">Aucune alerte programmée pour l\'instant. Depuis l\'onglet Analyse, clique sur « 🔔 Programmer une alerte » sous le prix actuel d\'une entreprise.</div>';
+}
+
+function initAlertes(){
+  const box = document.getElementById('alertesList');
+  if (!box) return;
+  box.addEventListener('click', e => {
+    const row = e.target.closest('.alerte-row[data-nom]');
+    if (row) goToAnalyse(row.dataset.nom);
+  });
+  const exportBtn = document.getElementById('alertesExportBtn');
+  if (exportBtn) exportBtn.addEventListener('click', exportAlertes);
 }
 
 /* ============================================================
@@ -1554,6 +1869,106 @@ function initFicheModal(){
 }
 
 /* ============================================================
+   ONGLET IDÉES DE DÉVELOPPEMENT — bloc-notes personnel pour
+   centraliser les idées d'évolution du site, 3 rangées de priorité
+   (urgent / bientôt / plus tard), case à cocher quand c'est fait.
+   Persistance identique aux autres onglets : localStorage +
+   socle data/idees.json.
+   ============================================================ */
+const IDEES_LS_KEY = 'wolfAnalysisIdees';
+const IDEES_BASELINE_URL = 'data/idees.json';
+const IDEES_CATS = [
+  { key:'urgent', label:'À faire urgemment' },
+  { key:'bientot', label:'Bientôt' },
+  { key:'plus_tard', label:'Plus tard' }
+];
+let ideesStore = { urgent:[], bientot:[], plus_tard:[] };
+
+async function loadIdeesBaseline(){
+  try{
+    const res = await fetch(IDEES_BASELINE_URL, { cache:'no-store' });
+    if (res.ok){
+      const json = await res.json();
+      IDEES_CATS.forEach(c => { if (json && Array.isArray(json[c.key])) ideesStore[c.key] = json[c.key]; });
+    }
+  }catch(e){ /* socle absent ou fetch bloqué (ex. file://) — non bloquant */ }
+  try{
+    const raw = localStorage.getItem(IDEES_LS_KEY);
+    if (raw){
+      const parsed = JSON.parse(raw);
+      IDEES_CATS.forEach(c => { if (Array.isArray(parsed[c.key])) ideesStore[c.key] = parsed[c.key]; });
+    }
+  }catch(e){ /* localStorage indisponible ou JSON corrompu */ }
+  renderIdees();
+}
+
+function persistIdeesLocal(){
+  try{ localStorage.setItem(IDEES_LS_KEY, JSON.stringify(ideesStore)); }catch(e){ /* quota / navigateur privé */ }
+}
+
+function exportIdees(){
+  const blob = new Blob([JSON.stringify(ideesStore, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'wolf-analysis-idees.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function renderIdees(){
+  const box = document.getElementById('ideesContent');
+  if (!box) return;
+  box.innerHTML = `
+    <div class="idees-actions"><button class="zoom-btn objectifs-export" id="ideesExportBtn">⭳ Exporter</button></div>
+    <div class="idees-grid">${IDEES_CATS.map(c => `
+      <div class="idees-column idees-${c.key}">
+        <h3>${c.label}</h3>
+        <div class="idees-list">${(ideesStore[c.key] || []).map(item => `
+          <div class="idee-item${item.done ? ' done' : ''}" data-cat="${c.key}" data-id="${item.id}">
+            <input type="checkbox" class="idee-check" ${item.done ? 'checked' : ''}>
+            <span class="idee-text">${item.texte.replace(/</g, '&lt;')}</span>
+            <button class="idee-del" aria-label="Supprimer">✕</button>
+          </div>`).join('')}</div>
+        <div class="idee-add">
+          <input type="text" placeholder="Nouvelle idée…" data-cat="${c.key}">
+          <button class="idee-add-btn" data-cat="${c.key}">+ Ajouter</button>
+        </div>
+      </div>`).join('')}</div>`;
+
+  document.getElementById('ideesExportBtn').addEventListener('click', exportIdees);
+  box.querySelectorAll('.idee-check').forEach(cb => {
+    cb.addEventListener('change', e => {
+      const item = e.target.closest('.idee-item');
+      const idee = ideesStore[item.dataset.cat].find(i => i.id === item.dataset.id);
+      if (idee){ idee.done = !idee.done; persistIdeesLocal(); renderIdees(); }
+    });
+  });
+  box.querySelectorAll('.idee-del').forEach(btn => {
+    btn.addEventListener('click', e => {
+      const item = e.target.closest('.idee-item');
+      ideesStore[item.dataset.cat] = ideesStore[item.dataset.cat].filter(i => i.id !== item.dataset.id);
+      persistIdeesLocal();
+      renderIdees();
+    });
+  });
+  const submitIdee = (catKey, input) => {
+    if (!input.value.trim()) { input.focus(); return; }
+    ideesStore[catKey].push({ id:'i' + Date.now(), texte: input.value.trim(), done:false });
+    persistIdeesLocal();
+    renderIdees();
+  };
+  box.querySelectorAll('.idee-add input').forEach(input => {
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') submitIdee(input.dataset.cat, input); });
+  });
+  box.querySelectorAll('.idee-add-btn').forEach(btn => {
+    btn.addEventListener('click', () => submitIdee(btn.dataset.cat, btn.previousElementSibling));
+  });
+}
+
+/* ============================================================
    INIT — on s'assure d'abord que Chart.js est bien chargé
    (avec plusieurs sources de secours si la première est bloquée
    par un bloqueur de publicité ou une restriction réseau),
@@ -1610,8 +2025,11 @@ document.getElementById('objectifsList').addEventListener('click', e => {
 loadObjectifsBaseline();
 initWatchlist();
 loadWatchlistBaseline();
+initAlertes();
+loadAlertesBaseline();
 initFicheModal();
 loadCerveauData();
+loadIdeesBaseline();
 
 (async function init(){
   const ok = await ensureChartJs();

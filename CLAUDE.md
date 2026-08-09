@@ -66,14 +66,20 @@ dans un navigateur, ou se déploie sur n'importe quel hébergement statique.
 | pFcf | N | 13 |
 | dividende | U | 20 |
 | rendementDiv | V | 21 |
+| cagrDiv5 | W | 22 |
 | cagrDiv10 | X | 23 |
+| cagrDiv20 | Y | 24 |
 | payoutRatio | AA | 26 |
 | fcfpeg | AJ | 35 |
 | fcfParAction | AM | 38 |
+| cagrFcf5 | AN | 39 |
 | cagrFcf10 | AO | 40 |
+| cagrFcf20 | AP | 41 |
 | medianePFCF | AQ | 42 |
 | ca | AS | 44 |
-| cagrCA10 | AU | 46 *(non confirmé par l'utilisateur, à valider)* |
+| cagrCA5 | AT | 45 |
+| cagrCA10 | AU | 46 |
+| cagrCA20 | AV | 47 |
 | margeOp | AW | 48 |
 | roic | AX | 49 |
 | cash | BA | 52 |
@@ -266,6 +272,9 @@ en intensité si retour utilisateur, mais **ne pas revenir à des opacités ~0.0
   "verre" plus premium qu'un simple overlay sombre. Pied de modale (`.zoom-footer`) aligné
   **à droite**, logo agrandi à 28px (au lieu de 16px centré comme au départ) — demande
   explicite pour renforcer l'image de marque sur les graphiques agrandis/partagés.
+  Panneau agrandi (`min(1400px,96vw)`, `94vh`) suite à un retour utilisateur ("trop
+  petit"). Sélecteur de plage 5/10/20/Max (`#zoomRangeRow`) + CAGR (`#zoomCagrRow`) sur
+  les 8 graphiques historiques, voir `openZoom()`/`sliceChartConfigByYears()` dans app.js.
 - Cartes de scénario (onglet Valorisation) : plates comme les autres cartes, mais
   **gardent** une bordure supérieure colorée de 3px par sémantique (vert Optimiste / bleu
   Réaliste / rouge Pessimiste, réutilisant `--green`/`--blue`/`--red` existants) — c'est
@@ -278,7 +287,9 @@ en intensité si retour utilisateur, mais **ne pas revenir à des opacités ~0.0
 - Header entreprise (logo, nom, ticker, secteur/sous-secteur, prix actuel)
 - Jauge de valorisation + verdict (Survalorisée / Équitable / Zone d'achat)
 - 8 ratios clés (prix juste, prix cible, écart, rendement dividende, rendement estimé
-  5 ans, FCFPEG, médiane P/FCF, payout ratio)
+  5 ans, FCFPEG, médiane P/FCF, payout ratio). FCFPEG en couleur : vert si < 1, orange
+  si 1–1,10, rouge si > 1,10 (classe `.warn` = `--gold`, ajoutée pour ce cas).
+- Alerte de prix par seuil, programmable sous le prix actuel (voir "Onglet Alertes")
 - Graphique cours de bourse hebdomadaire + moyenne mobile 200 semaines + sélecteur de
   plage (1a/2a/3a/5a/10a/20a/Max) — Yahoo Finance en source principale, repli automatique
   sur Stooq (voir "Cours de bourse" ci-dessous)
@@ -372,7 +383,29 @@ liste à la fois — la déplacer d'une liste à l'autre la retire automatiqueme
 l'ancienne (`moveToWatchlist(nom, listKey)`, `listKey=null` = retour au pool). Clic sur
 un logo (hors drag) → `goToAnalyse(nom)`. Persistance identique au pattern de l'onglet
 Valorisation : `localStorage` (`wolfAnalysisWatchlist`) + `data/watchlist.json` en socle
-+ pas d'export dédié pour l'instant (données petites, JSON simple — à ajouter si demandé).
++ bouton Exporter. Recherche (`#watchlistSearch`) filtre le pool en direct
+(`applyWatchlistSearchFilter()`, `stripAccents()`) pour trouver une entreprise sans
+scroller.
+
+### Onglet Alertes de prix (fait, fonctionnel)
+Widget sous le prix actuel de l'onglet Analyse (`#priceAlertWidget`,
+`renderPriceAlertWidget()`) pour programmer un seuil par entreprise — formulaire inline
+(pas de `prompt()`, voir "Pièges techniques" point 7). Direction (`up`/`down`) déduite
+une fois à la création selon que le seuil est au-dessus ou en dessous du prix du moment
+(`setAlerte()`), pour rester cohérente même si le prix oscille ensuite. Onglet dédié
+(`#alertesList`, `renderAlertesTab()`) liste toutes les alertes programmées, mise en
+évidence visuelle (bordure/lueur or) si le seuil est atteint. **Pas de notification ni
+d'email** (décision explicite avec l'utilisateur : une vraie alerte en arrière-plan
+nécessiterait un backend planifié, hors périmètre actuel — voir "Demandé, non
+commencé"). Persistance : `localStorage` (`wolfAnalysisAlertes`) + `data/alertes.json` +
+bouton Exporter.
+
+### Onglet Idées de développement (fait, fonctionnel)
+Bloc-notes à 3 priorités fixes (`IDEES_CATS` : urgent / bientôt / plus_tard), case à
+cocher par idée (`item.done`), bouton « + Ajouter » à côté de chaque champ (pas
+seulement Entrée — leçon retenue après un retour utilisateur : un champ texte sans
+bouton visible n'est pas assez découvrable). Persistance identique aux autres onglets :
+`localStorage` (`wolfAnalysisIdees`) + `data/idees.json` + bouton Exporter.
 
 ### Onglet Cerveau numérique (fait, fonctionnel)
 Base de connaissances visuelle : 11 secteurs GICS (+ "Autre") navigables → chaînes de
@@ -418,18 +451,34 @@ datées (texte + images uploadées/collées + croquis à main levée).
 séries de données. Vert/rouge restent réservés au sémantique positif/négatif : badges
 CAGR (classes CSS `.pos`/`.neg`) et jauge de valorisation (marqueurs CIBLE/JUSTE/ACTUEL).
 
-### Cours de bourse — Yahoo Finance + repli Stooq (fait)
+### Cours de bourse — Yahoo Finance + repli Stooq (fait, mais peu fiable — voir plus bas)
 `loadStockChart(ticker)` tente `fetchYahooWeekly()` en premier — qui malgré son nom
 récupère du **quotidien** via `period1`/`period2` explicites (pas `range=max`, voir
 "Pièges techniques" point 3) puis rééchantillonne en hebdomadaire côté client
 (`resampleWeekly()`). Mapping `mapTickerToYahoo` : `.PA` Paris, pas de suffixe
 Nasdaq/NYSE, `.L` Londres, `.DE` Francfort, `.AS` Amsterdam, `.MC` Madrid, `.MI` Milan,
-`.SW` Suisse, `.T` Tokyo. En cas d'échec (Yahoo n'a pas d'API officielle, CORS non
-garanti), repli automatique sur `fetchStooqWeekly()` (mapping `mapTickerToStooq`). La
-source active et le symbole utilisé sont affichés sous le graphique
-(`#stockSourceNote`). En cas d'échec des deux sources, message d'erreur explicite et
-actionnable dans `#stockStatus` (jamais d'échec silencieux). Sélecteur de plage
-(1a/2a/3a/5a/10a/20a/Max, `#rangeButtons`) recalcule l'affichage sans refaire de fetch.
+`.SW` Suisse, `.T` Tokyo. En cas d'échec, repli automatique sur `fetchStooqWeekly()`
+(mapping `mapTickerToStooq`). La source active et le symbole utilisé sont affichés sous
+le graphique (`#stockSourceNote`). En cas d'échec des deux sources, message d'erreur
+explicite et actionnable dans `#stockStatus` (jamais d'échec silencieux). Sélecteur de
+plage (1a/2a/3a/5a/10a/20a/Max, `#rangeButtons`) recalcule l'affichage sans refaire de
+fetch. **Canal de régression linéaire** (`computeRegressionChannel()`) superposé au
+graphique : moyenne ± 1/2 écarts-types calculés sur les 20 dernières années de clôtures
+hebdo (ou tout l'historique dispo si plus court), indépendant du sélecteur de plage —
+sur une plage plus courte on ne voit qu'un extrait du même canal.
+
+**Piège confirmé — ni Yahoo ni Stooq n'ont de CORS.** Aucun des deux endpoints
+n'envoie `Access-Control-Allow-Origin` (vérifié directement), donc un `fetch()` direct
+depuis un navigateur est **toujours** bloqué, quel que soit l'hébergement — pas un
+problème de `file://`. Fix en place : relais via `corsProxy()` (allorigins.win) avec
+`fetchWithRetry()` (2 tentatives, 15s chacune). **Ce relais reste lui-même instable en
+pratique** — confirmé par tests répétés en conditions réelles (parfois <1s, parfois
+15-40s ou échec pur, y compris pour des requêtes identiques rapprochées à quelques
+secondes d'intervalle). Ne pas supposer que ça marche parce que ça a marché une fois.
+Piste de fix retenue mais pas encore implémentée : **Twelve Data**
+(`api.twelvedata.com`), qui envoie `Access-Control-Allow-Origin: *` en direct (vérifié,
+y compris pour du Euronext Paris), donc plus besoin de proxy — nécessite une clé API
+gratuite (inscription ~10s, sans CB) à obtenir par l'utilisateur.
 
 *(Historique : un widget TradingView a brièvement remplacé cette solution, abandonné
 suite à une limitation de données bloquante pour les bourses non-américaines — voir

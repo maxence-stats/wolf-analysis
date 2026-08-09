@@ -5,6 +5,29 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 
 ## [Non publié]
 
+### Ajouté
+- **Recherche dans la Watchlist** : champ de recherche au-dessus du pool pour trouver
+  directement une entreprise sans faire défiler tous les logos.
+- **Export Watchlist et Export Alertes** (JSON), sur le même modèle que
+  Objectifs/Cerveau — socles `data/watchlist.json` (déjà existant), `data/alertes.json`
+  et `data/idees.json` créés.
+- **Canal de régression linéaire sur le cours de bourse** : moyenne ± 1 et 2
+  écarts-types, calculé sur les 20 dernières années de clôtures hebdo (ou tout
+  l'historique dispo si plus court), superposé au graphique existant.
+- **Code couleur FCF PEG** (onglet Analyse) : vert si < 1, orange si 1–1,10, rouge
+  si > 1,10.
+- **Modale de zoom des graphiques** : agrandie, sélecteur de plage 5/10/20 ans/Max
+  sur les 8 graphiques historiques (indépendant du graphique boursier, qui garde son
+  propre sélecteur), et CAGR 5/10/20 ans affiché en permanence pour Dividende, CA,
+  FCF/action et Actions (colonnes W/X/Y, AN/AO/AP, AT/AU/AV du Sheet — case vide si la
+  donnée n'existe pas encore, jamais inventée).
+- **Onglet Alertes de prix** : seuil programmable depuis l'onglet Analyse (sous le prix
+  actuel), liste dédiée mise en évidence visuellement quand le seuil est atteint. Pas de
+  notification ni d'email (choix explicite : une vraie alerte en arrière-plan
+  demanderait un backend planifié, hors périmètre actuel).
+- **Onglet Idées de développement** : bloc-notes à 3 priorités (Urgent / Bientôt / Plus
+  tard), cases à cocher, persistant comme les autres onglets.
+
 ### Corrigé
 - **Barre d'onglets non responsive sur petit écran** : `.page-nav` (6 onglets depuis
   l'ajout de Classement/Watchlist/Cerveau) n'avait ni retour à la ligne ni défilement —
@@ -14,6 +37,28 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
   (pas de barre de défilement) — donc pas découvrable. Remplacé par un retour à la ligne
   automatique (`flex-wrap:wrap`) : tous les onglets restent visibles en permanence, quelle
   que soit la largeur.
+- **Bouton « Exporter » potentiellement étroit sur tout nouveau conteneur réutilisant
+  `.objectifs-export`** (Cerveau, Idées, Watchlist) : la règle CSS était scopée à
+  `.objectifs-actions .objectifs-export`, donc pas de recours en dehors de ce parent —
+  écrasée par `.zoom-btn` (26px) ailleurs. Corrigé avec `button.objectifs-export` (plus
+  spécifique que `.zoom-btn` par nature d'élément, fonctionne quel que soit le parent).
+- **Répartition sectorielle : une case avec beaucoup d'entreprises étirait ses voisines**
+  sur la même ligne de la grille (comportement par défaut de CSS Grid). Corrigé avec
+  `align-items:start` sur `.sector-grid` — chaque case grandit désormais seule selon son
+  propre contenu.
+- **Onglet Idées : pas de bouton visible pour ajouter une idée** (seule la touche Entrée
+  fonctionnait). Ajout d'un bouton « + Ajouter » à côté de chaque champ de saisie.
+
+### Connu — pas encore résolu
+- **Cours de bourse (Yahoo Finance/Stooq) instable.** Ni Yahoo Finance ni Stooq
+  n'autorisent les requêtes directes depuis un navigateur (CORS bloqué, confirmé). Un
+  relais gratuit (allorigins.win) a été mis en place avec 2 tentatives et un délai de 15s,
+  mais reste lui-même instable en pratique (parfois 200 OK en moins d'1s, parfois 15-40s
+  ou échec pur, y compris pour des requêtes identiques rapprochées) — confirmé par tests
+  répétés en conditions réelles, pas un problème d'environnement de test. Piste retenue :
+  passer à une API dédiée avec vrai support CORS (Twelve Data, `Access-Control-Allow-
+  Origin: *` confirmé, y compris pour Euronext Paris) — nécessite une clé API gratuite
+  (inscription ~10s, sans CB) que l'utilisateur doit fournir.
 
 ### Ajouté
 - **Médiane P/FCF sur 20 ans** affichée sur l'onglet Valorisation (colonne BH, à titre
