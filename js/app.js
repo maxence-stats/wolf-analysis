@@ -3556,26 +3556,49 @@ function renderCerveauChaines(box){
 // 4 tailles : M/L (verticales, image en haut) puis XL/XXL "en longueur" (paysage,
 // image à gauche) — remplace l'ancien trio S/M/L (S retiré à la demande explicite,
 // jugé pas assez utile face aux tailles "en longueur").
-const CERVEAU_TAILLES = ['M', 'L', 'XL', 'XXL'];
+// Anciennes tailles fixes (M/L/XL/XXL) → largeur/hauteur d'image libres en px.
+// Remplacées par un redimensionnement à la souris (voir wireCerveauResize) suite à un
+// retour explicite ("ça prend trop de place", "laisse-moi la possibilité de le faire
+// moi-même") — ces valeurs ne servent plus qu'à convertir les anciennes données une
+// seule fois, plus aucune notion de taille fixe ensuite.
+const CERVEAU_TAILLE_DEFAULTS = { M:{ width:200, imgHeight:110 }, L:{ width:300, imgHeight:180 }, XL:{ width:420, imgHeight:150 }, XXL:{ width:640, imgHeight:170 } };
+const CERVEAU_MIN_WIDTH = 160;
+const CERVEAU_MIN_IMG_HEIGHT = 70;
 function migrateCerveauChains(){
   Object.keys(cerveauData.chains).forEach(sec => {
     (cerveauData.chains[sec] || []).forEach(chain => {
       (chain.phases || []).forEach(ph => {
-        ph.entreprises = (ph.entreprises || []).map(e => typeof e === 'string' ? { nom:e, image:'', legende:'', taille:'M' } : e);
-        ph.entreprises.forEach(e => { if (!e.taille || e.taille === 'S') e.taille = 'M'; });
+        ph.entreprises = (ph.entreprises || []).map(e => typeof e === 'string' ? { nom:e, image:'', legende:'' } : e);
+        ph.entreprises.forEach(e => {
+          if (!e.width || !e.imgHeight){
+            const d = CERVEAU_TAILLE_DEFAULTS[e.taille] || CERVEAU_TAILLE_DEFAULTS.M;
+            e.width = e.width || d.width;
+            e.imgHeight = e.imgHeight || d.imgHeight;
+          }
+          delete e.taille;
+        });
         if (!Array.isArray(ph.blocsLibres)) ph.blocsLibres = [];
-        ph.blocsLibres.forEach(b => { if (!b.taille || b.taille === 'S') b.taille = 'M'; });
+        ph.blocsLibres.forEach(b => {
+          if (!b.width || !b.imgHeight){
+            const d = CERVEAU_TAILLE_DEFAULTS[b.taille] || CERVEAU_TAILLE_DEFAULTS.M;
+            b.width = b.width || d.width;
+            b.imgHeight = b.imgHeight || d.imgHeight;
+          }
+          if (!b.style) b.style = 'corps';
+          delete b.taille;
+        });
       });
     });
   });
 }
 
-function cerveauImageZoneHtml(image, actionPrefix){
+function cerveauImageZoneHtml(image, actionPrefix, imgHeight){
   return `
-    <div class="cec-image ${image ? '' : 'cec-image-empty'}" data-action="${actionPrefix}-pick">
+    <div class="cec-image ${image ? '' : 'cec-image-empty'}" data-action="${actionPrefix}-pick" style="height:${imgHeight}px;">
       ${image ? `<img src="${image}" alt="">` : `<span class="cec-image-plus">+ image</span>`}
       <button class="cec-img-url" data-action="${actionPrefix}-url" title="Ajouter par lien">🔗</button>
       ${image ? `<button class="cec-img-remove" data-action="${actionPrefix}-clear" title="Retirer l'image">✕</button>` : ''}
+      <div class="cec-resize-handle" data-action="${actionPrefix}-resize" title="Redimensionner (glisser)"></div>
     </div>
     <div class="cec-url-row" data-role="url-row" style="display:none">
       <input type="text" class="cec-url-input" placeholder="Coller un lien d'image…">
@@ -3583,10 +3606,9 @@ function cerveauImageZoneHtml(image, actionPrefix){
     </div>`;
 }
 
-// 4 boutons numérotés (1/2/3/4 = M/L/XL/XXL) plutôt qu'un unique bouton cycle : choix
-// direct d'une taille en un clic, demandé explicitement ("plus simple").
-function cerveauSizeButtonsHtml(actionName, current){
-  return `<div class="cec-size-row">${CERVEAU_TAILLES.map((t, i) => `<button class="cec-size-num${(current || 'M') === t ? ' active' : ''}" data-action="${actionName}" data-size="${t}">${i + 1}</button>`).join('')}</div>`;
+const CERVEAU_TEXT_STYLES = [['titre', 'Titre'], ['soustitre', 'Sous-titre'], ['corps', 'Corps']];
+function cerveauTextStyleButtonsHtml(actionName, current){
+  return `<div class="cec-style-row">${CERVEAU_TEXT_STYLES.map(([key, label]) => `<button class="cec-style-btn${(current || 'corps') === key ? ' active' : ''}" data-action="${actionName}" data-style="${key}">${label}</button>`).join('')}</div>`;
 }
 
 function cerveauEntityCard(ent, phaseIdx, entIdx){
@@ -3594,8 +3616,9 @@ function cerveauEntityCard(ent, phaseIdx, entIdx){
   const tracked = companies[ent.nom];
   const logo = tracked ? companies[ent.nom][companies[ent.nom].length - 1].lienImage : '';
   const noteCount = (cerveauData.notes[ent.nom] || []).length;
-  return `<div class="cerveau-entity-card" draggable="true" data-taille="${ent.taille || 'M'}" data-phase="${phaseIdx}" data-ent="${entIdx}">
-    ${cerveauImageZoneHtml(ent.image, 'ent')}
+  const width = ent.width || 200;
+  return `<div class="cerveau-entity-card" style="width:${width}px;" data-phase="${phaseIdx}" data-ent="${entIdx}">
+    ${cerveauImageZoneHtml(ent.image, 'ent', ent.imgHeight || 110)}
     <div class="cec-body">
       <div class="cec-head">
         ${logo ? `<img class="cec-mini-logo" src="${logo}" alt="">` : `<span class="cerveau-entity-initial">${ent.nom.charAt(0).toUpperCase()}</span>`}
@@ -3604,18 +3627,26 @@ function cerveauEntityCard(ent, phaseIdx, entIdx){
       </div>
       <input type="text" class="cec-legend" data-action="ent-legend" placeholder="Légende…" value="${(ent.legende || '').replace(/"/g, '&quot;')}">
       <button class="cec-fiche-btn" data-action="ent-fiche">📇 Ouvrir la fiche</button>
-      ${cerveauSizeButtonsHtml('ent-size', ent.taille)}
     </div>
   </div>`;
 }
 
+// Texte optionnel : si le bloc n'a pas encore de texte (et n'est pas en cours de
+// rédaction), on affiche un simple bouton "+ texte" plutôt qu'un textarea vide — pour
+// qu'un bloc purement image puisse utiliser toute la carte, demande explicite
+// ("comme ça si je ne mets pas de texte, l'image peut prendre toute la place").
 function cerveauFreeBlockHtml(bloc, phaseIdx, blocIdx){
-  return `<div class="cerveau-freeblock" draggable="true" data-taille="${bloc.taille || 'M'}" data-phase="${phaseIdx}" data-bloc="${blocIdx}">
-    ${cerveauImageZoneHtml(bloc.image, 'free')}
+  const width = bloc.width || 200;
+  const hasText = !!(bloc.texte && bloc.texte.trim()) || bloc._editingText;
+  const textZone = hasText ? `
+      ${cerveauTextStyleButtonsHtml('free-style', bloc.style)}
+      <textarea class="cec-free-text cec-free-text-${bloc.style || 'corps'}" data-action="free-text" placeholder="Texte libre…">${(bloc.texte || '').replace(/</g, '&lt;')}</textarea>`
+    : `<button class="cec-add-text-btn" data-action="free-add-text">+ Texte</button>`;
+  return `<div class="cerveau-freeblock" style="width:${width}px;" data-phase="${phaseIdx}" data-bloc="${blocIdx}">
+    ${cerveauImageZoneHtml(bloc.image, 'free', bloc.imgHeight || 110)}
     <div class="cec-body">
-      <textarea class="cec-free-text" data-action="free-text" placeholder="Texte libre…">${(bloc.texte || '').replace(/</g, '&lt;')}</textarea>
+      ${textZone}
       <button class="cec-remove cec-remove-free" data-action="free-delete">✕ Retirer ce bloc</button>
-      ${cerveauSizeButtonsHtml('free-size', bloc.taille)}
     </div>
   </div>`;
 }
@@ -3628,7 +3659,8 @@ function printCerveauEntityHtml(ent){
 }
 function printCerveauFreeBlockHtml(bloc){
   const imgs = bloc.image ? `<div class="print-img-row"><img src="${bloc.image}" alt=""></div>` : '';
-  return `<div style="margin-bottom:10px">${bloc.texte ? `<p>${bloc.texte.replace(/</g, '&lt;')}</p>` : ''}${imgs}</div>`;
+  const textHtml = bloc.texte ? `<p class="print-cec-text-${bloc.style || 'corps'}">${bloc.texte.replace(/</g, '&lt;')}</p>` : '';
+  return `<div style="margin-bottom:10px">${textHtml}${imgs}</div>`;
 }
 function exportChainAsPdf(chain, secteur){
   const body = chain.phases.map(ph => {
@@ -3699,13 +3731,6 @@ function renderCerveauPhases(box){
       persistCerveauData();
       renderCerveau();
     });
-    card.querySelectorAll('[data-action="ent-size"]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        ent.taille = btn.dataset.size;
-        persistCerveauData();
-        renderCerveau();
-      });
-    });
     const legend = card.querySelector('[data-action="ent-legend"]');
     const saveLegend = () => { ent.legende = legend.value; persistCerveauData(); };
     legend.addEventListener('blur', saveLegend);
@@ -3721,72 +3746,185 @@ function renderCerveauPhases(box){
       persistCerveauData();
       renderCerveau();
     });
-    card.querySelectorAll('[data-action="free-size"]').forEach(btn => {
+    const addTextBtn = card.querySelector('[data-action="free-add-text"]');
+    if (addTextBtn){
+      addTextBtn.addEventListener('click', () => {
+        bloc._editingText = true;
+        renderCerveau();
+        const box2 = document.querySelector(`.cerveau-freeblock[data-phase="${phaseIdx}"][data-bloc="${blocIdx}"] [data-action="free-text"]`);
+        if (box2) box2.focus();
+      });
+    }
+    card.querySelectorAll('[data-action="free-style"]').forEach(btn => {
       btn.addEventListener('click', () => {
-        bloc.taille = btn.dataset.size;
+        bloc.style = btn.dataset.style;
         persistCerveauData();
         renderCerveau();
       });
     });
     const text = card.querySelector('[data-action="free-text"]');
-    const saveText = () => { bloc.texte = text.value; persistCerveauData(); };
-    text.addEventListener('blur', saveText);
+    if (text){
+      autoGrowTextarea(text);
+      const saveText = () => {
+        bloc.texte = text.value;
+        delete bloc._editingText;
+        persistCerveauData();
+        // Un bloc vidé de tout son texte redevient "sans texte" (bouton + Texte) —
+        // seul cas où un re-render est nécessaire après la saisie.
+        if (!text.value.trim()) renderCerveau();
+      };
+      text.addEventListener('input', () => autoGrowTextarea(text));
+      text.addEventListener('blur', saveText);
+    }
   });
 
+  wireCerveauResize(box, chain);
   wireCerveauBlockDrag(box, chain);
 }
 
-// Glisser-déposer pour réordonner les blocs (cartes entreprise entre elles, blocs
-// libres entre eux — pas de glisser inter-listes, les deux types de blocs ne
-// partagent pas le même tableau de données) — même pattern que le glisser-déposer des
-// images de l'Analyse développée (draggedImageRef).
-let draggedCerveauBlockRef = null;
-// Glisser-déposer des blocs : réordonne DANS une phase, et déplace maintenant aussi
-// D'UNE PHASE À L'AUTRE de la même chaîne (ex. Amont → Transformation), demandé
-// explicitement — seule contrainte : toujours le même TYPE de bloc (cartes entreprise
-// entre elles, blocs libres entre eux ; jamais les deux mélangés, formes de données
-// différentes). `draggedCerveauBlockRef.arr` retient le tableau SOURCE (pas
-// forcément celui de la liste où le drop a lieu), donc un simple splice-out du
-// tableau source + splice-in dans le tableau cible suffit, que ce soit la même
-// phase ou une autre.
+// Textarea qui grandit avec son contenu, jamais de scroll interne ni de troncature —
+// demande explicite ("le texte ne doit pas être coupé, je dois tout voir").
+function autoGrowTextarea(el){
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+}
+
+// Redimensionnement libre à la souris (largeur de la carte + hauteur de l'image),
+// remplace les 4 tailles fixes M/L/XL/XXL. Un seul geste de glisser sur la poignée en
+// bas à droite de l'image pilote les deux axes à la fois, comme un redimensionnement
+// de fenêtre classique. Largeur bornée par la largeur du conteneur de phase (« il ne
+// faut pas qu'il dépasse du cadre ») ; pas de grille visible, juste un arrondi à 10px
+// pendant le glisser pour un alignement propre entre cartes (« grille invisible »).
+const CERVEAU_RESIZE_STEP = 10;
+function wireCerveauResize(box, chain){
+  box.querySelectorAll('[data-action="ent-resize"], [data-action="free-resize"]').forEach(handle => {
+    const card = handle.closest('.cerveau-entity-card, .cerveau-freeblock');
+    const isFree = card.classList.contains('cerveau-freeblock');
+    const phaseIdx = parseInt(card.dataset.phase, 10);
+    const obj = isFree
+      ? chain.phases[phaseIdx].blocsLibres[parseInt(card.dataset.bloc, 10)]
+      : chain.phases[phaseIdx].entreprises[parseInt(card.dataset.ent, 10)];
+    const imageZone = card.querySelector('.cec-image');
+
+    handle.addEventListener('mousedown', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const phaseBox = card.closest('.cerveau-phase');
+      const maxWidth = phaseBox ? phaseBox.clientWidth - 44 : 640;
+      const startX = e.clientX, startY = e.clientY;
+      const startWidth = card.getBoundingClientRect().width;
+      const startHeight = imageZone.getBoundingClientRect().height;
+
+      function onMove(ev){
+        let w = Math.round((startWidth + (ev.clientX - startX)) / CERVEAU_RESIZE_STEP) * CERVEAU_RESIZE_STEP;
+        let h = Math.round((startHeight + (ev.clientY - startY)) / CERVEAU_RESIZE_STEP) * CERVEAU_RESIZE_STEP;
+        w = Math.max(CERVEAU_MIN_WIDTH, Math.min(w, maxWidth));
+        h = Math.max(CERVEAU_MIN_IMG_HEIGHT, Math.min(h, 500));
+        card.style.width = w + 'px';
+        imageZone.style.height = h + 'px';
+        obj.width = w;
+        obj.imgHeight = h;
+      }
+      function onUp(){
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        persistCerveauData();
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  });
+}
+
+// Réordonnancement des blocs (cartes entreprise entre elles, blocs libres entre eux —
+// jamais les deux mélangés, formes de données différentes) et déplacement inter-phases
+// de la même chaîne (ex. Amont → Transformation). Réécrit en glisser-déposer "maison"
+// piloté à la souris (mousedown/mousemove/mouseup + document.elementFromPoint), plus
+// fiable que le drag-and-drop HTML5 natif utilisé avant : ce dernier dépendait de
+// dragover/drop délégués précisément sur chaque élément survolé, et la cible réelle du
+// drop était recalculée à partir d'un index capturé AVANT le retrait de l'élément
+// source — pour un réordonnancement dans la même liste, ce retrait décale les index
+// suivants d'un cran, donnant un résultat correct un coup sur deux selon le sens du
+// glisser (symptôme rapporté : "des fois ça remplace un autre bloc, d'autres fois
+// non"). Ici, la position d'insertion est entièrement recalculée à la relâche de la
+// souris à partir de l'ordre RÉEL du DOM à cet instant, jamais d'un index mis en cache.
 function wireCerveauBlockDrag(box, chain){
   box.querySelectorAll('.cerveau-entity-list, .cerveau-freeblock-list').forEach(list => {
-    const phaseIdx = parseInt(list.dataset.phase, 10);
     const isFree = list.classList.contains('cerveau-freeblock-list');
-    const arr = isFree ? chain.phases[phaseIdx].blocsLibres : chain.phases[phaseIdx].entreprises;
     const selector = isFree ? '.cerveau-freeblock' : '.cerveau-entity-card';
-    const idxAttr = isFree ? 'bloc' : 'ent';
+    const listSelector = isFree ? '.cerveau-freeblock-list' : '.cerveau-entity-list';
 
-    // Drop sur la liste elle-même (zone vide d'une phase, ou espace après la dernière
-    // carte) : ajoute à la fin — sans ça, impossible de déplacer un bloc vers une
-    // phase qui n'en a encore aucun.
-    list.addEventListener('dragover', e => { if (draggedCerveauBlockRef && draggedCerveauBlockRef.isFree === isFree) e.preventDefault(); });
-    list.addEventListener('drop', e => {
-      if (e.target !== list || !draggedCerveauBlockRef || draggedCerveauBlockRef.isFree !== isFree) return;
-      e.preventDefault();
-      const [moved] = draggedCerveauBlockRef.arr.splice(draggedCerveauBlockRef.idx, 1);
-      arr.push(moved);
-      draggedCerveauBlockRef = null;
-      persistCerveauData();
-      renderCerveau();
-    });
-
-    list.querySelectorAll(selector).forEach(block => {
-      block.addEventListener('dragstart', e => {
-        draggedCerveauBlockRef = { arr, isFree, idx: parseInt(block.dataset[idxAttr], 10) };
-        e.dataTransfer.effectAllowed = 'move';
-      });
-      block.addEventListener('dragover', e => { if (draggedCerveauBlockRef && draggedCerveauBlockRef.isFree === isFree) e.preventDefault(); });
-      block.addEventListener('drop', e => {
+    list.querySelectorAll(selector).forEach(card => {
+      card.addEventListener('mousedown', e => {
+        // Ne pas capturer le clic si l'utilisateur interagit avec un champ, un bouton
+        // ou la poignée de redimensionnement — seule la carte "vide" (corps, en-tête
+        // hors boutons) sert de prise pour déplacer le bloc.
+        if (e.target.closest('input, textarea, button, a, .cec-resize-handle, .cec-image')) return;
         e.preventDefault();
-        e.stopPropagation();
-        if (!draggedCerveauBlockRef || draggedCerveauBlockRef.isFree !== isFree) { draggedCerveauBlockRef = null; return; }
-        const targetIdx = parseInt(block.dataset[idxAttr], 10);
-        const [moved] = draggedCerveauBlockRef.arr.splice(draggedCerveauBlockRef.idx, 1);
-        arr.splice(targetIdx, 0, moved);
-        draggedCerveauBlockRef = null;
-        persistCerveauData();
-        renderCerveau();
+
+        const sourceList = card.closest(listSelector);
+        const sourcePhase = parseInt(sourceList.dataset.phase, 10);
+        const sourceArr = isFree ? chain.phases[sourcePhase].blocsLibres : chain.phases[sourcePhase].entreprises;
+        const sourceIdx = Array.prototype.indexOf.call(sourceList.querySelectorAll(selector), card);
+        let moved = false;
+
+        function clearHighlights(){
+          document.querySelectorAll('.cec-drop-target').forEach(el => el.classList.remove('cec-drop-target'));
+        }
+        // Une liste vide (ou avec peu de blocs) ne fait que quelques pixels de haut —
+        // viser précisément ce mince rectangle est peu fiable au clavier/souris ET
+        // difficile même en test automatisé. On élargit la cible à toute la CARTE de
+        // phase (le cadre visuel entier), et on retrouve la liste du bon type à
+        // l'intérieur — bien plus tolérant, sans changer la sémantique (toujours
+        // impossible de déposer une carte entreprise dans une liste de blocs libres).
+        function findDropList(el){
+          const phaseCard = el && el.closest('.cerveau-phase');
+          return phaseCard ? phaseCard.querySelector(listSelector) : null;
+        }
+        function onMove(ev){
+          if (!moved){
+            moved = true;
+            card.classList.add('cec-dragging');
+          }
+          clearHighlights();
+          const targetList = findDropList(document.elementFromPoint(ev.clientX, ev.clientY));
+          if (targetList) targetList.classList.add('cec-drop-target');
+        }
+        function onUp(ev){
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          card.classList.remove('cec-dragging');
+          clearHighlights();
+          if (!moved) return; // simple clic, pas un glisser — rien à faire
+
+          const el = document.elementFromPoint(ev.clientX, ev.clientY);
+          const targetList = findDropList(el);
+          if (!targetList) return; // relâché hors de toute phase valide
+
+          const targetPhase = parseInt(targetList.dataset.phase, 10);
+          const targetArr = isFree ? chain.phases[targetPhase].blocsLibres : chain.phases[targetPhase].entreprises;
+          const siblings = Array.prototype.slice.call(targetList.querySelectorAll(selector));
+          const targetCard = el.closest(selector);
+          let insertIdx;
+          if (targetCard && siblings.includes(targetCard)){
+            const rect = targetCard.getBoundingClientRect();
+            const insertBefore = ev.clientX < rect.left + rect.width / 2;
+            insertIdx = siblings.indexOf(targetCard) + (insertBefore ? 0 : 1);
+          } else {
+            insertIdx = siblings.length; // zone vide de la liste → ajoute à la fin
+          }
+
+          if (targetArr === sourceArr && (insertIdx === sourceIdx || insertIdx === sourceIdx + 1)) return; // pas de déplacement réel
+
+          const [item] = sourceArr.splice(sourceIdx, 1);
+          let finalIdx = insertIdx;
+          if (targetArr === sourceArr && sourceIdx < insertIdx) finalIdx -= 1;
+          targetArr.splice(finalIdx, 0, item);
+          persistCerveauData();
+          renderCerveau();
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
       });
     });
   });

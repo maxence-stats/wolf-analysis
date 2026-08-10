@@ -258,35 +258,24 @@
   .cerveau-freeblock-list{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:10px;}
 
   /* Carte entreprise illustrée (image + légende + accès fiche), remplace l'ancienne puce
-     texte seule — objectif : composer visuellement la phase en un coup d'œil. Structure
-     DOM : .cec-image (+ .cec-url-row) puis .cec-body (tout le reste) — la séparation en
-     .cec-body permet aux tailles "en longueur" (XL/XXL) de passer en rangée (image à
-     gauche, contenu à droite) sans dupliquer le HTML par taille. */
+     texte seule — objectif : composer visuellement la phase en un coup d'œil. Largeur de
+     la carte et hauteur de l'image sont désormais libres (px inline, voir
+     wireCerveauResize) plutôt que 4 tailles fixes — poignée de redimensionnement en bas
+     à droite de l'image, glisser pour ajuster largeur ET hauteur à la fois. */
   .cerveau-entity-card, .cerveau-freeblock{width:200px;background:var(--panel-2);border:var(--card-border);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;cursor:grab;}
   .cerveau-entity-card:active, .cerveau-freeblock:active{cursor:grabbing;}
-  .cerveau-entity-card.cec-dragover, .cerveau-freeblock.cec-dragover{outline:2px dashed var(--gold);outline-offset:-2px;}
+  .cerveau-entity-card.cec-dragging, .cerveau-freeblock.cec-dragging{opacity:0.35;}
+  .cerveau-entity-list.cec-drop-target, .cerveau-freeblock-list.cec-drop-target{outline:2px dashed var(--gold);outline-offset:4px;border-radius:8px;}
   .cec-body{display:flex;flex-direction:column;flex:1;min-width:0;}
-  .cerveau-entity-card[data-taille="L"], .cerveau-freeblock[data-taille="L"]{width:300px;}
-  .cerveau-entity-card[data-taille="L"] .cec-image, .cerveau-freeblock[data-taille="L"] .cec-image{height:180px;}
-  /* XL = "en longueur", moitié de la largeur du conteneur de phase ; XXL = pleine
-     largeur — les deux en rangée (image à gauche) plutôt qu'empilées verticalement. */
-  .cerveau-entity-card[data-taille="XL"], .cerveau-freeblock[data-taille="XL"]{width:calc(50% - 6px);flex-direction:row;flex-wrap:wrap;}
-  .cerveau-entity-card[data-taille="XXL"], .cerveau-freeblock[data-taille="XXL"]{width:100%;flex-direction:row;flex-wrap:wrap;}
-  .cerveau-entity-card[data-taille="XL"] .cec-image, .cerveau-entity-card[data-taille="XXL"] .cec-image,
-  .cerveau-freeblock[data-taille="XL"] .cec-image, .cerveau-freeblock[data-taille="XXL"] .cec-image{flex:0 0 42%;height:auto;min-height:140px;}
-  .cerveau-entity-card[data-taille="XL"] .cec-url-row, .cerveau-entity-card[data-taille="XXL"] .cec-url-row,
-  .cerveau-freeblock[data-taille="XL"] .cec-url-row, .cerveau-freeblock[data-taille="XXL"] .cec-url-row{flex:1 1 100%;}
-  .cec-size-row{display:flex;gap:4px;margin:0 10px 10px;}
-  .cec-size-num{background:var(--panel);border:1px solid var(--hair);color:var(--text-faint);width:22px;height:22px;border-radius:6px;font-size:11px;cursor:pointer;font-family:var(--font-mono);}
-  .cec-size-num:hover{border-color:var(--gold);color:var(--text);}
-  .cec-size-num.active{background:var(--gold);border-color:var(--gold);color:#1a1305;font-weight:700;}
-  .cec-image{position:relative;height:110px;background:var(--panel);display:flex;align-items:center;justify-content:center;cursor:pointer;}
+  .cec-image{position:relative;background:var(--panel);display:flex;align-items:center;justify-content:center;cursor:pointer;}
   .cec-image img{width:100%;height:100%;object-fit:cover;}
   .cec-image-plus{font-size:11.5px;color:var(--text-faint);}
   .cec-img-url, .cec-img-remove{position:absolute;top:5px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(4,5,7,0.65);color:var(--text);font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
   .cec-img-url{right:5px;}
   .cec-img-remove{right:31px;}
   .cec-img-url:hover, .cec-img-remove:hover{background:rgba(4,5,7,0.9);}
+  .cec-resize-handle{position:absolute;bottom:0;right:0;width:18px;height:18px;cursor:nwse-resize;background:linear-gradient(135deg, transparent 50%, rgba(217,164,65,0.55) 50%);border-bottom-right-radius:4px;}
+  .cec-resize-handle:hover{background:linear-gradient(135deg, transparent 45%, var(--gold) 45%);}
   .cec-url-row{display:flex;gap:6px;padding:8px;background:var(--panel);}
   .cec-url-input{flex:1;min-width:0;background:var(--panel-2);border:1px solid var(--hair);border-radius:6px;padding:5px 8px;color:var(--text);font-size:11.5px;outline:none;}
   .cec-url-ok{background:var(--gold);border:none;border-radius:6px;padding:0 10px;font-size:11.5px;font-weight:700;cursor:pointer;color:#1a1305;}
@@ -302,8 +291,20 @@
   .cec-legend:focus{border-color:var(--gold);}
   .cec-fiche-btn{margin:0 10px 10px;background:transparent;border:1px solid var(--gold);color:var(--gold);border-radius:8px;padding:7px 0;font-size:12px;font-weight:600;cursor:pointer;}
   .cec-fiche-btn:hover{background:rgba(217,164,65,0.12);}
-  .cec-free-text{margin:8px 10px;background:var(--panel);border:1px solid var(--hair);border-radius:6px;padding:6px 8px;color:var(--text);font-size:11.5px;outline:none;resize:vertical;min-height:50px;font-family:var(--font-body);}
+  /* Texte libre : jamais de resize manuel ni de scroll interne, la hauteur suit le
+     contenu (voir autoGrowTextarea) — "je ne dois pas pouvoir le slider, je dois tout
+     voir". 3 styles au choix (cec-style-row), police/graisse dépendent du style. */
+  .cec-style-row{display:flex;gap:4px;margin:8px 10px 0;}
+  .cec-style-btn{background:var(--panel);border:1px solid var(--hair);color:var(--text-faint);border-radius:6px;padding:3px 9px;font-size:10.5px;cursor:pointer;font-family:var(--font-body);}
+  .cec-style-btn:hover{border-color:var(--gold);color:var(--text);}
+  .cec-style-btn.active{background:var(--gold);border-color:var(--gold);color:#1a1305;font-weight:700;}
+  .cec-free-text{margin:6px 10px 8px;background:var(--panel);border:1px solid var(--hair);border-radius:6px;padding:6px 8px;color:var(--text);outline:none;resize:none;overflow:hidden;width:calc(100% - 20px);}
   .cec-free-text:focus{border-color:var(--gold);}
+  .cec-free-text-corps{font-family:var(--font-body);font-size:12.5px;font-weight:400;}
+  .cec-free-text-soustitre{font-family:var(--font-display);font-size:13.5px;font-weight:600;font-style:italic;color:var(--text-dim);}
+  .cec-free-text-titre{font-family:var(--font-display);font-size:17px;font-weight:700;}
+  .cec-add-text-btn{align-self:flex-start;margin:8px 10px;background:transparent;border:1px dashed var(--hair);color:var(--text-dim);border-radius:8px;padding:5px 10px;font-size:11px;cursor:pointer;}
+  .cec-add-text-btn:hover{border-color:var(--gold);color:var(--gold);}
   .cec-remove-free{margin:0 10px 8px;text-align:left;font-size:11px;}
   .cerveau-add-free{align-self:flex-start;background:transparent;border:1px dashed var(--hair);color:var(--text-dim);border-radius:8px;padding:6px 12px;font-size:11.5px;cursor:pointer;margin-bottom:10px;}
   .cerveau-add-free:hover{border-color:var(--gold);color:var(--gold);}
@@ -678,6 +679,12 @@
     .mf-orange{color:#F0A441;font-weight:600;}
     .mf-green-strong{color:var(--green);font-weight:700;}
     .print-table tr:nth-child(even) td{background:rgba(255,255,255,0.02);}
+    /* Styles de texte des blocs libres du Cerveau numérique, mêmes 3 choix qu'à
+       l'écran (cec-free-text-*) — sans ça, l'export PDF perdait la mise en forme
+       (titre/sous-titre/corps) que l'utilisateur avait choisie pour chaque bloc. */
+    .print-cec-text-corps{font-family:var(--font-body);font-size:12px;font-weight:400;color:var(--text);}
+    .print-cec-text-soustitre{font-family:var(--font-display);font-size:13px;font-weight:600;font-style:italic;color:var(--text-dim);}
+    .print-cec-text-titre{font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--text);}
     .print-footer{margin-top:22px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);font-size:10px;color:var(--text-faint);text-align:right;font-family:var(--font-mono);}
     @page{margin:14mm;background:var(--bg);}
   }
