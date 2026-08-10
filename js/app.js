@@ -963,17 +963,60 @@ const MACRO_CHART_GETTERS = {
   weight: () => macroWeightChart,
   ranking: () => macroRankingChart
 };
+// Capture un graphique Chart.js en image haute résolution : Chart.js utilise par défaut
+// window.devicePixelRatio pour la résolution interne du canvas, donc sur un écran non-Retina
+// (dpr=1) un export PNG/JPEG/PDF ressort flou une fois zoomé/imprimé. On force temporairement
+// une densité de 3x avant la capture, puis on restaure (resize() est nécessaire des deux
+// côtés, Chart.js ne redimensionne pas le canvas tant qu'on ne le lui demande pas).
+function chartToHiResDataUrl(chart, mime){
+  if (!chart) return null;
+  const original = chart.options.devicePixelRatio || window.devicePixelRatio || 1;
+  const HI_RES = 3;
+  const bump = original < HI_RES;
+  if (bump){ chart.options.devicePixelRatio = HI_RES; chart.resize(); }
+  const dataUrl = chart.toBase64Image(mime || 'image/png', 1.0);
+  if (bump){ chart.options.devicePixelRatio = original; chart.resize(); }
+  return dataUrl;
+}
+// Réencode une image en lui appliquant des coins arrondis (les PNG/JPEG téléchargés sont
+// des pixels bruts — un border-radius CSS n'a d'effet que sur un <img> affiché/imprimé,
+// jamais sur le fichier téléchargé lui-même, d'où ce passage par un canvas avec clip).
+function roundedImageDataUrl(sourceDataUrl, mime, bgColor){
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width; canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      const r = Math.round(Math.min(img.width, img.height) * 0.025);
+      if (bgColor){ ctx.fillStyle = bgColor; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+      ctx.beginPath();
+      ctx.moveTo(r, 0);
+      ctx.arcTo(canvas.width, 0, canvas.width, canvas.height, r);
+      ctx.arcTo(canvas.width, canvas.height, 0, canvas.height, r);
+      ctx.arcTo(0, canvas.height, 0, 0, r);
+      ctx.arcTo(0, 0, canvas.width, 0, r);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(img, 0, 0);
+      resolve(canvas.toDataURL(mime || 'image/png', 0.95));
+    };
+    img.onerror = () => resolve(sourceDataUrl);
+    img.src = sourceDataUrl;
+  });
+}
 function exportMacroChartAsPdf(key, title){
   const chart = MACRO_CHART_GETTERS[key] && MACRO_CHART_GETTERS[key]();
   if (!chart) return;
-  const body = `<div class="print-section"><img class="print-chart-img" src="${chart.toBase64Image('image/png', 1.0)}" alt=""></div>`;
+  const body = `<div class="print-section"><img class="print-chart-img" src="${chartToHiResDataUrl(chart)}" alt=""></div>`;
   exportSectionAsPdf(title, null, body);
 }
-function exportMacroChartAsImage(key, filename, format){
+async function exportMacroChartAsImage(key, filename, format){
   const chart = MACRO_CHART_GETTERS[key] && MACRO_CHART_GETTERS[key]();
   if (!chart) return;
   const mime = format === 'jpg' ? 'image/jpeg' : 'image/png';
-  const url = chart.toBase64Image(mime, 1.0);
+  const rawUrl = chartToHiResDataUrl(chart, mime);
+  const url = await roundedImageDataUrl(rawUrl, mime, format === 'jpg' ? '#151A1F' : null);
   const a = document.createElement('a');
   a.href = url;
   a.download = filename + '.' + (format === 'jpg' ? 'jpg' : 'png');
@@ -1048,19 +1091,36 @@ const MACRO_FUND_QUARTER_END = { Q1:'-03-31', Q2:'-06-30', Q3:'-09-30', Q4:'-12-
 
 function renderMacroFundamentalsError(){
   const box = document.getElementById('macroFundamentalsTable');
+  let staleNote = '';
+  let stale = null;
+  try{ stale = JSON.parse(localStorage.getItem(MACRO_FUND_LS_KEY) || 'null'); }catch(e){ /* ignore */ }
+  if (stale && stale.rows && stale.rows.length){
+    macroFundamentalsData = stale.rows;
+    const ageDays = Math.floor((Date.now() - stale.fetchedAt) / 86400000);
+    staleNote = `<p class="macro-fund-note">⚠️ Rafraîchissement échoué (BEA/FRED indisponibles ou relais CORS en
+      panne temporaire) — dernières données connues affichées, mises à jour il y a ${ageDays} jour${ageDays > 1 ? 's' : ''}.</p>`;
+    renderMacroFundamentalsTable();
+    if (box) box.insertAdjacentHTML('afterbegin', staleNote);
+    return;
+  }
   if (box) box.innerHTML = `<p class="macro-fund-note">Impossible de charger les indicateurs macro pour le moment
-    (BEA/FRED indisponibles, clé invalide, ou relais CORS temporairement en panne). Recharge la page pour réessayer.</p>`;
+    (BEA/FRED indisponibles, clé invalide, ou relais CORS temporairement en panne).
+    <button id="macroFundRetryBtn" class="macro-fund-retry">↻ Réessayer</button></p>`;
+  const retryBtn = document.getElementById('macroFundRetryBtn');
+  if (retryBtn) retryBtn.addEventListener('click', () => loadMacroFundamentalsData(true));
 }
 
-async function loadMacroFundamentalsData(){
-  try{
-    const cached = JSON.parse(localStorage.getItem(MACRO_FUND_LS_KEY) || 'null');
-    if (cached && cached.fetchedAt && (Date.now() - cached.fetchedAt) < MACRO_FUND_CACHE_MS){
-      macroFundamentalsData = cached.rows;
-      renderMacroFundamentalsTable();
-      return;
-    }
-  }catch(e){ /* cache corrompu — on refetch normalement */ }
+async function loadMacroFundamentalsData(forceRefresh){
+  if (!forceRefresh){
+    try{
+      const cached = JSON.parse(localStorage.getItem(MACRO_FUND_LS_KEY) || 'null');
+      if (cached && cached.fetchedAt && (Date.now() - cached.fetchedAt) < MACRO_FUND_CACHE_MS){
+        macroFundamentalsData = cached.rows;
+        renderMacroFundamentalsTable();
+        return;
+      }
+    }catch(e){ /* cache corrompu — on refetch normalement */ }
+  }
 
   try{
     const [t10101, t10105, dgs10, dgs2, cpi] = await Promise.all([
@@ -1199,10 +1259,13 @@ function exportSectionAsPdf(title, subtitle, bodyHtml, entityLogoUrl){
 // Capture un canvas Chart.js vivant en image (le canvas lui-même ne peut pas être
 // déplacé/cloné dans #printArea sans perdre son rendu — Chart.js dessine sur un
 // contexte précis, une copie DOM du <canvas> serait vierge).
-function chartCanvasToImgHtml(canvasId, altLabel){
+function chartCanvasToImgHtml(canvasId, altLabel, chartInstance){
   const canvas = document.getElementById(canvasId);
   if (!canvas) return '';
-  try{ return `<img class="print-chart-img" src="${canvas.toDataURL('image/png')}" alt="${altLabel || ''}">`; }
+  try{
+    const dataUrl = chartInstance ? chartToHiResDataUrl(chartInstance) : canvas.toDataURL('image/png');
+    return `<img class="print-chart-img" src="${dataUrl}" alt="${altLabel || ''}">`;
+  }
   catch(e){ return ''; } // canvas taint (image cross-origin) — on omet simplement l'image
 }
 
@@ -1445,12 +1508,12 @@ async function buildPortfolioExportChartImg(holdings){
   const chart = new Chart(canvas.getContext('2d'), {
     type:'doughnut',
     data:{ labels: holdings.map(h => h.nom), datasets:[{ data: holdings.map(h => h.valorisation), backgroundColor: holdings.map((_, i) => PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length]), borderColor:'#151A1F', borderWidth:2 }] },
-    options:{ responsive:false, animation:false, cutout:'46%',
+    options:{ responsive:false, animation:false, cutout:'46%', devicePixelRatio:3,
       plugins:{ legend:{ position:'right', labels:{ boxWidth:10, font:{ size:11 }, color:'#E9EBEE' } } } },
     plugins:[centerLogoPlugin]
   });
   let dataUrl = '';
-  try{ dataUrl = canvas.toDataURL('image/png'); }catch(e){ /* improbable ici : seule image externe = logo Wolf, CORS-safe */ }
+  try{ dataUrl = await roundedImageDataUrl(canvas.toDataURL('image/png'), 'image/png'); }catch(e){ /* improbable ici : seule image externe = logo Wolf, CORS-safe */ }
   chart.destroy();
   return dataUrl ? `<img class="print-chart-img" src="${dataUrl}" alt="Répartition du portefeuille">` : '';
 }
@@ -3887,7 +3950,7 @@ function printAnalyseSectionHtml(s, data){
 }
 function printAnalyseChartHtml(key, rows){
   if (!rows || !rows.length) return '';
-  return `<div class="print-section"><h3>${ANALYSE_CHART_LABELS[key]}</h3>${chartCanvasToImgHtml('analyseChart_' + key, ANALYSE_CHART_LABELS[key])}</div>`;
+  return `<div class="print-section"><h3>${ANALYSE_CHART_LABELS[key]}</h3>${chartCanvasToImgHtml('analyseChart_' + key, ANALYSE_CHART_LABELS[key], analyseCharts[key])}</div>`;
 }
 function printAnalyseConcurrentsHtml(list){
   if (!list || !list.length) return '';
