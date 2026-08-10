@@ -1028,6 +1028,58 @@ async function exportMacroChartAsImage(key, filename, format){
 // tableau HTML demanderait une librairie type html2canvas, écarté pour rester
 // cohérent avec le choix déjà fait pour l'export PDF (voir "Pièges techniques" point 1
 // : éviter d'ajouter une dépendance CDN de plus).
+// Export complet des ratios : Analyse et Valorisation (demande explicite, en plus des
+// exports déjà existants par graphique/onglet). Réutilise exportSectionAsPdf — les
+// grilles de ratios (.ratio-grid/.ratio-card, .analyse-valo-*) sont des règles CSS
+// globales (pas scoped à un média), donc leur outerHTML s'affiche correctement une
+// fois copié dans #printArea sans dupliquer le CSS.
+const ANALYSE_CHART_EXPORT_LIST = [
+  ['stock', 'Cours de bourse'],
+  ['div', 'Dividende & Payout ratio'],
+  ['ca', "Chiffre d'affaires"],
+  ['marges', 'Marge opérationnelle & ROIC'],
+  ['fcf', 'FCF par action'],
+  ['pfcf', 'P/FCF & Médiane P/FCF'],
+  ['actions', 'Actions en circulation'],
+  ['dette', 'Dette nette / OCF'],
+  ['cash', 'Trésorerie & investissements']
+];
+function exportAnalyseFullAsPdf(){
+  if (!activeCompany) return;
+  const latest = companies[activeCompany][companies[activeCompany].length - 1];
+  const logo = companyLogoUrl(activeCompany);
+  const ratiosBox = document.querySelector('#pageAnalyse .ratio-grid');
+  const ratiosHtml = ratiosBox ? `<div class="print-section"><h3>Ratios clés</h3>${ratiosBox.outerHTML}</div>` : '';
+  const valoBox = document.getElementById('analyseValoCard');
+  const valoHtml = (valoBox && valoBox.style.display !== 'none' && valoBox.innerHTML.trim())
+    ? `<div class="print-section"><h3>Valorisation enregistrée</h3>${valoBox.outerHTML}</div>` : '';
+  const chartsHtml = ANALYSE_CHART_EXPORT_LIST.map(([key, title]) => {
+    const chart = chartInstances[key];
+    if (!chart) return '';
+    return `<div class="print-section"><h3>${title}</h3><img class="print-chart-img" src="${chartToHiResDataUrl(chart)}" alt=""></div>`;
+  }).join('');
+  exportSectionAsPdf(activeCompany, (latest.ticker || '') + ' — Analyse complète', ratiosHtml + valoHtml + chartsHtml, logo);
+}
+function exportValorisationFullAsPdf(){
+  if (!activeCompany) return;
+  const logo = companyLogoUrl(activeCompany);
+  const summaryBox = document.querySelector('#pageValorisation .valo-summary');
+  const summaryHtml = summaryBox ? `<div class="print-section"><h3>Résumé</h3>${summaryBox.outerHTML}</div>` : '';
+  const scenariosHtml = SCENARIOS.map(s => {
+    const v = scenarioValues[s.key];
+    if (!v) return '';
+    const chart = scenarioCharts[s.key];
+    const img = chart ? `<img class="print-chart-img" src="${chartToHiResDataUrl(chart)}" alt="">` : '';
+    const rows = ['prixJuste', 'prixCible', 'prixEst', 'rendement'].map(k => {
+      const el = document.getElementById('vo-' + s.key + '-' + k);
+      if (!el) return '';
+      const kEl = el.parentElement && el.parentElement.querySelector('.r-k');
+      return `<tr><td>${kEl ? kEl.textContent : k}</td><td>${el.textContent}</td></tr>`;
+    }).join('');
+    return `<div class="print-section"><h3>${s.label} — CAGR ${v.cagr}% / Multiple ${v.multiple}x</h3>${img}<table class="print-table">${rows}</table></div>`;
+  }).join('');
+  exportSectionAsPdf(activeCompany, valorisationMetric.toUpperCase() + ' — Simulations scénarisées', summaryHtml + scenariosHtml, logo);
+}
 function exportMacroTableAsPdf(boxId, title){
   const box = document.getElementById(boxId);
   if (!box) return;

@@ -68,6 +68,7 @@
           <span class="tag" id="secteurTag">Secteur —</span>
           <span class="tag" id="sousSecteurTag">Sous-secteur —</span>
           <span class="tag tag-link" id="openAnalyseTag">📊 Analyse développée</span>
+          <span class="tag tag-link" onclick="exportAnalyseFullAsPdf()">🖨 Exporter PDF</span>
         </div>
       </div>
       <div class="price-block">
@@ -270,6 +271,7 @@
       <div class="range-buttons" id="valoMetricToggle" style="margin-bottom:16px;">
         <button class="active" data-metric="fcf" onclick="setValorisationMetric('fcf')">Valoriser avec le FCF</button>
         <button data-metric="ocf" onclick="setValorisationMetric('ocf')">Valoriser avec l'OCF</button>
+        <button class="objectifs-export" style="margin-left:auto;" onclick="exportValorisationFullAsPdf()">🖨 Exporter PDF</button>
       </div>
 
       <div class="ratio-grid valo-summary">
