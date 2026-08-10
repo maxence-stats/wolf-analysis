@@ -1123,6 +1123,32 @@ function exportValorisationFullAsPdf(){
   }).join('');
   exportSectionAsPdf(activeCompany, valorisationMetric.toUpperCase() + ' — Simulations scénarisées', summaryHtml + scenariosHtml, logo);
 }
+// Export individuel d'un graphique de scénario — la page Valorisation n'avait jusque là
+// que l'export PDF de la page entière, pas de PNG/JPEG par scénario comme sur Macro et
+// Analyse (demande explicite).
+function exportScenarioChartAsPdf(key){
+  const chart = scenarioCharts[key];
+  if (!chart) return;
+  const s = SCENARIOS.find(sc => sc.key === key);
+  const logo = companyLogoUrl(activeCompany);
+  const body = `<div class="print-section"><img class="print-chart-img" src="${chartToHiResDataUrl(chart)}" alt=""></div>`;
+  exportSectionAsPdf((s ? s.label : key), activeCompany, body, logo);
+}
+async function exportScenarioChartAsImage(key, format){
+  const chart = scenarioCharts[key];
+  if (!chart) return;
+  const s = SCENARIOS.find(sc => sc.key === key);
+  const mime = format === 'jpg' ? 'image/jpeg' : 'image/png';
+  const rawUrl = chartToHiResDataUrl(chart, mime);
+  const url = await roundedImageDataUrl(rawUrl, mime, format === 'jpg' ? '#151A1F' : null);
+  const filename = (activeCompany || 'entreprise') + '-' + (s ? s.key : key);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename.toLowerCase().replace(/\s+/g, '-') + '.' + (format === 'jpg' ? 'jpg' : 'png');
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
 function exportMacroTableAsPdf(boxId, title){
   const box = document.getElementById(boxId);
   if (!box) return;
@@ -2772,6 +2798,11 @@ function scenarioCardHtml(s){
         <div><div class="r-k">Rendement (5a)</div><div class="r-v" id="vo-${s.key}-rendement">—</div></div>
       </div>
       <div class="scenario-chart-holder"><canvas id="vo-${s.key}-chart"></canvas></div>
+      <div class="macro-export-row">
+        <button onclick="exportScenarioChartAsPdf('${s.key}')">PDF</button>
+        <button onclick="exportScenarioChartAsImage('${s.key}','png')">PNG</button>
+        <button onclick="exportScenarioChartAsImage('${s.key}','jpg')">JPG</button>
+      </div>
     </div>
   `;
 }
@@ -2809,6 +2840,12 @@ function renderValorisation(nom){
   document.getElementById('voPrixActuel').textContent = prixActuel != null ? fmtEUR(prixActuel) : 'N/D';
   document.getElementById('voFcfLabel').textContent = label + ' actuel';
   document.getElementById('voFcfActuel').textContent = fcfActuel != null ? fmtEUR(fcfActuel) : 'N/D';
+  // Libellés dynamiques FCF/OCF sur les tuiles CAGR et médiane — sans ça, rien ne
+  // distinguait "CAGR (historique)" d'un CAGR FCF ou OCF une fois la valorisation
+  // enregistrée/rechargée, source de doute signalée explicitement par l'utilisateur.
+  document.getElementById('voCagrLabel').textContent = 'CAGR ' + label + ' (historique)';
+  document.getElementById('voMedianeLabel').textContent = 'Médiane ' + label + ' (historique)';
+  document.getElementById('voMediane20Label').textContent = 'Médiane ' + label + ' (20 ans)';
   document.getElementById('voCagrHist').textContent = cagrHist != null ? fmtPct(cagrHist) : 'N/D';
   document.getElementById('voMedianeHist').textContent = medianeHist != null ? medianeHist.toLocaleString('fr-FR', {minimumFractionDigits:1}) + 'x' : 'N/D';
   document.getElementById('voMediane20').textContent = mediane20 != null ? mediane20.toLocaleString('fr-FR', {minimumFractionDigits:1}) + 'x' : 'N/D';
@@ -2948,7 +2985,12 @@ function openScenarioZoom(key){
   logoEl.style.display = logo ? '' : 'none';
   if (logo) logoEl.src = logo;
   document.getElementById('scenarioZoomModal').style.display = 'flex';
-  if (scenarioCharts[key]) scenarioCharts[key].resize();
+  // requestAnimationFrame plutôt qu'un resize() synchrone immédiat : déplacer la carte
+  // + changer sa classe ne force pas de reflow tout de suite, donc Chart.js pouvait lire
+  // les DIMENSIONS D'AVANT le changement (encore celles de la petite carte) et figer le
+  // canvas à cette taille — symptôme observé à l'ouverture comme à la fermeture ("il
+  // s'étend trop grand"). On laisse le navigateur reflow avant de mesurer.
+  requestAnimationFrame(() => { if (scenarioCharts[key]) scenarioCharts[key].resize(); });
 }
 function closeScenarioZoom(){
   const body = document.getElementById('scenarioZoomBody');
@@ -2956,9 +2998,16 @@ function closeScenarioZoom(){
   if (card && card._zoomHome){
     card.classList.remove('scenario-card-zoomed');
     const { parent, next } = card._zoomHome;
-    if (next) parent.insertBefore(card, next); else parent.appendChild(card);
+    // `next` peut être devenu un nœud orphelin si #scenarioGrid a été reconstruit
+    // (changement FCF/OCF, changement d'entreprise) pendant que la carte était zoomée —
+    // insertBefore lèverait alors une exception et laisserait la carte coincée hors du
+    // DOM normal. Repli sûr : simplement l'ajouter à la fin du conteneur actuel.
+    try{
+      if (next && next.parentNode === parent) parent.insertBefore(card, next);
+      else parent.appendChild(card);
+    }catch(e){ parent.appendChild(card); }
     const key = card.dataset.key;
-    if (scenarioCharts[key]) scenarioCharts[key].resize();
+    requestAnimationFrame(() => { if (scenarioCharts[key]) scenarioCharts[key].resize(); });
   }
   document.getElementById('scenarioZoomModal').style.display = 'none';
 }
