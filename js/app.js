@@ -1033,6 +1033,31 @@ function exportMacroTableAsPdf(boxId, title){
   if (!box) return;
   exportSectionAsPdf(title, null, `<div class="print-section">${box.innerHTML}</div>`);
 }
+// Export global demandé par l'utilisateur : les 4 graphiques + les 2 tableaux de
+// l'onglet Macroéconomie dans un seul document PDF, plutôt que 6 exports séparés.
+const MACRO_EXPORT_ALL_CHARTS = [
+  ['cycle', 'Cycle de Marché — Offensif vs Défensif'],
+  ['rotation', 'Rotation Sectorielle GICS vs S&P 500'],
+  ['weight', 'Poids relatif des secteurs'],
+  ['ranking', 'Classement sectoriel']
+];
+const MACRO_EXPORT_ALL_TABLES = [
+  ['macroPowerTable', 'Force relative sectorielle'],
+  ['macroFundamentalsTable', 'Indicateurs macroéconomiques (États-Unis)']
+];
+function exportMacroFullPageAsPdf(){
+  const chartHtml = MACRO_EXPORT_ALL_CHARTS.map(([key, title]) => {
+    const chart = MACRO_CHART_GETTERS[key] && MACRO_CHART_GETTERS[key]();
+    if (!chart) return '';
+    return `<div class="print-section"><h3>${title}</h3><img class="print-chart-img" src="${chartToHiResDataUrl(chart)}" alt=""></div>`;
+  }).join('');
+  const tableHtml = MACRO_EXPORT_ALL_TABLES.map(([id, title]) => {
+    const box = document.getElementById(id);
+    if (!box || !box.querySelector('table')) return '';
+    return `<div class="print-section"><h3>${title}</h3>${box.innerHTML}</div>`;
+  }).join('');
+  exportSectionAsPdf('Macroéconomie', "Vue d'ensemble — graphiques et tableaux", chartHtml + tableHtml);
+}
 
 // Indicateurs macro US (PIB, taux, inflation) : en attente des 2 clés API gratuites
 // (BEA + FRED, voir CLAUDE.md "Onglet Macroéconomie") pour un chargement automatique —
