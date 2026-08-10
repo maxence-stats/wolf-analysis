@@ -456,10 +456,13 @@ scroller.
 
 ### Onglet Alertes de prix (fait, fonctionnel)
 Widget sous le prix actuel de l'onglet Analyse (`#priceAlertWidget`,
-`renderPriceAlertWidget()`) pour programmer un seuil par entreprise — formulaire inline
-(pas de `prompt()`, voir "Pièges techniques" point 7). Direction (`up`/`down`) déduite
-une fois à la création selon que le seuil est au-dessus ou en dessous du prix du moment
-(`setAlerte()`), pour rester cohérente même si le prix oscille ensuite. Onglet dédié
+`renderPriceAlertWidget()`) pour programmer un ou **plusieurs** seuils par entreprise —
+`alertesStore[nom]` est un tableau (`[{id, seuil, direction}, ...]`), pas un objet
+unique (ancien format à un seul seuil migré automatiquement au chargement par
+`migrateAlertesFormat()`, sans perte). Formulaire inline (pas de `prompt()`, voir
+"Pièges techniques" point 7). Direction (`up`/`down`) déduite une fois à la création
+selon que le seuil est au-dessus ou en dessous du prix du moment (`addAlerte()`), pour
+rester cohérente même si le prix oscille ensuite. Onglet dédié
 (`#alertesList`, `renderAlertesTab()`) liste toutes les alertes programmées, mise en
 évidence visuelle (bordure/lueur or) si le seuil est atteint. **Pas de notification ni
 d'email** (décision explicite avec l'utilisateur : une vraie alerte en arrière-plan

@@ -450,6 +450,7 @@ function portfolioSegmentLogosPlugin(){
         ctx.arc(x, y, size / 2, 0, Math.PI * 2);
         ctx.fillStyle = '#fff';
         ctx.fill();
+        const label = String(chart.data.labels[i]);
         if (img){
           ctx.save();
           ctx.beginPath();
@@ -457,12 +458,17 @@ function portfolioSegmentLogosPlugin(){
           ctx.clip();
           ctx.drawImage(img, x - size / 2, y - size / 2, size, size);
           ctx.restore();
+        } else if (label.toUpperCase() === 'CASH'){
+          ctx.font = Math.round(size * 0.55) + 'px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('💶', x, y);
         } else {
           ctx.fillStyle = '#0D1013';
           ctx.font = 'bold ' + Math.round(size * 0.42) + 'px sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText(String(chart.data.labels[i]).charAt(0).toUpperCase(), x, y);
+          ctx.fillText(label.charAt(0).toUpperCase(), x, y);
         }
         ctx.restore();
       });
@@ -494,7 +500,10 @@ function buildPortfolioDonutConfig(){
       responsive:true, maintainAspectRatio:false, cutout:'46%',
       plugins:{
         legend:{ display:false },
-        tooltip:{ callbacks:{ label: ctx => {
+        // position:'nearest' + caretPadding : la bulle suit le curseur au lieu de
+        // rester fixe au centre du segment (là où le logo est dessiné), ce qui évitait
+        // de se superposer au logo — retour utilisateur ("le logo passe par-dessus").
+        tooltip:{ position:'nearest', caretPadding:14, callbacks:{ label: ctx => {
           const pct = total ? (ctx.parsed / total * 100) : 0;
           return ctx.label + ' : ' + ctx.parsed.toLocaleString('fr-FR',{maximumFractionDigits:0}) + ' € (' + pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%)';
         } } }
@@ -553,7 +562,7 @@ function renderPortfolioHoldingsList(){
       const swatch = PORTFOLIO_COLORS[holdings.indexOf(h) % PORTFOLIO_COLORS.length];
       return `<div class="portfolio-holding-row">
         <span class="portfolio-holding-swatch" style="background:${swatch}"></span>
-        <div class="portfolio-holding-logo">${logo ? `<img src="${logo}" alt="">` : `<span>${h.nom.charAt(0).toUpperCase()}</span>`}</div>
+        <div class="portfolio-holding-logo">${logo ? `<img src="${logo}" alt="">` : h.nom.toUpperCase() === 'CASH' ? `<span>💶</span>` : `<span>${h.nom.charAt(0).toUpperCase()}</span>`}</div>
         <div class="portfolio-holding-name">${h.nom}</div>
         <div class="portfolio-holding-pct">${pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</div>
         <div class="portfolio-holding-perf ${perfClass}">${h.perf != null ? (h.perf >= 0 ? '+' : '') + fmtPct(h.perf) : '—'}</div>
@@ -599,12 +608,12 @@ function renderPortfolioVsSpxMonthly(){
   if (!monthly.length) return;
 
   portfolioVsSpxMonthlyChart = new Chart(canvas.getContext('2d'), {
-    type:'bar',
+    type:'line',
     data:{
       labels: monthly.map(m => m.mois),
       datasets:[
-        { label:'Wolf Portfolio', data: monthly.map(m => m.rendementMensuel), backgroundColor:THEME.gold, borderRadius:4, barPercentage:0.7 },
-        { label:'S&P 500', data: monthly.map(m => m.spxPerfMensuelle), backgroundColor:THEME.blue, borderRadius:4, barPercentage:0.7 }
+        { label:'Wolf Portfolio', data: monthly.map(m => m.rendementMensuel), borderColor:THEME.gold, backgroundColor:'rgba(217,164,65,0.08)', fill:true, tension:0.25, pointRadius:3, spanGaps:true },
+        { label:'S&P 500', data: monthly.map(m => m.spxPerfMensuelle), borderColor:THEME.blue, borderWidth:1.5, pointRadius:3, tension:0.25, spanGaps:true }
       ]
     },
     options:{ responsive:true, maintainAspectRatio:false,
@@ -1846,8 +1855,20 @@ function initWatchlist(){
    ============================================================ */
 const ALERTES_LS_KEY = 'wolfAnalysisAlertes';
 const ALERTES_BASELINE_URL = 'data/alertes.json';
-let alertesStore = {}; // { [nom]: { seuil, direction: 'up'|'down' } }
+let alertesStore = {}; // { [nom]: [{ id, seuil, direction: 'up'|'down' }, ...] } — plusieurs alertes par entreprise
 let priceAlertEditing = false;
+
+// D'anciennes données locales peuvent avoir été enregistrées au format { seuil, direction }
+// (une seule alerte par entreprise) avant le passage aux alertes multiples — migré ici
+// vers un tableau plutôt que perdu, conformément à la règle "ne jamais rien supprimer".
+function migrateAlertesFormat(){
+  Object.keys(alertesStore).forEach(nom => {
+    const v = alertesStore[nom];
+    if (!Array.isArray(v)){
+      alertesStore[nom] = v && v.seuil != null ? [Object.assign({ id: 'a' + Date.now() + Math.random().toString(36).slice(2) }, v)] : [];
+    }
+  });
+}
 
 async function loadAlertesBaseline(){
   try{
@@ -1861,6 +1882,7 @@ async function loadAlertesBaseline(){
     const raw = localStorage.getItem(ALERTES_LS_KEY);
     if (raw) Object.assign(alertesStore, JSON.parse(raw));
   }catch(e){ /* localStorage indisponible ou JSON corrompu */ }
+  migrateAlertesFormat();
   renderAlertesTab();
   if (activeCompany) renderPriceAlertWidget(activeCompany, companies[activeCompany][companies[activeCompany].length - 1].prixActuel);
 }
@@ -1881,12 +1903,15 @@ function exportAlertes(){
   URL.revokeObjectURL(url);
 }
 
-function setAlerte(nom, seuil, prixActuelRef){
-  alertesStore[nom] = { seuil, direction: seuil <= prixActuelRef ? 'down' : 'up' };
+function addAlerte(nom, seuil, prixActuelRef){
+  if (!alertesStore[nom]) alertesStore[nom] = [];
+  alertesStore[nom].push({ id: 'a' + Date.now() + Math.random().toString(36).slice(2), seuil, direction: seuil <= prixActuelRef ? 'down' : 'up' });
   persistAlertesLocal();
 }
-function removeAlerte(nom){
-  delete alertesStore[nom];
+function removeAlerte(nom, id){
+  if (!alertesStore[nom]) return;
+  alertesStore[nom] = alertesStore[nom].filter(a => a.id !== id);
+  if (!alertesStore[nom].length) delete alertesStore[nom];
   persistAlertesLocal();
 }
 function isAlerteTriggered(alerte, prixActuel){
@@ -1897,20 +1922,37 @@ function isAlerteTriggered(alerte, prixActuel){
 function renderPriceAlertWidget(nom, prixActuel){
   const box = document.getElementById('priceAlertWidget');
   if (!box) return;
-  const alerte = alertesStore[nom];
+  const alertes = alertesStore[nom] || [];
+
+  const badges = alertes.map(a => {
+    const triggered = isAlerteTriggered(a, prixActuel);
+    return `<div class="price-alert-badge${triggered ? ' triggered' : ''}">
+      🔔 ${a.seuil.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})} €${triggered ? ' — atteinte' : ''}
+      <button class="price-alert-del" data-id="${a.id}" aria-label="Supprimer">✕</button>
+    </div>`;
+  }).join('');
+
+  const formOrButton = priceAlertEditing
+    ? `<div class="price-alert-form">
+        <input type="number" step="0.01" min="0" id="priceAlertInput" placeholder="Seuil en €">
+        <button id="priceAlertSave" aria-label="Enregistrer">✓</button>
+        <button id="priceAlertCancel" aria-label="Annuler">✕</button>
+      </div>`
+    : `<button class="price-alert-set-btn" id="priceAlertSetBtn">🔔 ${alertes.length ? 'Ajouter une alerte' : 'Programmer une alerte'}</button>`;
+
+  box.innerHTML = `<div class="price-alert-list">${badges}</div>${formOrButton}`;
+
+  box.querySelectorAll('.price-alert-del').forEach(btn => {
+    btn.addEventListener('click', () => { removeAlerte(nom, btn.dataset.id); renderPriceAlertWidget(nom, prixActuel); renderAlertesTab(); });
+  });
 
   if (priceAlertEditing){
-    box.innerHTML = `<div class="price-alert-form">
-      <input type="number" step="0.01" min="0" id="priceAlertInput" placeholder="Seuil en €" value="${alerte ? alerte.seuil : ''}">
-      <button id="priceAlertSave" aria-label="Enregistrer">✓</button>
-      <button id="priceAlertCancel" aria-label="Annuler">✕</button>
-    </div>`;
     const input = document.getElementById('priceAlertInput');
     input.focus();
     const submit = () => {
       const v = parseFloat(input.value);
       if (isNaN(v) || v <= 0){ input.focus(); return; }
-      setAlerte(nom, v, prixActuel);
+      addAlerte(nom, v, prixActuel);
       priceAlertEditing = false;
       renderPriceAlertWidget(nom, prixActuel);
       renderAlertesTab();
@@ -1918,20 +1960,7 @@ function renderPriceAlertWidget(nom, prixActuel){
     document.getElementById('priceAlertSave').addEventListener('click', submit);
     document.getElementById('priceAlertCancel').addEventListener('click', () => { priceAlertEditing = false; renderPriceAlertWidget(nom, prixActuel); });
     input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
-    return;
-  }
-
-  if (alerte){
-    const triggered = isAlerteTriggered(alerte, prixActuel);
-    box.innerHTML = `<div class="price-alert-badge${triggered ? ' triggered' : ''}">
-      🔔 Alerte à ${alerte.seuil.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})} €${triggered ? ' — atteinte' : ''}
-      <button class="price-alert-edit" id="priceAlertEditBtn" aria-label="Modifier">✎</button>
-      <button class="price-alert-del" id="priceAlertDelBtn" aria-label="Supprimer">✕</button>
-    </div>`;
-    document.getElementById('priceAlertEditBtn').addEventListener('click', () => { priceAlertEditing = true; renderPriceAlertWidget(nom, prixActuel); });
-    document.getElementById('priceAlertDelBtn').addEventListener('click', () => { removeAlerte(nom); renderPriceAlertWidget(nom, prixActuel); renderAlertesTab(); });
   } else {
-    box.innerHTML = `<button class="price-alert-set-btn" id="priceAlertSetBtn">🔔 Programmer une alerte</button>`;
     document.getElementById('priceAlertSetBtn').addEventListener('click', () => { priceAlertEditing = true; renderPriceAlertWidget(nom, prixActuel); });
   }
 }
@@ -1940,14 +1969,15 @@ function renderAlertesTab(){
   const box = document.getElementById('alertesList');
   if (!box) return;
 
-  const rows = Object.keys(alertesStore)
-    .filter(nom => companies[nom])
-    .map(nom => {
-      const latest = companies[nom][companies[nom].length - 1];
-      const alerte = alertesStore[nom];
-      return { nom, logo: latest.lienImage, prixActuel: latest.prixActuel, seuil: alerte.seuil, triggered: isAlerteTriggered(alerte, latest.prixActuel) };
-    })
-    .sort((a, b) => (b.triggered ? 1 : 0) - (a.triggered ? 1 : 0));
+  const rows = [];
+  Object.keys(alertesStore).forEach(nom => {
+    if (!companies[nom]) return;
+    const latest = companies[nom][companies[nom].length - 1];
+    (alertesStore[nom] || []).forEach(alerte => {
+      rows.push({ nom, logo: latest.lienImage, prixActuel: latest.prixActuel, seuil: alerte.seuil, triggered: isAlerteTriggered(alerte, latest.prixActuel) });
+    });
+  });
+  rows.sort((a, b) => (b.triggered ? 1 : 0) - (a.triggered ? 1 : 0));
 
   box.innerHTML = rows.length ? rows.map(r => `
     <div class="alerte-row${r.triggered ? ' triggered' : ''}" data-nom="${r.nom.replace(/"/g, '&quot;')}">

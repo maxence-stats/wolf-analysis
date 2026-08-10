@@ -222,18 +222,17 @@
   .cerveau-sector-box, .cerveau-chain-box{cursor:pointer;transition:transform .12s ease,border-color .12s ease;}
   .cerveau-sector-box:hover, .cerveau-chain-box:hover{transform:translateY(-2px);border-color:rgba(217,164,65,0.3);}
   .cerveau-chain-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(240px, 1fr));gap:14px;}
-  .cerveau-phase-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;}
-  .cerveau-phase{padding:18px;}
-  .cerveau-entity-list{display:flex;flex-direction:column;gap:8px;min-height:20px;margin-bottom:12px;}
-  .cerveau-entity-chip{display:flex;align-items:center;gap:8px;background:var(--panel-2);border:var(--card-border);border-radius:10px;padding:6px 10px;cursor:pointer;font-size:12.5px;}
+  .cerveau-phase-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;}
+  .cerveau-phase{padding:22px;min-height:420px;display:flex;flex-direction:column;}
+  .cerveau-entity-list{display:flex;flex-direction:column;gap:10px;min-height:20px;margin-bottom:14px;flex:1;}
+  .cerveau-entity-chip{display:flex;align-items:center;gap:10px;background:var(--panel-2);border:var(--card-border);border-radius:10px;padding:9px 12px;cursor:pointer;font-size:13px;}
   .cerveau-entity-chip:hover{border-color:var(--gold);}
-  .cerveau-entity-chip img{width:20px;height:20px;object-fit:contain;background:#fff;border-radius:3px;flex-shrink:0;}
-  .cerveau-entity-initial{width:20px;height:20px;border-radius:3px;background:var(--hair);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;}
+  .cerveau-entity-chip img{width:28px;height:28px;object-fit:contain;background:#fff;border-radius:4px;flex-shrink:0;}
+  .cerveau-entity-initial{width:28px;height:28px;border-radius:4px;background:var(--hair);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;}
   .cerveau-note-badge{margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--text-faint);}
-  .cerveau-add-entity input{width:100%;background:var(--panel);border:1px solid var(--hair);border-radius:8px;padding:6px 10px;color:var(--text);font-size:12px;outline:none;}
+  .cerveau-add-entity input{width:100%;background:var(--panel);border:1px solid var(--hair);border-radius:8px;padding:8px 10px;color:var(--text);font-size:12.5px;outline:none;}
   .cerveau-add-entity input:focus{border-color:var(--gold);}
-  @media (max-width:1300px){ .cerveau-phase-grid{grid-template-columns:repeat(2,1fr);} }
-  @media (max-width:760px){ .cerveau-phase-grid{grid-template-columns:1fr;} }
+  @media (max-width:900px){ .cerveau-phase-grid{grid-template-columns:1fr;} }
 
   /* ---------- FICHE ENTITÉ (modale) ---------- */
   #ficheModal{display:none;position:fixed;inset:0;background:rgba(4,5,7,0.78);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);z-index:999;align-items:center;justify-content:center;padding:30px;}
@@ -285,7 +284,9 @@
   .price-value{font-family:var(--font-mono);font-size:38px;font-weight:700;color:var(--text);line-height:1.1;}
   .price-value sup{font-size:16px;color:var(--text-dim);font-weight:500;}
   .price-year{font-size:11px;color:var(--text-faint);font-family:var(--font-mono);margin-top:4px;}
-  .price-alert{margin-top:10px;display:flex;justify-content:flex-end;}
+  .price-alert{margin-top:10px;display:flex;flex-direction:column;align-items:flex-end;gap:6px;}
+  .price-alert-list{display:flex;flex-direction:column;align-items:flex-end;gap:6px;}
+  .price-alert-list:empty{display:none;}
   .price-alert-set-btn{background:none;border:1px dashed var(--hair);color:var(--text-faint);border-radius:20px;padding:5px 12px;font-size:11px;font-family:var(--font-mono);cursor:pointer;}
   .price-alert-set-btn:hover{border-color:var(--gold);color:var(--text);}
   .price-alert-badge{display:flex;align-items:center;gap:6px;background:var(--panel-2);border:1px solid var(--hair);border-radius:20px;padding:5px 6px 5px 12px;font-size:11px;font-family:var(--font-mono);color:var(--text-dim);}
@@ -402,7 +403,7 @@
 
   /* ---------- ZOOM MODAL ---------- */
   #zoomModal{display:none;position:fixed;inset:0;background:rgba(4,5,7,0.78);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);z-index:999;align-items:center;justify-content:center;padding:24px;}
-  .zoom-panel{background:var(--card-bg);border:var(--card-border);border-radius:16px;padding:22px 24px;width:min(1400px,96vw);max-height:94vh;display:flex;flex-direction:column;box-shadow:0 24px 60px -20px rgba(0,0,0,0.7);}
+  .zoom-panel{background:var(--card-bg);border:var(--card-border);border-radius:16px;padding:22px 24px;width:min(1700px,98vw);height:97vh;max-height:97vh;display:flex;flex-direction:column;box-shadow:0 24px 60px -20px rgba(0,0,0,0.7);}
   .zoom-panel-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
   .zoom-panel-head h3{font-family:var(--font-display);font-size:18px;font-weight:600;margin:0;}
   .zoom-close{background:none;border:1px solid var(--hair);color:var(--text-dim);width:32px;height:32px;border-radius:8px;cursor:pointer;font-size:15px;}
@@ -412,7 +413,7 @@
   .zoom-cagr-row{display:flex;gap:10px;flex-wrap:wrap;}
   .zoom-cagr-chip{font-family:var(--font-mono);font-size:11px;padding:4px 10px;border-radius:20px;border:1px solid var(--hair);color:var(--text-dim);background:rgba(255,255,255,0.02);}
   .zoom-cagr-chip b{color:var(--text);font-weight:700;}
-  .zoom-canvas-holder{position:relative;flex:1;min-height:560px;}
+  .zoom-canvas-holder{position:relative;flex:1;min-height:680px;}
   .zoom-footer{margin-top:16px;display:flex;align-items:center;justify-content:flex-end;gap:10px;font-size:11px;color:var(--text-faint);font-family:var(--font-mono);}
   .zoom-footer img{height:28px;width:auto;border-radius:5px;}
 

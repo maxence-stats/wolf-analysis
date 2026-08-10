@@ -6,6 +6,16 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 ## [Non publié]
 
 ### Ajouté
+- **Alertes de prix multiples** : jusqu'ici une seule alerte par entreprise (la
+  reprogrammer écrasait la précédente) — passage à un tableau d'alertes par
+  entreprise, ancien format migré automatiquement sans perte au premier chargement.
+- **Wolf Portfolio, retouches** : zoom modal agrandi (97vh), tooltip du donut qui suit
+  le curseur au lieu de rester fixe sur le logo survolé, icône 💶 pour le Cash (au lieu
+  d'un simple "C"), graphique de performance mensuelle passé en courbes.
+- Onglet "Cerveau" renommé "Cerveau numérique" (barre d'onglets), blocs de phase de
+  chaîne de valeur agrandis (grille 2 colonnes au lieu de 4, plus de hauteur).
+
+### Ajouté
 - **Onglet Wolf Portfolio, suite** : mise en page recomposée (liste des positions à
   gauche, donut agrandi à droite, plus grand possible), logos de segment agrandis
   (jusqu'à 56px, anneau élargi à `cutout:46%`), bouton zoom sur le donut (réutilise la
