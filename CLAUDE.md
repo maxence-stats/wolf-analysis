@@ -581,6 +581,28 @@ aussi l'archive sous la clé `archive`) + bouton **Exporter PDF**
   seule via une rangée de pastilles mensuelles sous les 3 colonnes actives
   (`ideesArchiveViewHtml()`), un clic affiche/masque le contenu du mois choisi.
 
+### Onglet Revue de la semaine (fait, fonctionnel)
+Fiches de synthèse d'opportunités de sous-valorisation façon revue de presse
+financière (entreprise, source/analyste, objectif de cours, 3 points clés sur les
+fondamentaux), groupées par semaine (`revueWeekKey()`, numéro de semaine approximatif
+— pas besoin de conformité ISO 8601 stricte, juste un regroupement visuel lisible).
+Logo résolu automatiquement via `companyLogoUrl()` si l'entreprise saisie correspond à
+une entreprise suivie, sinon repli sur une initiale (même pattern que
+`portfolioEntityLogo()`/`cerveauEntityCard()`). Formulaire d'ajout inline (nom, source,
+objectif, textarea "un point par ligne" limité aux 3 premières lignes non vides) —
+pas de `prompt()`, voir "Pièges techniques" point 7. Persistance identique aux autres
+onglets : `localStorage` (`wolfAnalysisRevue`) + `data/revue.json` (fusion par `id`,
+pas par simple concaténation) + bouton Exporter (JSON).
+- **Pas d'automatisation Gemini/RSS côté client** (décision explicite après discussion
+  des options avec l'utilisateur) : un vrai scraping+synthèse programmé "chaque
+  vendredi soir" nécessiterait un cron, impossible sur un site 100% statique sans
+  backend (même limite que les alertes de prix et l'archivage mensuel des idées).
+  **Déclenchement manuel en conversation** à la place : l'utilisateur demande "fais la
+  revue de la semaine" (ou équivalent) directement à Claude, qui recherche/synthétise
+  et met à jour `data/revue.json` (commit + push) — même flux de synchronisation que
+  les objectifs de valorisation. L'utilisateur peut aussi ajouter/retirer des fiches
+  lui-même directement depuis l'onglet à tout moment, indépendamment de ce flux.
+
 ### Onglet Cerveau numérique (fait, fonctionnel)
 Base de connaissances visuelle : 11 secteurs GICS (+ "Autre") navigables → chaînes de
 valeur créées librement par l'utilisateur (nom + phases personnalisées, ex. Amont/
@@ -1027,16 +1049,27 @@ Marché, voir "Pièges techniques" point 14) :
   tableau vide silencieux.
 
 ### Demandé, non commencé — nécessite une décision d'architecture
-Ces 2 fonctionnalités ne sont **pas réalisables en site statique pur** sans backend :
-
 1. **Onglet Superinvestors (13F)** — pas d'API gratuite fiable et accessible en CORS
    pour les données 13F de la SEC. Options : API payante (WhaleWisdom...), ou compilation
    manuelle périodique par Claude dans le Sheet (même schéma que les données actuelles :
    Sheet = source de vérité, le site ne fait qu'afficher).
-2. **Onglet Résumé Hebdo** ("bouton qui va chercher sur internet") — impossible côté
-   client pur : nécessite recherche web + génération de texte, donc un backend avec clé
-   API. Alternative proposée : demander le résumé directement en conversation (ponctuel
-   ou tâche récurrente programmée), et le coller dans le Sheet/site si besoin d'affichage.
+2. **Onglet Résumé Hebdo / "Revue de la semaine"** — la partie affichage est **faite**
+   (voir "Onglet Revue de la semaine"), mais la collecte web + synthèse automatisée
+   reste **manuelle en conversation**, pas un vrai cron : impossible côté client pur sur
+   un site 100% statique. Piste explorée avec l'utilisateur : script GitHub Actions
+   programmé (clé API en secret GitHub, jamais exposée côté client, écrit
+   `data/revue.json`) — non retenue pour l'instant, l'utilisateur a choisi le
+   déclenchement manuel en conversation plutôt que de mettre en place cette
+   infrastructure. À reconsidérer si le besoin d'automatisation réelle se confirme.
+3. **Onglet "Résultats" (calendrier des publications)** — demandé, pas commencé.
+   Finnhub (API gratuite envisagée) **vérifié techniquement** : CORS OK en direct
+   (pas besoin de relais proxy), mais le **calendrier de résultats en plan gratuit ne
+   couvre que les valeurs américaines** — Euronext (donc la majorité du portefeuille,
+   très majoritairement européen) nécessite un abonnement payant. Décision : basculer
+   sur le pattern habituel du projet, un **nouvel onglet Google Sheet dédié** (saisie
+   manuelle des dates de publication, comme l'historique de prix ou le Cycle de
+   Marché) plutôt qu'un abonnement payant pour une fonctionnalité secondaire — en
+   attente que l'utilisateur crée cet onglet Sheet et communique son gid.
 
 ## Conventions de code
 
