@@ -66,6 +66,7 @@
         <div class="tags">
           <span class="tag" id="secteurTag">Secteur —</span>
           <span class="tag" id="sousSecteurTag">Sous-secteur —</span>
+          <span class="tag tag-link" id="openAnalyseTag">📊 Analyse développée</span>
         </div>
       </div>
       <div class="price-block">
@@ -370,7 +371,10 @@
   <div class="zoom-panel fiche-panel">
     <div class="zoom-panel-head">
       <h3 id="ficheTitle">—</h3>
-      <button class="zoom-close" onclick="closeFiche()" aria-label="Fermer">✕</button>
+      <div class="chart-card-actions">
+        <button class="zoom-btn" id="ficheOpenAnalyseBtn" title="Analyse développée">📊</button>
+        <button class="zoom-close" onclick="closeFiche()" aria-label="Fermer">✕</button>
+      </div>
     </div>
     <div class="fiche-entries" id="ficheEntries"></div>
     <div class="fiche-editor">
@@ -388,6 +392,27 @@
           <button class="zoom-btn" id="ficheSketchClear">Effacer</button>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<div id="analyseModal" onclick="if(event.target===this) closeAnalyse()">
+  <div class="zoom-panel analyse-panel">
+    <div class="zoom-panel-head">
+      <h3 id="analyseTitle">—</h3>
+      <button class="zoom-close" onclick="closeAnalyse()" aria-label="Fermer">✕</button>
+    </div>
+    <div class="analyse-toolbar">
+      <select id="analyseVersionSelect"></select>
+      <button class="cerveau-btn-cancel" id="analyseDuplicateBtn">⧉ Dupliquer cette version</button>
+      <button class="cerveau-btn-cancel" id="analyseNewBtn">+ Nouvelle fiche vierge</button>
+      <span class="analyse-updated" id="analyseUpdatedLabel"></span>
+      <button class="refresh-btn" id="analyseSaveBtn">💾 Enregistrer</button>
+    </div>
+    <div class="analyse-body" id="analyseBody"></div>
+    <div class="zoom-footer">
+      Données fournies par Wolf Analysis
+      <img src="https://i.postimg.cc/43WmYDB1/20260714-LOGO-WINTER-PNG.png" alt="Wolf Analysis">
     </div>
   </div>
 </div>

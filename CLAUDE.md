@@ -498,7 +498,9 @@ datées (texte + images uploadées/collées + croquis à main levée).
   par IndexedDB. Bouton « Exporter » sur la vue "Secteurs" (niveau racine).
 - **Modèle de données** : `cerveauData = { chains: { [secteurKey]: [{id, nom, phases:
   [{nom, entreprises:[nomLibre,...]}]}] }, notes: { [nomEntite]: [{date, texte, images:
-  [dataURL,...], sketches:[dataURL,...]}] } }`. Les clés de `notes` sont des noms libres
+  [dataURL,...], sketches:[dataURL,...]}] }, analyses: { [nomEntite]: [{id, label,
+  dateCreated, dateModified, sections:{...}, revenusPays:[], revenusSecteurs:[],
+  concurrents:[]}, ...] } }`. Les clés de `notes`/`analyses` sont des noms libres
   (pas forcément dans `companies`) — `cerveauEntityChip()` affiche le vrai logo si
   l'entité correspond à une entreprise suivie, sinon une initiale.
 - **Fiche entité** (`openFiche(nom)` / modale `#ficheModal`) : journal append-only (une
@@ -514,6 +516,20 @@ datées (texte + images uploadées/collées + croquis à main levée).
 - **Création de chaîne** : formulaire en ligne (nom + phases, boutons Créer/Annuler),
   affiché quand `cerveauView.creatingChain === true`. **Ne pas revenir à `prompt()`** pour
   cette interaction — voir "Pièges techniques" point 7 (crash silencieux constaté).
+- **Analyse développée** (`openAnalyse(nom)` / modale `#analyseModal`, distincte de
+  `#ficheModal`) : trame fixe de 9 blocs texte+images (`CERVEAU_ANALYSE_SECTIONS`) +
+  2 blocs "revenus" avec vrai camembert Chart.js (`revenusPays`/`revenusSecteurs`,
+  liste `{label,pct}` éditable qui redessine le graphique) + une liste extensible de
+  concurrents. **Contrairement au journal (`notes`, append-only), c'est une fiche qu'on
+  modifie sur place** — mais dupliquable (`duplicateAnalyseVersion()`, clone profond
+  via `JSON.parse(JSON.stringify())`) pour garder plusieurs versions datées sans jamais
+  écraser une version existante (demande explicite : l'entreprise évolue, l'ancienne
+  analyse doit rester consultable). Sauvegarde explicite (bouton, pas d'auto-save à
+  chaque frappe) : les champs texte/listes modifient l'objet `v` en mémoire directement
+  au fil de la saisie, `saveAnalyseVersion()` persiste sur IndexedDB. Deux points
+  d'entrée : bouton 📊 dans `#ficheModal` (`openAnalyseFromFiche()`) et tag
+  « 📊 Analyse développée » dans l'en-tête de l'onglet Analyse (`#openAnalyseTag`,
+  pour l'entreprise actuellement affichée).
 
 ### Palette graphiques (fait)
 `THEME` expose `blue` (`css.getPropertyValue('--blue').trim()`) en plus de `gold`. Les

@@ -2012,7 +2012,7 @@ function initAlertes(){
 const CERVEAU_DB_NAME = 'wolfAnalysisCerveau';
 const CERVEAU_STORE = 'state';
 let cerveauDB = null;
-let cerveauData = { chains:{}, notes:{} };
+let cerveauData = { chains:{}, notes:{}, analyses:{} };
 let cerveauView = { level:'secteurs' };
 
 function openCerveauDB(){
@@ -2034,6 +2034,7 @@ async function loadCerveauData(){
       const json = await res.json();
       if (json && json.chains) Object.assign(cerveauData.chains, json.chains);
       if (json && json.notes) Object.assign(cerveauData.notes, json.notes);
+      if (json && json.analyses) Object.assign(cerveauData.analyses, json.analyses);
     }
   }catch(e){ /* socle absent ou fetch bloqué (ex. file://) — non bloquant */ }
 
@@ -2047,6 +2048,7 @@ async function loadCerveauData(){
     if (stored){
       if (stored.chains) Object.keys(stored.chains).forEach(k => { cerveauData.chains[k] = stored.chains[k]; });
       if (stored.notes) Object.keys(stored.notes).forEach(k => { cerveauData.notes[k] = stored.notes[k]; });
+      if (stored.analyses) Object.keys(stored.analyses).forEach(k => { cerveauData.analyses[k] = stored.analyses[k]; });
     }
   }catch(e){ /* IndexedDB indisponible (navigation privée stricte...) — non bloquant */ }
 
@@ -2214,6 +2216,12 @@ function openFiche(nom){
   renderFicheEntries();
   document.getElementById('ficheModal').style.display = 'flex';
 }
+
+function openAnalyseFromFiche(){
+  if (!ficheEntite) return;
+  closeFiche();
+  openAnalyse(ficheEntite);
+}
 function closeFiche(){
   document.getElementById('ficheModal').style.display = 'none';
   ficheEntite = null;
@@ -2251,6 +2259,7 @@ function clearSketchCanvas(){
 }
 
 function initFicheModal(){
+  document.getElementById('ficheOpenAnalyseBtn').addEventListener('click', openAnalyseFromFiche);
   const imageInput = document.getElementById('ficheImageInput');
   imageInput.addEventListener('change', async () => {
     for (const file of imageInput.files){
@@ -2312,6 +2321,236 @@ function initFicheModal(){
     renderFicheEntries();
     renderCerveau();
   });
+}
+
+/* ============================================================
+   ANALYSE DÉVELOPPÉE — trame structurée réutilisable par entreprise
+   (n'importe quel nom, comme le journal ci-dessus), accessible depuis
+   le Cerveau (bouton 📊 dans la fiche journal) et depuis l'onglet
+   Analyse (tag "📊 Analyse développée"). Contrairement au journal
+   (append-only), c'est UNE fiche qu'on modifie sur place — mais on
+   peut la DUPLIQUER pour garder plusieurs versions datées sans jamais
+   écraser une version existante (demande explicite : l'entreprise
+   évolue, l'ancienne analyse doit rester consultable).
+   Stockage : cerveauData.analyses[nom] = [ {id, label, dateCreated,
+   dateModified, sections:{...}, revenusPays:[], revenusSecteurs:[],
+   concurrents:[]}, ... ] — même IndexedDB que chains/notes, jamais
+   supprimé automatiquement.
+   ============================================================ */
+const CERVEAU_ANALYSE_SECTIONS = [
+  { key:'presentation', label:"Présentation de l'entreprise", hint:'Stratégie, profil opérationnel et concurrentiel' },
+  { key:'marche', label:'Analyse du marché' },
+  { key:'moat', label:'Avantage concurrentiel (moat)' },
+  { key:'secteursActivite', label:"Secteurs d'activité", hint:'Produits, perspectives de développement' },
+  { key:'perspectives', label:'Perspectives de croissance' },
+  { key:'risques', label:'Analyse du risque' },
+  { key:'actionnariat', label:'Actionnariat principal', hint:"Chiffres, ou capture d'écran d'un graphique" },
+  { key:'ratios', label:'Ratios financiers', hint:"Captures d'écran de l'application" },
+  { key:'conclusion', label:'Conclusion', hint:'Business model, synthèse, datée automatiquement' }
+];
+
+let analyseEntite = null;
+let analyseVersionId = null;
+let analyseCharts = {};
+
+function blankAnalyseVersion(label){
+  const today = new Date().toISOString().slice(0, 10);
+  const sections = {};
+  CERVEAU_ANALYSE_SECTIONS.forEach(s => { sections[s.key] = { texte:'', images:[] }; });
+  return { id:'v' + Date.now() + Math.random().toString(36).slice(2), label, dateCreated:today, dateModified:today, sections, revenusPays:[], revenusSecteurs:[], concurrents:[] };
+}
+
+function currentAnalyseVersion(){
+  const list = cerveauData.analyses[analyseEntite] || [];
+  return list.find(v => v.id === analyseVersionId) || list[list.length - 1];
+}
+
+function openAnalyse(nom){
+  analyseEntite = nom;
+  if (!cerveauData.analyses[nom] || !cerveauData.analyses[nom].length){
+    cerveauData.analyses[nom] = [blankAnalyseVersion('Version 1')];
+    persistCerveauData();
+  }
+  analyseVersionId = cerveauData.analyses[nom][cerveauData.analyses[nom].length - 1].id;
+  document.getElementById('analyseTitle').textContent = 'Analyse développée — ' + nom;
+  renderAnalyse();
+  document.getElementById('analyseModal').style.display = 'flex';
+}
+function closeAnalyse(){
+  document.getElementById('analyseModal').style.display = 'none';
+  Object.values(analyseCharts).forEach(c => c && c.destroy());
+  analyseCharts = {};
+  analyseEntite = null;
+}
+
+function renderAnalyseVersionSelect(){
+  const sel = document.getElementById('analyseVersionSelect');
+  const list = cerveauData.analyses[analyseEntite] || [];
+  sel.innerHTML = list.map(v => `<option value="${v.id}"${v.id === analyseVersionId ? ' selected' : ''}>${v.label} (${v.dateModified})</option>`).join('');
+}
+
+function analyseSectionHtml(s, data){
+  return `<div class="analyse-section">
+    <h4>${s.label}</h4>
+    ${s.hint ? `<p class="analyse-hint">${s.hint}</p>` : ''}
+    <textarea class="analyse-textarea" data-key="${s.key}" placeholder="Texte…">${(data.texte || '').replace(/</g, '&lt;')}</textarea>
+    <div class="analyse-images" data-key="${s.key}">${(data.images || []).map((src, i) => `<div class="analyse-image-thumb"><img src="${src}" alt=""><button class="analyse-image-del" data-key="${s.key}" data-idx="${i}">✕</button></div>`).join('')}</div>
+    <label class="fiche-file-btn">+ Image<input type="file" accept="image/*" multiple class="analyse-image-input" data-key="${s.key}" hidden></label>
+  </div>`;
+}
+
+function analyseRevenusHtml(key, label, rows){
+  return `<div class="analyse-section">
+    <h4>${label}</h4>
+    <div class="analyse-revenus-body">
+      <div>
+        ${rows.map((r, i) => `<div class="analyse-revenus-row"><span>${r.label}</span><span>${r.pct}%</span><button class="analyse-revenus-del" data-key="${key}" data-idx="${i}">✕</button></div>`).join('')}
+        <div class="analyse-revenus-add">
+          <input type="text" placeholder="Libellé (ex. France)" class="analyse-revenus-label" data-key="${key}">
+          <input type="number" placeholder="%" min="0" max="100" class="analyse-revenus-pct" data-key="${key}">
+          <button class="analyse-revenus-addbtn" data-key="${key}">+ Ajouter</button>
+        </div>
+      </div>
+      <div class="chart-holder analyse-revenus-chart"><canvas id="analyseChart_${key}"></canvas></div>
+    </div>
+  </div>`;
+}
+
+function analyseConcurrentsHtml(list){
+  return `<div class="analyse-section">
+    <h4>Concurrents</h4>
+    <p class="analyse-hint">Au moins 3-4 fiches : logo/image produit, description rapide</p>
+    <div class="analyse-competitors">${list.map((c, i) => `
+      <div class="analyse-competitor">
+        <input type="text" class="analyse-competitor-nom" data-idx="${i}" placeholder="Nom du concurrent" value="${(c.nom || '').replace(/"/g, '&quot;')}">
+        <textarea class="analyse-competitor-texte" data-idx="${i}" placeholder="Description…">${(c.texte || '').replace(/</g, '&lt;')}</textarea>
+        <div class="analyse-images">${(c.images || []).map((src, j) => `<div class="analyse-image-thumb"><img src="${src}" alt=""><button class="analyse-competitor-image-del" data-idx="${i}" data-img="${j}">✕</button></div>`).join('')}</div>
+        <label class="fiche-file-btn">+ Image<input type="file" accept="image/*" multiple class="analyse-competitor-image-input" data-idx="${i}" hidden></label>
+        <div><button class="analyse-competitor-del" data-idx="${i}">Supprimer ce concurrent</button></div>
+      </div>`).join('')}</div>
+    <button class="cerveau-btn-cancel" id="analyseAddCompetitor">+ Ajouter un concurrent</button>
+  </div>`;
+}
+
+function renderAnalyseCharts(v){
+  [['revenusPays', v.revenusPays], ['revenusSecteurs', v.revenusSecteurs]].forEach(([key, rows]) => {
+    const canvas = document.getElementById('analyseChart_' + key);
+    if (analyseCharts[key]) { analyseCharts[key].destroy(); analyseCharts[key] = null; }
+    if (!canvas || !rows.length) return;
+    analyseCharts[key] = new Chart(canvas.getContext('2d'), {
+      type:'pie',
+      data:{ labels: rows.map(r => r.label), datasets:[{ data: rows.map(r => r.pct), backgroundColor: rows.map((_, i) => PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length]), borderColor:THEME.hair, borderWidth:2 }] },
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true, color:THEME.dim, font:{size:10.5} } } } }
+    });
+  });
+}
+
+function wireAnalyseSectionEvents(){
+  const v = currentAnalyseVersion();
+  const box = document.getElementById('analyseBody');
+
+  box.querySelectorAll('.analyse-textarea').forEach(ta => {
+    ta.addEventListener('input', () => { v.sections[ta.dataset.key].texte = ta.value; });
+  });
+  box.querySelectorAll('.analyse-image-input').forEach(input => {
+    input.addEventListener('change', async () => {
+      for (const file of input.files) v.sections[input.dataset.key].images.push(await readFileAsDataURL(file));
+      input.value = '';
+      renderAnalyse();
+    });
+  });
+  box.querySelectorAll('.analyse-image-del').forEach(btn => {
+    btn.addEventListener('click', () => { v.sections[btn.dataset.key].images.splice(parseInt(btn.dataset.idx, 10), 1); renderAnalyse(); });
+  });
+
+  box.querySelectorAll('.analyse-revenus-addbtn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.key;
+      const labelInput = box.querySelector(`.analyse-revenus-label[data-key="${key}"]`);
+      const pctInput = box.querySelector(`.analyse-revenus-pct[data-key="${key}"]`);
+      const label = labelInput.value.trim();
+      const pct = parseFloat(pctInput.value);
+      if (!label || isNaN(pct)) return;
+      v[key].push({ label, pct });
+      renderAnalyse();
+    });
+  });
+  box.querySelectorAll('.analyse-revenus-del').forEach(btn => {
+    btn.addEventListener('click', () => { v[btn.dataset.key].splice(parseInt(btn.dataset.idx, 10), 1); renderAnalyse(); });
+  });
+
+  box.querySelectorAll('.analyse-competitor-nom').forEach(input => {
+    input.addEventListener('input', () => { v.concurrents[parseInt(input.dataset.idx, 10)].nom = input.value; });
+  });
+  box.querySelectorAll('.analyse-competitor-texte').forEach(ta => {
+    ta.addEventListener('input', () => { v.concurrents[parseInt(ta.dataset.idx, 10)].texte = ta.value; });
+  });
+  box.querySelectorAll('.analyse-competitor-image-input').forEach(input => {
+    input.addEventListener('change', async () => {
+      const idx = parseInt(input.dataset.idx, 10);
+      for (const file of input.files) v.concurrents[idx].images.push(await readFileAsDataURL(file));
+      input.value = '';
+      renderAnalyse();
+    });
+  });
+  box.querySelectorAll('.analyse-competitor-image-del').forEach(btn => {
+    btn.addEventListener('click', () => { v.concurrents[parseInt(btn.dataset.idx, 10)].images.splice(parseInt(btn.dataset.img, 10), 1); renderAnalyse(); });
+  });
+  box.querySelectorAll('.analyse-competitor-del').forEach(btn => {
+    btn.addEventListener('click', () => { v.concurrents.splice(parseInt(btn.dataset.idx, 10), 1); renderAnalyse(); });
+  });
+  document.getElementById('analyseAddCompetitor').addEventListener('click', () => { v.concurrents.push({ nom:'', texte:'', images:[] }); renderAnalyse(); });
+}
+
+function renderAnalyse(){
+  renderAnalyseVersionSelect();
+  const v = currentAnalyseVersion();
+  document.getElementById('analyseUpdatedLabel').textContent = 'Dernière modification : ' + v.dateModified;
+  const box = document.getElementById('analyseBody');
+  box.innerHTML = CERVEAU_ANALYSE_SECTIONS.map(s => analyseSectionHtml(s, v.sections[s.key])).join('')
+    + analyseRevenusHtml('revenusPays', 'Revenus par pays', v.revenusPays)
+    + analyseRevenusHtml('revenusSecteurs', "Revenus par secteur d'activité", v.revenusSecteurs)
+    + analyseConcurrentsHtml(v.concurrents);
+  wireAnalyseSectionEvents();
+  renderAnalyseCharts(v);
+}
+
+function saveAnalyseVersion(){
+  const v = currentAnalyseVersion();
+  v.dateModified = new Date().toISOString().slice(0, 10);
+  persistCerveauData();
+  renderAnalyseVersionSelect();
+  document.getElementById('analyseUpdatedLabel').textContent = 'Dernière modification : ' + v.dateModified + ' — enregistré ✓';
+}
+
+function duplicateAnalyseVersion(){
+  const list = cerveauData.analyses[analyseEntite];
+  const src = currentAnalyseVersion();
+  const copy = JSON.parse(JSON.stringify(src));
+  copy.id = 'v' + Date.now() + Math.random().toString(36).slice(2);
+  copy.label = src.label + ' (copie)';
+  copy.dateCreated = new Date().toISOString().slice(0, 10);
+  copy.dateModified = copy.dateCreated;
+  list.push(copy);
+  analyseVersionId = copy.id;
+  persistCerveauData();
+  renderAnalyse();
+}
+
+function newBlankAnalyseVersion(){
+  const list = cerveauData.analyses[analyseEntite];
+  const v = blankAnalyseVersion('Version ' + (list.length + 1));
+  list.push(v);
+  analyseVersionId = v.id;
+  persistCerveauData();
+  renderAnalyse();
+}
+
+function initAnalyseModal(){
+  document.getElementById('analyseVersionSelect').addEventListener('change', e => { analyseVersionId = e.target.value; renderAnalyse(); });
+  document.getElementById('analyseDuplicateBtn').addEventListener('click', duplicateAnalyseVersion);
+  document.getElementById('analyseNewBtn').addEventListener('click', newBlankAnalyseVersion);
+  document.getElementById('analyseSaveBtn').addEventListener('click', saveAnalyseVersion);
 }
 
 /* ============================================================
@@ -2474,6 +2713,8 @@ loadWatchlistBaseline();
 initAlertes();
 loadAlertesBaseline();
 initFicheModal();
+initAnalyseModal();
+document.getElementById('openAnalyseTag').addEventListener('click', () => { if (activeCompany) openAnalyse(activeCompany); });
 loadCerveauData();
 loadIdeesBaseline();
 

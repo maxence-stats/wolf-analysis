@@ -6,6 +6,16 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 ## [Non publié]
 
 ### Ajouté
+- **Analyse développée par entreprise (Cerveau numérique)** : trame structurée
+  réutilisable (présentation, marché, moat, secteurs d'activité, perspectives,
+  risques, actionnariat, ratios, conclusion — texte + images sur chaque bloc), deux
+  vrais graphiques camembert pour la répartition des revenus (par pays, par secteur),
+  section concurrents extensible. Accessible depuis la fiche journal du Cerveau
+  (bouton 📊) et directement depuis l'onglet Analyse (tag « 📊 Analyse développée »).
+  **Versionnable par duplication** plutôt qu'écrasée : une fiche de base qu'on modifie
+  sur place, avec la possibilité de la dupliquer pour garder plusieurs versions datées
+  quand l'entreprise évolue — jamais de perte de version précédente. Stockage
+  IndexedDB (`cerveauData.analyses`), jamais supprimé automatiquement.
 - **Alertes de prix multiples** : jusqu'ici une seule alerte par entreprise (la
   reprogrammer écrasait la précédente) — passage à un tableau d'alertes par
   entreprise, ancien format migré automatiquement sans perte au premier chargement.

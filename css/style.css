@@ -253,6 +253,44 @@
   .fiche-sketch-wrap{margin-top:10px;}
   .fiche-sketch-wrap canvas{width:100%;height:auto;background:#fff;border-radius:8px;cursor:crosshair;touch-action:none;}
   .fiche-sketch-tools{display:flex;align-items:center;gap:10px;margin-top:8px;}
+  .tag-link{cursor:pointer;}
+  .tag-link:hover{border-color:var(--gold);color:var(--text);}
+
+  /* ---------- ANALYSE DÉVELOPPÉE (modale) ---------- */
+  #analyseModal{display:none;position:fixed;inset:0;background:rgba(4,5,7,0.78);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);z-index:999;align-items:center;justify-content:center;padding:20px;}
+  .analyse-panel{width:min(1100px,96vw);height:94vh;max-height:94vh;overflow:hidden;}
+  .analyse-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--hair);}
+  .analyse-toolbar select{background:var(--panel);border:1px solid var(--hair);border-radius:8px;padding:7px 10px;color:var(--text);font-family:var(--font-body);font-size:12.5px;outline:none;max-width:220px;}
+  .analyse-updated{margin-left:auto;font-family:var(--font-mono);font-size:11px;color:var(--text-faint);white-space:nowrap;}
+  .analyse-body{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:16px;padding-right:4px;}
+  .analyse-section{background:var(--panel-2);border:var(--card-border);border-radius:12px;padding:16px 18px;}
+  .analyse-section h4{font-family:var(--font-display);font-size:14.5px;font-weight:600;margin:0 0 4px;}
+  .analyse-hint{margin:0 0 10px;font-size:11.5px;color:var(--text-faint);}
+  .analyse-textarea{width:100%;min-height:80px;background:var(--panel);border:1px solid var(--hair);border-radius:8px;padding:10px 12px;color:var(--text);font-family:var(--font-body);font-size:13px;resize:vertical;outline:none;}
+  .analyse-textarea:focus{border-color:var(--gold);}
+  .analyse-images{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;}
+  .analyse-image-thumb{position:relative;width:70px;height:70px;}
+  .analyse-image-thumb img{width:100%;height:100%;object-fit:cover;border-radius:6px;}
+  .analyse-image-thumb button{position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:var(--red);border:none;color:#fff;font-size:10px;cursor:pointer;line-height:1;}
+  .analyse-section > .fiche-file-btn{margin-top:10px;display:inline-block;}
+  .analyse-revenus-body{display:grid;grid-template-columns:1fr 260px;gap:16px;align-items:start;}
+  .analyse-revenus-row{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:8px;padding:6px 0;font-size:12.5px;border-bottom:1px solid var(--hair);}
+  .analyse-revenus-del{background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:11px;}
+  .analyse-revenus-del:hover{color:var(--red);}
+  .analyse-revenus-add{display:flex;gap:6px;margin-top:10px;}
+  .analyse-revenus-add input{background:var(--panel);border:1px solid var(--hair);border-radius:8px;padding:6px 8px;color:var(--text);font-size:12px;outline:none;}
+  .analyse-revenus-label{flex:1;min-width:0;}
+  .analyse-revenus-pct{width:60px;}
+  .analyse-revenus-addbtn{flex-shrink:0;background:var(--panel);border:1px solid var(--hair);color:var(--text-dim);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;}
+  .analyse-revenus-addbtn:hover{border-color:var(--gold);color:var(--text);}
+  .analyse-revenus-chart{position:relative;height:200px;}
+  .analyse-competitors{display:grid;grid-template-columns:repeat(auto-fill, minmax(240px,1fr));gap:12px;margin-bottom:12px;}
+  .analyse-competitor{background:var(--panel);border:1px solid var(--hair);border-radius:10px;padding:12px;}
+  .analyse-competitor input{width:100%;background:var(--panel-2);border:1px solid var(--hair);border-radius:6px;padding:6px 8px;color:var(--text);font-size:12.5px;font-weight:600;outline:none;margin-bottom:8px;}
+  .analyse-competitor textarea{width:100%;min-height:60px;background:var(--panel-2);border:1px solid var(--hair);border-radius:6px;padding:8px;color:var(--text);font-size:12px;resize:vertical;outline:none;}
+  .analyse-competitor-del{margin-top:8px;background:none;border:1px solid var(--hair);color:var(--text-faint);border-radius:8px;padding:5px 10px;font-size:11px;cursor:pointer;}
+  .analyse-competitor-del:hover{border-color:var(--red);color:var(--red);}
+  @media (max-width:900px){ .analyse-revenus-body{grid-template-columns:1fr;} }
 
   /* ---------- STATE SCREENS ---------- */
   #loadingScreen, #errorScreen{
