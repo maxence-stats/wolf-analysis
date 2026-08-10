@@ -633,15 +633,29 @@ datées (texte + images uploadées/collées + croquis à main levée).
   posée juste avant `.click()` sur l'input cachée) — même famille de pattern que
   `draggedImageRef` pour le glisser-déposer des images de l'Analyse développée.
 - **Tailles de bloc et réorganisation** : chaque carte entreprise et bloc libre a un
-  champ `taille` (`S`/`M`/`L`, migration automatique à `M` pour les entrées existantes
-  sans ce champ) et un bouton cycle (⤢, `data-action="ent-size"`/`"free-size"`) qui
-  fait défiler les 3 tailles — CSS `[data-taille="S"|"L"]` ajuste largeur de la carte et
-  hauteur de la zone image. **Glisser-déposer pour réordonner** les cartes entre elles
-  ET les blocs libres entre eux (`wireCerveauBlockDrag()`, `draggedCerveauBlockRef`,
-  même famille de pattern que `draggedImageRef`) — **pas de glisser inter-listes** (une
-  carte entreprise ne peut pas devenir un bloc libre, les deux types ne partagent pas
-  le même tableau de données), le `drop` est ignoré si la liste cible n'est pas celle
-  d'origine.
+  champ `taille`. **4 tailles** (`CERVEAU_TAILLES = ['M','L','XL','XXL']` — la
+  toute petite taille `S` de la 1ère version a été retirée sur demande explicite,
+  jugée pas assez utile) : `M`/`L` verticales (image en haut, comme avant), `XL`/`XXL`
+  **"en longueur"** — paysage, image à gauche (`flex-direction:row`), `XL` = moitié de
+  la largeur du conteneur de phase (`width:calc(50% - 6px)`), `XXL` = pleine largeur.
+  La séparation HTML en `.cec-image` (+ `.cec-url-row`) puis `.cec-body` (tout le reste
+  : nom, légende, bouton fiche / texte libre) permet ce passage en rangée sans dupliquer
+  le HTML par taille. **4 boutons numérotés (1/2/3/4)** en bas du bloc
+  (`cerveauSizeButtonsHtml()`) sélectionnent directement une taille en un clic — remplace
+  l'ancien bouton cycle unique, jugé moins direct ("plus simple" demandé explicitement).
+  Migration automatique : toute ancienne entrée `S` ou sans `taille` devient `M`.
+  **Glisser-déposer** pour réordonner les cartes entre elles ET les blocs libres entre
+  eux (`wireCerveauBlockDrag()`, `draggedCerveauBlockRef`, même famille de pattern que
+  `draggedImageRef`) — fonctionne maintenant aussi **entre deux phases différentes**
+  de la même chaîne (ex. Amont → Transformation, demandé explicitement après un premier
+  essai qui l'interdisait) : `draggedCerveauBlockRef` retient le TYPE (`isFree`) et le
+  tableau SOURCE, donc splice-out du tableau source + splice-in dans le tableau cible
+  fonctionne identiquement que la cible soit la même phase ou une autre. Seule
+  contrainte restante : **jamais de glisser entre les deux types** (une carte
+  entreprise ne peut pas devenir un bloc libre, formes de données différentes) — le
+  `drop` est ignoré si `isFree` ne correspond pas. Un handler de `drop` est aussi posé
+  sur le CONTENEUR de liste lui-même (pas seulement sur chaque bloc), sinon impossible
+  de déposer dans une phase qui n'a encore aucun bloc de ce type.
 - **Fiche entité** (`openFiche(nom)` / modale `#ficheModal`) : journal append-only (une
   nouvelle entrée par sauvegarde, jamais d'édition rétroactive — même logique que
   l'historique des objectifs). Éditeur : `<textarea>` + upload d'images (`<input
@@ -755,6 +769,13 @@ travail nativement). **Ne pas réintroduire de librairie PDF sans en rediscuter.
 - **JSON reste le format de synchronisation multi-appareils** (voir "Conventions de
   code") — le PDF est un format de lecture/partage en plus, jamais un remplacement :
   ne pas faire dépendre `data/*.json` d'un export PDF.
+- **Logo de l'entreprise concernée** (`companyLogoUrl(nom)`, résolution dynamique par
+  nom comme `portfolioEntityLogo()` — jamais mise en cache en dur, donc apparaît
+  automatiquement dès qu'une entreprise est ajoutée au Sheet, sans changement de code) :
+  affiché en plus du logo Wolf Analysis dans l'en-tête de l'export Analyse développée
+  (`exportSectionAsPdf(..., entityLogoUrl)`, 4e paramètre optionnel) et à côté du nom de
+  chaque entité suivie dans l'export Chaîne de valeur (`printCerveauEntityHtml()`).
+  Absent silencieusement (pas de logo cassé affiché) si l'entreprise n'est pas suivie.
 
 ### Palette graphiques (fait)
 `THEME` expose `blue` (`css.getPropertyValue('--blue').trim()`) en plus de `gold`. Les
@@ -801,16 +822,21 @@ fetch. **Canal de régression linéaire** (`computeRegressionChannel()`) superpo
 graphique : moyenne ± 1/2 écarts-types calculés sur les 20 dernières années de clôtures
 hebdo (ou tout l'historique dispo si plus court), indépendant du sélecteur de plage —
 sur une plage plus courte on ne voit qu'un extrait du même canal. **Palette du
-graphique boursier** (`renderStockChart()`, revue complète — pas les couleurs
-sémantiques habituelles pos/neg du reste du site, ce sont des repères visuels/
-statistiques) : clôture hebdo en **blanc** (`THEME.white`), moyenne mobile **200
-semaines** en **jaune gras** (`THEME.yellow`, `borderWidth:2.5`), moyenne mobile
-**30 semaines** (nouvelle, `computeSMA(closes,30)`) en **violet fin** (`THEME.violet`
-— seule exception au design system, où le violet est autrement "jamais utilisé pour de
-la donnée", décidée explicitement par l'utilisateur pour cette ligne précise), ligne de
-régression centrale toujours en rouge, et les **4 bandes d'écart-type (±1σ, ±2σ) en
-bleu pointillé uniformément** (avant : ±1σ bleu, ±2σ rouge pointillé — simplifié à la
-demande explicite).
+graphique boursier** (`renderStockChart()`, révisée 2 fois de suite en cours de
+session — pas les couleurs sémantiques habituelles pos/neg du reste du site, ce sont
+des repères visuels/statistiques) : **v2 (actuelle)** — clôture hebdo en **jaune**
+(`THEME.yellow`), moyenne mobile **200 semaines** en **blanc** (`THEME.white`,
+`borderWidth:2.5`), moyenne mobile **30 semaines** (`computeSMA(closes,30)`) en
+**violet fin** (`THEME.violet` — seule exception au design system, où le violet est
+autrement "jamais utilisé pour de la donnée", décidée explicitement par l'utilisateur
+pour cette ligne précise), **±2σ et la ligne de régression centrale en rouge
+pointillé**, **±1σ en bleu pointillé** (inchangé depuis la v1). Corrigé deux fois de
+suite sur demande explicite de l'utilisateur (v1 : clôture blanc/SMA200 jaune, toutes
+les bandes bleu pointillé et médiane rouge plein → v2 : clôture jaune/SMA200 blanc,
+±2σ et médiane passés en rouge pointillé) — **si l'utilisateur redemande encore un
+changement de couleur sur ce graphique, vérifier d'abord la palette actuelle en lisant
+`renderStockChart()` plutôt que de supposer, l'historique montre que les couleurs ont
+déjà tourné deux fois**.
 
 **Piège confirmé — ni Yahoo ni Stooq n'ont de CORS.** Aucun des deux endpoints
 n'envoie `Access-Control-Allow-Origin` (vérifié directement), donc un `fetch()` direct
@@ -878,13 +904,16 @@ sans un moyen de contourner cette limitation.)*
   `input` qui soumet automatiquement dès que la valeur correspond exactement à une
   entreprise suivie (donc bien une suggestion choisie, pas juste une frappe en cours).
 
-### Onglet Macroéconomie (fait, 3 sur 4 sections — la 4e attend des clés API)
+### Onglet Macroéconomie (fait, 4/4 sections)
 3 sources sur le même Sheet publié, gids dédiés, chargées en parallèle du reste
 (`loadMacroCycleData()`/`loadMacroRotationData()`/`loadMacroPowerData()`, tous les
 trois via `loadSheetDual()` — factory générique CSV+gviz+responseHandler dédié,
 introduite ici pour ne pas réécrire 3 fois de plus le boilerplate déjà dupliqué pour
 Portfolio/historique de prix). `colToIdx('AB')` convertit une lettre de colonne Sheet
 en index 0-based, utilisé partout dans ce module plutôt que des indices en dur.
+**Mise en page en 2 colonnes** (`.macro-charts-row`, grid 2 colonnes, empile en 1 sous
+1100px) pour que 2 graphiques tiennent côte à côte, demandé explicitement ("prennent la
+moitié de la page").
 
 - **Cycle de Marché — Offensif vs Défensif** (`MACRO_CYCLE_GID = "1014329874"`) :
   ratio (Technologie + Finance + Industrie) / (Santé + Conso. de base + Services
@@ -899,15 +928,33 @@ en index 0-based, utilisé partout dans ce module plutôt que des indices en dur
   Panique/Neutre basé sur les 2 dernières colonnes flag, bouton zoom dédié
   (`openMacroCycleZoom()`, réutilise `#zoomModal` avec une config reconstruite —
   pas de sliders ici contrairement au zoom scénario, donc pas besoin de déplacer un
-  élément DOM vivant).
+  élément DOM vivant). Couleurs : ratio brut blanc, EMA20 rouge, **±2σ rouge pointillé**
+  (bleu pointillé à l'origine, changé sur demande explicite — même révision que le
+  graphique boursier), ±1σ bleu pointillé inchangé.
 - **Rotation Sectorielle GICS vs S&P 500** (`MACRO_ROTATION_GID = "1706659327"`) :
   11 secteurs déjà exprimés en ratio rebasé (~1.00 au début de la fenêtre disponible
   sur cet onglet, ~3 ans d'historique) — **pas de série S&P 500 séparée à tracer**,
   chaque secteur est déjà "vs S&P 500" ; une ligne de repère horizontale à 1.00 sert de
   référence visuelle (confirmé par la capture de référence de l'utilisateur : sa
-  légende ne liste que les 11 secteurs, pas de S&P 500). Pas de sélecteur de plage
-  (l'onglet source n'a que ~3 ans de données, un sélecteur 10/20 ans n'aurait pas de
-  sens). Bouton zoom (`openMacroRotationZoom()`), même pattern que ci-dessus.
+  légende ne liste que les 11 secteurs, pas de S&P 500). **Sélecteur de plage 1/2/3 ans**
+  (`#macroRotationRangeButtons`, `macroRotationRange`, même pattern de découpage par
+  date que le cours de bourse) — volontairement plus court que les autres sélecteurs du
+  site (5/10/20 ans), l'onglet source n'a que ~3 ans d'historique. Bouton zoom
+  (`openMacroRotationZoom()`), même pattern que ci-dessus.
+- **Poids relatif des secteurs** (camembert, `buildMacroWeightChartConfig()`) :
+  dérivé de `macroRotationData`, prend la **dernière valeur connue** de ratio de
+  chaque secteur (recule dans la série si la toute dernière ligne a un trou) et la
+  normalise en %. **Approximation volontairement affichée comme telle** (sous-titre
+  explicite) : ce n'est pas une vraie pondération de capitalisation boursière, juste
+  une lecture rapide de qui pèse le plus dans le mouvement récent — les ratios sont
+  rebasés à 1.00 au début de la fenêtre, pas une mesure de taille absolue.
+- **Classement sectoriel** (barres triées, `buildMacroRankingChartConfig()`) : reprend
+  directement la ligne **"Classement" déjà calculée dans le Sheet** (pondération
+  1/2/3 mois à 0,5/0,3/0,2, formule confirmée par l'utilisateur via capture d'écran de
+  sa formule Sheet) — aucun recalcul, triée du secteur le plus performant au moins
+  performant, mêmes couleurs par seuil que le tableau de force relative
+  (`macroPowerColorHex()`, version hex de `macroPowerColorClass()` pour les barres
+  Chart.js qui ont besoin d'une couleur directe et non d'une classe CSS).
 - **Tableau de force relative sectorielle** (`MACRO_POWER_GID = "30985186"`, onglet
   "Dashboard cycle") : **seul tableau de tout le projet dont le parsing utilise des
   positions de ligne fixes** (lignes 12 à 24, colonnes P à AA) plutôt qu'une
@@ -925,33 +972,59 @@ en index 0-based, utilisé partout dans ce module plutôt que des indices en dur
   explicitement par l'utilisateur. Tableau scrollable horizontalement (`overflow-x`),
   première colonne (libellés de ligne) fixée en `position:sticky`.
 - **Indicateurs macroéconomiques US** (PIB, consommation, investissement, dépenses
-  publiques, balance commerciale, taux à 10/2 ans, spread, inflation, taux réel) — **en
-  attente de 2 clés API gratuites fournies par l'utilisateur**, voir section suivante.
-  `renderMacroFundamentalsPlaceholder()` affiche un message explicite avec les liens
-  d'inscription en attendant, plutôt qu'un bloc vide sans explication.
+  publiques, balance commerciale, taux à 10/2 ans, spread, inflation, taux réel) — 100%
+  automatisé, clés API fournies par l'utilisateur (BEA + FRED, voir section suivante).
 
-#### Automatisation prévue : BEA (direct) + FRED (via relais CORS)
-Décision prise avec l'utilisateur après vérification technique (`curl` sur les deux
-API avec une clé factice, en observant la présence ou non de l'en-tête
-`Access-Control-Allow-Origin`) :
-- **API BEA** (`apps.bea.gov/api/data`, données PIB/NIPA : consommation, investissement,
-  dépenses publiques, balance commerciale) — **envoie `Access-Control-Allow-Origin: *`**
-  (vérifié), donc appelable en direct depuis le navigateur, sans proxy. Clé gratuite,
-  inscription instantanée, sans CB (`apps.bea.gov/API/signup/`).
-- **API FRED** (`api.stlouisfed.org/fred`, séries `DGS10`/`DGS2`/CPI pour les taux et
-  l'inflation) — **n'envoie aucun en-tête CORS** (vérifié, même comportement que
-  Yahoo Finance/Stooq, voir "Cours de bourse"), donc `fetch()` direct toujours bloqué.
-  Doit passer par le même relais déjà en place (`corsProxyUrls()`/`fetchWithRetry()`).
-  Clé gratuite, même processus (`fredaccount.stlouisfed.org/apikeys`).
-- **Ne pas implémenter avant d'avoir reçu les 2 clés de l'utilisateur** — il n'y a
-  pas de clé partagée/publique utilisable, chaque clé est personnelle et gratuite mais
-  doit être créée par lui.
-- Une fois les clés fournies : fetch complet de l'historique (pas seulement la donnée
-  la plus récente, les deux API renvoient des séries complètes) au chargement de
-  l'app, avec un cache `localStorage` daté pour éviter de re-fetcher à chaque visite
-  dans la même journée — pas besoin du système d'export/sync via `data/*.json` utilisé
-  pour les autres onglets (Idées, Watchlist...), puisque la source de vérité est
-  directement l'API, pas une saisie de l'utilisateur.
+#### Indicateurs macro US : BEA (direct) + FRED (via relais CORS) — implémenté
+Décision prise avec l'utilisateur après vérification technique (`curl` sur les deux API,
+présence ou non de l'en-tête `Access-Control-Allow-Origin`) : **API BEA en appel direct**
+(`apps.bea.gov/api/data`, `Access-Control-Allow-Origin:*` confirmé), **API FRED via le
+relais CORS déjà en place** (`fetchWithRetry()`/`corsProxyUrls()` — n'envoie aucun
+en-tête CORS, même comportement que Yahoo Finance/Stooq). Les 2 clés (gratuites, faible
+privilège, aucun risque financier en cas d'exposition côté client contrairement à une
+clé payante) sont codées en dur dans `app.js` (`BEA_API_KEY`, `FRED_API_KEY`) — ce
+n'est pas un problème pour ce projet ("pas de backend" assumé partout ailleurs).
+
+**Mapping des tables/lignes BEA, vérifié valeur par valeur contre le Sheet avant
+d'écrire le code** (même discipline que pour la colonne Technologie du Cycle de
+Marché, voir "Pièges techniques" point 14) :
+- `T10101` (Percent Change From Preceding Period), ligne 2 = Personal consumption
+  expenditures (colonne Sheet "C (%)"), ligne 7 = Gross private domestic investment
+  ("I (%)"), ligne 22 = Government consumption expenditures and gross investment
+  ("G (%)"). Valeurs confirmées identiques ou très proches de celles déjà saisies dans
+  le Sheet (petits écarts normaux dus aux révisions trimestrielles/annuelles du BEA
+  entre la saisie manuelle et l'appel API).
+- `T10105` (Current Dollars, niveaux), ligne 1 = PIB nominal (colonne Sheet "PIB"),
+  **valeurs identiques à la décimale près** au Sheet une fois divisées par 1000
+  (`UNIT_MULT=6` ⇒ la valeur brute est en millions, donc `/1000` pour l'exprimer en
+  milliards). Ligne 15 = Net exports of goods and services — **piège trouvé** : la
+  colonne Sheet "X-M Billions of Dollars" n'est PAS le niveau de cette ligne malgré son
+  nom, c'est la **variation trimestre sur trimestre** de ce niveau (vérifié : la
+  différence entre deux trimestres consécutifs de la ligne 15 correspond exactement aux
+  valeurs déjà présentes dans le Sheet, alors que le niveau brut ne correspond à rien
+  — un niveau positif de +144 Md$ serait d'ailleurs impossible, les USA sont
+  structurellement en déficit commercial). D'où `trade = netEx(trimestre) -
+  netEx(trimestre précédent)` dans le code, pas la valeur brute de la ligne.
+- FRED : `DGS10`/`DGS2` (taux 10/2 ans quotidiens) lus à la **dernière valeur connue
+  avant ou à la fin du trimestre** (`fredValueAtOrBefore()`, pas une moyenne).
+  `CPIAUCSL` avec `units=pc1` (FRED calcule lui-même la variation sur un an, pas besoin
+  de le faire côté client). **Spread (10-2) et taux réel (10 ans − inflation) sont
+  calculés côté client** par simple soustraction, pas des séries FRED séparées —
+  vérifié que cela correspond exactement aux colonnes K/M déjà présentes dans le Sheet
+  (ex. `4,21 - 2,5 = 1,71`, valeur du Sheet).
+- **Historique complet fetché** (`Year=X` côté BEA, `observation_start=2006-01-01` côté
+  FRED — même fenêtre de 20 ans que le reste du site), pas seulement le dernier
+  trimestre. **Cache `localStorage` de 24h** (`wolfAnalysisMacroFundamentals`,
+  `MACRO_FUND_CACHE_MS`) pour éviter de re-fetcher à chaque visite dans la même
+  journée — au-delà, re-fetch automatique au chargement de l'app (pas besoin d'action
+  de l'utilisateur). Le tableau affiché ne montre que les 12 derniers trimestres
+  (`recent = macroFundamentalsData.slice(-12)`), lisible sans scroll excessif — la
+  donnée complète reste en mémoire/cache si besoin d'aller plus loin un jour.
+  **Pas besoin du système d'export/sync via `data/*.json`** utilisé pour les autres
+  onglets (Idées, Watchlist...), puisque la source de vérité est directement l'API, pas
+  une saisie de l'utilisateur — en cas d'échec (clé invalide, API en panne, relais CORS
+  down), `renderMacroFundamentalsError()` affiche un message explicite au lieu d'un
+  tableau vide silencieux.
 
 ### Demandé, non commencé — nécessite une décision d'architecture
 Ces 2 fonctionnalités ne sont **pas réalisables en site statique pur** sans backend :

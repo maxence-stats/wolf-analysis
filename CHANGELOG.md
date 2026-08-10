@@ -6,6 +6,32 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 ## [Non publié]
 
 ### Ajouté
+- **Indicateurs macroéconomiques US, automatisation complète** : PIB, consommation,
+  investissement, dépenses publiques, balance commerciale (BEA, appel direct — CORS
+  confirmé) et taux 10/2 ans + inflation (FRED, via le relais CORS déjà utilisé pour
+  Yahoo/Stooq), spread et taux réel calculés côté client. Cache `localStorage` de 24h
+  pour éviter de re-fetcher à chaque visite. Mapping des tables/lignes BEA vérifié
+  valeur par valeur contre les chiffres déjà saisis manuellement dans le Sheet avant
+  d'écrire le code (dont une découverte : la colonne "Balance commerciale" du Sheet est
+  en réalité une variation trimestrielle, pas un niveau).
+- **Macro : mise en page en 2 colonnes**, sélecteur de plage 1/2/3 ans sur la Rotation
+  Sectorielle, nouveau graphique en camembert du poids relatif des secteurs (à partir
+  des ratios), nouveau graphique de classement sectoriel (barres triées, reprend la
+  ligne "Classement" déjà calculée dans le Sheet). Bandes ±2σ du Cycle de Marché
+  passées de bleu à rouge pointillé.
+- **Graphique boursier, palette v2** : clôture en jaune (était blanc), SMA200 en blanc
+  (était jaune), ±2σ et ligne de régression centrale en rouge pointillé (±1σ inchangé
+  en bleu pointillé, SMA30 inchangée en violet).
+- **Export PDF : logo de l'entreprise concernée** — Analyse développée (en-tête) et
+  chaîne de valeur du Cerveau numérique (chaque entité suivie) affichent maintenant le
+  logo de l'entreprise en plus du logo Wolf Analysis, résolu dynamiquement à chaque
+  export (apparaît automatiquement dès qu'une entreprise est ajoutée au Sheet).
+- **Cerveau numérique, chaîne de valeur** : le glisser-déposer fonctionne maintenant
+  aussi **entre deux phases différentes** (ex. Amont → Transformation), pas seulement
+  à l'intérieur d'une même phase. Tailles de bloc revues : la petite taille (S) est
+  retirée, 2 nouvelles tailles "en longueur" (paysage, image à gauche) ajoutées — une à
+  moitié de la largeur du conteneur de phase, une pleine largeur. Sélection directe
+  via 4 boutons numérotés au lieu d'un bouton cycle unique.
 - **Nouvel onglet « Macroéconomie »** : 3 nouvelles sources sur le même Google Sheet
   publié (gids dédiés), chargées en parallèle du reste (même pattern CSV+gviz, chaque
   source avec son propre `responseHandler`) via un loader générique factorisé

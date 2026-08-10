@@ -361,28 +361,51 @@
     <div id="pageMacro" class="page">
       <div class="section-label">Macroéconomie</div>
 
-      <div class="chart-card macro-cycle-card">
-        <div class="chart-card-head">
-          <div><h3>Cycle de Marché — Offensif vs Défensif</h3><p class="chart-subtitle">(Technologie + Finance + Industrie) / (Santé + Conso. de base + Services publics) — EMA 20 &amp; écarts-types</p></div>
-          <div class="chart-card-actions">
-            <span class="macro-cycle-badge" id="macroCycleBadge"></span>
-            <button class="zoom-btn" onclick="openMacroCycleZoom()" aria-label="Agrandir">⤢</button>
+      <div class="macro-charts-row">
+        <div class="chart-card macro-cycle-card">
+          <div class="chart-card-head">
+            <div><h3>Cycle de Marché — Offensif vs Défensif</h3><p class="chart-subtitle">(Technologie + Finance + Industrie) / (Santé + Conso. de base + Services publics) — EMA 20 &amp; écarts-types</p></div>
+            <div class="chart-card-actions">
+              <span class="macro-cycle-badge" id="macroCycleBadge"></span>
+              <button class="zoom-btn" onclick="openMacroCycleZoom()" aria-label="Agrandir">⤢</button>
+            </div>
           </div>
+          <div class="range-buttons" id="macroCycleRangeButtons">
+            <button data-range="5">5a</button><button data-range="10">10a</button><button class="active" data-range="20">20a</button><button data-range="max">Max</button>
+          </div>
+          <div class="chart-holder" style="height:340px;"><canvas id="chartMacroCycle"></canvas></div>
+          <div id="macroCycleStatus" class="stock-status" style="display:none;"></div>
         </div>
-        <div class="range-buttons" id="macroCycleRangeButtons">
-          <button data-range="5">5a</button><button data-range="10">10a</button><button class="active" data-range="20">20a</button><button data-range="max">Max</button>
+
+        <div class="chart-card">
+          <div class="chart-card-head">
+            <div><h3>Rotation Sectorielle GICS vs S&amp;P 500</h3><p class="chart-subtitle">Base 1.00 — historique disponible sur la feuille (~3 ans)</p></div>
+            <div class="chart-card-actions"><button class="zoom-btn" onclick="openMacroRotationZoom()" aria-label="Agrandir">⤢</button></div>
+          </div>
+          <div class="range-buttons" id="macroRotationRangeButtons">
+            <button data-range="1">1a</button><button data-range="2">2a</button><button class="active" data-range="3">3a</button>
+          </div>
+          <div class="chart-holder" style="height:340px;"><canvas id="chartMacroRotation"></canvas></div>
+          <div id="macroRotationStatus" class="stock-status" style="display:none;"></div>
         </div>
-        <div class="chart-holder" style="height:380px;"><canvas id="chartMacroCycle"></canvas></div>
-        <div id="macroCycleStatus" class="stock-status" style="display:none;"></div>
       </div>
 
-      <div class="chart-card">
-        <div class="chart-card-head">
-          <div><h3>Rotation Sectorielle GICS vs S&amp;P 500</h3><p class="chart-subtitle">Base 1.00 — historique disponible sur la feuille (~3 ans)</p></div>
-          <div class="chart-card-actions"><button class="zoom-btn" onclick="openMacroRotationZoom()" aria-label="Agrandir">⤢</button></div>
+      <div class="macro-charts-row">
+        <div class="chart-card">
+          <div class="chart-card-head">
+            <div><h3>Poids relatif des secteurs</h3><p class="chart-subtitle">Approximation à partir des ratios sectoriels actuels — pas une vraie pondération de capitalisation</p></div>
+            <div class="chart-card-actions"><button class="zoom-btn" onclick="openMacroWeightZoom()" aria-label="Agrandir">⤢</button></div>
+          </div>
+          <div class="chart-holder" style="height:340px;"><canvas id="chartMacroWeight"></canvas></div>
         </div>
-        <div class="chart-holder" style="height:420px;"><canvas id="chartMacroRotation"></canvas></div>
-        <div id="macroRotationStatus" class="stock-status" style="display:none;"></div>
+
+        <div class="chart-card">
+          <div class="chart-card-head">
+            <div><h3>Classement sectoriel</h3><p class="chart-subtitle">Score pondéré 1/2/3 mois (0,5 / 0,3 / 0,2), déjà calculé sur la feuille</p></div>
+            <div class="chart-card-actions"><button class="zoom-btn" onclick="openMacroRankingZoom()" aria-label="Agrandir">⤢</button></div>
+          </div>
+          <div class="chart-holder" style="height:340px;"><canvas id="chartMacroRanking"></canvas></div>
+        </div>
       </div>
 
       <div class="section-label">Force relative sectorielle</div>

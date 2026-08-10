@@ -629,8 +629,8 @@ function buildMacroCycleChartConfig(range){
     data:{ labels, datasets:[
       { label:'Ratio Offensif/Défensif', data:slice('ratio'), borderColor:THEME.white, backgroundColor:'rgba(255,255,255,0.05)', fill:true, borderWidth:1.5, pointRadius:0, tension:0.12, spanGaps:false },
       { label:'EMA 20', data:slice('ema'), borderColor:THEME.red, borderWidth:1.75, pointRadius:0, spanGaps:false, tension:0.12 },
-      Object.assign(bandStyle(slice('plus2'), THEME.blue), { label:'+2σ' }),
-      Object.assign(bandStyle(slice('minus2'), THEME.blue), { label:'−2σ' }),
+      Object.assign(bandStyle(slice('plus2'), THEME.red), { label:'+2σ' }),
+      Object.assign(bandStyle(slice('minus2'), THEME.red), { label:'−2σ' }),
       Object.assign(bandStyle(slice('plus1'), THEME.blue), { label:'+1σ', _legend:false }),
       Object.assign(bandStyle(slice('minus1'), THEME.blue), { label:'−1σ', _legend:false })
     ]},
@@ -708,18 +708,29 @@ function handleMacroRotationRows(rows){
   macroRotationData = out;
   document.getElementById('macroRotationStatus').style.display = 'none';
   renderMacroRotationChart();
+  renderMacroWeightChart();
 }
 
-function buildMacroRotationChartConfig(){
+let macroRotationRange = '3';
+function buildMacroRotationChartConfig(range){
   const d = macroRotationData;
+  let startIdx = 0;
+  if (range){
+    const years = parseInt(range, 10);
+    const cutoff = new Date();
+    cutoff.setFullYear(cutoff.getFullYear() - years);
+    const found = d.dates.findIndex(dt => new Date(dt) >= cutoff);
+    startIdx = found === -1 ? 0 : found;
+  }
+  const labels = d.dates.slice(startIdx);
   const datasets = MACRO_ROTATION_SECTORS.map((s, i) => ({
-    label: s.label, data: d.series[s.key],
+    label: s.label, data: d.series[s.key].slice(startIdx),
     borderColor: MACRO_ROTATION_COLORS[i], borderWidth:1.5, pointRadius:0, spanGaps:true, tension:0.1
   }));
-  datasets.push({ label:'S&P 500 (repère)', data: d.dates.map(() => 1), borderColor:THEME.dim, borderWidth:1, borderDash:[3,3], pointRadius:0, spanGaps:false });
+  datasets.push({ label:'S&P 500 (repère)', data: labels.map(() => 1), borderColor:THEME.dim, borderWidth:1, borderDash:[3,3], pointRadius:0, spanGaps:false });
   return {
     type:'line',
-    data:{ labels:d.dates, datasets },
+    data:{ labels, datasets },
     options:{ responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true, font:{size:9.5} } } },
       scales:{
@@ -736,7 +747,7 @@ function renderMacroRotationChart(){
   const canvas = document.getElementById('chartMacroRotation');
   if (!canvas) return;
   if (macroRotationChart) macroRotationChart.destroy();
-  macroRotationChart = new Chart(canvas.getContext('2d'), buildMacroRotationChartConfig());
+  macroRotationChart = new Chart(canvas.getContext('2d'), buildMacroRotationChartConfig(macroRotationRange));
 }
 
 function openMacroRotationZoom(){
@@ -746,7 +757,53 @@ function openMacroRotationZoom(){
   document.getElementById('zoomCagrRow').innerHTML = '';
   zoomKey = null;
   if (window.__zoomChart) window.__zoomChart.destroy();
-  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), buildMacroRotationChartConfig());
+  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), buildMacroRotationChartConfig(macroRotationRange));
+  document.getElementById('zoomModal').style.display = 'flex';
+}
+
+// Poids relatif des secteurs : approximation à partir de la DERNIÈRE valeur de ratio
+// de chaque secteur (macroRotationData), normalisée en %. Ce n'est PAS une vraie
+// pondération de capitalisation boursière (les ratios sont rebasés à 1.00 au début de
+// la fenêtre disponible, pas une mesure de taille absolue) — juste une lecture rapide
+// de "qui pèse le plus dans le mouvement récent", d'où l'avertissement en sous-titre.
+function buildMacroWeightChartConfig(){
+  const d = macroRotationData;
+  const lastIdx = d.dates.length - 1;
+  const values = MACRO_ROTATION_SECTORS.map(s => {
+    for (let r = lastIdx; r >= 0; r--){ const v = d.series[s.key][r]; if (v != null) return v; }
+    return 0;
+  });
+  const total = values.reduce((a, b) => a + b, 0);
+  return {
+    type:'pie',
+    data:{ labels: MACRO_ROTATION_SECTORS.map(s => s.label), datasets:[{ data: values, backgroundColor: MACRO_ROTATION_COLORS, borderColor:THEME.hair, borderWidth:2 }] },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{ position:'right', labels:{ boxWidth:8, usePointStyle:true, font:{size:9.5}, color:THEME.dim } },
+        tooltip:{ callbacks:{ label: ctx => {
+          const pct = total ? (ctx.parsed / total * 100) : 0;
+          return ctx.label + ' : ' + pct.toLocaleString('fr-FR', {minimumFractionDigits:1, maximumFractionDigits:1}) + '%';
+        } } }
+      }
+    }
+  };
+}
+let macroWeightChart = null;
+function renderMacroWeightChart(){
+  if (!macroRotationData || !macroRotationData.dates.length) return;
+  const canvas = document.getElementById('chartMacroWeight');
+  if (!canvas) return;
+  if (macroWeightChart) macroWeightChart.destroy();
+  macroWeightChart = new Chart(canvas.getContext('2d'), buildMacroWeightChartConfig());
+}
+function openMacroWeightZoom(){
+  if (!macroRotationData || !macroRotationData.dates.length) return;
+  document.getElementById('zoomTitle').textContent = 'Poids relatif des secteurs';
+  document.getElementById('zoomRangeRow').innerHTML = '';
+  document.getElementById('zoomCagrRow').innerHTML = '';
+  zoomKey = null;
+  if (window.__zoomChart) window.__zoomChart.destroy();
+  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), buildMacroWeightChartConfig());
   document.getElementById('zoomModal').style.display = 'flex';
 }
 
@@ -786,6 +843,62 @@ function handleMacroPowerRows(rows){
   }
   macroPowerData = { categories, headers, rows: dataRows };
   renderMacroPowerTable();
+  renderMacroRankingChart();
+}
+
+// Version "couleur hex" des mêmes seuils que macroPowerColorClass(), pour les barres
+// Chart.js (qui ont besoin d'une couleur directe, pas d'une classe CSS).
+function macroPowerColorHex(v){
+  if (v == null) return THEME.dim;
+  if (v < -3) return THEME.red;
+  if (v < 0) return 'rgba(229,99,107,0.55)';
+  if (v < 5.5) return 'rgba(79,209,165,0.55)';
+  return THEME.green;
+}
+
+// Graphique de classement : reprend directement la ligne "Classement" déjà calculée
+// dans le Sheet (pondération 1/2/3 mois 0,5/0,3/0,2, confirmée par l'utilisateur —
+// aucun recalcul nécessaire ici), triée du secteur le plus performant au moins
+// performant.
+function buildMacroRankingChartConfig(){
+  const row = macroPowerData.rows.find(r => r.label === 'Classement');
+  if (!row) return null;
+  const items = macroPowerData.headers
+    .map((h, i) => ({ label:h, value:row.values[i] }))
+    .filter(it => it.value != null)
+    .sort((a, b) => b.value - a.value);
+  return {
+    type:'bar',
+    data:{ labels: items.map(it => it.label), datasets:[{ data: items.map(it => it.value), backgroundColor: items.map(it => macroPowerColorHex(it.value)), borderRadius:4 }] },
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label: ctx => (ctx.parsed.x >= 0 ? '+' : '') + ctx.parsed.x.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + '%' } } },
+      scales:{
+        x:{ grid:baseGrid, ticks:{ color:THEME.dim, callback:v=>v+'%' } },
+        y:{ grid:{display:false}, ticks:{ color:THEME.dim, font:{size:10.5} } }
+      }
+    }
+  };
+}
+let macroRankingChart = null;
+function renderMacroRankingChart(){
+  if (!macroPowerData) return;
+  const config = buildMacroRankingChartConfig();
+  if (!config) return;
+  const canvas = document.getElementById('chartMacroRanking');
+  if (!canvas) return;
+  if (macroRankingChart) macroRankingChart.destroy();
+  macroRankingChart = new Chart(canvas.getContext('2d'), config);
+}
+function openMacroRankingZoom(){
+  const config = buildMacroRankingChartConfig();
+  if (!config) return;
+  document.getElementById('zoomTitle').textContent = 'Classement sectoriel';
+  document.getElementById('zoomRangeRow').innerHTML = '';
+  document.getElementById('zoomCagrRow').innerHTML = '';
+  zoomKey = null;
+  if (window.__zoomChart) window.__zoomChart.destroy();
+  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), config);
+  document.getElementById('zoomModal').style.display = 'flex';
 }
 
 function macroPowerColorClass(v){
@@ -809,14 +922,145 @@ function renderMacroPowerTable(){
 // Indicateurs macro US (PIB, taux, inflation) : en attente des 2 clés API gratuites
 // (BEA + FRED, voir CLAUDE.md "Onglet Macroéconomie") pour un chargement automatique —
 // tant qu'elles ne sont pas fournies, affiche un message explicite plutôt qu'un bloc vide.
-function renderMacroFundamentalsPlaceholder(){
+// Clés fournies par l'utilisateur pour ce chargement 100% client (voir CLAUDE.md
+// "Onglet Macroéconomie" — clés gratuites, faible privilège, pas de risque financier
+// en cas d'exposition, contrairement à une clé payante).
+const BEA_API_KEY = '856D6733-5908-4AA9-B95C-8A06DC3DD0B9';
+const FRED_API_KEY = '20504787eb914aca27e3c1f273fd493a';
+const MACRO_FUND_LS_KEY = 'wolfAnalysisMacroFundamentals';
+const MACRO_FUND_MIN_YEAR = 2006; // même fenêtre que les autres historiques du site
+const MACRO_FUND_CACHE_MS = 24 * 3600 * 1000; // 1 jour — évite de re-fetch à chaque visite
+let macroFundamentalsData = null;
+
+// BEA envoie Access-Control-Allow-Origin:* (vérifié directement), appelable en
+// direct depuis le navigateur — contrairement à FRED (voir plus bas).
+async function fetchBeaTable(tableName){
+  const url = `https://apps.bea.gov/api/data?UserID=${BEA_API_KEY}&method=GetData&datasetname=NIPA&TableName=${tableName}&Frequency=Q&Year=X&ResultFormat=JSON`;
+  const res = await fetch(url, { cache:'no-store' });
+  const json = await res.json();
+  return (json.BEAAPI && json.BEAAPI.Results && json.BEAAPI.Results.Data) || [];
+}
+
+function beaLineSeries(data, lineNumber){
+  const out = {};
+  data.forEach(r => {
+    if (String(r.LineNumber) === String(lineNumber) && /^\d{4}Q[1-4]$/.test(r.TimePeriod)){
+      const year = parseInt(r.TimePeriod.slice(0, 4), 10);
+      if (year >= MACRO_FUND_MIN_YEAR) out[r.TimePeriod] = parseFloat(String(r.DataValue).replace(/,/g, ''));
+    }
+  });
+  return out;
+}
+
+// FRED n'envoie aucun en-tête CORS (vérifié, même comportement que Yahoo/Stooq) —
+// passe par le même relais déjà en place (fetchWithRetry/corsProxyUrls).
+async function fetchFredSeries(seriesId, units){
+  const params = `series_id=${seriesId}&api_key=${FRED_API_KEY}&file_type=json${units ? '&units=' + units : ''}&observation_start=${MACRO_FUND_MIN_YEAR}-01-01`;
+  const res = await fetchWithRetry(`https://api.stlouisfed.org/fred/series/observations?${params}`, { cache:'no-store' }, 15000);
+  const json = await res.json();
+  return json.observations || [];
+}
+
+// Dernière observation connue à la date donnée ou avant (fin de trimestre) — pas une
+// moyenne, juste "où en était-on à ce moment-là".
+function fredValueAtOrBefore(observations, dateStr){
+  let val = null;
+  for (const o of observations){
+    if (o.date > dateStr) break;
+    if (o.value !== '.') val = parseFloat(o.value);
+  }
+  return val;
+}
+
+const MACRO_FUND_QUARTER_END = { Q1:'-03-31', Q2:'-06-30', Q3:'-09-30', Q4:'-12-31' };
+
+function renderMacroFundamentalsError(){
   const box = document.getElementById('macroFundamentalsTable');
-  if (!box) return;
-  box.innerHTML = `<p class="macro-fund-note">Ce tableau (PIB, consommation, investissement, dépenses publiques,
-    balance commerciale, taux à 10/2 ans, spread, inflation, taux réel) sera alimenté automatiquement dès que
-    2 clés API gratuites seront fournies : <a href="https://apps.bea.gov/API/signup/" target="_blank" rel="noopener">BEA</a>
-    (composantes du PIB) et <a href="https://fredaccount.stlouisfed.org/apikeys" target="_blank" rel="noopener">FRED</a>
-    (taux, inflation) — inscription gratuite, sans carte bancaire, ~1 minute chacune.</p>`;
+  if (box) box.innerHTML = `<p class="macro-fund-note">Impossible de charger les indicateurs macro pour le moment
+    (BEA/FRED indisponibles, clé invalide, ou relais CORS temporairement en panne). Recharge la page pour réessayer.</p>`;
+}
+
+async function loadMacroFundamentalsData(){
+  try{
+    const cached = JSON.parse(localStorage.getItem(MACRO_FUND_LS_KEY) || 'null');
+    if (cached && cached.fetchedAt && (Date.now() - cached.fetchedAt) < MACRO_FUND_CACHE_MS){
+      macroFundamentalsData = cached.rows;
+      renderMacroFundamentalsTable();
+      return;
+    }
+  }catch(e){ /* cache corrompu — on refetch normalement */ }
+
+  try{
+    const [t10101, t10105, dgs10, dgs2, cpi] = await Promise.all([
+      fetchBeaTable('T10101'), fetchBeaTable('T10105'),
+      fetchFredSeries('DGS10'), fetchFredSeries('DGS2'), fetchFredSeries('CPIAUCSL', 'pc1')
+    ]);
+
+    // Lignes confirmées une par une contre les valeurs déjà saisies manuellement par
+    // l'utilisateur dans le Sheet avant d'écrire ce mapping (mêmes précautions que pour
+    // les colonnes de la feuille "Cycle de Marché", voir "Pièges techniques" point 14) :
+    // T10101 L2=Consommation, L7=Investissement, L22=Dépenses publiques (% variation
+    // annualisée) ; T10105 L1=PIB nominal, L15=Exportations nettes (niveau, $) — la
+    // colonne "X-M Md$" du Sheet s'est avérée être la VARIATION trimestre sur trimestre
+    // du niveau, pas le niveau lui-même (vérifié : la différence entre deux trimestres
+    // consécutifs de L15 correspond exactement aux valeurs déjà présentes dans le Sheet).
+    const cSeries = beaLineSeries(t10101, 2);
+    const iSeries = beaLineSeries(t10101, 7);
+    const gSeries = beaLineSeries(t10101, 22);
+    const gdpSeries = beaLineSeries(t10105, 1);
+    const netExSeries = beaLineSeries(t10105, 15);
+
+    const quarters = Object.keys(gdpSeries).sort();
+    const rows = [];
+    let prevNetEx = null;
+    quarters.forEach(q => {
+      const qn = q.slice(4);
+      const endDate = q.slice(0, 4) + MACRO_FUND_QUARTER_END[qn];
+      const taux10 = fredValueAtOrBefore(dgs10, endDate);
+      const taux2 = fredValueAtOrBefore(dgs2, endDate);
+      const inflation = fredValueAtOrBefore(cpi, endDate);
+      const netEx = netExSeries[q] != null ? netExSeries[q] / 1000 : null;
+      const trade = (netEx != null && prevNetEx != null) ? netEx - prevNetEx : null;
+      if (netEx != null) prevNetEx = netEx;
+      rows.push({
+        quarter: qn + ' ' + q.slice(0, 4),
+        gdp: gdpSeries[q] != null ? gdpSeries[q] / 1000 : null,
+        c: cSeries[q], i: iSeries[q], g: gSeries[q],
+        trade, taux10, taux2,
+        spread: (taux10 != null && taux2 != null) ? taux10 - taux2 : null,
+        inflation,
+        realRate: (taux10 != null && inflation != null) ? taux10 - inflation : null
+      });
+    });
+
+    macroFundamentalsData = rows;
+    try{ localStorage.setItem(MACRO_FUND_LS_KEY, JSON.stringify({ fetchedAt: Date.now(), rows })); }catch(e){ /* quota / navigateur privé */ }
+    renderMacroFundamentalsTable();
+  }catch(e){
+    renderMacroFundamentalsError();
+  }
+}
+
+function renderMacroFundamentalsTable(){
+  const box = document.getElementById('macroFundamentalsTable');
+  if (!box || !macroFundamentalsData) return;
+  const recent = macroFundamentalsData.slice(-12);
+  const pct = (v, dec) => v != null ? (v >= 0 ? '+' : '') + v.toLocaleString('fr-FR', {minimumFractionDigits:dec || 2, maximumFractionDigits:dec || 2}) + '%' : '—';
+  const bn = v => v != null ? v.toLocaleString('fr-FR', {maximumFractionDigits:0}) + ' Md$' : '—';
+  box.innerHTML = `<div style="overflow-x:auto"><table class="macro-fund-table"><thead><tr>
+      <th>Trimestre</th><th>PIB</th><th>Consommation</th><th>Investissement</th><th>Dépenses publ.</th>
+      <th>Balance comm. (Δ)</th><th>Taux 10 ans</th><th>Taux 2 ans</th><th>Spread 10-2</th><th>Inflation</th><th>Taux réel</th>
+    </tr></thead><tbody>${recent.map(r => `<tr>
+      <td>${r.quarter}</td><td>${bn(r.gdp)}</td><td>${pct(r.c, 1)}</td><td>${pct(r.i, 1)}</td><td>${pct(r.g, 1)}</td>
+      <td>${r.trade != null ? (r.trade >= 0 ? '+' : '') + r.trade.toLocaleString('fr-FR', {maximumFractionDigits:0}) + ' Md$' : '—'}</td>
+      <td>${r.taux10 != null ? r.taux10.toLocaleString('fr-FR', {minimumFractionDigits:2}) + '%' : '—'}</td>
+      <td>${r.taux2 != null ? r.taux2.toLocaleString('fr-FR', {minimumFractionDigits:2}) + '%' : '—'}</td>
+      <td>${pct(r.spread)}</td>
+      <td>${r.inflation != null ? r.inflation.toLocaleString('fr-FR', {minimumFractionDigits:1}) + '%' : '—'}</td>
+      <td>${pct(r.realRate)}</td>
+    </tr>`).join('')}</tbody></table></div>
+    <p class="macro-fund-note" style="margin-top:10px;">Sources : BEA (PIB, consommation, investissement, dépenses
+    publiques, balance commerciale) et FRED (taux, inflation) — rechargé automatiquement toutes les 24h.</p>`;
 }
 
 const PORTFOLIO_COLORS = ['#D9A441','#4A9FE0','#F0C877','#7DBEEA','#B8842E','#2E6FA3','#F5DDA3','#A8D4F0','#8A6420','#1F4E73'];
@@ -835,12 +1079,23 @@ function printImagesRowHtml(images){
   if (!images || !images.length) return '';
   return `<div class="print-img-row">${images.map(src => `<img src="${src}" alt="">`).join('')}</div>`;
 }
-function exportSectionAsPdf(title, subtitle, bodyHtml){
+// Résout le logo d'une entreprise SUIVIE (companies[nom]), même correspondance que
+// portfolioEntityLogo()/cerveauEntityCard() — résolu à chaque appel (jamais mis en
+// cache en dur), donc apparaît automatiquement dès que l'entreprise est ajoutée au
+// Sheet, sans changement de code.
+function companyLogoUrl(nom){
+  if (!nom) return null;
+  const match = Object.keys(companies).find(n => stripAccents(n.toLowerCase()) === stripAccents(nom.toLowerCase()));
+  return match ? companies[match][companies[match].length - 1].lienImage || null : null;
+}
+
+function exportSectionAsPdf(title, subtitle, bodyHtml, entityLogoUrl){
   const area = document.getElementById('printArea');
   const dateLabel = new Date().toLocaleDateString('fr-FR', { year:'numeric', month:'long', day:'numeric' });
   area.innerHTML = `
     <div class="print-header">
       <img src="${WOLF_LOGO_URL}" alt="">
+      ${entityLogoUrl ? `<img class="print-entity-logo" src="${entityLogoUrl}" alt="">` : ''}
       <div>
         <div class="print-title">${title}</div>
         <div class="print-subtitle">${subtitle ? subtitle + ' — ' : ''}${dateLabel}</div>
@@ -1889,25 +2144,23 @@ function renderStockChart(){
 
   if (chartInstances.stock) chartInstances.stock.destroy();
 
-  // Couleurs demandées explicitement : clôture en blanc, SMA200 en jaune gras, SMA30
-  // (nouvelle) en violet fin — seule exception au "violet jamais utilisé pour de la
-  // donnée" du design system, décidée explicitement par l'utilisateur pour cette
-  // ligne précise. Les 4 bandes d'écart-type (±1σ, ±2σ) en bleu pointillé uniformément
-  // (l'ancien rouge pointillé sur ±2σ est abandonné) ; la ligne de régression centrale
-  // reste rouge, inchangée.
+  // Couleurs v2 (révision explicite) : clôture en jaune, SMA200 en blanc, SMA30
+  // (inchangée) en violet fin — seule exception au "violet jamais utilisé pour de la
+  // donnée" du design system. ±2σ et la ligne de régression centrale en rouge
+  // pointillé ; ±1σ inchangé en bleu pointillé.
   const regStyle = (offset, label, showInLegend) => ({
     label, data: regLine(offset),
-    borderColor: offset === 0 ? THEME.red : THEME.blue,
+    borderColor: Math.abs(offset) === 2 || offset === 0 ? THEME.red : THEME.blue,
     borderWidth: offset === 0 ? 1.75 : 1.25,
-    borderDash: offset === 0 ? [] : [5,4],
+    borderDash: [5,4],
     pointRadius:0, spanGaps:false, tension:0, _legend: !!showInLegend
   });
 
   const config = {
     type:'line',
     data:{ labels, datasets:[
-      { label:'Clôture hebdo', data:dataClose, borderColor:THEME.white, backgroundColor:'rgba(255,255,255,0.06)', fill:true, tension:0.12, pointRadius:0, borderWidth:1.5, _legend:true },
-      { label:'Moyenne mobile 200 sem.', data:dataSma, borderColor:THEME.yellow, borderWidth:2.5, pointRadius:0, spanGaps:true, tension:0.12, _legend:true },
+      { label:'Clôture hebdo', data:dataClose, borderColor:THEME.yellow, backgroundColor:'rgba(240,214,61,0.06)', fill:true, tension:0.12, pointRadius:0, borderWidth:1.5, _legend:true },
+      { label:'Moyenne mobile 200 sem.', data:dataSma, borderColor:THEME.white, borderWidth:2.5, pointRadius:0, spanGaps:true, tension:0.12, _legend:true },
       { label:'Moyenne mobile 30 sem.', data:dataSma30, borderColor:THEME.violet, borderWidth:1, pointRadius:0, spanGaps:true, tension:0.12, _legend:true },
       regStyle(0, 'Régression linéaire (20 ans max)', true),
       regStyle(1, '+1σ', false), regStyle(-1, '−1σ', false),
@@ -1937,6 +2190,13 @@ document.getElementById('macroCycleRangeButtons').addEventListener('click', e =>
   macroCycleRange = btn.dataset.range;
   document.querySelectorAll('#macroCycleRangeButtons button').forEach(b => b.classList.toggle('active', b === btn));
   renderMacroCycleChart();
+});
+document.getElementById('macroRotationRangeButtons').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-range]');
+  if (!btn) return;
+  macroRotationRange = btn.dataset.range;
+  document.querySelectorAll('#macroRotationRangeButtons button').forEach(b => b.classList.toggle('active', b === btn));
+  renderMacroRotationChart();
 });
 
 /* ---------- Zoom : sélecteur de plage (5/10/20 ans) + CAGR sur les graphiques
@@ -2830,15 +3090,18 @@ function renderCerveauChaines(box){
 // Migration : les anciennes chaînes stockaient ph.entreprises comme un tableau de noms
 // (string). Passage à des objets {nom,image,legende} pour les cartes illustrées — les
 // entrées string existantes sont converties sans perte au premier chargement.
-const CERVEAU_TAILLES = ['S', 'M', 'L'];
+// 4 tailles : M/L (verticales, image en haut) puis XL/XXL "en longueur" (paysage,
+// image à gauche) — remplace l'ancien trio S/M/L (S retiré à la demande explicite,
+// jugé pas assez utile face aux tailles "en longueur").
+const CERVEAU_TAILLES = ['M', 'L', 'XL', 'XXL'];
 function migrateCerveauChains(){
   Object.keys(cerveauData.chains).forEach(sec => {
     (cerveauData.chains[sec] || []).forEach(chain => {
       (chain.phases || []).forEach(ph => {
         ph.entreprises = (ph.entreprises || []).map(e => typeof e === 'string' ? { nom:e, image:'', legende:'', taille:'M' } : e);
-        ph.entreprises.forEach(e => { if (!e.taille) e.taille = 'M'; });
+        ph.entreprises.forEach(e => { if (!e.taille || e.taille === 'S') e.taille = 'M'; });
         if (!Array.isArray(ph.blocsLibres)) ph.blocsLibres = [];
-        ph.blocsLibres.forEach(b => { if (!b.taille) b.taille = 'M'; });
+        ph.blocsLibres.forEach(b => { if (!b.taille || b.taille === 'S') b.taille = 'M'; });
       });
     });
   });
@@ -2857,6 +3120,12 @@ function cerveauImageZoneHtml(image, actionPrefix){
     </div>`;
 }
 
+// 4 boutons numérotés (1/2/3/4 = M/L/XL/XXL) plutôt qu'un unique bouton cycle : choix
+// direct d'une taille en un clic, demandé explicitement ("plus simple").
+function cerveauSizeButtonsHtml(actionName, current){
+  return `<div class="cec-size-row">${CERVEAU_TAILLES.map((t, i) => `<button class="cec-size-num${(current || 'M') === t ? ' active' : ''}" data-action="${actionName}" data-size="${t}">${i + 1}</button>`).join('')}</div>`;
+}
+
 function cerveauEntityCard(ent, phaseIdx, entIdx){
   const safe = ent.nom.replace(/"/g, '&quot;');
   const tracked = companies[ent.nom];
@@ -2864,31 +3133,35 @@ function cerveauEntityCard(ent, phaseIdx, entIdx){
   const noteCount = (cerveauData.notes[ent.nom] || []).length;
   return `<div class="cerveau-entity-card" draggable="true" data-taille="${ent.taille || 'M'}" data-phase="${phaseIdx}" data-ent="${entIdx}">
     ${cerveauImageZoneHtml(ent.image, 'ent')}
-    <div class="cec-head">
-      ${logo ? `<img class="cec-mini-logo" src="${logo}" alt="">` : `<span class="cerveau-entity-initial">${ent.nom.charAt(0).toUpperCase()}</span>`}
-      <span class="cec-name" title="${safe}">${ent.nom}</span>${noteCount ? `<span class="cerveau-note-badge">${noteCount}</span>` : ''}
-      <button class="cec-size-btn" data-action="ent-size" title="Changer la taille">⤢</button>
-      <button class="cec-remove" data-action="ent-delete" title="Retirer de la phase">✕</button>
+    <div class="cec-body">
+      <div class="cec-head">
+        ${logo ? `<img class="cec-mini-logo" src="${logo}" alt="">` : `<span class="cerveau-entity-initial">${ent.nom.charAt(0).toUpperCase()}</span>`}
+        <span class="cec-name" title="${safe}">${ent.nom}</span>${noteCount ? `<span class="cerveau-note-badge">${noteCount}</span>` : ''}
+        <button class="cec-remove" data-action="ent-delete" title="Retirer de la phase">✕</button>
+      </div>
+      <input type="text" class="cec-legend" data-action="ent-legend" placeholder="Légende…" value="${(ent.legende || '').replace(/"/g, '&quot;')}">
+      <button class="cec-fiche-btn" data-action="ent-fiche">📇 Ouvrir la fiche</button>
+      ${cerveauSizeButtonsHtml('ent-size', ent.taille)}
     </div>
-    <input type="text" class="cec-legend" data-action="ent-legend" placeholder="Légende…" value="${(ent.legende || '').replace(/"/g, '&quot;')}">
-    <button class="cec-fiche-btn" data-action="ent-fiche">📇 Ouvrir la fiche</button>
   </div>`;
 }
 
 function cerveauFreeBlockHtml(bloc, phaseIdx, blocIdx){
   return `<div class="cerveau-freeblock" draggable="true" data-taille="${bloc.taille || 'M'}" data-phase="${phaseIdx}" data-bloc="${blocIdx}">
     ${cerveauImageZoneHtml(bloc.image, 'free')}
-    <textarea class="cec-free-text" data-action="free-text" placeholder="Texte libre…">${(bloc.texte || '').replace(/</g, '&lt;')}</textarea>
-    <div class="cec-free-actions">
-      <button class="cec-size-btn" data-action="free-size" title="Changer la taille">⤢</button>
+    <div class="cec-body">
+      <textarea class="cec-free-text" data-action="free-text" placeholder="Texte libre…">${(bloc.texte || '').replace(/</g, '&lt;')}</textarea>
       <button class="cec-remove cec-remove-free" data-action="free-delete">✕ Retirer ce bloc</button>
+      ${cerveauSizeButtonsHtml('free-size', bloc.taille)}
     </div>
   </div>`;
 }
 
 function printCerveauEntityHtml(ent){
   const imgs = ent.image ? `<div class="print-img-row"><img src="${ent.image}" alt=""></div>` : '';
-  return `<div style="margin-bottom:10px"><strong>${ent.nom.replace(/</g, '&lt;')}</strong>${ent.legende ? `<p>${ent.legende.replace(/</g, '&lt;')}</p>` : ''}${imgs}</div>`;
+  const logo = companyLogoUrl(ent.nom);
+  const logoImg = logo ? `<img class="print-inline-logo" src="${logo}" alt="">` : '';
+  return `<div style="margin-bottom:10px">${logoImg}<strong>${ent.nom.replace(/</g, '&lt;')}</strong>${ent.legende ? `<p>${ent.legende.replace(/</g, '&lt;')}</p>` : ''}${imgs}</div>`;
 }
 function printCerveauFreeBlockHtml(bloc){
   const imgs = bloc.image ? `<div class="print-img-row"><img src="${bloc.image}" alt=""></div>` : '';
@@ -2963,11 +3236,12 @@ function renderCerveauPhases(box){
       persistCerveauData();
       renderCerveau();
     });
-    card.querySelector('[data-action="ent-size"]').addEventListener('click', () => {
-      const i = CERVEAU_TAILLES.indexOf(ent.taille || 'M');
-      ent.taille = CERVEAU_TAILLES[(i + 1) % CERVEAU_TAILLES.length];
-      persistCerveauData();
-      renderCerveau();
+    card.querySelectorAll('[data-action="ent-size"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        ent.taille = btn.dataset.size;
+        persistCerveauData();
+        renderCerveau();
+      });
     });
     const legend = card.querySelector('[data-action="ent-legend"]');
     const saveLegend = () => { ent.legende = legend.value; persistCerveauData(); };
@@ -2984,11 +3258,12 @@ function renderCerveauPhases(box){
       persistCerveauData();
       renderCerveau();
     });
-    card.querySelector('[data-action="free-size"]').addEventListener('click', () => {
-      const i = CERVEAU_TAILLES.indexOf(bloc.taille || 'M');
-      bloc.taille = CERVEAU_TAILLES[(i + 1) % CERVEAU_TAILLES.length];
-      persistCerveauData();
-      renderCerveau();
+    card.querySelectorAll('[data-action="free-size"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        bloc.taille = btn.dataset.size;
+        persistCerveauData();
+        renderCerveau();
+      });
     });
     const text = card.querySelector('[data-action="free-text"]');
     const saveText = () => { bloc.texte = text.value; persistCerveauData(); };
@@ -3003,6 +3278,14 @@ function renderCerveauPhases(box){
 // partagent pas le même tableau de données) — même pattern que le glisser-déposer des
 // images de l'Analyse développée (draggedImageRef).
 let draggedCerveauBlockRef = null;
+// Glisser-déposer des blocs : réordonne DANS une phase, et déplace maintenant aussi
+// D'UNE PHASE À L'AUTRE de la même chaîne (ex. Amont → Transformation), demandé
+// explicitement — seule contrainte : toujours le même TYPE de bloc (cartes entreprise
+// entre elles, blocs libres entre eux ; jamais les deux mélangés, formes de données
+// différentes). `draggedCerveauBlockRef.arr` retient le tableau SOURCE (pas
+// forcément celui de la liste où le drop a lieu), donc un simple splice-out du
+// tableau source + splice-in dans le tableau cible suffit, que ce soit la même
+// phase ou une autre.
 function wireCerveauBlockDrag(box, chain){
   box.querySelectorAll('.cerveau-entity-list, .cerveau-freeblock-list').forEach(list => {
     const phaseIdx = parseInt(list.dataset.phase, 10);
@@ -3011,17 +3294,32 @@ function wireCerveauBlockDrag(box, chain){
     const selector = isFree ? '.cerveau-freeblock' : '.cerveau-entity-card';
     const idxAttr = isFree ? 'bloc' : 'ent';
 
+    // Drop sur la liste elle-même (zone vide d'une phase, ou espace après la dernière
+    // carte) : ajoute à la fin — sans ça, impossible de déplacer un bloc vers une
+    // phase qui n'en a encore aucun.
+    list.addEventListener('dragover', e => { if (draggedCerveauBlockRef && draggedCerveauBlockRef.isFree === isFree) e.preventDefault(); });
+    list.addEventListener('drop', e => {
+      if (e.target !== list || !draggedCerveauBlockRef || draggedCerveauBlockRef.isFree !== isFree) return;
+      e.preventDefault();
+      const [moved] = draggedCerveauBlockRef.arr.splice(draggedCerveauBlockRef.idx, 1);
+      arr.push(moved);
+      draggedCerveauBlockRef = null;
+      persistCerveauData();
+      renderCerveau();
+    });
+
     list.querySelectorAll(selector).forEach(block => {
       block.addEventListener('dragstart', e => {
-        draggedCerveauBlockRef = { arr, idx: parseInt(block.dataset[idxAttr], 10) };
+        draggedCerveauBlockRef = { arr, isFree, idx: parseInt(block.dataset[idxAttr], 10) };
         e.dataTransfer.effectAllowed = 'move';
       });
-      block.addEventListener('dragover', e => e.preventDefault());
+      block.addEventListener('dragover', e => { if (draggedCerveauBlockRef && draggedCerveauBlockRef.isFree === isFree) e.preventDefault(); });
       block.addEventListener('drop', e => {
         e.preventDefault();
-        if (!draggedCerveauBlockRef || draggedCerveauBlockRef.arr !== arr) { draggedCerveauBlockRef = null; return; }
+        e.stopPropagation();
+        if (!draggedCerveauBlockRef || draggedCerveauBlockRef.isFree !== isFree) { draggedCerveauBlockRef = null; return; }
         const targetIdx = parseInt(block.dataset[idxAttr], 10);
-        const [moved] = arr.splice(draggedCerveauBlockRef.idx, 1);
+        const [moved] = draggedCerveauBlockRef.arr.splice(draggedCerveauBlockRef.idx, 1);
         arr.splice(targetIdx, 0, moved);
         draggedCerveauBlockRef = null;
         persistCerveauData();
@@ -3409,7 +3707,7 @@ function exportAnalyseAsPdf(){
     + CERVEAU_ANALYSE_SECTIONS_MID.map(s => printAnalyseSectionHtml(s, v.sections[s.key])).join('')
     + printAnalyseChartHtml('actionnariat', v.actionnariat)
     + CERVEAU_ANALYSE_SECTIONS_BOTTOM.map(s => printAnalyseSectionHtml(s, v.sections[s.key])).join('');
-  exportSectionAsPdf('Analyse développée — ' + analyseEntite, v.label, body);
+  exportSectionAsPdf('Analyse développée — ' + analyseEntite, v.label, body, companyLogoUrl(analyseEntite));
 }
 
 // Récupère le tableau d'images (et son objet propriétaire pour la sauvegarde) à partir
@@ -3837,7 +4135,7 @@ loadAlertesBaseline();
 initFicheModal();
 initAnalyseModal();
 initCerveauImagePicker();
-renderMacroFundamentalsPlaceholder();
+loadMacroFundamentalsData();
 document.getElementById('openAnalyseTag').addEventListener('click', () => { if (activeCompany) openAnalyse(activeCompany); });
 loadCerveauData();
 loadIdeesBaseline();
