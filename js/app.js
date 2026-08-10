@@ -968,15 +968,26 @@ const MACRO_CHART_GETTERS = {
 // (dpr=1) un export PNG/JPEG/PDF ressort flou une fois zoomé/imprimé. On force temporairement
 // une densité de 3x avant la capture, puis on restaure (resize() est nécessaire des deux
 // côtés, Chart.js ne redimensionne pas le canvas tant qu'on ne le lui demande pas).
-function chartToHiResDataUrl(chart, mime){
+function chartToHiResDataUrl(chart, mime, scale){
   if (!chart) return null;
   const original = chart.options.devicePixelRatio || window.devicePixelRatio || 1;
-  const HI_RES = 3;
+  const HI_RES = scale || 3;
   const bump = original < HI_RES;
   if (bump){ chart.options.devicePixelRatio = HI_RES; chart.resize(); }
   const dataUrl = chart.toBase64Image(mime || 'image/png', 1.0);
   if (bump){ chart.options.devicePixelRatio = original; chart.resize(); }
   return dataUrl;
+}
+// Export PDF regroupant PLUSIEURS graphiques dans un seul document (Analyse complète,
+// Valorisation complète, Macro complète) : signalé par l'utilisateur comme "les
+// graphiques ne s'affichent pas" alors que le texte/les ratios s'affichent bien —
+// cohérent avec une limite du moteur d'impression Chrome sur de très volumineuses
+// images en base64 cumulées (plusieurs Mo au total à ×3), pas reproduit localement
+// mais le risque est réel et le coût de la précaution est nul. Résolution réduite à
+// ×2 (au lieu de ×3 pour un export à l'unité) pour un export groupé — encore net à
+// l'impression, mais ~55% de volume de données en moins cumulé sur 9 images.
+function chartToPrintDataUrl(chart){
+  return chartToHiResDataUrl(chart, 'image/png', 2);
 }
 // Réencode une image en lui appliquant des coins arrondis (les PNG/JPEG téléchargés sont
 // des pixels bruts — un border-radius CSS n'a d'effet que sur un <img> affiché/imprimé,
@@ -1004,6 +1015,38 @@ function roundedImageDataUrl(sourceDataUrl, mime, bgColor){
     img.onerror = () => resolve(sourceDataUrl);
     img.src = sourceDataUrl;
   });
+}
+// Export du graphique actuellement affiché dans la modale de zoom générique
+// (#zoomModal, window.__zoomChart) — couvre les 9 graphiques de l'onglet Analyse (dont
+// le cours de bourse), les graphiques macro zoomés et les camemberts de l'Analyse
+// développée, sans dupliquer un bouton par type de graphique. Demande explicite :
+// l'utilisateur ne trouvait cette possibilité que sur les graphiques macro.
+function exportZoomChartAsPdf(){
+  if (!window.__zoomChart) return;
+  const title = document.getElementById('zoomTitle').textContent || 'Graphique';
+  let dataUrl;
+  // Canvas "tainté" possible (donut Portfolio, logos dessinés sans crossOrigin — voir
+  // CLAUDE.md "Pièges techniques" point 13) : toBase64Image lève alors SecurityError.
+  try{ dataUrl = chartToHiResDataUrl(window.__zoomChart); }
+  catch(e){ alert("Ce graphique ne peut pas être exporté directement (image externe non compatible) — utilise le bouton d'export dédié de son onglet."); return; }
+  const body = `<div class="print-section"><img class="print-chart-img" src="${dataUrl}" alt=""></div>`;
+  exportSectionAsPdf(title, activeCompany || null, body);
+}
+async function exportZoomChartAsImage(format){
+  if (!window.__zoomChart) return;
+  const title = document.getElementById('zoomTitle').textContent || 'graphique';
+  const filename = title.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'graphique';
+  const mime = format === 'jpg' ? 'image/jpeg' : 'image/png';
+  let rawUrl;
+  try{ rawUrl = chartToHiResDataUrl(window.__zoomChart, mime); }
+  catch(e){ alert("Ce graphique ne peut pas être exporté directement (image externe non compatible) — utilise le bouton d'export dédié de son onglet."); return; }
+  const url = await roundedImageDataUrl(rawUrl, mime, format === 'jpg' ? '#151A1F' : null);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename + '.' + (format === 'jpg' ? 'jpg' : 'png');
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 function exportMacroChartAsPdf(key, title){
   const chart = MACRO_CHART_GETTERS[key] && MACRO_CHART_GETTERS[key]();
@@ -1056,7 +1099,7 @@ function exportAnalyseFullAsPdf(){
   const chartsHtml = ANALYSE_CHART_EXPORT_LIST.map(([key, title]) => {
     const chart = chartInstances[key];
     if (!chart) return '';
-    return `<div class="print-section"><h3>${title}</h3><img class="print-chart-img" src="${chartToHiResDataUrl(chart)}" alt=""></div>`;
+    return `<div class="print-section"><h3>${title}</h3><img class="print-chart-img" src="${chartToPrintDataUrl(chart)}" alt=""></div>`;
   }).join('');
   exportSectionAsPdf(activeCompany, (latest.ticker || '') + ' — Analyse complète', ratiosHtml + valoHtml + chartsHtml, logo);
 }
@@ -1069,7 +1112,7 @@ function exportValorisationFullAsPdf(){
     const v = scenarioValues[s.key];
     if (!v) return '';
     const chart = scenarioCharts[s.key];
-    const img = chart ? `<img class="print-chart-img" src="${chartToHiResDataUrl(chart)}" alt="">` : '';
+    const img = chart ? `<img class="print-chart-img" src="${chartToPrintDataUrl(chart)}" alt="">` : '';
     const rows = ['prixJuste', 'prixCible', 'prixEst', 'rendement'].map(k => {
       const el = document.getElementById('vo-' + s.key + '-' + k);
       if (!el) return '';
@@ -1101,7 +1144,7 @@ function exportMacroFullPageAsPdf(){
   const chartHtml = MACRO_EXPORT_ALL_CHARTS.map(([key, title]) => {
     const chart = MACRO_CHART_GETTERS[key] && MACRO_CHART_GETTERS[key]();
     if (!chart) return '';
-    return `<div class="print-section"><h3>${title}</h3><img class="print-chart-img" src="${chartToHiResDataUrl(chart)}" alt=""></div>`;
+    return `<div class="print-section"><h3>${title}</h3><img class="print-chart-img" src="${chartToPrintDataUrl(chart)}" alt=""></div>`;
   }).join('');
   const tableHtml = MACRO_EXPORT_ALL_TABLES.map(([id, title]) => {
     const box = document.getElementById(id);
@@ -3584,8 +3627,15 @@ function migrateCerveauChains(){
             b.width = b.width || d.width;
             b.imgHeight = b.imgHeight || d.imgHeight;
           }
-          if (!b.style) b.style = 'corps';
           delete b.taille;
+          // texte/style (un seul segment) → textBlocks (plusieurs segments empilés,
+          // chacun avec son propre style) — demande explicite : pouvoir composer un
+          // titre + un sous-titre + un corps sur le même bloc plutôt qu'un seul texte.
+          if (!Array.isArray(b.textBlocks)){
+            b.textBlocks = (b.texte && b.texte.trim()) ? [{ id:'tb' + Date.now() + Math.random().toString(36).slice(2, 6), texte:b.texte, style:b.style || 'corps' }] : [];
+          }
+          delete b.texte;
+          delete b.style;
         });
       });
     });
@@ -3631,21 +3681,29 @@ function cerveauEntityCard(ent, phaseIdx, entIdx){
   </div>`;
 }
 
-// Texte optionnel : si le bloc n'a pas encore de texte (et n'est pas en cours de
-// rédaction), on affiche un simple bouton "+ texte" plutôt qu'un textarea vide — pour
-// qu'un bloc purement image puisse utiliser toute la carte, demande explicite
-// ("comme ça si je ne mets pas de texte, l'image peut prendre toute la place").
+// Texte optionnel ET multiple : un bloc sans aucun textBlocks affiche juste "+ Texte"
+// (l'image peut alors occuper toute la carte, demande explicite) ; chaque clic sur
+// "+ Texte" AJOUTE un nouveau segment empilé sous les précédents (plutôt que de n'en
+// permettre qu'un seul) — permet de composer par ex. un titre + un sous-titre + un
+// corps sur la même carte, chacun avec son propre style et sa propre suppression.
+function cerveauTextBlockHtml(tb, blocIdx){
+  return `<div class="cec-textblock" data-tb="${tb.id}">
+    <div class="cec-textblock-head">
+      ${cerveauTextStyleButtonsHtml('free-style', tb.style)}
+      <button class="cec-remove" data-action="free-text-delete" title="Retirer ce texte">✕</button>
+    </div>
+    <textarea class="cec-free-text cec-free-text-${tb.style || 'corps'}" data-action="free-text" placeholder="Texte…">${(tb.texte || '').replace(/</g, '&lt;')}</textarea>
+  </div>`;
+}
 function cerveauFreeBlockHtml(bloc, phaseIdx, blocIdx){
   const width = bloc.width || 200;
-  const hasText = !!(bloc.texte && bloc.texte.trim()) || bloc._editingText;
-  const textZone = hasText ? `
-      ${cerveauTextStyleButtonsHtml('free-style', bloc.style)}
-      <textarea class="cec-free-text cec-free-text-${bloc.style || 'corps'}" data-action="free-text" placeholder="Texte libre…">${(bloc.texte || '').replace(/</g, '&lt;')}</textarea>`
-    : `<button class="cec-add-text-btn" data-action="free-add-text">+ Texte</button>`;
+  const textBlocks = bloc.textBlocks || [];
+  const textZone = textBlocks.map(tb => cerveauTextBlockHtml(tb, blocIdx)).join('');
   return `<div class="cerveau-freeblock" style="width:${width}px;" data-phase="${phaseIdx}" data-bloc="${blocIdx}">
     ${cerveauImageZoneHtml(bloc.image, 'free', bloc.imgHeight || 110)}
     <div class="cec-body">
       ${textZone}
+      <button class="cec-add-text-btn" data-action="free-add-text">+ Texte</button>
       <button class="cec-remove cec-remove-free" data-action="free-delete">✕ Retirer ce bloc</button>
     </div>
   </div>`;
@@ -3659,7 +3717,7 @@ function printCerveauEntityHtml(ent){
 }
 function printCerveauFreeBlockHtml(bloc){
   const imgs = bloc.image ? `<div class="print-img-row"><img src="${bloc.image}" alt=""></div>` : '';
-  const textHtml = bloc.texte ? `<p class="print-cec-text-${bloc.style || 'corps'}">${bloc.texte.replace(/</g, '&lt;')}</p>` : '';
+  const textHtml = (bloc.textBlocks || []).filter(tb => tb.texte).map(tb => `<p class="print-cec-text-${tb.style || 'corps'}">${tb.texte.replace(/</g, '&lt;')}</p>`).join('');
   return `<div style="margin-bottom:10px">${textHtml}${imgs}</div>`;
 }
 function exportChainAsPdf(chain, secteur){
@@ -3741,6 +3799,7 @@ function renderCerveauPhases(box){
     const phaseIdx = parseInt(card.dataset.phase, 10);
     const blocIdx = parseInt(card.dataset.bloc, 10);
     const bloc = chain.phases[phaseIdx].blocsLibres[blocIdx];
+    if (!Array.isArray(bloc.textBlocks)) bloc.textBlocks = [];
     card.querySelector('[data-action="free-delete"]').addEventListener('click', () => {
       chain.phases[phaseIdx].blocsLibres.splice(blocIdx, 1);
       persistCerveauData();
@@ -3749,33 +3808,35 @@ function renderCerveauPhases(box){
     const addTextBtn = card.querySelector('[data-action="free-add-text"]');
     if (addTextBtn){
       addTextBtn.addEventListener('click', () => {
-        bloc._editingText = true;
+        const newId = 'tb' + Date.now() + Math.random().toString(36).slice(2, 6);
+        bloc.textBlocks.push({ id:newId, texte:'', style:'corps' });
+        persistCerveauData();
         renderCerveau();
-        const box2 = document.querySelector(`.cerveau-freeblock[data-phase="${phaseIdx}"][data-bloc="${blocIdx}"] [data-action="free-text"]`);
-        if (box2) box2.focus();
+        const newTa = document.querySelector(`.cerveau-freeblock[data-phase="${phaseIdx}"][data-bloc="${blocIdx}"] [data-tb="${newId}"] [data-action="free-text"]`);
+        if (newTa) newTa.focus();
       });
     }
-    card.querySelectorAll('[data-action="free-style"]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        bloc.style = btn.dataset.style;
+    card.querySelectorAll('.cec-textblock').forEach(tbEl => {
+      const tbId = tbEl.dataset.tb;
+      const tb = bloc.textBlocks.find(t => t.id === tbId);
+      if (!tb) return;
+      tbEl.querySelector('[data-action="free-text-delete"]').addEventListener('click', () => {
+        bloc.textBlocks = bloc.textBlocks.filter(t => t.id !== tbId);
         persistCerveauData();
         renderCerveau();
       });
-    });
-    const text = card.querySelector('[data-action="free-text"]');
-    if (text){
+      tbEl.querySelectorAll('[data-action="free-style"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          tb.style = btn.dataset.style;
+          persistCerveauData();
+          renderCerveau();
+        });
+      });
+      const text = tbEl.querySelector('[data-action="free-text"]');
       autoGrowTextarea(text);
-      const saveText = () => {
-        bloc.texte = text.value;
-        delete bloc._editingText;
-        persistCerveauData();
-        // Un bloc vidé de tout son texte redevient "sans texte" (bouton + Texte) —
-        // seul cas où un re-render est nécessaire après la saisie.
-        if (!text.value.trim()) renderCerveau();
-      };
       text.addEventListener('input', () => autoGrowTextarea(text));
-      text.addEventListener('blur', saveText);
-    }
+      text.addEventListener('blur', () => { tb.texte = text.value; persistCerveauData(); });
+    });
   });
 
   wireCerveauResize(box, chain);

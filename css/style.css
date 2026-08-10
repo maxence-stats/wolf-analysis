@@ -268,7 +268,15 @@
   .cerveau-entity-list.cec-drop-target, .cerveau-freeblock-list.cec-drop-target{outline:2px dashed var(--gold);outline-offset:4px;border-radius:8px;}
   .cec-body{display:flex;flex-direction:column;flex:1;min-width:0;}
   .cec-image{position:relative;background:var(--panel);display:flex;align-items:center;justify-content:center;cursor:pointer;}
-  .cec-image img{width:100%;height:100%;object-fit:cover;}
+  /* object-fit:contain (pas cover) : l'image entière reste toujours visible, quitte à
+     laisser une marge (fond .cec-image) sur l'axe qui ne remplit pas — plutôt que de
+     rogner le haut/bas ou les côtés selon le rapport largeur/hauteur choisi au
+     redimensionnement. Cover donnait l'impression d'une image "déformée"/coupée dès
+     que la carte était redimensionnée dans un ratio différent du logo (ex. un logo
+     carré dans une carte très large ne montrait plus qu'une bande centrale rognée en
+     haut et en bas) — signalé explicitement par l'utilisateur, aucun pixel n'était
+     réellement étiré, seul le rognage donnait cette impression. */
+  .cec-image img{width:100%;height:100%;object-fit:contain;}
   .cec-image-plus{font-size:11.5px;color:var(--text-faint);}
   .cec-img-url, .cec-img-remove{position:absolute;top:5px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(4,5,7,0.65);color:var(--text);font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
   .cec-img-url{right:5px;}
@@ -291,14 +299,20 @@
   .cec-legend:focus{border-color:var(--gold);}
   .cec-fiche-btn{margin:0 10px 10px;background:transparent;border:1px solid var(--gold);color:var(--gold);border-radius:8px;padding:7px 0;font-size:12px;font-weight:600;cursor:pointer;}
   .cec-fiche-btn:hover{background:rgba(217,164,65,0.12);}
-  /* Texte libre : jamais de resize manuel ni de scroll interne, la hauteur suit le
-     contenu (voir autoGrowTextarea) — "je ne dois pas pouvoir le slider, je dois tout
-     voir". 3 styles au choix (cec-style-row), police/graisse dépendent du style. */
-  .cec-style-row{display:flex;gap:4px;margin:8px 10px 0;}
+  /* Texte libre : plusieurs segments empilés possibles par carte (.cec-textblock), ex.
+     un titre + un sous-titre + un corps, chacun avec son propre style et sa propre
+     suppression — demande explicite ("tu ne m'as pas permis de rajouter plusieurs
+     textes"). Jamais de resize manuel ni de scroll interne sur le textarea, la hauteur
+     suit le contenu (voir autoGrowTextarea) — "je ne dois pas pouvoir le slider, je
+     dois tout voir". */
+  .cec-textblock{margin:8px 10px 0;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.05);}
+  .cec-textblock:last-of-type{border-bottom:none;}
+  .cec-textblock-head{display:flex;align-items:center;justify-content:space-between;gap:6px;}
+  .cec-style-row{display:flex;gap:4px;}
   .cec-style-btn{background:var(--panel);border:1px solid var(--hair);color:var(--text-faint);border-radius:6px;padding:3px 9px;font-size:10.5px;cursor:pointer;font-family:var(--font-body);}
   .cec-style-btn:hover{border-color:var(--gold);color:var(--text);}
   .cec-style-btn.active{background:var(--gold);border-color:var(--gold);color:#1a1305;font-weight:700;}
-  .cec-free-text{margin:6px 10px 8px;background:var(--panel);border:1px solid var(--hair);border-radius:6px;padding:6px 8px;color:var(--text);outline:none;resize:none;overflow:hidden;width:calc(100% - 20px);}
+  .cec-free-text{margin:6px 0 0;background:var(--panel);border:1px solid var(--hair);border-radius:6px;padding:6px 8px;color:var(--text);outline:none;resize:none;overflow:hidden;width:100%;}
   .cec-free-text:focus{border-color:var(--gold);}
   .cec-free-text-corps{font-family:var(--font-body);font-size:12.5px;font-weight:400;}
   .cec-free-text-soustitre{font-family:var(--font-display);font-size:13.5px;font-weight:600;font-style:italic;color:var(--text-dim);}
@@ -617,6 +631,7 @@
   .zoom-cagr-chip{font-family:var(--font-mono);font-size:11px;padding:4px 10px;border-radius:20px;border:1px solid var(--hair);color:var(--text-dim);background:rgba(255,255,255,0.02);}
   .zoom-cagr-chip b{color:var(--text);font-weight:700;}
   .zoom-canvas-holder{position:relative;flex:1;min-height:680px;}
+  .zoom-export-row{margin:12px 0 0;justify-content:flex-end;}
   .zoom-footer{margin-top:16px;display:flex;align-items:center;justify-content:flex-end;gap:10px;font-size:11px;color:var(--text-faint);font-family:var(--font-mono);}
   .zoom-footer img{height:28px;width:auto;border-radius:5px;}
 
