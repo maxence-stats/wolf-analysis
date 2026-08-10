@@ -6,6 +6,15 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 ## [Non publié]
 
 ### Ajouté
+- **Onglet Wolf Portfolio, suite** : mise en page recomposée (liste des positions à
+  gauche, donut agrandi à droite, plus grand possible), logos de segment agrandis
+  (jusqu'à 56px, anneau élargi à `cutout:46%`), bouton zoom sur le donut (réutilise la
+  modale existante, même pied de page « Données fournies par Wolf Analysis »),
+  nouveau graphique de performance **mensuelle** (barres, colonnes AT/AV) à côté du
+  graphique de performance cumulée déjà existant.
+- **Régression linéaire (cours de bourse) : couleurs demandées** — moyenne en rouge,
+  ±1 écart-type en bleu, ±2 écarts-types en rouge pointillé (remplace le gris neutre
+  utilisé au départ).
 - **Nouvel onglet « Wolf Portfolio »** : lit l'onglet « Wolf portefeuille » du même
   Google Sheet (gid dédié, `PORTFOLIO_GID`). 5 tuiles de résumé (capital investi,
   valorisation, cash, gains €/%), composition en donut Chart.js **agrandi** avec le
@@ -42,6 +51,11 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
   tard), cases à cocher, persistant comme les autres onglets.
 
 ### Corrigé
+- **Zoom du donut Wolf Portfolio en erreur** (`TypeError` Chart.js) : réutiliser le
+  même objet `options`/`data` entre le graphique normal et sa version zoomée casse la
+  seconde instance (Chart.js mute cet objet en interne pour résoudre les valeurs
+  scriptables comme `cutout`). Corrigé avec `buildPortfolioDonutConfig()`, qui
+  reconstruit une config indépendante à chaque appel.
 - **Canal de régression invisible sur le graphique boursier** : pas un bug du canal
   lui-même (testé isolément, calculs corrects) — `renderStockChart()` s'arrête avant
   d'y arriver si `stockFull` est vide, ce qui est le cas tant que le cours de bourse

@@ -442,7 +442,7 @@ function portfolioSegmentLogosPlugin(){
         const r = (arc.innerRadius + arc.outerRadius) / 2;
         const x = arc.x + Math.cos(angle) * r;
         const y = arc.y + Math.sin(angle) * r;
-        const size = Math.min(30, Math.max(16, arc.outerRadius - arc.innerRadius - 10));
+        const size = Math.min(56, Math.max(24, (arc.outerRadius - arc.innerRadius) * 0.9));
         const src = dataset._logos && dataset._logos[i];
         const img = src && portfolioImageCache[src];
         ctx.save();
@@ -470,24 +470,16 @@ function portfolioSegmentLogosPlugin(){
   };
 }
 
-let portfolioDonutChart = null;
-async function renderPortfolioDonut(){
+// Construit une config Chart.js fraîche à chaque appel (jamais un objet partagé entre
+// deux instances Chart.js vivantes : Chart.js mutant `options`/`cutout` en interne pour
+// résoudre les valeurs scriptables, réutiliser le même objet entre le graphique normal
+// et sa version zoomée fait planter la seconde instance — TypeError constaté en test).
+function buildPortfolioDonutConfig(){
   const holdings = portfolioData.holdings.filter(h => h.valorisation != null && h.valorisation > 0);
-  const canvas = document.getElementById('chartPortfolioDonut');
-  if (!canvas) return;
-  if (portfolioDonutChart) portfolioDonutChart.destroy();
-  if (!holdings.length) return;
-
+  if (!holdings.length) return null;
   const total = holdings.reduce((s, h) => s + h.valorisation, 0);
   const logos = holdings.map(h => portfolioEntityLogo(h.nom));
-
-  // Précharge le logo central + ceux des positions avant de créer le graphique — pas
-  // bloquant si une image échoue (loadImageCached résout quand même, avec null).
-  Promise.all([WOLF_LOGO_URL, ...logos].map(loadImageCached)).then(() => {
-    if (portfolioDonutChart) portfolioDonutChart.update();
-  });
-
-  portfolioDonutChart = new Chart(canvas.getContext('2d'), {
+  return {
     type:'doughnut',
     data:{
       labels: holdings.map(h => h.nom),
@@ -499,7 +491,7 @@ async function renderPortfolioDonut(){
       }]
     },
     options:{
-      responsive:true, maintainAspectRatio:false, cutout:'58%',
+      responsive:true, maintainAspectRatio:false, cutout:'46%',
       plugins:{
         legend:{ display:false },
         tooltip:{ callbacks:{ label: ctx => {
@@ -508,8 +500,42 @@ async function renderPortfolioDonut(){
         } } }
       }
     },
-    plugins:[portfolioCenterImagePlugin(), portfolioSegmentLogosPlugin()]
+    plugins:[portfolioCenterImagePlugin(), portfolioSegmentLogosPlugin()],
+    _logos: logos
+  };
+}
+
+let portfolioDonutChart = null;
+async function renderPortfolioDonut(){
+  const canvas = document.getElementById('chartPortfolioDonut');
+  if (!canvas) return;
+  if (portfolioDonutChart) portfolioDonutChart.destroy();
+  const config = buildPortfolioDonutConfig();
+  if (!config) return;
+
+  // Précharge le logo central + ceux des positions avant de créer le graphique — pas
+  // bloquant si une image échoue (loadImageCached résout quand même, avec null).
+  Promise.all([WOLF_LOGO_URL, ...config._logos].map(loadImageCached)).then(() => {
+    if (portfolioDonutChart) portfolioDonutChart.update();
   });
+
+  portfolioDonutChart = new Chart(canvas.getContext('2d'), config);
+}
+
+// Zoom dédié (pas via chartConfigs/openZoom) : ce donut a des plugins custom et pas de
+// notion d'années/CAGR, donc il ne correspond pas au système générique de zoom conçu
+// pour les 8 graphiques historiques. Réutilise le même #zoomModal (donc le même pied de
+// page "Données fournies par Wolf Analysis"), juste sans les lignes plage/CAGR.
+function openPortfolioZoom(){
+  const config = buildPortfolioDonutConfig();
+  if (!config) return;
+  document.getElementById('zoomTitle').textContent = 'Répartition — Wolf Portfolio';
+  document.getElementById('zoomRangeRow').innerHTML = '';
+  document.getElementById('zoomCagrRow').innerHTML = '';
+  zoomKey = null;
+  if (window.__zoomChart) window.__zoomChart.destroy();
+  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), config);
+  document.getElementById('zoomModal').style.display = 'flex';
 }
 
 function renderPortfolioHoldingsList(){
@@ -564,6 +590,33 @@ function renderPortfolioVsSpx(){
   });
 }
 
+let portfolioVsSpxMonthlyChart = null;
+function renderPortfolioVsSpxMonthly(){
+  const canvas = document.getElementById('chartPortfolioVsSpxMonthly');
+  if (!canvas) return;
+  if (portfolioVsSpxMonthlyChart) portfolioVsSpxMonthlyChart.destroy();
+  const monthly = portfolioData.monthly.filter(m => m.rendementMensuel != null || m.spxPerfMensuelle != null);
+  if (!monthly.length) return;
+
+  portfolioVsSpxMonthlyChart = new Chart(canvas.getContext('2d'), {
+    type:'bar',
+    data:{
+      labels: monthly.map(m => m.mois),
+      datasets:[
+        { label:'Wolf Portfolio', data: monthly.map(m => m.rendementMensuel), backgroundColor:THEME.gold, borderRadius:4, barPercentage:0.7 },
+        { label:'S&P 500', data: monthly.map(m => m.spxPerfMensuelle), backgroundColor:THEME.blue, borderRadius:4, barPercentage:0.7 }
+      ]
+    },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true } } },
+      scales:{
+        x:{ grid:{display:false}, ticks:{color:THEME.dim}, border:{color:THEME.hair} },
+        y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'%'} }
+      }
+    }
+  });
+}
+
 function renderPortfolio(){
   const fmtSigned = v => v == null ? 'N/D' : (v >= 0 ? '+' : '') + v.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' €';
 
@@ -586,6 +639,7 @@ function renderPortfolio(){
   renderPortfolioDonut();
   renderPortfolioHoldingsList();
   renderPortfolioVsSpx();
+  renderPortfolioVsSpxMonthly();
 }
 
 /* ============================================================
@@ -1221,12 +1275,19 @@ function renderStockChart(){
 
   if (chartInstances.stock) chartInstances.stock.destroy();
 
-  const regStyle = (offset, label, showInLegend) => ({
-    label, data: regLine(offset),
-    borderColor: `rgba(233,235,238,${offset === 0 ? 0.55 : Math.abs(offset) === 1 ? 0.32 : 0.18})`,
-    borderWidth: offset === 0 ? 1.5 : 1,
-    borderDash: offset === 0 ? [6,4] : [3,4], pointRadius:0, spanGaps:false, tension:0, _legend: !!showInLegend
-  });
+  // Couleurs demandées explicitement : moyenne en rouge, ±1σ en bleu, ±2σ en rouge
+  // pointillé (pas les couleurs sémantiques habituelles pos/neg du site — ce sont des
+  // repères statistiques, pas un jugement positif/négatif).
+  const regStyle = (offset, label, showInLegend) => {
+    const abs = Math.abs(offset);
+    return {
+      label, data: regLine(offset),
+      borderColor: abs === 1 ? THEME.blue : THEME.red,
+      borderWidth: offset === 0 ? 1.75 : 1.25,
+      borderDash: abs === 2 ? [5,4] : [],
+      pointRadius:0, spanGaps:false, tension:0, _legend: !!showInLegend
+    };
+  };
 
   const config = {
     type:'line',

@@ -357,7 +357,16 @@ avec le chargement principal sinon).
   pour éviter un rendu illisible.
 - **Graphique Wolf Portfolio vs S&P 500** : courbes de rendement cumulé (`AU` vs `AW`)
   par mois, en filtrant les mois futurs pré-remplis dans le Sheet sans données
-  (`rendementTotal`/`spxPerfTotale` tous les deux `null`).
+  (`rendementTotal`/`spxPerfTotale` tous les deux `null`). À côté, un second graphique
+  en barres pour la performance **mensuelle** (`AT` vs `AV`, même filtrage des mois
+  vides), `renderPortfolioVsSpxMonthly()`.
+- **Zoom sur le donut** (`openPortfolioZoom()`) : ne passe pas par le système générique
+  `chartConfigs`/`openZoom()` (conçu pour les graphiques historiques avec plage/CAGR,
+  pas pour un donut avec plugins custom) — réutilise juste `#zoomModal` directement.
+  `buildPortfolioDonutConfig()` reconstruit une config Chart.js indépendante à chaque
+  appel (normal + zoom) : réutiliser le même objet `options` entre deux instances
+  Chart.js vivantes fait planter la seconde (Chart.js le mute en interne pour résoudre
+  les valeurs scriptables comme `cutout`) — piège constaté en test, cf. CHANGELOG.
 
 ### Onglet Secteur (fait, fonctionnel)
 - 11 secteurs GICS + bucket "Autre / non classé"
@@ -523,7 +532,9 @@ plage (1a/2a/3a/5a/10a/20a/Max, `#rangeButtons`) recalcule l'affichage sans refa
 fetch. **Canal de régression linéaire** (`computeRegressionChannel()`) superposé au
 graphique : moyenne ± 1/2 écarts-types calculés sur les 20 dernières années de clôtures
 hebdo (ou tout l'historique dispo si plus court), indépendant du sélecteur de plage —
-sur une plage plus courte on ne voit qu'un extrait du même canal.
+sur une plage plus courte on ne voit qu'un extrait du même canal. Couleurs demandées
+explicitement (pas les couleurs sémantiques habituelles pos/neg) : moyenne en rouge,
+±1σ en bleu, ±2σ en rouge pointillé.
 
 **Piège confirmé — ni Yahoo ni Stooq n'ont de CORS.** Aucun des deux endpoints
 n'envoie `Access-Control-Allow-Origin` (vérifié directement), donc un `fetch()` direct
