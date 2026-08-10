@@ -539,7 +539,9 @@
   .scenario-card-zoomed .scenario-results .r-v{font-size:20px;}
   .scenario-card-zoomed .scenario-chart-holder{height:420px;margin-top:10px;}
   .zoom-panel{background:var(--card-bg);border:var(--card-border);border-radius:16px;padding:22px 24px;width:min(1700px,98vw);height:97vh;max-height:97vh;display:flex;flex-direction:column;box-shadow:0 24px 60px -20px rgba(0,0,0,0.7);}
-  .zoom-panel-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+  .zoom-panel-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:10px;}
+  .zoom-panel-head h3{flex:1;}
+  .zoom-entity-logo{height:30px;width:30px;object-fit:contain;background:#fff;border-radius:6px;padding:3px;flex-shrink:0;}
   .zoom-panel-head h3{font-family:var(--font-display);font-size:18px;font-weight:600;margin:0;}
   .zoom-close{background:none;border:1px solid var(--hair);color:var(--text-dim);width:32px;height:32px;border-radius:8px;cursor:pointer;font-size:15px;}
   .zoom-close:hover{border-color:var(--red);color:var(--red);}
@@ -630,5 +632,9 @@
   .macro-fund-table th, .macro-fund-table td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--hair);}
   .macro-fund-table th:first-child, .macro-fund-table td:first-child{text-align:left;}
   .macro-fund-table th{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;color:var(--text-dim);}
+  .macro-fund-table td.mf-red{color:var(--red);font-weight:700;}
+  .macro-fund-table td.mf-green-light{color:#8fd9bd;}
+  .macro-fund-table td.mf-orange{color:#F0A441;font-weight:600;}
+  .macro-fund-table td.mf-green-strong{color:var(--green);font-weight:700;}
   .macro-fund-note{font-size:12px;color:var(--text-dim);line-height:1.6;}
 

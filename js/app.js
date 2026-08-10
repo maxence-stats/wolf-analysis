@@ -656,13 +656,8 @@ function renderMacroCycleChart(){
 
 function openMacroCycleZoom(){
   if (!macroCycleData || !macroCycleData.dates.length) return;
-  document.getElementById('zoomTitle').textContent = 'Cycle de Marché — Offensif vs Défensif';
-  document.getElementById('zoomRangeRow').innerHTML = '';
-  document.getElementById('zoomCagrRow').innerHTML = '';
-  zoomKey = null;
-  if (window.__zoomChart) window.__zoomChart.destroy();
-  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), buildMacroCycleChartConfig(macroCycleRange));
-  document.getElementById('zoomModal').style.display = 'flex';
+  zoomMacroCycleRange = macroCycleRange;
+  openZoom('macroCycle', 'Cycle de Marché — Offensif vs Défensif');
 }
 
 /* ---- Rotation Sectorielle GICS vs S&P 500 : 11 secteurs déjà exprimés en ratio
@@ -716,9 +711,11 @@ function buildMacroRotationChartConfig(range){
   const d = macroRotationData;
   let startIdx = 0;
   if (range){
-    const years = parseInt(range, 10);
     const cutoff = new Date();
-    cutoff.setFullYear(cutoff.getFullYear() - years);
+    // "m1"/"m2"/"m3" = mois (zoom fin, demandé explicitement en plus des plages en
+    // années) ; sinon la valeur est un nombre d'années comme partout ailleurs.
+    if (String(range).startsWith('m')) cutoff.setMonth(cutoff.getMonth() - parseInt(range.slice(1), 10));
+    else cutoff.setFullYear(cutoff.getFullYear() - parseInt(range, 10));
     const found = d.dates.findIndex(dt => new Date(dt) >= cutoff);
     startIdx = found === -1 ? 0 : found;
   }
@@ -752,13 +749,8 @@ function renderMacroRotationChart(){
 
 function openMacroRotationZoom(){
   if (!macroRotationData || !macroRotationData.dates.length) return;
-  document.getElementById('zoomTitle').textContent = 'Rotation Sectorielle GICS vs S&P 500';
-  document.getElementById('zoomRangeRow').innerHTML = '';
-  document.getElementById('zoomCagrRow').innerHTML = '';
-  zoomKey = null;
-  if (window.__zoomChart) window.__zoomChart.destroy();
-  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), buildMacroRotationChartConfig(macroRotationRange));
-  document.getElementById('zoomModal').style.display = 'flex';
+  zoomMacroRotationRange = macroRotationRange;
+  openZoom('macroRotation', 'Rotation Sectorielle GICS vs S&P 500');
 }
 
 // Poids relatif des secteurs : approximation à partir de la DERNIÈRE valeur de ratio
@@ -766,6 +758,35 @@ function openMacroRotationZoom(){
 // pondération de capitalisation boursière (les ratios sont rebasés à 1.00 au début de
 // la fenêtre disponible, pas une mesure de taille absolue) — juste une lecture rapide
 // de "qui pèse le plus dans le mouvement récent", d'où l'avertissement en sous-titre.
+// Plugin custom pour afficher le % directement sur chaque part (Chart.js n'a pas de
+// data labels intégrés) — afterDatasetsDraw comme les autres plugins custom du site
+// (donut Portfolio), dessine après les segments mais avant tout plugin core.
+function pieLabelsPlugin(){
+  return {
+    id:'pieLabels',
+    afterDatasetsDraw(chart){
+      const meta = chart.getDatasetMeta(0);
+      const dataset = chart.data.datasets[0];
+      const total = dataset.data.reduce((a, b) => a + b, 0);
+      const ctx = chart.ctx;
+      meta.data.forEach((arc, i) => {
+        const pct = total ? dataset.data[i] / total * 100 : 0;
+        if (pct < 3) return; // part trop fine pour un texte lisible
+        const angle = (arc.startAngle + arc.endAngle) / 2;
+        const r = (arc.innerRadius + arc.outerRadius) / 2;
+        const x = arc.x + Math.cos(angle) * r;
+        const y = arc.y + Math.sin(angle) * r;
+        ctx.save();
+        ctx.fillStyle = '#0D1013';
+        ctx.font = 'bold 11px "Plus Jakarta Sans", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(pct.toLocaleString('fr-FR', {maximumFractionDigits:0}) + '%', x, y);
+        ctx.restore();
+      });
+    }
+  };
+}
 function buildMacroWeightChartConfig(){
   const d = macroRotationData;
   const lastIdx = d.dates.length - 1;
@@ -775,9 +796,9 @@ function buildMacroWeightChartConfig(){
   });
   const total = values.reduce((a, b) => a + b, 0);
   return {
-    type:'pie',
+    type:'doughnut',
     data:{ labels: MACRO_ROTATION_SECTORS.map(s => s.label), datasets:[{ data: values, backgroundColor: MACRO_ROTATION_COLORS, borderColor:THEME.hair, borderWidth:2 }] },
-    options:{ responsive:true, maintainAspectRatio:false,
+    options:{ responsive:true, maintainAspectRatio:false, cutout:'45%',
       plugins:{
         legend:{ position:'right', labels:{ boxWidth:8, usePointStyle:true, font:{size:9.5}, color:THEME.dim } },
         tooltip:{ callbacks:{ label: ctx => {
@@ -785,7 +806,8 @@ function buildMacroWeightChartConfig(){
           return ctx.label + ' : ' + pct.toLocaleString('fr-FR', {minimumFractionDigits:1, maximumFractionDigits:1}) + '%';
         } } }
       }
-    }
+    },
+    plugins:[pieLabelsPlugin()]
   };
 }
 let macroWeightChart = null;
@@ -860,8 +882,16 @@ function macroPowerColorHex(v){
 // dans le Sheet (pondération 1/2/3 mois 0,5/0,3/0,2, confirmée par l'utilisateur —
 // aucun recalcul nécessaire ici), triée du secteur le plus performant au moins
 // performant.
-function buildMacroRankingChartConfig(){
-  const row = macroPowerData.rows.find(r => r.label === 'Classement');
+// Sélecteur de ligne (pas une "plage" au sens strict, mais même famille d'usage) :
+// pioche directement la ligne demandée dans macroPowerData (déjà calculée dans le
+// Sheet, aucun recalcul) — "Classement" (score pondéré) ou une performance brute sur
+// 1/2/3 mois. Les libellés "1 moi"/"2 mois"/"3 mois" reprennent exactement ceux du
+// Sheet (dont un typo "moi" sans s, volontairement pas corrigé pour matcher la vraie
+// ligne).
+let macroRankingRow = 'Classement';
+const MACRO_RANKING_OPTIONS = [['Classement','Classement'],['1 moi','1 mois'],['2 mois','2 mois'],['3 mois','3 mois']];
+function buildMacroRankingChartConfig(rowLabel){
+  const row = macroPowerData.rows.find(r => r.label === (rowLabel || macroRankingRow));
   if (!row) return null;
   const items = macroPowerData.headers
     .map((h, i) => ({ label:h, value:row.values[i] }))
@@ -882,7 +912,7 @@ function buildMacroRankingChartConfig(){
 let macroRankingChart = null;
 function renderMacroRankingChart(){
   if (!macroPowerData) return;
-  const config = buildMacroRankingChartConfig();
+  const config = buildMacroRankingChartConfig(macroRankingRow);
   if (!config) return;
   const canvas = document.getElementById('chartMacroRanking');
   if (!canvas) return;
@@ -890,15 +920,8 @@ function renderMacroRankingChart(){
   macroRankingChart = new Chart(canvas.getContext('2d'), config);
 }
 function openMacroRankingZoom(){
-  const config = buildMacroRankingChartConfig();
-  if (!config) return;
-  document.getElementById('zoomTitle').textContent = 'Classement sectoriel';
-  document.getElementById('zoomRangeRow').innerHTML = '';
-  document.getElementById('zoomCagrRow').innerHTML = '';
-  zoomKey = null;
-  if (window.__zoomChart) window.__zoomChart.destroy();
-  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), config);
-  document.getElementById('zoomModal').style.display = 'flex';
+  zoomMacroRankingRow = macroRankingRow;
+  openZoom('macroRanking', 'Classement sectoriel');
 }
 
 function macroPowerColorClass(v){
@@ -1009,6 +1032,11 @@ async function loadMacroFundamentalsData(){
     const gSeries = beaLineSeries(t10101, 22);
     const gdpSeries = beaLineSeries(t10105, 1);
     const netExSeries = beaLineSeries(t10105, 15);
+    // Croissance RÉELLE du PIB (T10101 ligne 1, % variation annualisée, chaîné —
+    // équivalent à la série FRED GDPC1/A191RL) en plus du niveau nominal — sans elle,
+    // le PIB n'était affiché qu'en niveau brut ($ courants), sans indication de
+    // croissance, ce qui pouvait donner une impression de donnée incomplète/incohérente.
+    const gdpGrowthSeries = beaLineSeries(t10101, 1);
 
     const quarters = Object.keys(gdpSeries).sort();
     const rows = [];
@@ -1025,6 +1053,7 @@ async function loadMacroFundamentalsData(){
       rows.push({
         quarter: qn + ' ' + q.slice(0, 4),
         gdp: gdpSeries[q] != null ? gdpSeries[q] / 1000 : null,
+        gdpGrowth: gdpGrowthSeries[q],
         c: cSeries[q], i: iSeries[q], g: gSeries[q],
         trade, taux10, taux2,
         spread: (taux10 != null && taux2 != null) ? taux10 - taux2 : null,
@@ -1041,26 +1070,39 @@ async function loadMacroFundamentalsData(){
   }
 }
 
+// Seuils donnés explicitement par l'utilisateur pour ce tableau (distincts de ceux du
+// tableau de force relative sectorielle) : négatif = rouge, [0,1) = vert clair,
+// [1,2) = orange, ≥2 = vert vif. Appliqué uniquement aux colonnes en %
+// (croissance/taux/spread/inflation) — PAS au niveau du PIB ni à la balance
+// commerciale, exprimés en Md$, une échelle où ce seuillage n'aurait pas de sens.
+function macroFundColorClass(v){
+  if (v == null) return '';
+  if (v < 0) return 'mf-red';
+  if (v < 1) return 'mf-green-light';
+  if (v < 2) return 'mf-orange';
+  return 'mf-green-strong';
+}
+
 function renderMacroFundamentalsTable(){
   const box = document.getElementById('macroFundamentalsTable');
   if (!box || !macroFundamentalsData) return;
   const recent = macroFundamentalsData.slice(-12);
   const pct = (v, dec) => v != null ? (v >= 0 ? '+' : '') + v.toLocaleString('fr-FR', {minimumFractionDigits:dec || 2, maximumFractionDigits:dec || 2}) + '%' : '—';
+  const pctCell = (v, dec) => `<td class="${macroFundColorClass(v)}">${pct(v, dec)}</td>`;
   const bn = v => v != null ? v.toLocaleString('fr-FR', {maximumFractionDigits:0}) + ' Md$' : '—';
   box.innerHTML = `<div style="overflow-x:auto"><table class="macro-fund-table"><thead><tr>
-      <th>Trimestre</th><th>PIB</th><th>Consommation</th><th>Investissement</th><th>Dépenses publ.</th>
+      <th>Trimestre</th><th>PIB (niveau)</th><th>PIB (croissance réelle)</th><th>Consommation</th><th>Investissement</th><th>Dépenses publ.</th>
       <th>Balance comm. (Δ)</th><th>Taux 10 ans</th><th>Taux 2 ans</th><th>Spread 10-2</th><th>Inflation</th><th>Taux réel</th>
     </tr></thead><tbody>${recent.map(r => `<tr>
-      <td>${r.quarter}</td><td>${bn(r.gdp)}</td><td>${pct(r.c, 1)}</td><td>${pct(r.i, 1)}</td><td>${pct(r.g, 1)}</td>
+      <td>${r.quarter}</td><td>${bn(r.gdp)}</td>${pctCell(r.gdpGrowth, 1)}${pctCell(r.c, 1)}${pctCell(r.i, 1)}${pctCell(r.g, 1)}
       <td>${r.trade != null ? (r.trade >= 0 ? '+' : '') + r.trade.toLocaleString('fr-FR', {maximumFractionDigits:0}) + ' Md$' : '—'}</td>
-      <td>${r.taux10 != null ? r.taux10.toLocaleString('fr-FR', {minimumFractionDigits:2}) + '%' : '—'}</td>
-      <td>${r.taux2 != null ? r.taux2.toLocaleString('fr-FR', {minimumFractionDigits:2}) + '%' : '—'}</td>
-      <td>${pct(r.spread)}</td>
-      <td>${r.inflation != null ? r.inflation.toLocaleString('fr-FR', {minimumFractionDigits:1}) + '%' : '—'}</td>
-      <td>${pct(r.realRate)}</td>
+      ${pctCell(r.taux10, 2)}${pctCell(r.taux2, 2)}${pctCell(r.spread, 2)}${pctCell(r.inflation, 1)}${pctCell(r.realRate, 2)}
     </tr>`).join('')}</tbody></table></div>
-    <p class="macro-fund-note" style="margin-top:10px;">Sources : BEA (PIB, consommation, investissement, dépenses
-    publiques, balance commerciale) et FRED (taux, inflation) — rechargé automatiquement toutes les 24h.</p>`;
+    <p class="macro-fund-note" style="margin-top:10px;">Sources : BEA table T10101 (croissance réelle du PIB, de la
+    consommation, de l'investissement, des dépenses publiques — % annualisé, révisé, jamais une projection) et
+    T10105 (niveau du PIB, balance commerciale) ; FRED séries DGS10/DGS2 (taux quotidiens réels de marché) et
+    CPIAUCSL (inflation YoY réelle) — spread et taux réel calculés par simple soustraction. Rechargé
+    automatiquement toutes les 24h.</p>`;
 }
 
 const PORTFOLIO_COLORS = ['#D9A441','#4A9FE0','#F0C877','#7DBEEA','#B8842E','#2E6FA3','#F5DDA3','#A8D4F0','#8A6420','#1F4E73'];
@@ -1378,11 +1420,16 @@ async function exportPortfolioAsPdf(){
   const chartImg = await buildPortfolioExportChartImg(holdingsForChart);
   const chartSection = chartImg ? `<div class="print-section"><h3>Répartition</h3>${chartImg}</div>` : '';
 
+  // Le donut exporté ne peut pas porter les logos de position (canvas tainté par le
+  // CORS, voir "Pièges techniques" point 13) — on les remet ici, dans le tableau, qui
+  // n'a pas cette contrainte (de simples <img>, jamais relues en pixels).
   const holdings = portfolioData.holdings.filter(h => h.valorisation != null).slice().sort((a, b) => b.valorisation - a.valorisation);
   const total = holdings.reduce((s, h) => s + h.valorisation, 0);
   const rows = holdings.map(h => {
     const pct = total ? (h.valorisation / total * 100) : 0;
-    return `<tr><td>${h.nom}</td><td>${pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</td><td>${h.perf != null ? (h.perf >= 0 ? '+' : '') + fmtPct(h.perf) : '—'}</td></tr>`;
+    const logo = companyLogoUrl(h.nom);
+    const logoImg = logo ? `<img class="print-inline-logo" src="${logo}" alt="">` : '';
+    return `<tr><td>${logoImg}${h.nom}</td><td>${pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</td><td>${h.perf != null ? (h.perf >= 0 ? '+' : '') + fmtPct(h.perf) : '—'}</td></tr>`;
   }).join('');
   const table = `<div class="print-section"><h3>Positions</h3><table class="print-table"><thead><tr><th>Entreprise</th><th>Poids</th><th>Performance</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 
@@ -2122,12 +2169,14 @@ async function loadStockChart(ticker, nom){
   }
 }
 
-function renderStockChart(){
-  if (!stockFull) return;
+// Factory extraite (comme les scénarios/graphiques macro) pour être réutilisable par
+// le zoom, qui a besoin de son propre sélecteur de plage indépendant de la carte
+// normale — demande explicite ("même quand on zoome").
+function buildStockChartConfig(range){
   const { dates, closes, sma, sma30 } = stockFull;
   let startIdx = 0;
-  if (stockRange !== 'max'){
-    const years = parseInt(stockRange, 10);
+  if (range !== 'max'){
+    const years = parseInt(range, 10);
     const cutoff = new Date();
     cutoff.setFullYear(cutoff.getFullYear() - years);
     const found = dates.findIndex(d => new Date(d) >= cutoff);
@@ -2141,8 +2190,6 @@ function renderStockChart(){
 
   const reg = computeRegressionChannel(dates, closes);
   const regLine = (offset) => labels.map(d => (reg && reg.byDate[d] != null) ? reg.byDate[d] + offset * reg.stdDev : null);
-
-  if (chartInstances.stock) chartInstances.stock.destroy();
 
   // Couleurs v2 (révision explicite) : clôture en jaune, SMA200 en blanc, SMA30
   // (inchangée) en violet fin — seule exception au "violet jamais utilisé pour de la
@@ -2174,7 +2221,13 @@ function renderStockChart(){
       }
     }
   };
-  chartInstances.stock = makeChart('stock', 'chartStock', config);
+  return config;
+}
+
+function renderStockChart(){
+  if (!stockFull) return;
+  if (chartInstances.stock) chartInstances.stock.destroy();
+  chartInstances.stock = makeChart('stock', 'chartStock', buildStockChartConfig(stockRange));
 }
 
 document.getElementById('rangeButtons').addEventListener('click', e => {
@@ -2198,6 +2251,13 @@ document.getElementById('macroRotationRangeButtons').addEventListener('click', e
   document.querySelectorAll('#macroRotationRangeButtons button').forEach(b => b.classList.toggle('active', b === btn));
   renderMacroRotationChart();
 });
+document.getElementById('macroRankingRowButtons').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-row]');
+  if (!btn) return;
+  macroRankingRow = btn.dataset.row;
+  document.querySelectorAll('#macroRankingRowButtons button').forEach(b => b.classList.toggle('active', b === btn));
+  renderMacroRankingChart();
+});
 
 /* ---------- Zoom : sélecteur de plage (5/10/20 ans) + CAGR sur les graphiques
    historiques (pas le cours de bourse, qui a déjà son propre sélecteur sur la carte
@@ -2215,6 +2275,15 @@ const ZOOM_CAGR_META = {
 };
 let zoomKey = null;
 let zoomRange = 'max';
+// Plages indépendantes de la carte normale pour les zooms qui ont leur propre
+// sélecteur (cours de bourse + les 2 graphiques macro) — changer la plage en zoom
+// n'affecte pas la carte normale, et vice versa.
+let zoomStockRange = 'max';
+let zoomMacroCycleRange = '20';
+let zoomMacroRotationRange = '3';
+const ZOOM_STOCK_RANGES = [['1','1a'],['2','2a'],['3','3a'],['5','5a'],['10','10a'],['20','20a'],['max','Max']];
+const ZOOM_MACRO_CYCLE_RANGES = [['5','5a'],['10','10a'],['20','20a'],['max','Max']];
+const ZOOM_MACRO_ROTATION_RANGES = [['1','1a'],['2','2a'],['3','3a'],['m1','1m'],['m2','2m'],['m3','3m']];
 
 function renderZoomCagrRow(){
   const box = document.getElementById('zoomCagrRow');
@@ -2228,30 +2297,80 @@ function renderZoomCagrRow(){
   }).join('');
 }
 
+// Zooms "spéciaux" (pas dans chartConfigs/ZOOM_HISTORICAL_KEYS) qui ont leur propre
+// sélecteur de plage indépendant de la carte normale — cours de bourse + les 2
+// graphiques macro à ratio temporel (demande explicite : pouvoir changer la plage
+// même en plein écran, pas seulement sur la petite carte).
+let zoomMacroRankingRow = 'Classement';
+const ZOOM_SPECIAL_RANGES = {
+  stock: ZOOM_STOCK_RANGES,
+  macroCycle: ZOOM_MACRO_CYCLE_RANGES,
+  macroRotation: ZOOM_MACRO_ROTATION_RANGES,
+  macroRanking: MACRO_RANKING_OPTIONS
+};
+function zoomSpecialRangeGet(){
+  if (zoomKey === 'stock') return zoomStockRange;
+  if (zoomKey === 'macroCycle') return zoomMacroCycleRange;
+  if (zoomKey === 'macroRotation') return zoomMacroRotationRange;
+  if (zoomKey === 'macroRanking') return zoomMacroRankingRow;
+  return null;
+}
+function zoomSpecialRangeSet(val){
+  if (zoomKey === 'stock') zoomStockRange = val;
+  else if (zoomKey === 'macroCycle') zoomMacroCycleRange = val;
+  else if (zoomKey === 'macroRotation') zoomMacroRotationRange = val;
+  else if (zoomKey === 'macroRanking') zoomMacroRankingRow = val;
+}
+function zoomSpecialChartConfig(){
+  if (zoomKey === 'stock') return buildStockChartConfig(zoomStockRange);
+  if (zoomKey === 'macroCycle') return buildMacroCycleChartConfig(zoomMacroCycleRange);
+  if (zoomKey === 'macroRotation') return buildMacroRotationChartConfig(zoomMacroRotationRange);
+  if (zoomKey === 'macroRanking') return buildMacroRankingChartConfig(zoomMacroRankingRow);
+  return null;
+}
+
 function renderZoomRangeRow(){
   const row = document.getElementById('zoomRangeRow');
+  if (ZOOM_SPECIAL_RANGES[zoomKey]){
+    const current = zoomSpecialRangeGet();
+    row.innerHTML = ZOOM_SPECIAL_RANGES[zoomKey].map(([val,label]) => `<button data-zrange="${val}" class="${current===val?'active':''}">${label}</button>`).join('');
+    return;
+  }
   if (!ZOOM_HISTORICAL_KEYS.includes(zoomKey)){ row.innerHTML = ''; return; }
   const ranges = [['5','5a'],['10','10a'],['20','20a'],['max','Max']];
   row.innerHTML = ranges.map(([val,label]) => `<button data-zrange="${val}" class="${zoomRange===val?'active':''}">${label}</button>`).join('');
 }
 
 function renderZoomChart(){
+  if (window.__zoomChart){ window.__zoomChart.destroy(); window.__zoomChart = null; }
+  if (ZOOM_SPECIAL_RANGES[zoomKey]){
+    const config = zoomSpecialChartConfig();
+    if (config) window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), config);
+    return;
+  }
   const baseConfig = chartConfigs[zoomKey];
   if (!baseConfig) return;
   const nYears = (!ZOOM_HISTORICAL_KEYS.includes(zoomKey) || zoomRange === 'max') ? null : parseInt(zoomRange, 10);
-  if (window.__zoomChart) window.__zoomChart.destroy();
   window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), sliceChartConfigByYears(baseConfig, nYears));
 }
 
 function openZoom(key, title){
-  const config = chartConfigs[key];
-  if (!config) return;
+  if (!ZOOM_SPECIAL_RANGES[key] && !chartConfigs[key]) return;
   zoomKey = key;
   zoomRange = 'max';
   document.getElementById('zoomTitle').textContent = title;
   renderZoomRangeRow();
   renderZoomCagrRow();
   renderZoomChart();
+  // Logo de l'entreprise affiché UNIQUEMENT en zoom (pas sur la petite carte, demande
+  // explicite) — pour que l'export PDF d'un graphique zoomé reste identifiable. Ne
+  // concerne que les graphiques liés à une entreprise (historiques + cours de bourse),
+  // pas les graphiques macro qui partagent le même #zoomModal.
+  const logoEl = document.getElementById('zoomEntityLogo');
+  const isCompanyChart = key === 'stock' || ZOOM_HISTORICAL_KEYS.includes(key);
+  const logo = isCompanyChart && activeCompany ? companyLogoUrl(activeCompany) : null;
+  logoEl.style.display = logo ? '' : 'none';
+  if (logo) logoEl.src = logo;
   document.getElementById('zoomModal').style.display = 'flex';
 }
 function closeZoom(){
@@ -2262,7 +2381,8 @@ function closeZoom(){
 document.getElementById('zoomRangeRow').addEventListener('click', e => {
   const btn = e.target.closest('button[data-zrange]');
   if (!btn) return;
-  zoomRange = btn.dataset.zrange;
+  if (ZOOM_SPECIAL_RANGES[zoomKey]) zoomSpecialRangeSet(btn.dataset.zrange);
+  else zoomRange = btn.dataset.zrange;
   renderZoomRangeRow();
   renderZoomCagrRow();
   renderZoomChart();
@@ -2506,6 +2626,10 @@ function openScenarioZoom(key){
   card._zoomHome = { parent: card.parentNode, next: card.nextSibling };
   body.appendChild(card);
   card.classList.add('scenario-card-zoomed');
+  const logoEl = document.getElementById('scenarioZoomEntityLogo');
+  const logo = activeCompany ? companyLogoUrl(activeCompany) : null;
+  logoEl.style.display = logo ? '' : 'none';
+  if (logo) logoEl.src = logo;
   document.getElementById('scenarioZoomModal').style.display = 'flex';
   if (scenarioCharts[key]) scenarioCharts[key].resize();
 }
