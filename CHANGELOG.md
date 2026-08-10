@@ -6,6 +6,38 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 ## [Non publié]
 
 ### Ajouté
+- **Analyse développée, suite** : graphique camembert ajouté pour l'**actionnariat**
+  principal (même mécanique que revenus par pays/secteur), en plus des deux
+  graphiques revenus déjà existants — les 3 graphiques utilisent désormais un même
+  composant (`analyseChartSectionHtml()`). **Saisie en valeurs brutes** : l'utilisateur
+  entre les montants bruts par ligne (ex. milliards de CA par secteur), l'appli calcule
+  automatiquement le total et le pourcentage de chaque ligne pour l'affichage — le
+  graphique Chart.js reçoit directement les valeurs brutes (proportion déjà correcte
+  sans calcul manuel côté utilisateur). **Bouton agrandir (⤢)** sur chaque graphique,
+  réutilise `#zoomModal` en plein écran. **Mise en page** : revenus par pays et par
+  secteur côte à côte en 2 colonnes, graphique dominant et tableau de saisie compact
+  (`.analyse-charts-row`). **Réordonnancement des sections** : Revenus (2 graphiques)
+  et Concurrents remontés en haut de la fiche (juste après Présentation), Actionnariat
+  déplacé après Analyse du risque, Conclusion reste en dernier. **Suppression d'une
+  fiche** : bouton dédié avec confirmation en 2 clics (jamais de `confirm()` natif),
+  supprime la version courante et bascule sur la précédente ou ferme la modale si
+  c'était la dernière. **Images par URL** : champ pour coller un lien internet (logo
+  d'entreprise typiquement) en plus de l'upload de fichier, pas besoin de télécharger
+  l'image au préalable. **Images agrandies** (260×180px, `object-fit:cover`) pour rester
+  lisibles à l'écran dans un contexte vidéo YouTube, plus **glisser-déposer pour
+  réordonner les images** au sein d'un même bloc, plus **bouton zoom sur chaque image**
+  (nouvelle modale légère `#imageZoomModal`, plein écran, indépendante de `#zoomModal`).
+- **Wolf Portfolio : correction de la superposition** — les logos de segment et le logo
+  central passaient au-dessus de l'infobulle (tooltip) au survol, la rendant illisible.
+  Cause réelle : les plugins Chart.js custom dessinaient sur `afterDraw`, qui s'exécute
+  *après* le tracé de l'infobulle (plugin `tooltip`, également sur `afterDraw`). Fix :
+  les deux plugins custom (`portfolioCenterImagePlugin`, `portfolioSegmentLogosPlugin`)
+  dessinent maintenant sur `afterDatasetsDraw`, une phase distincte du cycle de rendu
+  Chart.js qui s'exécute systématiquement *avant* `afterDraw` — ordre garanti par le
+  cycle de vie de Chart.js, pas par l'ordre d'enregistrement des plugins. Résultat :
+  segments + logo central en arrière-plan, logos de segment par-dessus, infobulle
+  toujours au-dessus de tout. (Un essai précédent, `tooltip.position:'nearest'` +
+  `caretPadding`, n'était qu'un correctif partiel, insuffisant.)
 - **Analyse développée par entreprise (Cerveau numérique)** : trame structurée
   réutilisable (présentation, marché, moat, secteurs d'activité, perspectives,
   risques, actionnariat, ratios, conclusion — texte + images sur chaque bloc), deux
@@ -15,13 +47,13 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
   **Versionnable par duplication** plutôt qu'écrasée : une fiche de base qu'on modifie
   sur place, avec la possibilité de la dupliquer pour garder plusieurs versions datées
   quand l'entreprise évolue — jamais de perte de version précédente. Stockage
-  IndexedDB (`cerveauData.analyses`), jamais supprimé automatiquement.
+  IndexedDB (`cerveauData.analyses`), jamais supprimé automatiquement (sauf suppression
+  explicite par l'utilisateur, voir ci-dessus).
 - **Alertes de prix multiples** : jusqu'ici une seule alerte par entreprise (la
   reprogrammer écrasait la précédente) — passage à un tableau d'alertes par
   entreprise, ancien format migré automatiquement sans perte au premier chargement.
-- **Wolf Portfolio, retouches** : zoom modal agrandi (97vh), tooltip du donut qui suit
-  le curseur au lieu de rester fixe sur le logo survolé, icône 💶 pour le Cash (au lieu
-  d'un simple "C"), graphique de performance mensuelle passé en courbes.
+- **Wolf Portfolio, retouches** : zoom modal agrandi (97vh), icône 💶 pour le Cash (au
+  lieu d'un simple "C"), graphique de performance mensuelle passé en courbes.
 - Onglet "Cerveau" renommé "Cerveau numérique" (barre d'onglets), blocs de phase de
   chaîne de valeur agrandis (grille 2 colonnes au lieu de 4, plus de hauteur).
 

@@ -406,6 +406,7 @@
       <select id="analyseVersionSelect"></select>
       <button class="cerveau-btn-cancel" id="analyseDuplicateBtn">⧉ Dupliquer cette version</button>
       <button class="cerveau-btn-cancel" id="analyseNewBtn">+ Nouvelle fiche vierge</button>
+      <button class="cerveau-btn-cancel" id="analyseDeleteBtn">🗑 Supprimer cette fiche</button>
       <span class="analyse-updated" id="analyseUpdatedLabel"></span>
       <button class="refresh-btn" id="analyseSaveBtn">💾 Enregistrer</button>
     </div>
@@ -414,6 +415,13 @@
       Données fournies par Wolf Analysis
       <img src="https://i.postimg.cc/43WmYDB1/20260714-LOGO-WINTER-PNG.png" alt="Wolf Analysis">
     </div>
+  </div>
+</div>
+
+<div id="imageZoomModal" onclick="if(event.target===this) closeImageZoom()">
+  <div class="image-zoom-panel">
+    <button class="zoom-close" onclick="closeImageZoom()" aria-label="Fermer">✕</button>
+    <img id="imageZoomImg" src="" alt="">
   </div>
 </div>
 

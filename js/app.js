@@ -409,7 +409,11 @@ function loadImageCached(src){
 function portfolioCenterImagePlugin(){
   return {
     id: 'portfolioCenterImage',
-    afterDraw(chart){
+    // afterDatasetsDraw (pas afterDraw) : les plugins "core" comme le tooltip
+    // s'exécutent en afterDraw APRÈS les plugins custom passés dans la config —
+    // dessiner ici plutôt garantit que le tooltip survolé reste au-dessus du logo
+    // (et pas l'inverse, bug remonté par l'utilisateur).
+    afterDatasetsDraw(chart){
       const img = portfolioImageCache[WOLF_LOGO_URL];
       const meta = chart.getDatasetMeta(0);
       if (!img || !meta.data[0]) return;
@@ -430,7 +434,11 @@ function portfolioCenterImagePlugin(){
 function portfolioSegmentLogosPlugin(){
   return {
     id: 'portfolioSegmentLogos',
-    afterDraw(chart){
+    // afterDatasetsDraw (pas afterDraw) : les plugins "core" comme le tooltip
+    // s'exécutent en afterDraw APRÈS les plugins custom passés dans la config —
+    // dessiner ici plutôt garantit que le tooltip survolé reste au-dessus du logo
+    // (et pas l'inverse, bug remonté par l'utilisateur).
+    afterDatasetsDraw(chart){
       const meta = chart.getDatasetMeta(0);
       const dataset = chart.data.datasets[0];
       const total = dataset.data.reduce((a, b) => a + b, 0);
@@ -2331,33 +2339,51 @@ function initFicheModal(){
    (append-only), c'est UNE fiche qu'on modifie sur place — mais on
    peut la DUPLIQUER pour garder plusieurs versions datées sans jamais
    écraser une version existante (demande explicite : l'entreprise
-   évolue, l'ancienne analyse doit rester consultable).
+   évolue, l'ancienne analyse doit rester consultable), et la
+   supprimer si besoin (double-clic de confirmation, pas de confirm()
+   natif — voir "Pièges techniques" point 7).
+   Les 3 blocs graphiques (revenus par pays/secteur, actionnariat)
+   prennent des VALEURS BRUTES ({label, valeur}), jamais un pourcentage
+   saisi à la main — le pourcentage affiché et le camembert sont
+   calculés à partir du total des lignes (demande explicite : les
+   données dispo sont en valeur absolue, pas déjà en %).
    Stockage : cerveauData.analyses[nom] = [ {id, label, dateCreated,
    dateModified, sections:{...}, revenusPays:[], revenusSecteurs:[],
-   concurrents:[]}, ... ] — même IndexedDB que chains/notes, jamais
-   supprimé automatiquement.
+   actionnariat:[], concurrents:[]}, ... ] — même IndexedDB que
+   chains/notes, jamais supprimé automatiquement.
    ============================================================ */
-const CERVEAU_ANALYSE_SECTIONS = [
-  { key:'presentation', label:"Présentation de l'entreprise", hint:'Stratégie, profil opérationnel et concurrentiel' },
+const ANALYSE_CHART_KEYS = ['revenusPays', 'revenusSecteurs', 'actionnariat'];
+const ANALYSE_CHART_LABELS = { revenusPays:'Revenus par pays', revenusSecteurs:"Revenus par secteur d'activité", actionnariat:'Actionnariat principal' };
+
+// Ordre demandé explicitement : présentation d'abord, puis revenus/concurrents (les
+// données brutes) tout en haut, la conclusion reste toujours en tout dernier.
+const CERVEAU_ANALYSE_SECTIONS_TOP = [
+  { key:'presentation', label:"Présentation de l'entreprise", hint:'Stratégie, profil opérationnel et concurrentiel' }
+];
+const CERVEAU_ANALYSE_SECTIONS_MID = [
   { key:'marche', label:'Analyse du marché' },
   { key:'moat', label:'Avantage concurrentiel (moat)' },
   { key:'secteursActivite', label:"Secteurs d'activité", hint:'Produits, perspectives de développement' },
   { key:'perspectives', label:'Perspectives de croissance' },
-  { key:'risques', label:'Analyse du risque' },
-  { key:'actionnariat', label:'Actionnariat principal', hint:"Chiffres, ou capture d'écran d'un graphique" },
+  { key:'risques', label:'Analyse du risque' }
+];
+const CERVEAU_ANALYSE_SECTIONS_BOTTOM = [
   { key:'ratios', label:'Ratios financiers', hint:"Captures d'écran de l'application" },
   { key:'conclusion', label:'Conclusion', hint:'Business model, synthèse, datée automatiquement' }
 ];
+const CERVEAU_ANALYSE_SECTIONS_ALL = CERVEAU_ANALYSE_SECTIONS_TOP.concat(CERVEAU_ANALYSE_SECTIONS_MID, CERVEAU_ANALYSE_SECTIONS_BOTTOM);
 
 let analyseEntite = null;
 let analyseVersionId = null;
 let analyseCharts = {};
+let analyseDeleteConfirming = false;
+let draggedImageRef = null; // { arr, idx } — référence directe au tableau d'images en cours de glisser-déposer
 
 function blankAnalyseVersion(label){
   const today = new Date().toISOString().slice(0, 10);
   const sections = {};
-  CERVEAU_ANALYSE_SECTIONS.forEach(s => { sections[s.key] = { texte:'', images:[] }; });
-  return { id:'v' + Date.now() + Math.random().toString(36).slice(2), label, dateCreated:today, dateModified:today, sections, revenusPays:[], revenusSecteurs:[], concurrents:[] };
+  CERVEAU_ANALYSE_SECTIONS_ALL.forEach(s => { sections[s.key] = { texte:'', images:[] }; });
+  return { id:'v' + Date.now() + Math.random().toString(36).slice(2), label, dateCreated:today, dateModified:today, sections, revenusPays:[], revenusSecteurs:[], actionnariat:[], concurrents:[] };
 }
 
 function currentAnalyseVersion(){
@@ -2389,29 +2415,52 @@ function renderAnalyseVersionSelect(){
   sel.innerHTML = list.map(v => `<option value="${v.id}"${v.id === analyseVersionId ? ' selected' : ''}>${v.label} (${v.dateModified})</option>`).join('');
 }
 
+function analyseImagesHtml(images, ownerAttr){
+  return `<div class="analyse-images" ${ownerAttr}>${images.map((src, i) => `
+    <div class="analyse-image-thumb" draggable="true" ${ownerAttr} data-img-idx="${i}">
+      <img src="${src}" alt="" data-zoom-src="${src.replace(/"/g,'&quot;')}">
+      <button class="analyse-image-del" ${ownerAttr} data-idx="${i}">✕</button>
+    </div>`).join('')}</div>`;
+}
+
+function analyseImageAddRowHtml(ownerAttr){
+  return `<div class="analyse-image-add-row">
+    <label class="fiche-file-btn">+ Image<input type="file" accept="image/*" multiple class="analyse-image-input" ${ownerAttr} hidden></label>
+    <input type="text" class="analyse-image-url" ${ownerAttr} placeholder="ou coller un lien URL d'image…">
+    <button class="analyse-image-url-btn" ${ownerAttr}>Ajouter</button>
+  </div>`;
+}
+
 function analyseSectionHtml(s, data){
   return `<div class="analyse-section">
     <h4>${s.label}</h4>
     ${s.hint ? `<p class="analyse-hint">${s.hint}</p>` : ''}
     <textarea class="analyse-textarea" data-key="${s.key}" placeholder="Texte…">${(data.texte || '').replace(/</g, '&lt;')}</textarea>
-    <div class="analyse-images" data-key="${s.key}">${(data.images || []).map((src, i) => `<div class="analyse-image-thumb"><img src="${src}" alt=""><button class="analyse-image-del" data-key="${s.key}" data-idx="${i}">✕</button></div>`).join('')}</div>
-    <label class="fiche-file-btn">+ Image<input type="file" accept="image/*" multiple class="analyse-image-input" data-key="${s.key}" hidden></label>
+    ${analyseImagesHtml(data.images || [], `data-key="${s.key}"`)}
+    ${analyseImageAddRowHtml(`data-key="${s.key}"`)}
   </div>`;
 }
 
-function analyseRevenusHtml(key, label, rows){
-  return `<div class="analyse-section">
-    <h4>${label}</h4>
-    <div class="analyse-revenus-body">
-      <div>
-        ${rows.map((r, i) => `<div class="analyse-revenus-row"><span>${r.label}</span><span>${r.pct}%</span><button class="analyse-revenus-del" data-key="${key}" data-idx="${i}">✕</button></div>`).join('')}
-        <div class="analyse-revenus-add">
-          <input type="text" placeholder="Libellé (ex. France)" class="analyse-revenus-label" data-key="${key}">
-          <input type="number" placeholder="%" min="0" max="100" class="analyse-revenus-pct" data-key="${key}">
-          <button class="analyse-revenus-addbtn" data-key="${key}">+ Ajouter</button>
+function analyseChartSectionHtml(key, rows){
+  const total = rows.reduce((s, r) => s + (r.valeur || 0), 0);
+  return `<div class="analyse-section analyse-chart-section">
+    <div class="chart-card-head">
+      <h4>${ANALYSE_CHART_LABELS[key]}</h4>
+      <button class="zoom-btn" data-chart-zoom="${key}" aria-label="Agrandir">⤢</button>
+    </div>
+    <div class="analyse-chart-body">
+      <div class="chart-holder analyse-chart-canvas-holder"><canvas id="analyseChart_${key}"></canvas></div>
+      <div class="analyse-chart-table">
+        ${rows.map((r, i) => {
+          const pct = total ? (r.valeur / total * 100) : 0;
+          return `<div class="analyse-chart-row"><span>${r.label}</span><span>${(r.valeur || 0).toLocaleString('fr-FR')}</span><span>${pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</span><button class="analyse-chart-del" data-key="${key}" data-idx="${i}">✕</button></div>`;
+        }).join('')}
+        <div class="analyse-chart-add">
+          <input type="text" placeholder="Libellé" class="analyse-chart-label" data-key="${key}">
+          <input type="number" placeholder="Valeur brute" class="analyse-chart-valeur" data-key="${key}">
+          <button class="analyse-chart-addbtn" data-key="${key}">+</button>
         </div>
       </div>
-      <div class="chart-holder analyse-revenus-chart"><canvas id="analyseChart_${key}"></canvas></div>
     </div>
   </div>`;
 }
@@ -2424,8 +2473,8 @@ function analyseConcurrentsHtml(list){
       <div class="analyse-competitor">
         <input type="text" class="analyse-competitor-nom" data-idx="${i}" placeholder="Nom du concurrent" value="${(c.nom || '').replace(/"/g, '&quot;')}">
         <textarea class="analyse-competitor-texte" data-idx="${i}" placeholder="Description…">${(c.texte || '').replace(/</g, '&lt;')}</textarea>
-        <div class="analyse-images">${(c.images || []).map((src, j) => `<div class="analyse-image-thumb"><img src="${src}" alt=""><button class="analyse-competitor-image-del" data-idx="${i}" data-img="${j}">✕</button></div>`).join('')}</div>
-        <label class="fiche-file-btn">+ Image<input type="file" accept="image/*" multiple class="analyse-competitor-image-input" data-idx="${i}" hidden></label>
+        ${analyseImagesHtml(c.images || [], `data-competitor="${i}"`)}
+        ${analyseImageAddRowHtml(`data-competitor="${i}"`)}
         <div><button class="analyse-competitor-del" data-idx="${i}">Supprimer ce concurrent</button></div>
       </div>`).join('')}</div>
     <button class="cerveau-btn-cancel" id="analyseAddCompetitor">+ Ajouter un concurrent</button>
@@ -2433,14 +2482,81 @@ function analyseConcurrentsHtml(list){
 }
 
 function renderAnalyseCharts(v){
-  [['revenusPays', v.revenusPays], ['revenusSecteurs', v.revenusSecteurs]].forEach(([key, rows]) => {
+  ANALYSE_CHART_KEYS.forEach(key => {
     const canvas = document.getElementById('analyseChart_' + key);
     if (analyseCharts[key]) { analyseCharts[key].destroy(); analyseCharts[key] = null; }
+    const rows = v[key];
     if (!canvas || !rows.length) return;
     analyseCharts[key] = new Chart(canvas.getContext('2d'), {
       type:'pie',
-      data:{ labels: rows.map(r => r.label), datasets:[{ data: rows.map(r => r.pct), backgroundColor: rows.map((_, i) => PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length]), borderColor:THEME.hair, borderWidth:2 }] },
+      data:{ labels: rows.map(r => r.label), datasets:[{ data: rows.map(r => r.valeur), backgroundColor: rows.map((_, i) => PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length]), borderColor:THEME.hair, borderWidth:2 }] },
       options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true, color:THEME.dim, font:{size:10.5} } } } }
+    });
+  });
+}
+
+function openAnalyseChartZoom(key){
+  const v = currentAnalyseVersion();
+  const rows = v[key];
+  if (!rows || !rows.length) return;
+  document.getElementById('zoomTitle').textContent = ANALYSE_CHART_LABELS[key];
+  document.getElementById('zoomRangeRow').innerHTML = '';
+  document.getElementById('zoomCagrRow').innerHTML = '';
+  zoomKey = null;
+  if (window.__zoomChart) window.__zoomChart.destroy();
+  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), {
+    type:'pie',
+    data:{ labels: rows.map(r => r.label), datasets:[{ data: rows.map(r => r.valeur), backgroundColor: rows.map((_, i) => PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length]), borderColor:THEME.hair, borderWidth:2 }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true } } } }
+  });
+  document.getElementById('zoomModal').style.display = 'flex';
+}
+
+// Récupère le tableau d'images (et son objet propriétaire pour la sauvegarde) à partir
+// d'un élément qui porte soit data-key (section fixe), soit data-competitor (concurrent).
+function analyseImagesArrayFromEl(v, el){
+  if (el.dataset.key != null) return v.sections[el.dataset.key].images;
+  return v.concurrents[parseInt(el.dataset.competitor, 10)].images;
+}
+
+function wireAnalyseImageEvents(v, box){
+  box.querySelectorAll('.analyse-image-input').forEach(input => {
+    input.addEventListener('change', async () => {
+      const arr = analyseImagesArrayFromEl(v, input);
+      for (const file of input.files) arr.push(await readFileAsDataURL(file));
+      input.value = '';
+      renderAnalyse();
+    });
+  });
+  box.querySelectorAll('.analyse-image-url-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const input = btn.previousElementSibling;
+      const url = input.value.trim();
+      if (!url) return;
+      analyseImagesArrayFromEl(v, btn).push(url);
+      renderAnalyse();
+    });
+  });
+  box.querySelectorAll('.analyse-image-del').forEach(btn => {
+    btn.addEventListener('click', () => { analyseImagesArrayFromEl(v, btn).splice(parseInt(btn.dataset.idx, 10), 1); renderAnalyse(); });
+  });
+  box.querySelectorAll('.analyse-image-thumb img').forEach(img => {
+    img.addEventListener('click', () => openImageZoom(img.dataset.zoomSrc));
+  });
+  // Glisser-déposer pour réordonner les images à l'intérieur d'un même bloc.
+  box.querySelectorAll('.analyse-image-thumb').forEach(thumb => {
+    thumb.addEventListener('dragstart', () => { draggedImageRef = { arr: analyseImagesArrayFromEl(v, thumb), idx: parseInt(thumb.dataset.imgIdx, 10) }; });
+    thumb.addEventListener('dragover', e => e.preventDefault());
+    thumb.addEventListener('drop', e => {
+      e.preventDefault();
+      if (!draggedImageRef) return;
+      const targetArr = analyseImagesArrayFromEl(v, thumb);
+      if (targetArr !== draggedImageRef.arr) return; // pas de glisser entre deux blocs différents
+      const targetIdx = parseInt(thumb.dataset.imgIdx, 10);
+      const [moved] = targetArr.splice(draggedImageRef.idx, 1);
+      targetArr.splice(targetIdx, 0, moved);
+      draggedImageRef = null;
+      renderAnalyse();
     });
   });
 }
@@ -2452,30 +2568,25 @@ function wireAnalyseSectionEvents(){
   box.querySelectorAll('.analyse-textarea').forEach(ta => {
     ta.addEventListener('input', () => { v.sections[ta.dataset.key].texte = ta.value; });
   });
-  box.querySelectorAll('.analyse-image-input').forEach(input => {
-    input.addEventListener('change', async () => {
-      for (const file of input.files) v.sections[input.dataset.key].images.push(await readFileAsDataURL(file));
-      input.value = '';
-      renderAnalyse();
-    });
-  });
-  box.querySelectorAll('.analyse-image-del').forEach(btn => {
-    btn.addEventListener('click', () => { v.sections[btn.dataset.key].images.splice(parseInt(btn.dataset.idx, 10), 1); renderAnalyse(); });
-  });
+  wireAnalyseImageEvents(v, box);
 
-  box.querySelectorAll('.analyse-revenus-addbtn').forEach(btn => {
+  ANALYSE_CHART_KEYS.forEach(key => {
+    const btn = box.querySelector(`.zoom-btn[data-chart-zoom="${key}"]`);
+    if (btn) btn.addEventListener('click', () => openAnalyseChartZoom(key));
+  });
+  box.querySelectorAll('.analyse-chart-addbtn').forEach(btn => {
     btn.addEventListener('click', () => {
       const key = btn.dataset.key;
-      const labelInput = box.querySelector(`.analyse-revenus-label[data-key="${key}"]`);
-      const pctInput = box.querySelector(`.analyse-revenus-pct[data-key="${key}"]`);
+      const labelInput = box.querySelector(`.analyse-chart-label[data-key="${key}"]`);
+      const valeurInput = box.querySelector(`.analyse-chart-valeur[data-key="${key}"]`);
       const label = labelInput.value.trim();
-      const pct = parseFloat(pctInput.value);
-      if (!label || isNaN(pct)) return;
-      v[key].push({ label, pct });
+      const valeur = parseFloat(valeurInput.value);
+      if (!label || isNaN(valeur)) return;
+      v[key].push({ label, valeur });
       renderAnalyse();
     });
   });
-  box.querySelectorAll('.analyse-revenus-del').forEach(btn => {
+  box.querySelectorAll('.analyse-chart-del').forEach(btn => {
     btn.addEventListener('click', () => { v[btn.dataset.key].splice(parseInt(btn.dataset.idx, 10), 1); renderAnalyse(); });
   });
 
@@ -2484,17 +2595,6 @@ function wireAnalyseSectionEvents(){
   });
   box.querySelectorAll('.analyse-competitor-texte').forEach(ta => {
     ta.addEventListener('input', () => { v.concurrents[parseInt(ta.dataset.idx, 10)].texte = ta.value; });
-  });
-  box.querySelectorAll('.analyse-competitor-image-input').forEach(input => {
-    input.addEventListener('change', async () => {
-      const idx = parseInt(input.dataset.idx, 10);
-      for (const file of input.files) v.concurrents[idx].images.push(await readFileAsDataURL(file));
-      input.value = '';
-      renderAnalyse();
-    });
-  });
-  box.querySelectorAll('.analyse-competitor-image-del').forEach(btn => {
-    btn.addEventListener('click', () => { v.concurrents[parseInt(btn.dataset.idx, 10)].images.splice(parseInt(btn.dataset.img, 10), 1); renderAnalyse(); });
   });
   box.querySelectorAll('.analyse-competitor-del').forEach(btn => {
     btn.addEventListener('click', () => { v.concurrents.splice(parseInt(btn.dataset.idx, 10), 1); renderAnalyse(); });
@@ -2506,11 +2606,18 @@ function renderAnalyse(){
   renderAnalyseVersionSelect();
   const v = currentAnalyseVersion();
   document.getElementById('analyseUpdatedLabel').textContent = 'Dernière modification : ' + v.dateModified;
+  analyseDeleteConfirming = false;
+  const delBtn = document.getElementById('analyseDeleteBtn');
+  delBtn.textContent = '🗑 Supprimer cette fiche';
+  delBtn.classList.remove('analyse-delete-confirm');
+
   const box = document.getElementById('analyseBody');
-  box.innerHTML = CERVEAU_ANALYSE_SECTIONS.map(s => analyseSectionHtml(s, v.sections[s.key])).join('')
-    + analyseRevenusHtml('revenusPays', 'Revenus par pays', v.revenusPays)
-    + analyseRevenusHtml('revenusSecteurs', "Revenus par secteur d'activité", v.revenusSecteurs)
-    + analyseConcurrentsHtml(v.concurrents);
+  box.innerHTML = CERVEAU_ANALYSE_SECTIONS_TOP.map(s => analyseSectionHtml(s, v.sections[s.key])).join('')
+    + `<div class="analyse-charts-row">${analyseChartSectionHtml('revenusPays', v.revenusPays)}${analyseChartSectionHtml('revenusSecteurs', v.revenusSecteurs)}</div>`
+    + analyseConcurrentsHtml(v.concurrents)
+    + CERVEAU_ANALYSE_SECTIONS_MID.map(s => analyseSectionHtml(s, v.sections[s.key])).join('')
+    + analyseChartSectionHtml('actionnariat', v.actionnariat)
+    + CERVEAU_ANALYSE_SECTIONS_BOTTOM.map(s => analyseSectionHtml(s, v.sections[s.key])).join('');
   wireAnalyseSectionEvents();
   renderAnalyseCharts(v);
 }
@@ -2546,11 +2653,41 @@ function newBlankAnalyseVersion(){
   renderAnalyse();
 }
 
+// Suppression avec confirmation en 2 clics inline (pas de confirm() natif, voir
+// "Pièges techniques" point 7) : le 1er clic change juste le texte du bouton.
+function deleteAnalyseVersion(){
+  const list = cerveauData.analyses[analyseEntite];
+  const idx = list.findIndex(v => v.id === analyseVersionId);
+  if (idx !== -1) list.splice(idx, 1);
+  persistCerveauData();
+  if (!list.length){ closeAnalyse(); return; }
+  analyseVersionId = list[list.length - 1].id;
+  renderAnalyse();
+}
+
 function initAnalyseModal(){
   document.getElementById('analyseVersionSelect').addEventListener('change', e => { analyseVersionId = e.target.value; renderAnalyse(); });
   document.getElementById('analyseDuplicateBtn').addEventListener('click', duplicateAnalyseVersion);
   document.getElementById('analyseNewBtn').addEventListener('click', newBlankAnalyseVersion);
   document.getElementById('analyseSaveBtn').addEventListener('click', saveAnalyseVersion);
+  document.getElementById('analyseDeleteBtn').addEventListener('click', () => {
+    const btn = document.getElementById('analyseDeleteBtn');
+    if (!analyseDeleteConfirming){
+      analyseDeleteConfirming = true;
+      btn.textContent = '⚠️ Confirmer la suppression ?';
+      btn.classList.add('analyse-delete-confirm');
+      return;
+    }
+    deleteAnalyseVersion();
+  });
+}
+
+function openImageZoom(src){
+  document.getElementById('imageZoomImg').src = src;
+  document.getElementById('imageZoomModal').style.display = 'flex';
+}
+function closeImageZoom(){
+  document.getElementById('imageZoomModal').style.display = 'none';
 }
 
 /* ============================================================

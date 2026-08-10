@@ -348,7 +348,16 @@ avec le chargement principal sinon).
   initiale sinon, même pattern que `cerveauEntityChip()`), pourcentage du portefeuille
   et performance individuelle. **Logo Wolf Analysis au centre + logo de chaque position
   directement sur son segment** : deux plugins Chart.js custom
-  (`portfolioCenterImagePlugin()`, `portfolioSegmentLogosPlugin()`, hooks `afterDraw`),
+  (`portfolioCenterImagePlugin()`, `portfolioSegmentLogosPlugin()`, hooks
+  `afterDatasetsDraw` — **pas `afterDraw`** : le plugin `tooltip` de Chart.js dessine
+  aussi sur `afterDraw`, et s'exécute après les plugins custom passés dans
+  `plugins:[]` — un logo dessiné sur `afterDraw` recouvrait donc l'infobulle au survol,
+  la rendant illisible. `afterDatasetsDraw` est une phase distincte du cycle de rendu,
+  garantie par Chart.js pour s'exécuter avant `afterDraw` quel que soit l'ordre
+  d'enregistrement des plugins — fixe l'ordre de superposition demandé : segments +
+  logo central en arrière-plan, logos de segment par-dessus, infobulle toujours au
+  sommet. Un essai précédent avec `tooltip.position:'nearest'`/`caretPadding` était
+  insuffisant, ce n'est pas un problème de position mais de phase de dessin),
   images préchargées et mises en cache (`loadImageCached()`/`portfolioImageCache`) —
   **surtout pas de `img.crossOrigin='anonymous'`** ici : ces logos ne sont jamais relus
   depuis le canvas (pas de `toDataURL`/`getImageData`), et l'exiger ferait échouer le
@@ -358,7 +367,7 @@ avec le chargement principal sinon).
 - **Graphique Wolf Portfolio vs S&P 500** : courbes de rendement cumulé (`AU` vs `AW`)
   par mois, en filtrant les mois futurs pré-remplis dans le Sheet sans données
   (`rendementTotal`/`spxPerfTotale` tous les deux `null`). À côté, un second graphique
-  en barres pour la performance **mensuelle** (`AT` vs `AV`, même filtrage des mois
+  en courbes pour la performance **mensuelle** (`AT` vs `AV`, même filtrage des mois
   vides), `renderPortfolioVsSpxMonthly()`.
 - **Zoom sur le donut** (`openPortfolioZoom()`) : ne passe pas par le système générique
   `chartConfigs`/`openZoom()` (conçu pour les graphiques historiques avec plage/CAGR,
@@ -517,19 +526,68 @@ datées (texte + images uploadées/collées + croquis à main levée).
   affiché quand `cerveauView.creatingChain === true`. **Ne pas revenir à `prompt()`** pour
   cette interaction — voir "Pièges techniques" point 7 (crash silencieux constaté).
 - **Analyse développée** (`openAnalyse(nom)` / modale `#analyseModal`, distincte de
-  `#ficheModal`) : trame fixe de 9 blocs texte+images (`CERVEAU_ANALYSE_SECTIONS`) +
-  2 blocs "revenus" avec vrai camembert Chart.js (`revenusPays`/`revenusSecteurs`,
-  liste `{label,pct}` éditable qui redessine le graphique) + une liste extensible de
-  concurrents. **Contrairement au journal (`notes`, append-only), c'est une fiche qu'on
-  modifie sur place** — mais dupliquable (`duplicateAnalyseVersion()`, clone profond
-  via `JSON.parse(JSON.stringify())`) pour garder plusieurs versions datées sans jamais
-  écraser une version existante (demande explicite : l'entreprise évolue, l'ancienne
-  analyse doit rester consultable). Sauvegarde explicite (bouton, pas d'auto-save à
-  chaque frappe) : les champs texte/listes modifient l'objet `v` en mémoire directement
-  au fil de la saisie, `saveAnalyseVersion()` persiste sur IndexedDB. Deux points
-  d'entrée : bouton 📊 dans `#ficheModal` (`openAnalyseFromFiche()`) et tag
-  « 📊 Analyse développée » dans l'en-tête de l'onglet Analyse (`#openAnalyseTag`,
-  pour l'entreprise actuellement affichée).
+  `#ficheModal`) : trame fixe de blocs texte+images répartie en 3 groupes affichés dans
+  cet ordre — `CERVEAU_ANALYSE_SECTIONS_TOP` (présentation), puis 2 graphiques revenus
+  côte à côte + concurrents, puis `CERVEAU_ANALYSE_SECTIONS_MID` (marché, moat, secteurs
+  d'activité, perspectives, risques), puis le graphique actionnariat, puis
+  `CERVEAU_ANALYSE_SECTIONS_BOTTOM` (ratios, conclusion — **toujours en dernier**).
+  Revenus et concurrents remontés en haut de la fiche à la demande explicite de
+  l'utilisateur (« je ne veux pas à la fin, juste avant la conclusion » — l'ordre
+  précédent, hérité de la conception initiale, ne convenait pas pour un usage vidéo où
+  ces infos doivent apparaître tôt).
+  - **3 graphiques camembert Chart.js** (`revenusPays`, `revenusSecteurs`,
+    `actionnariat`), tous rendus par le même composant `analyseChartSectionHtml(key,
+    rows)` (remplace l'ancien `analyseRevenusHtml()` dédié). **Saisie en valeurs
+    brutes, jamais en pourcentage** : chaque ligne est `{label, valeur}` (ex. montant
+    en Md€ par secteur), l'app calcule `total` et le `pct` de chaque ligne à
+    l'affichage uniquement — le graphique Chart.js reçoit directement les `valeur`
+    brutes (Chart.js proportionne lui-même les parts du camembert, pas besoin de
+    pré-calculer un pourcentage). Demande explicite : l'utilisateur dispose des
+    montants bruts, pas des pourcentages, « c'est à nous de le calculer ».
+  - **Mise en page 2 colonnes** pour revenus pays/secteur (`.analyse-charts-row`,
+    `grid-template-columns:1fr 1fr`, empile en 1 colonne sous 1100px) — graphique
+    dominant, tableau de saisie compact en dessous (`.analyse-chart-table`, hauteur
+    plafonnée avec scroll interne). Actionnariat reste seul (pas de mise en 2 colonnes,
+    pas de graphique jumeau).
+  - **Bouton agrandir (⤢)** sur chaque graphique (`data-chart-zoom="${key}"` →
+    `openAnalyseChartZoom(key)`) : réutilise `#zoomModal` (pas le système générique
+    `chartConfigs`/`openZoom` conçu pour les 8 graphiques historiques — celui-ci vide
+    juste `#zoomRangeRow`/`#zoomCagrRow` et pousse une config Chart.js construite à la
+    volée à partir des `rows` du bloc). `#zoomModal` a un `z-index:1000` (contre `999`
+    pour `#analyseModal`/`#ficheModal`) précisément pour pouvoir s'ouvrir imbriqué
+    par-dessus la modale Analyse développée.
+  - **Suppression d'une fiche** (`#analyseDeleteBtn` → `deleteAnalyseVersion()`) :
+    confirmation en **2 clics** inline (1er clic → le bouton devient « ⚠️ Confirmer la
+    suppression ? », 2e clic → suppression réelle), **jamais `confirm()` natif** (voir
+    "Pièges techniques" point 7). Supprime uniquement la version courante de
+    `cerveauData.analyses[nom]` ; s'il en reste, bascule sur la dernière restante,
+    sinon ferme la modale. `analyseDeleteConfirming` est remis à `false` (et le texte
+    du bouton restauré) à chaque `renderAnalyse()`, pour ne jamais rester coincé en
+    état "confirmation en attente" après un changement de version/section.
+  - **Images par bloc** (`analyseImagesHtml()`/`wireAnalyseImageEvents()`, partagé
+    entre les sections fixes et chaque concurrent via `ownerAttr` = `data-key` ou
+    `data-competitor`, résolu par `analyseImagesArrayFromEl()`) : upload fichier **ou**
+    ajout par **URL collée** (logo d'entreprise typiquement, sans avoir besoin de le
+    télécharger d'abord). Vignettes à `260×180px` (`object-fit:cover`) — volontairement
+    grandes pour rester lisibles à l'écran dans un contexte de vidéo YouTube (demande
+    explicite). **Glisser-déposer pour réordonner** les images au sein d'un même bloc
+    (`draggedImageRef = {arr, idx}` retient la référence directe du tableau source posé
+    au `dragstart`, le `drop` sur une autre vignette fait un `splice` sortie/insertion
+    dans ce même tableau — pas de réordonnancement inter-blocs, le `drop` est ignoré si
+    la vignette cible n'appartient pas au même tableau que la source). **Zoom sur une
+    image** : clic sur une vignette → `openImageZoom(src)`, lightbox légère et
+    indépendante (`#imageZoomModal`, pas liée à `#zoomModal`/Chart.js).
+  - **Contrairement au journal (`notes`, append-only), c'est une fiche qu'on modifie
+    sur place** — mais dupliquable (`duplicateAnalyseVersion()`, clone profond via
+    `JSON.parse(JSON.stringify())`) pour garder plusieurs versions datées sans jamais
+    écraser une version existante (demande explicite : l'entreprise évolue, l'ancienne
+    analyse doit rester consultable, et si erreur de saisie l'utilisateur veut pouvoir
+    supprimer une version plutôt que la corriger à la main). Sauvegarde explicite
+    (bouton, pas d'auto-save à chaque frappe) : les champs texte/listes modifient
+    l'objet `v` en mémoire directement au fil de la saisie, `saveAnalyseVersion()`
+    persiste sur IndexedDB. Deux points d'entrée : bouton 📊 dans `#ficheModal`
+    (`openAnalyseFromFiche()`) et tag « 📊 Analyse développée » dans l'en-tête de
+    l'onglet Analyse (`#openAnalyseTag`, pour l'entreprise actuellement affichée).
 
 ### Palette graphiques (fait)
 `THEME` expose `blue` (`css.getPropertyValue('--blue').trim()`) en plus de `gold`. Les
