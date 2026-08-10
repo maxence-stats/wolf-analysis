@@ -2856,21 +2856,39 @@ function saveObjectif(nom){
   renderObjectifsHistory(nom);
 }
 
+// Regroupe les entrées par date pour afficher FCF et OCF de la même date côte à côte
+// (2 colonnes) plutôt qu'en pleine largeur l'une sous l'autre — demande explicite de
+// l'utilisateur, l'ancien affichage "prenait trop de place" pour des entrées courtes.
 function renderObjectifsHistory(nom){
   const box = document.getElementById('objectifsList');
   if (!box) return;
-  const entries = (objectifsStore[nom] || []).slice().reverse();
+  const entries = (objectifsStore[nom] || []).map((e, i) => ({ e, realIdx: i })).reverse();
   if (entries.length === 0){
     box.innerHTML = '<div class="objectifs-empty">Aucun objectif enregistré pour cette entreprise.</div>';
     return;
   }
-  box.innerHTML = entries.map((e, idx) => {
-    const realIdx = objectifsStore[nom].length - 1 - idx;
-    const parts = SCENARIOS.map(s => {
-      const v = e.scenarios[s.key];
-      return v ? `<b>${s.label.replace('Scénario ', '')}</b> ${v.cagr}% / ${v.multiple}x` : '';
-    }).filter(Boolean).join(' · ');
-    return `<div class="objectifs-entry"><span class="date">${e.date}</span><span class="scen">${parts}</span><div class="objectifs-entry-actions"><button class="load" data-idx="${realIdx}">↻ Charger</button><button class="del" data-idx="${realIdx}" aria-label="Supprimer">✕</button></div></div>`;
+  const groups = [];
+  entries.forEach(item => {
+    let g = groups.find(g => g.date === item.e.date);
+    if (!g){ g = { date: item.e.date, items: [] }; groups.push(g); }
+    g.items.push(item);
+  });
+  box.innerHTML = groups.map(g => {
+    const cards = g.items.map(({ e, realIdx }) => {
+      const metric = e.metric === 'ocf' ? 'ocf' : 'fcf';
+      const parts = SCENARIOS.map(s => {
+        const v = e.scenarios[s.key];
+        return v ? `<b>${s.label.replace('Scénario ', '')}</b> ${v.cagr}% / ${v.multiple}x` : '';
+      }).filter(Boolean).join(' · ');
+      return `<div class="objectifs-entry">
+        <div class="objectifs-entry-head">
+          <span class="objectifs-metric-tag ${metric}">${metric.toUpperCase()}</span>
+          <div class="objectifs-entry-actions"><button class="load" data-idx="${realIdx}">↻ Charger</button><button class="del" data-idx="${realIdx}" aria-label="Supprimer">✕</button></div>
+        </div>
+        <span class="scen">${parts}</span>
+      </div>`;
+    }).join('');
+    return `<div class="objectifs-date-group"><span class="objectifs-date-label">${g.date}</span><div class="objectifs-date-row">${cards}</div></div>`;
   }).join('');
 }
 
