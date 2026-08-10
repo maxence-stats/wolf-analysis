@@ -4353,6 +4353,141 @@ function closeImageZoom(){
 }
 
 /* ============================================================
+   ONGLET REVUE DE LA SEMAINE — fiches de synthèse d'opportunités
+   de sous-valorisation, façon revue de presse. Pas d'automatisation
+   RSS/Gemini côté client (décision explicite : site 100% statique,
+   pas de cron possible sans backend — voir aussi Idées/Alertes pour
+   la même limite) : le déclenchement est manuel, en conversation
+   ("fais la revue de la semaine"), Claude renseigne alors
+   data/revue.json (commit+push), qui redevient le socle chargé par
+   tous les appareils. L'utilisateur peut aussi ajouter/retirer des
+   fiches directement depuis l'onglet, mêmes mécaniques de
+   persistance que les autres onglets (localStorage + export JSON).
+   ============================================================ */
+const REVUE_LS_KEY = 'wolfAnalysisRevue';
+const REVUE_BASELINE_URL = 'data/revue.json';
+let revueStore = { fiches: [] };
+
+function mergeRevue(extra){
+  (extra.fiches || []).forEach(f => {
+    if (!revueStore.fiches.find(x => x.id === f.id)) revueStore.fiches.push(f);
+  });
+}
+
+async function loadRevueBaseline(){
+  try{
+    const res = await fetch(REVUE_BASELINE_URL, { cache:'no-store' });
+    if (res.ok){
+      const json = await res.json();
+      if (json && typeof json === 'object') mergeRevue(json);
+    }
+  }catch(e){ /* fichier absent ou fetch bloqué (ex. file://) — non bloquant */ }
+  try{
+    const raw = localStorage.getItem(REVUE_LS_KEY);
+    if (raw) mergeRevue(JSON.parse(raw));
+  }catch(e){ /* localStorage indisponible ou JSON corrompu */ }
+  renderRevue();
+}
+
+function persistRevueLocal(){
+  try{ localStorage.setItem(REVUE_LS_KEY, JSON.stringify(revueStore)); }catch(e){ /* quota / navigateur privé */ }
+}
+
+function exportRevue(){
+  const blob = new Blob([JSON.stringify(revueStore, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'wolf-analysis-revue.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Numéro de semaine ISO approximatif — suffisant pour regrouper visuellement les
+// fiches par semaine, pas besoin d'une conformité ISO 8601 stricte ici.
+function revueWeekKey(dateStr){
+  const d = new Date(dateStr);
+  const onejan = new Date(d.getFullYear(), 0, 1);
+  const week = Math.ceil((((d - onejan) / 86400000) + onejan.getDay() + 1) / 7);
+  return d.getFullYear() + ' — Semaine ' + String(week).padStart(2, '0');
+}
+
+function revueFicheHtml(f){
+  const logo = companyLogoUrl(f.entreprise);
+  const pointsHtml = (f.points || []).filter(Boolean).map(p => `<li>${p.replace(/</g, '&lt;')}</li>`).join('');
+  return `<div class="revue-fiche" data-id="${f.id}">
+    <div class="revue-fiche-head">
+      <div class="revue-fiche-logo">${logo ? `<img src="${logo}" alt="">` : `<span>${(f.entreprise || '?').charAt(0).toUpperCase()}</span>`}</div>
+      <div class="revue-fiche-title">
+        <div class="revue-fiche-nom">${(f.entreprise || '').replace(/</g, '&lt;')}</div>
+        <div class="revue-fiche-source">${(f.source || 'Source non précisée').replace(/</g, '&lt;')}${f.objectifCours ? ' · Objectif ' + f.objectifCours.replace(/</g, '&lt;') : ''}</div>
+      </div>
+      <button class="revue-fiche-del" data-id="${f.id}" aria-label="Supprimer">✕</button>
+    </div>
+    ${pointsHtml ? `<ul class="revue-fiche-points">${pointsHtml}</ul>` : ''}
+  </div>`;
+}
+
+function renderRevue(){
+  const box = document.getElementById('revueContent');
+  if (!box) return;
+  const fiches = (revueStore.fiches || []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const groups = [];
+  fiches.forEach(f => {
+    const key = revueWeekKey(f.date || new Date().toISOString().slice(0, 10));
+    let g = groups.find(g => g.key === key);
+    if (!g){ g = { key, items: [] }; groups.push(g); }
+    g.items.push(f);
+  });
+
+  box.innerHTML = `
+    <div class="idees-actions">
+      <button class="zoom-btn objectifs-export" id="revueExportBtn">⭳ Exporter</button>
+    </div>
+    <div class="revue-add-card">
+      <div class="revue-add-row">
+        <input type="text" id="revueEntrepriseInput" list="revueCompanyList" placeholder="Entreprise">
+        <datalist id="revueCompanyList">${Object.keys(companies).map(n => `<option value="${n.replace(/"/g, '&quot;')}">`).join('')}</datalist>
+        <input type="text" id="revueSourceInput" placeholder="Source / analyste">
+        <input type="text" id="revueObjectifInput" placeholder="Objectif de cours (optionnel)">
+      </div>
+      <textarea id="revuePointsInput" placeholder="3 points clés sur les fondamentaux, un par ligne…" rows="3"></textarea>
+      <button id="revueAddBtn" class="revue-add-btn">+ Ajouter la fiche</button>
+    </div>
+    ${groups.length === 0 ? '<div class="objectifs-empty">Aucune fiche pour l\'instant.</div>' : groups.map(g => `
+      <div class="revue-week-group">
+        <div class="revue-week-label">${g.key}</div>
+        <div class="revue-week-fiches">${g.items.map(revueFicheHtml).join('')}</div>
+      </div>`).join('')}
+  `;
+
+  document.getElementById('revueExportBtn').addEventListener('click', exportRevue);
+  document.getElementById('revueAddBtn').addEventListener('click', addRevueFiche);
+  box.querySelectorAll('.revue-fiche-del').forEach(btn => {
+    btn.addEventListener('click', () => {
+      revueStore.fiches = (revueStore.fiches || []).filter(f => f.id !== btn.dataset.id);
+      persistRevueLocal();
+      renderRevue();
+    });
+  });
+}
+
+function addRevueFiche(){
+  const entrepriseInput = document.getElementById('revueEntrepriseInput');
+  const entreprise = entrepriseInput.value.trim();
+  if (!entreprise){ entrepriseInput.focus(); return; }
+  const source = document.getElementById('revueSourceInput').value.trim();
+  const objectifCours = document.getElementById('revueObjectifInput').value.trim();
+  const points = document.getElementById('revuePointsInput').value.split('\n').map(s => s.trim()).filter(Boolean).slice(0, 3);
+  if (!revueStore.fiches) revueStore.fiches = [];
+  revueStore.fiches.push({ id: 'r' + Date.now(), entreprise, source, objectifCours, points, date: new Date().toISOString().slice(0, 10) });
+  persistRevueLocal();
+  renderRevue();
+}
+
+/* ============================================================
    ONGLET IDÉES DE DÉVELOPPEMENT — bloc-notes personnel pour
    centraliser les idées d'évolution du site, 3 rangées de priorité
    (urgent / bientôt / plus tard), case à cocher quand c'est fait.
@@ -4602,6 +4737,7 @@ loadMacroFundamentalsData();
 document.getElementById('openAnalyseTag').addEventListener('click', () => { if (activeCompany) openAnalyse(activeCompany); });
 loadCerveauData();
 loadIdeesBaseline();
+loadRevueBaseline();
 
 (async function init(){
   const ok = await ensureChartJs();
