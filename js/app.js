@@ -16,7 +16,13 @@ const COL = {
   fcfpeg:35, fcfParAction:38, cagrFcf5:39, cagrFcf10:40, cagrFcf20:41, pFcf:13, medianePFCF:42,
   ca:44, cagrCA5:45, cagrCA10:46, cagrCA20:47, margeOp:48, roic:49,
   cash:52, cashInvesti:53, actions:54, cagrActions:55,
-  detteOCF:58, medianePFCF20:59
+  detteOCF:58, medianePFCF20:59,
+  // Valorisation alternative par OCF (bascule FCF/OCF, onglet Valorisation) : pas de
+  // colonne "OCF par action" directe dans le Sheet — dérivée de prixActuel/pOcf, même
+  // logique que le P/FCF existant. cagrOcf20 (AE) volontairement absent : comme
+  // cagrFcf20, non utilisé dans les formules de scénario, seulement une donnée
+  // disponible pour un futur badge éventuel.
+  pOcf:12, cagrOcf10:29, medianePOcf:31, medianePOcf20:33
 };
 
 let companies = {};   // { nomEntreprise: [ {annee, ...valeurs}, ... ] sorted asc }
@@ -222,6 +228,10 @@ function handleCsvRows(rows){
       pFcf: parseNum(c[COL.pFcf]),
       medianePFCF: parseNum(c[COL.medianePFCF]),
       medianePFCF20: parseNum(c[COL.medianePFCF20]),
+      pOcf: parseNum(c[COL.pOcf]),
+      cagrOcf10: parseNum(c[COL.cagrOcf10]),
+      medianePOcf: parseNum(c[COL.medianePOcf]),
+      medianePOcf20: parseNum(c[COL.medianePOcf20]),
       ca: parseNum(c[COL.ca]),
       cagrCA5: parseNum(c[COL.cagrCA5]),
       cagrCA10: parseNum(c[COL.cagrCA10]),
@@ -940,6 +950,45 @@ function renderMacroPowerTable(){
     <thead><tr><th></th>${headers.map((h, i) => `<th>${h}${categories[i] ? `<span class="mp-cat">${categories[i]}</span>` : ''}</th>`).join('')}</tr></thead>
     <tbody>${rows.map(row => `<tr><td>${row.label}</td>${row.values.map(v => `<td class="${macroPowerColorClass(v)}">${v != null ? (v >= 0 ? '+' : '') + v.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + '%' : '—'}</td>`).join('')}</tr>`).join('')}</tbody>
   </table>`;
+}
+
+// Export PDF/PNG/JPEG des graphiques et tableaux macro. Getters (pas un accès direct
+// via window[...]) car ces variables sont déclarées en `let` au niveau module — un
+// top-level `let` ne devient PAS une propriété de `window` (contrairement à `var`),
+// donc `window['macroCycleChart']` serait toujours undefined ; un getter lit la
+// valeur actuelle de la variable à chaque appel, y compris après un destroy+recreate.
+const MACRO_CHART_GETTERS = {
+  cycle: () => macroCycleChart,
+  rotation: () => macroRotationChart,
+  weight: () => macroWeightChart,
+  ranking: () => macroRankingChart
+};
+function exportMacroChartAsPdf(key, title){
+  const chart = MACRO_CHART_GETTERS[key] && MACRO_CHART_GETTERS[key]();
+  if (!chart) return;
+  const body = `<div class="print-section"><img class="print-chart-img" src="${chart.toBase64Image('image/png', 1.0)}" alt=""></div>`;
+  exportSectionAsPdf(title, null, body);
+}
+function exportMacroChartAsImage(key, filename, format){
+  const chart = MACRO_CHART_GETTERS[key] && MACRO_CHART_GETTERS[key]();
+  if (!chart) return;
+  const mime = format === 'jpg' ? 'image/jpeg' : 'image/png';
+  const url = chart.toBase64Image(mime, 1.0);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename + '.' + (format === 'jpg' ? 'jpg' : 'png');
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+// Les tableaux (pas de canvas) n'ont que le PDF — un export PNG/JPEG fidèle d'un
+// tableau HTML demanderait une librairie type html2canvas, écarté pour rester
+// cohérent avec le choix déjà fait pour l'export PDF (voir "Pièges techniques" point 1
+// : éviter d'ajouter une dépendance CDN de plus).
+function exportMacroTableAsPdf(boxId, title){
+  const box = document.getElementById(boxId);
+  if (!box) return;
+  exportSectionAsPdf(title, null, `<div class="print-section">${box.innerHTML}</div>`);
 }
 
 // Indicateurs macro US (PIB, taux, inflation) : en attente des 2 clés API gratuites
@@ -2474,18 +2523,18 @@ function scenarioCardHtml(s){
         <button class="zoom-btn scenario-zoom-btn" data-zoom-scenario="${s.key}" title="Agrandir">⤢</button>
       </div>
       <div class="scenario-fcf-history">
-        <span>Médiane P/FCF 10 ans <b>${document.getElementById('voMedianeHist').textContent}</b></span>
-        <span>Médiane P/FCF 20 ans <b>${document.getElementById('voMediane20').textContent}</b></span>
+        <span>Médiane P/${valorisationMetric.toUpperCase()} 10 ans <b>${document.getElementById('voMedianeHist').textContent}</b></span>
+        <span>Médiane P/${valorisationMetric.toUpperCase()} 20 ans <b>${document.getElementById('voMediane20').textContent}</b></span>
       </div>
       <div class="scenario-row fixe">
-        <div class="scenario-row-head"><span>FCF Actuel (Fixe)</span><span class="val" id="vo-${s.key}-fcf">—</span></div>
+        <div class="scenario-row-head"><span>${valorisationMetric.toUpperCase()} Actuel (Fixe)</span><span class="val" id="vo-${s.key}-fcf">—</span></div>
       </div>
       <div class="scenario-row">
-        <div class="scenario-row-head"><span>CAGR FCF Prévu (%)</span><span class="val" id="vo-${s.key}-cagrVal">—</span></div>
+        <div class="scenario-row-head"><span>CAGR ${valorisationMetric.toUpperCase()} Prévu (%)</span><span class="val" id="vo-${s.key}-cagrVal">—</span></div>
         <input type="range" class="scenario-slider" id="vo-${s.key}-cagr" min="-10" max="30" step="0.1">
       </div>
       <div class="scenario-row">
-        <div class="scenario-row-head"><span>Médiane FCF (Multiple)</span><span class="val" id="vo-${s.key}-multVal">—</span></div>
+        <div class="scenario-row-head"><span>Médiane ${valorisationMetric.toUpperCase()} (Multiple)</span><span class="val" id="vo-${s.key}-multVal">—</span></div>
         <input type="range" class="scenario-slider" id="vo-${s.key}-mult" min="1" max="50" step="0.1">
       </div>
       <div class="scenario-results">
@@ -2499,20 +2548,42 @@ function scenarioCardHtml(s){
   `;
 }
 
+// Bascule FCF/OCF : mêmes formules exactement (computeScenario/wireScenarioCard ne
+// connaissent que des noms génériques fcfActuel/cagr/multiple, indifférents à la
+// métrique réelle derrière) — seule la SOURCE des 4 valeurs change. Pas de colonne
+// "OCF par action" directe dans le Sheet, dérivée de prixActuel/pOcf (même principe
+// que le P/FCF existant, juste inversé : ratio connu, prix connu, on en tire le FCF/
+// OCF par action). Persisté (localStorage) et mémorisé dans chaque objectif enregistré
+// pour ne pas se retrouver avec des sliders réglés pour une métrique en affichant une
+// autre au rechargement.
+let valorisationMetric = localStorage.getItem('wolfAnalysisValoMetric') || 'fcf';
+function setValorisationMetric(metric){
+  valorisationMetric = metric;
+  try{ localStorage.setItem('wolfAnalysisValoMetric', metric); }catch(e){ /* ignore */ }
+  document.querySelectorAll('#valoMetricToggle button').forEach(b => b.classList.toggle('active', b.dataset.metric === metric));
+  if (activeCompany) renderValorisation(activeCompany);
+}
+function valorisationInputs(latest){
+  if (valorisationMetric === 'ocf'){
+    const ocfActuel = (latest.prixActuel != null && latest.pOcf) ? latest.prixActuel / latest.pOcf : null;
+    return { fcfActuel: ocfActuel, cagrHist: latest.cagrOcf10, medianeHist: latest.medianePOcf, mediane20: latest.medianePOcf20, label:'OCF' };
+  }
+  return { fcfActuel: latest.fcfParAction, cagrHist: latest.cagrFcf10, medianeHist: latest.medianePFCF, mediane20: latest.medianePFCF20, label:'FCF' };
+}
+
 function renderValorisation(nom){
   const hist = companies[nom];
   if (!hist) return;
   const latest = hist[hist.length - 1];
-  const fcfActuel = latest.fcfParAction;
+  const { fcfActuel, cagrHist, medianeHist, mediane20, label } = valorisationInputs(latest);
   const prixActuel = latest.prixActuel;
-  const cagrHist = latest.cagrFcf10;
-  const medianeHist = latest.medianePFCF;
 
   document.getElementById('voPrixActuel').textContent = prixActuel != null ? fmtEUR(prixActuel) : 'N/D';
+  document.getElementById('voFcfLabel').textContent = label + ' actuel';
   document.getElementById('voFcfActuel').textContent = fcfActuel != null ? fmtEUR(fcfActuel) : 'N/D';
   document.getElementById('voCagrHist').textContent = cagrHist != null ? fmtPct(cagrHist) : 'N/D';
   document.getElementById('voMedianeHist').textContent = medianeHist != null ? medianeHist.toLocaleString('fr-FR', {minimumFractionDigits:1}) + 'x' : 'N/D';
-  document.getElementById('voMediane20').textContent = latest.medianePFCF20 != null ? latest.medianePFCF20.toLocaleString('fr-FR', {minimumFractionDigits:1}) + 'x' : 'N/D';
+  document.getElementById('voMediane20').textContent = mediane20 != null ? mediane20.toLocaleString('fr-FR', {minimumFractionDigits:1}) + 'x' : 'N/D';
 
   scenarioValues = {};
   SCENARIOS.forEach(s => {
@@ -2693,7 +2764,7 @@ function saveObjectif(nom){
   if (!objectifsStore[nom]) objectifsStore[nom] = [];
   const snapshot = {};
   SCENARIOS.forEach(s => { snapshot[s.key] = { cagr: scenarioValues[s.key].cagr, multiple: scenarioValues[s.key].multiple }; });
-  objectifsStore[nom].push({ date: new Date().toISOString().slice(0, 10), scenarios: snapshot });
+  objectifsStore[nom].push({ date: new Date().toISOString().slice(0, 10), scenarios: snapshot, metric: valorisationMetric });
   persistObjectifsLocal();
   renderObjectifsHistory(nom);
 }
@@ -2719,6 +2790,7 @@ function renderObjectifsHistory(nom){
 function applyObjectif(nom, idx){
   const entry = (objectifsStore[nom] || [])[idx];
   if (!entry) return;
+  setValorisationMetric(entry.metric || 'fcf');
   SCENARIOS.forEach(s => {
     const v = entry.scenarios[s.key];
     if (!v) return;
@@ -2730,7 +2802,8 @@ function applyObjectif(nom, idx){
   });
   const hist = companies[nom];
   const latest = hist[hist.length - 1];
-  SCENARIOS.forEach(s => updateScenarioCard(s, hist, latest.fcfParAction, latest.prixActuel));
+  const { fcfActuel } = valorisationInputs(latest);
+  SCENARIOS.forEach(s => updateScenarioCard(s, hist, fcfActuel, latest.prixActuel));
 }
 
 function exportObjectifs(){

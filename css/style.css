@@ -602,12 +602,25 @@
     .print-table{width:100%;border-collapse:collapse;font-size:11.5px;margin:8px 0;}
     .print-table th, .print-table td{border-bottom:1px solid rgba(255,255,255,0.08);padding:7px 10px;text-align:left;color:var(--text);}
     .print-table th{color:var(--gold-2);font-weight:600;font-family:var(--font-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;}
+    /* Coloration des tableaux macro (force relative + fondamentaux US) conservée à
+       l'export PDF — mêmes classes/couleurs qu'à l'écran. */
+    .mp-red-strong{background:rgba(229,99,107,0.32);color:#fff;font-weight:700;}
+    .mp-red-light{background:rgba(229,99,107,0.14);}
+    .mp-green-light{background:rgba(79,209,165,0.14);}
+    .mp-green-strong{background:rgba(79,209,165,0.32);color:#fff;font-weight:700;}
+    .mf-red{color:var(--red);font-weight:700;}
+    .mf-green-light{color:#8fd9bd;}
+    .mf-orange{color:#F0A441;font-weight:600;}
+    .mf-green-strong{color:var(--green);font-weight:700;}
     .print-table tr:nth-child(even) td{background:rgba(255,255,255,0.02);}
     .print-footer{margin-top:22px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);font-size:10px;color:var(--text-faint);text-align:right;font-family:var(--font-mono);}
     @page{margin:14mm;background:var(--bg);}
   }
 
   /* ---------- MACROÉCONOMIE ---------- */
+  .macro-export-row{display:flex;gap:6px;margin-top:10px;}
+  .macro-export-row button{background:var(--panel);border:1px solid var(--hair);color:var(--text-dim);border-radius:6px;padding:4px 10px;font-size:10.5px;font-family:var(--font-mono);cursor:pointer;}
+  .macro-export-row button:hover{border-color:var(--gold);color:var(--text);}
   .macro-charts-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;}
   .macro-charts-row .chart-card{margin-bottom:0;}
   @media (max-width:1100px){ .macro-charts-row{grid-template-columns:1fr;} }

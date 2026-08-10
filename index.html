@@ -261,15 +261,20 @@
 
     <div id="pageValorisation" class="page">
       <div class="section-label">Simulations scénarisées</div>
-      <p class="valo-intro">Le Free Cash Flow est fixé selon les derniers résultats. Ajuste la croissance
-        (CAGR FCF) et le multiple (médiane P/FCF) de chaque scénario — Prix Juste = FCF × Médiane.</p>
+      <p class="valo-intro">Le Free Cash Flow (ou l'Operating Cash Flow, au choix) est fixé selon les derniers
+        résultats. Ajuste la croissance et le multiple de chaque scénario — Prix Juste = Métrique × Médiane.</p>
+
+      <div class="range-buttons" id="valoMetricToggle" style="margin-bottom:16px;">
+        <button class="active" data-metric="fcf" onclick="setValorisationMetric('fcf')">Valoriser avec le FCF</button>
+        <button data-metric="ocf" onclick="setValorisationMetric('ocf')">Valoriser avec l'OCF</button>
+      </div>
 
       <div class="ratio-grid valo-summary">
         <div class="ratio-card"><div class="k">Prix actuel</div><div class="v" id="voPrixActuel">—</div><div class="sub">cours au dernier exercice</div></div>
-        <div class="ratio-card"><div class="k">FCF actuel</div><div class="v" id="voFcfActuel">—</div><div class="sub">dernier exercice, par action</div></div>
-        <div class="ratio-card"><div class="k">CAGR FCF (historique)</div><div class="v" id="voCagrHist">—</div><div class="sub">croissance sur 10 ans</div></div>
-        <div class="ratio-card"><div class="k">Médiane P/FCF (historique)</div><div class="v" id="voMedianeHist">—</div><div class="sub">multiple médian sur 10 ans</div></div>
-        <div class="ratio-card"><div class="k">Médiane P/FCF (20 ans)</div><div class="v" id="voMediane20">—</div><div class="sub">multiple médian sur 20 ans</div></div>
+        <div class="ratio-card"><div class="k" id="voFcfLabel">FCF actuel</div><div class="v" id="voFcfActuel">—</div><div class="sub">dernier exercice, par action</div></div>
+        <div class="ratio-card"><div class="k">CAGR (historique)</div><div class="v" id="voCagrHist">—</div><div class="sub">croissance sur 10 ans</div></div>
+        <div class="ratio-card"><div class="k">Médiane (historique)</div><div class="v" id="voMedianeHist">—</div><div class="sub">multiple médian sur 10 ans</div></div>
+        <div class="ratio-card"><div class="k">Médiane (20 ans)</div><div class="v" id="voMediane20">—</div><div class="sub">multiple médian sur 20 ans</div></div>
       </div>
 
       <div class="scenario-grid" id="scenarioGrid"></div>
@@ -375,6 +380,11 @@
           </div>
           <div class="chart-holder" style="height:340px;"><canvas id="chartMacroCycle"></canvas></div>
           <div id="macroCycleStatus" class="stock-status" style="display:none;"></div>
+          <div class="macro-export-row">
+            <button onclick="exportMacroChartAsPdf('cycle','Cycle de Marché — Offensif vs Défensif')">PDF</button>
+            <button onclick="exportMacroChartAsImage('cycle','cycle-de-marche','png')">PNG</button>
+            <button onclick="exportMacroChartAsImage('cycle','cycle-de-marche','jpg')">JPG</button>
+          </div>
         </div>
 
         <div class="chart-card">
@@ -388,6 +398,11 @@
           </div>
           <div class="chart-holder" style="height:340px;"><canvas id="chartMacroRotation"></canvas></div>
           <div id="macroRotationStatus" class="stock-status" style="display:none;"></div>
+          <div class="macro-export-row">
+            <button onclick="exportMacroChartAsPdf('rotation','Rotation Sectorielle GICS vs S&P 500')">PDF</button>
+            <button onclick="exportMacroChartAsImage('rotation','rotation-sectorielle','png')">PNG</button>
+            <button onclick="exportMacroChartAsImage('rotation','rotation-sectorielle','jpg')">JPG</button>
+          </div>
         </div>
       </div>
 
@@ -398,6 +413,11 @@
             <div class="chart-card-actions"><button class="zoom-btn" onclick="openMacroWeightZoom()" aria-label="Agrandir">⤢</button></div>
           </div>
           <div class="chart-holder" style="height:340px;"><canvas id="chartMacroWeight"></canvas></div>
+          <div class="macro-export-row">
+            <button onclick="exportMacroChartAsPdf('weight','Poids relatif des secteurs')">PDF</button>
+            <button onclick="exportMacroChartAsImage('weight','poids-sectoriel','png')">PNG</button>
+            <button onclick="exportMacroChartAsImage('weight','poids-sectoriel','jpg')">JPG</button>
+          </div>
         </div>
 
         <div class="chart-card">
@@ -409,17 +429,24 @@
             <button class="active" data-row="Classement">Classement</button><button data-row="1 moi">1m</button><button data-row="2 mois">2m</button><button data-row="3 mois">3m</button>
           </div>
           <div class="chart-holder" style="height:340px;"><canvas id="chartMacroRanking"></canvas></div>
+          <div class="macro-export-row">
+            <button onclick="exportMacroChartAsPdf('ranking','Classement sectoriel')">PDF</button>
+            <button onclick="exportMacroChartAsImage('ranking','classement-sectoriel','png')">PNG</button>
+            <button onclick="exportMacroChartAsImage('ranking','classement-sectoriel','jpg')">JPG</button>
+          </div>
         </div>
       </div>
 
       <div class="section-label">Force relative sectorielle</div>
       <div class="macro-power-card">
         <div id="macroPowerTable" class="macro-power-table-wrap"></div>
+        <div class="macro-export-row"><button onclick="exportMacroTableAsPdf('macroPowerTable','Force relative sectorielle')">⭳ Exporter PDF</button></div>
       </div>
 
       <div class="section-label">Indicateurs macroéconomiques (États-Unis)</div>
       <div class="macro-power-card">
         <div id="macroFundamentalsTable"></div>
+        <div class="macro-export-row"><button onclick="exportMacroTableAsPdf('macroFundamentalsTable','Indicateurs macroéconomiques (États-Unis)')">⭳ Exporter PDF</button></div>
       </div>
     </div>
 
