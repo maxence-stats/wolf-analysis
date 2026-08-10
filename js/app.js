@@ -1693,12 +1693,50 @@ function renderSectorView(){
    opportunité de valorisation (écart de valeur, colonne K,
    négatif = sous-valorisé = plus intéressant, tri croissant)
    ============================================================ */
-function classementRowHtml(nom, logo, rank, valueText, cls){
-  return `<div class="classement-row" data-nom="${nom.replace(/"/g,'&quot;')}">
-    <span class="classement-rank">${rank}</span>
-    <div class="classement-logo"><img src="${logo || ''}" alt=""></div>
-    <span class="classement-name">${nom}</span>
-    <span class="classement-value${cls ? ' ' + cls : ''}">${valueText}</span>
+function classementRowHtml(nom, logo, rank, valueText, cls, rendHtml){
+  return `<div class="classement-row${rendHtml ? ' classement-row-valo' : ''}" data-nom="${nom.replace(/"/g,'&quot;')}">
+    <div class="classement-row-main">
+      <span class="classement-rank">${rank}</span>
+      <div class="classement-logo"><img src="${logo || ''}" alt=""></div>
+      <span class="classement-name">${nom}</span>
+      <span class="classement-value${cls ? ' ' + cls : ''}">${valueText}</span>
+    </div>
+    ${rendHtml || ''}
+  </div>`;
+}
+// Rendement espéré (5 ans) FCF et OCF, scénario Pessimiste, à partir du dernier
+// objectif enregistré pour l'entreprise sur chaque métrique (indépendants — une
+// entreprise peut avoir un objectif FCF sans OCF ou l'inverse). Simple recalcul avec
+// le prix/FCF-OCF actuels + les hypothèses (CAGR, multiple) figées dans l'objectif —
+// pas une nouvelle saisie, juste la lecture de ce que l'utilisateur a déjà validé en
+// Valorisation.
+function lastObjectifForMetric(nom, metric){
+  const entries = objectifsStore[nom] || [];
+  for (let i = entries.length - 1; i >= 0; i--){
+    if ((entries[i].metric || 'fcf') === metric) return entries[i];
+  }
+  return null;
+}
+function rendementEspereFromObjectif(nom, metric){
+  const entry = lastObjectifForMetric(nom, metric);
+  const v = entry && entry.scenarios && entry.scenarios.pessimiste;
+  const hist = companies[nom];
+  if (!v || !hist) return null;
+  const latest = hist[hist.length - 1];
+  const metricActuel = metric === 'ocf'
+    ? (latest.prixActuel != null && latest.pOcf ? latest.prixActuel / latest.pOcf : null)
+    : latest.fcfParAction;
+  if (metricActuel == null || latest.prixActuel == null) return null;
+  return computeScenario(metricActuel, latest.prixActuel, v.cagr, v.multiple).rendement5A;
+}
+function classementRendementRowHtml(nom){
+  const fcf = rendementEspereFromObjectif(nom, 'fcf');
+  const ocf = rendementEspereFromObjectif(nom, 'ocf');
+  if (fcf == null && ocf == null) return '';
+  const fmt = v => v == null ? 'N/D' : (v >= 0 ? '+' : '') + v.toLocaleString('fr-FR', { minimumFractionDigits:1, maximumFractionDigits:1 }) + '%';
+  return `<div class="classement-rend-row" title="Rendement espéré à 5 ans, scénario Pessimiste, dernier objectif enregistré en Valorisation">
+    <span class="classement-rend-tag fcf">FCF ${fmt(fcf)}</span>
+    <span class="classement-rend-tag ocf">OCF ${fmt(ocf)}</span>
   </div>`;
 }
 
@@ -1746,10 +1784,10 @@ function renderClassement(){
   const survalo = rows.filter(r => r.ecartValeur != null && r.ecartValeur >= 0).sort((a, b) => a.ecartValeur - b.ecartValeur);
 
   valoSousBox.innerHTML = sousValo.length
-    ? sousValo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartValeur * 100), 'pos')).join('')
+    ? sousValo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartValeur * 100), 'pos', classementRendementRowHtml(r.nom))).join('')
     : '<div class="objectifs-empty">Aucune entreprise sous-valorisée.</div>';
   valoSurvaloBox.innerHTML = survalo.length
-    ? survalo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartValeur * 100), 'neg')).join('')
+    ? survalo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartValeur * 100), 'neg', classementRendementRowHtml(r.nom))).join('')
     : '<div class="objectifs-empty">Aucune entreprise survalorisée.</div>';
 }
 

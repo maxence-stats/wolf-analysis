@@ -200,8 +200,9 @@
   .classement-subgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 18px;}
   .classement-sublabel{font-family:var(--font-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);margin-bottom:6px;}
   .classement-list{display:flex;flex-direction:column;gap:4px;}
-  .classement-row{display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:10px;cursor:pointer;transition:background .12s ease;}
+  .classement-row{display:flex;flex-direction:column;gap:4px;padding:8px 10px;border-radius:10px;cursor:pointer;transition:background .12s ease;}
   .classement-row:hover{background:var(--panel-2);}
+  .classement-row-main{display:flex;align-items:center;gap:12px;}
   .classement-rank{font-family:var(--font-mono);font-weight:700;color:var(--text-faint);width:20px;text-align:center;flex-shrink:0;}
   .classement-logo{width:32px;height:32px;background:#fff;border-radius:6px;display:flex;align-items:center;justify-content:center;padding:4px;flex-shrink:0;}
   .classement-logo img{max-width:100%;max-height:100%;object-fit:contain;}
@@ -209,6 +210,10 @@
   .classement-value{font-family:var(--font-mono);font-weight:700;font-size:14px;}
   .classement-value.pos{color:var(--green);}
   .classement-value.neg{color:var(--red);}
+  .classement-rend-row{display:flex;gap:6px;padding-left:64px;}
+  .classement-rend-tag{font-family:var(--font-mono);font-size:10px;font-weight:600;padding:2px 7px;border-radius:8px;}
+  .classement-rend-tag.fcf{color:var(--gold);background:rgba(217,164,65,0.12);}
+  .classement-rend-tag.ocf{color:var(--blue);background:rgba(74,159,224,0.12);}
   @media (max-width:1300px){
     .classement-grid{grid-template-columns:1fr;}
   }
