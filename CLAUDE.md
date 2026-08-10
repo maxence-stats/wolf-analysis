@@ -654,30 +654,58 @@ datées (texte + images uploadées/collées + croquis à main levée).
   `cerveauImagePickerTarget` (référence directe à l'objet `{image}` en cours d'édition,
   posée juste avant `.click()` sur l'input cachée) — même famille de pattern que
   `draggedImageRef` pour le glisser-déposer des images de l'Analyse développée.
-- **Tailles de bloc et réorganisation** : chaque carte entreprise et bloc libre a un
-  champ `taille`. **4 tailles** (`CERVEAU_TAILLES = ['M','L','XL','XXL']` — la
-  toute petite taille `S` de la 1ère version a été retirée sur demande explicite,
-  jugée pas assez utile) : `M`/`L` verticales (image en haut, comme avant), `XL`/`XXL`
-  **"en longueur"** — paysage, image à gauche (`flex-direction:row`), `XL` = moitié de
-  la largeur du conteneur de phase (`width:calc(50% - 6px)`), `XXL` = pleine largeur.
-  La séparation HTML en `.cec-image` (+ `.cec-url-row`) puis `.cec-body` (tout le reste
-  : nom, légende, bouton fiche / texte libre) permet ce passage en rangée sans dupliquer
-  le HTML par taille. **4 boutons numérotés (1/2/3/4)** en bas du bloc
-  (`cerveauSizeButtonsHtml()`) sélectionnent directement une taille en un clic — remplace
-  l'ancien bouton cycle unique, jugé moins direct ("plus simple" demandé explicitement).
-  Migration automatique : toute ancienne entrée `S` ou sans `taille` devient `M`.
-  **Glisser-déposer** pour réordonner les cartes entre elles ET les blocs libres entre
-  eux (`wireCerveauBlockDrag()`, `draggedCerveauBlockRef`, même famille de pattern que
-  `draggedImageRef`) — fonctionne maintenant aussi **entre deux phases différentes**
-  de la même chaîne (ex. Amont → Transformation, demandé explicitement après un premier
-  essai qui l'interdisait) : `draggedCerveauBlockRef` retient le TYPE (`isFree`) et le
-  tableau SOURCE, donc splice-out du tableau source + splice-in dans le tableau cible
-  fonctionne identiquement que la cible soit la même phase ou une autre. Seule
-  contrainte restante : **jamais de glisser entre les deux types** (une carte
-  entreprise ne peut pas devenir un bloc libre, formes de données différentes) — le
-  `drop` est ignoré si `isFree` ne correspond pas. Un handler de `drop` est aussi posé
-  sur le CONTENEUR de liste lui-même (pas seulement sur chaque bloc), sinon impossible
-  de déposer dans une phase qui n'a encore aucun bloc de ce type.
+- **Taille libre et réorganisation (v2, refonte complète)** — remplace l'ancien système
+  de 4 tailles fixes (M/L/XL/XXL + boutons 1/2/3/4), jugé trop rigide et prenant trop de
+  place à l'écran (retour explicite de l'utilisateur). Chaque carte entreprise et bloc
+  libre a désormais `width`/`imgHeight` en px (au lieu d'un champ `taille`), réglables
+  **librement à la souris** via une poignée de redimensionnement en bas à droite de la
+  zone image (`.cec-resize-handle`, `wireCerveauResize()`) : un seul geste de glisser
+  pilote largeur de la carte ET hauteur de l'image simultanément (comme un
+  redimensionnement de fenêtre classique), arrondi à 10px pendant le glisser pour un
+  alignement propre entre cartes (« grille invisible », pas de lignes de grille
+  affichées) et borné à la largeur du conteneur de phase (`CERVEAU_MIN_WIDTH`,
+  `CERVEAU_MIN_IMG_HEIGHT`). Migration automatique (`migrateCerveauChains()`) :
+  toute ancienne entrée `taille` (y compris l'ancienne petite taille `S`) est convertie
+  une seule fois en `width`/`imgHeight` via `CERVEAU_TAILLE_DEFAULTS`, puis le champ
+  `taille` est supprimé — aucune notion de taille fixe ensuite.
+  - **Texte des blocs libres rendu optionnel** : si `bloc.texte` est vide, un simple
+    bouton « + Texte » remplace le textarea (au lieu d'un champ vide qui prenait de la
+    place) — l'image peut alors occuper toute la carte. Cliquer dessus révèle un
+    textarea avec sélecteur de style et focus automatique (`bloc._editingText`, flag
+    transitoire non persisté).
+  - **3 styles de texte au choix** (`CERVEAU_TEXT_STYLES` : Titre / Sous-titre / Corps,
+    champ `bloc.style`, défaut `'corps'`) — police/graisse dédiées par style
+    (`.cec-free-text-titre/-soustitre/-corps`), boutons de sélection
+    (`cerveauTextStyleButtonsHtml()`), répercutées dans l'export PDF
+    (`.print-cec-text-titre/-soustitre/-corps`, sinon le style choisi à l'écran se
+    perdait à l'impression).
+  - **Textarea auto-adaptative** (`autoGrowTextarea()`, appelée à chaque rendu et à
+    chaque frappe) : `resize:none;overflow:hidden`, hauteur recalculée via
+    `scrollHeight` — plus jamais de troncature ni de barre de défilement interne,
+    tout le texte reste visible quelle que soit sa longueur (demande explicite : « le
+    texte ne doit pas être coupé, je dois tout voir »).
+  - **Glisser-déposer entièrement réécrit en souris** (`wireCerveauBlockDrag()`,
+    `mousedown`/`mousemove`/`mouseup` + `document.elementFromPoint()`) à la place du
+    drag-and-drop HTML5 natif (`draggable`/`dragstart`/`dragover`/`drop`) utilisé
+    avant. **Cause racine identifiée** du problème rapporté (« des fois ça remplace un
+    autre bloc, d'autres fois non ») : la cible de dépôt visée était la LISTE
+    (`.cerveau-entity-list`/`.cerveau-freeblock-list`) elle-même, un conteneur flex ne
+    faisant que quelques pixels de haut quand elle est vide ou peu remplie — un dépôt
+    visant cette zone très fine ratait fréquemment sa cible (confirmé en reproduisant
+    le bug : `document.elementFromPoint()` à l'endroit du dépôt retombait sur le
+    conteneur de PHASE, pas sur la liste). Fix : la carte de phase entière
+    (`.cerveau-phase`) sert maintenant de zone de dépôt valide, la liste du bon type
+    étant retrouvée à l'intérieur (`findDropList()`) — beaucoup plus tolérant. La
+    position d'insertion est aussi recalculée intégralement à partir de l'ordre RÉEL du
+    DOM au moment du relâchement (jamais d'un index mis en cache avant un retrait de
+    tableau, qui décalait les index suivants et causait des insertions décalées).
+    Fonctionne à la fois pour réordonner DANS une phase et pour déplacer **entre deux
+    phases différentes** de la même chaîne (ex. Amont → Transformation) — seule
+    contrainte inchangée : jamais de glisser entre les deux types (carte entreprise vs
+    bloc libre, formes de données différentes). Le geste s'initie depuis le corps de la
+    carte (`.cec-body`, en-tête hors boutons) — exclu explicitement des champs, boutons,
+    liens, poignée de redimensionnement et zone image, qui gardent leurs propres
+    interactions (clic, focus, redimensionnement) sans déclencher un déplacement.
 - **Fiche entité** (`openFiche(nom)` / modale `#ficheModal`) : journal append-only (une
   nouvelle entrée par sauvegarde, jamais d'édition rétroactive — même logique que
   l'historique des objectifs). Éditeur : `<textarea>` + upload d'images (`<input
