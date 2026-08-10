@@ -261,6 +261,9 @@ function handleCsvRows(rows){
 
   loadPortfolioData();
   loadPriceHistoryData();
+  loadMacroCycleData();
+  loadMacroRotationData();
+  loadMacroPowerData();
 }
 
 /* ============================================================
@@ -505,6 +508,315 @@ function fetchPriceHistorySeries(nom){
   const series = findPriceHistoryForCompany(nom);
   if (!series || series.length < 50) return null;
   return resampleWeekly(series.map(p => p.date), series.map(p => p.close));
+}
+
+/* ============================================================
+   MACROÉCONOMIE — 3 onglets Sheet dédiés (même fichier publié, gids différents).
+   Chargement générique factorisé (CSV + gviz, responseHandler dédié par source —
+   voir "Pièges techniques" point 9, chaque source gviz supplémentaire a besoin du
+   sien) : loadSheetDual() remplace la duplication qu'on aurait eue à écrire 3 fois de
+   plus du même boilerplate déjà présent pour le Portfolio et l'historique de prix.
+   ============================================================ */
+function loadSheetDual(gid, handlerName, onRows){
+  let settled = false;
+  const csvUrl = `https://docs.google.com/spreadsheets/d/e/${PUBLISHED_ID}/pub?gid=${gid}&single=true&output=csv`;
+  const controller = new AbortController();
+  const hardTimeout = setTimeout(() => controller.abort(), 8000);
+  fetch(csvUrl + '&_=' + Date.now(), { signal: controller.signal, cache:'no-store' })
+    .then(async res => {
+      if (settled) return;
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const text = await res.text();
+      if (text.trim().toLowerCase().startsWith('<')) throw new Error('HTML au lieu de CSV');
+      const parsed = Papa.parse(text.trim(), { skipEmptyLines:false });
+      if (!parsed.data || parsed.data.length < 3) throw new Error('CSV vide ou illisible');
+      if (settled) return;
+      settled = true;
+      clearTimeout(hardTimeout);
+      onRows(parsed.data);
+    })
+    .catch(() => { clearTimeout(hardTimeout); });
+
+  const old = document.getElementById('gviz_' + handlerName);
+  if (old) old.remove();
+  window[handlerName] = function(data){
+    if (settled) return;
+    try{
+      if (!data || !data.table || !data.table.cols) throw new Error('table vide');
+      const rows = [data.table.cols.map(c => c.label)].concat(
+        (data.table.rows || []).map(r => (r.c || []).map(cell => cell ? (cell.f != null ? cell.f : cell.v) : ''))
+      );
+      settled = true;
+      onRows(rows);
+    }catch(e){ /* silencieux : le repli CSV ou le timeout de secours prendront le relais */ }
+  };
+  const script = document.createElement('script');
+  script.id = 'gviz_' + handlerName;
+  script.src = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json;responseHandler:${handlerName}&gid=${gid}&headers=1&_=${Date.now()}`;
+  document.body.appendChild(script);
+  setTimeout(() => { settled = true; }, 9000);
+}
+
+function colToIdx(letters){
+  let n = 0;
+  for (const c of letters) n = n * 26 + (c.charCodeAt(0) - 64);
+  return n - 1;
+}
+
+/* ---- Cycle de Marché : ratio Offensif (Techno+Finance+Industrie) vs Défensif
+   (Santé+Conso. base+Services publics), déjà calculé dans le Sheet (EMA20 + écarts-
+   types) — on lit directement les colonnes calculées, aucun recalcul de notre côté.
+   Colonne Technologie réelle = O (pas K, qui contient encore XLK/100 brut : correction
+   trouvée en inspectant le CSV réel, vérifiée valeur par valeur avant d'écrire ce code —
+   voir "Pièges techniques" point 11). */
+const MACRO_CYCLE_GID = '1014329874';
+let macroCycleData = null; // { dates, ratio, ema, plus1, minus1, plus2, minus2, euphorie, panique }
+let macroCycleRange = '20';
+
+function loadMacroCycleData(){
+  loadSheetDual(MACRO_CYCLE_GID, '__handleMacroCycleGviz', handleMacroCycleRows);
+}
+
+function handleMacroCycleRows(rows){
+  const col = { date:colToIdx('G'), ratio:colToIdx('AV'), ema:colToIdx('AW'), p2:colToIdx('AY'), m2:colToIdx('AZ'), p1:colToIdx('BA'), m1:colToIdx('BB'), euph:colToIdx('BD'), pan:colToIdx('BE') };
+  const out = { dates:[], ratio:[], ema:[], plus1:[], minus1:[], plus2:[], minus2:[], euphorie:[], panique:[] };
+  for (let r = 2; r < rows.length; r++){
+    const row = rows[r];
+    if (!row) continue;
+    const date = parseFrenchSheetDate(row[col.date]);
+    const ratio = parseNum(row[col.ratio]);
+    if (!date || ratio == null) continue;
+    out.dates.push(date);
+    out.ratio.push(ratio);
+    out.ema.push(parseNum(row[col.ema]));
+    out.plus1.push(parseNum(row[col.p1]));
+    out.minus1.push(parseNum(row[col.m1]));
+    out.plus2.push(parseNum(row[col.p2]));
+    out.minus2.push(parseNum(row[col.m2]));
+    out.euphorie.push(parseNum(row[col.euph]));
+    out.panique.push(parseNum(row[col.pan]));
+  }
+  macroCycleData = out;
+  document.getElementById('macroCycleStatus').style.display = 'none';
+  renderMacroCycleChart();
+}
+
+function renderMacroCycleBadge(){
+  const badge = document.getElementById('macroCycleBadge');
+  if (!badge || !macroCycleData || !macroCycleData.dates.length) return;
+  const i = macroCycleData.euphorie.length - 1;
+  badge.className = 'macro-cycle-badge';
+  if (macroCycleData.euphorie[i] === 1){ badge.textContent = '🔴 Euphorie'; badge.classList.add('euphorie'); }
+  else if (macroCycleData.panique[i] === 1){ badge.textContent = '🔵 Panique'; badge.classList.add('panique'); }
+  else badge.textContent = '⚪ Neutre';
+}
+
+function buildMacroCycleChartConfig(range){
+  const d = macroCycleData;
+  let startIdx = 0;
+  if (range !== 'max'){
+    const years = parseInt(range, 10);
+    const cutoff = new Date();
+    cutoff.setFullYear(cutoff.getFullYear() - years);
+    const found = d.dates.findIndex(dt => new Date(dt) >= cutoff);
+    startIdx = found === -1 ? 0 : found;
+  }
+  const slice = k => d[k].slice(startIdx);
+  const labels = slice('dates');
+  const bandStyle = (data, borderColor) => ({ data, borderColor, borderWidth:1.25, borderDash:[5,4], pointRadius:0, spanGaps:false, tension:0 });
+  return {
+    type:'line',
+    data:{ labels, datasets:[
+      { label:'Ratio Offensif/Défensif', data:slice('ratio'), borderColor:THEME.white, backgroundColor:'rgba(255,255,255,0.05)', fill:true, borderWidth:1.5, pointRadius:0, tension:0.12, spanGaps:false },
+      { label:'EMA 20', data:slice('ema'), borderColor:THEME.red, borderWidth:1.75, pointRadius:0, spanGaps:false, tension:0.12 },
+      Object.assign(bandStyle(slice('plus2'), THEME.blue), { label:'+2σ' }),
+      Object.assign(bandStyle(slice('minus2'), THEME.blue), { label:'−2σ' }),
+      Object.assign(bandStyle(slice('plus1'), THEME.blue), { label:'+1σ', _legend:false }),
+      Object.assign(bandStyle(slice('minus1'), THEME.blue), { label:'−1σ', _legend:false })
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true, filter: item => item.datasetIndex < 4 } } },
+      scales:{
+        x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:8}, border:{color:THEME.hair} },
+        y:{ grid:baseGrid, ticks:{color:THEME.dim} }
+      }
+    }
+  };
+}
+
+let macroCycleChart = null;
+function renderMacroCycleChart(){
+  if (!macroCycleData || !macroCycleData.dates.length) return;
+  const canvas = document.getElementById('chartMacroCycle');
+  if (!canvas) return;
+  if (macroCycleChart) macroCycleChart.destroy();
+  macroCycleChart = new Chart(canvas.getContext('2d'), buildMacroCycleChartConfig(macroCycleRange));
+  renderMacroCycleBadge();
+}
+
+function openMacroCycleZoom(){
+  if (!macroCycleData || !macroCycleData.dates.length) return;
+  document.getElementById('zoomTitle').textContent = 'Cycle de Marché — Offensif vs Défensif';
+  document.getElementById('zoomRangeRow').innerHTML = '';
+  document.getElementById('zoomCagrRow').innerHTML = '';
+  zoomKey = null;
+  if (window.__zoomChart) window.__zoomChart.destroy();
+  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), buildMacroCycleChartConfig(macroCycleRange));
+  document.getElementById('zoomModal').style.display = 'flex';
+}
+
+/* ---- Rotation Sectorielle GICS vs S&P 500 : 11 secteurs déjà exprimés en ratio
+   (rebasé ~1.00 au début de la fenêtre disponible sur cet onglet, ~3 ans) — pas de
+   ligne S&P 500 séparée à tracer, chaque secteur EST déjà "vs S&P 500", donc une simple
+   ligne horizontale à 1.00 sert de repère (confirmé : pas de série S&P 500 dans la
+   légende de la capture de référence fournie par l'utilisateur). */
+const MACRO_ROTATION_GID = '1706659327';
+const MACRO_ROTATION_SECTORS = [
+  { key:'techno', label:'Technologie', col:'O' },
+  { key:'sante', label:'Santé', col:'U' },
+  { key:'consobase', label:'Consommation de base', col:'AA' },
+  { key:'consodiscr', label:'Consommation discrétionnaire', col:'AG' },
+  { key:'finance', label:'Finance', col:'AM' },
+  { key:'industrie', label:'Industrie', col:'AS' },
+  { key:'energie', label:'Energie', col:'AY' },
+  { key:'materiaux', label:'Matériaux', col:'BE' },
+  { key:'services', label:'Services Publics', col:'BK' },
+  { key:'immobilier', label:'Immobilier', col:'BQ' },
+  { key:'telecoms', label:'Télécoms', col:'BW' }
+];
+const MACRO_ROTATION_COLORS = ['#4A9FE0','#E5636B','#F0D63D','#4FD1A5','#D9A441','#8B7FE8','#F0C877','#7DBEEA','#E88AB0','#6FCF97','#B8842E'];
+let macroRotationData = null; // { dates, series: { key: [valeurs] } }
+
+function loadMacroRotationData(){
+  loadSheetDual(MACRO_ROTATION_GID, '__handleMacroRotationGviz', handleMacroRotationRows);
+}
+
+function handleMacroRotationRows(rows){
+  const dateIdx = colToIdx('G');
+  const out = { dates:[], series:{} };
+  MACRO_ROTATION_SECTORS.forEach(s => { out.series[s.key] = []; });
+  const colIdx = {}; MACRO_ROTATION_SECTORS.forEach(s => { colIdx[s.key] = colToIdx(s.col); });
+
+  for (let r = 2; r < rows.length; r++){
+    const row = rows[r];
+    if (!row) continue;
+    const date = parseFrenchSheetDate(row[dateIdx]);
+    if (!date) continue;
+    out.dates.push(date);
+    MACRO_ROTATION_SECTORS.forEach(s => out.series[s.key].push(parseNum(row[colIdx[s.key]])));
+  }
+  macroRotationData = out;
+  document.getElementById('macroRotationStatus').style.display = 'none';
+  renderMacroRotationChart();
+}
+
+function buildMacroRotationChartConfig(){
+  const d = macroRotationData;
+  const datasets = MACRO_ROTATION_SECTORS.map((s, i) => ({
+    label: s.label, data: d.series[s.key],
+    borderColor: MACRO_ROTATION_COLORS[i], borderWidth:1.5, pointRadius:0, spanGaps:true, tension:0.1
+  }));
+  datasets.push({ label:'S&P 500 (repère)', data: d.dates.map(() => 1), borderColor:THEME.dim, borderWidth:1, borderDash:[3,3], pointRadius:0, spanGaps:false });
+  return {
+    type:'line',
+    data:{ labels:d.dates, datasets },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true, font:{size:9.5} } } },
+      scales:{
+        x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:8}, border:{color:THEME.hair} },
+        y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v.toLocaleString('fr-FR',{minimumFractionDigits:2})} }
+      }
+    }
+  };
+}
+
+let macroRotationChart = null;
+function renderMacroRotationChart(){
+  if (!macroRotationData || !macroRotationData.dates.length) return;
+  const canvas = document.getElementById('chartMacroRotation');
+  if (!canvas) return;
+  if (macroRotationChart) macroRotationChart.destroy();
+  macroRotationChart = new Chart(canvas.getContext('2d'), buildMacroRotationChartConfig());
+}
+
+function openMacroRotationZoom(){
+  if (!macroRotationData || !macroRotationData.dates.length) return;
+  document.getElementById('zoomTitle').textContent = 'Rotation Sectorielle GICS vs S&P 500';
+  document.getElementById('zoomRangeRow').innerHTML = '';
+  document.getElementById('zoomCagrRow').innerHTML = '';
+  zoomKey = null;
+  if (window.__zoomChart) window.__zoomChart.destroy();
+  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), buildMacroRotationChartConfig());
+  document.getElementById('zoomModal').style.display = 'flex';
+}
+
+/* ---- Force relative sectorielle : onglet "Dashboard cycle", positions fixes (pas de
+   reconnaissance de contenu ici — contrairement aux onglets "tableau de bord" comme
+   Wolf Portfolio, celui-ci n'a qu'un seul petit bloc avec une mise en page stable,
+   vérifiée directement sur le CSV réel avant d'écrire ce parsing). Colonne P = libellés
+   de ligne, Q à AA = les 11 secteurs (labels + catégorie Cyclique/Défensif/Sensible lus
+   directement du Sheet plutôt que codés en dur, pour rester fidèles à ses propres
+   intitulés). */
+const MACRO_POWER_GID = '30985186';
+let macroPowerData = null; // { categories:[], headers:[], rows:[{label, values:[]}] }
+
+function loadMacroPowerData(){
+  loadSheetDual(MACRO_POWER_GID, '__handleMacroPowerGviz', handleMacroPowerRows);
+}
+
+function handleMacroPowerRows(rows){
+  const pIdx = colToIdx('P');
+  const colStart = colToIdx('Q'), colEnd = colToIdx('AA');
+  const catRow = rows[12] || [];
+  const headerRow = rows[14] || [];
+  const categories = [], headers = [];
+  for (let c = colStart; c <= colEnd; c++){
+    categories.push(parseStr(catRow[c]));
+    headers.push(parseStr(headerRow[c]));
+  }
+  const dataRows = [];
+  for (let r = 15; r <= 24; r++){
+    const row = rows[r];
+    if (!row) continue;
+    const label = parseStr(row[pIdx]);
+    if (!label) continue;
+    const values = [];
+    for (let c = colStart; c <= colEnd; c++) values.push(parseNum(row[c]));
+    dataRows.push({ label, values });
+  }
+  macroPowerData = { categories, headers, rows: dataRows };
+  renderMacroPowerTable();
+}
+
+function macroPowerColorClass(v){
+  if (v == null) return '';
+  if (v < -3) return 'mp-red-strong';
+  if (v < 0) return 'mp-red-light';
+  if (v < 5.5) return 'mp-green-light';
+  return 'mp-green-strong';
+}
+
+function renderMacroPowerTable(){
+  const box = document.getElementById('macroPowerTable');
+  if (!box || !macroPowerData) return;
+  const { categories, headers, rows } = macroPowerData;
+  box.innerHTML = `<table class="macro-power-table">
+    <thead><tr><th></th>${headers.map((h, i) => `<th>${h}${categories[i] ? `<span class="mp-cat">${categories[i]}</span>` : ''}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(row => `<tr><td>${row.label}</td>${row.values.map(v => `<td class="${macroPowerColorClass(v)}">${v != null ? (v >= 0 ? '+' : '') + v.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + '%' : '—'}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table>`;
+}
+
+// Indicateurs macro US (PIB, taux, inflation) : en attente des 2 clés API gratuites
+// (BEA + FRED, voir CLAUDE.md "Onglet Macroéconomie") pour un chargement automatique —
+// tant qu'elles ne sont pas fournies, affiche un message explicite plutôt qu'un bloc vide.
+function renderMacroFundamentalsPlaceholder(){
+  const box = document.getElementById('macroFundamentalsTable');
+  if (!box) return;
+  box.innerHTML = `<p class="macro-fund-note">Ce tableau (PIB, consommation, investissement, dépenses publiques,
+    balance commerciale, taux à 10/2 ans, spread, inflation, taux réel) sera alimenté automatiquement dès que
+    2 clés API gratuites seront fournies : <a href="https://apps.bea.gov/API/signup/" target="_blank" rel="noopener">BEA</a>
+    (composantes du PIB) et <a href="https://fredaccount.stlouisfed.org/apikeys" target="_blank" rel="noopener">FRED</a>
+    (taux, inflation) — inscription gratuite, sans carte bancaire, ~1 minute chacune.</p>`;
 }
 
 const PORTFOLIO_COLORS = ['#D9A441','#4A9FE0','#F0C877','#7DBEEA','#B8842E','#2E6FA3','#F5DDA3','#A8D4F0','#8A6420','#1F4E73'];
@@ -1618,6 +1930,13 @@ document.getElementById('rangeButtons').addEventListener('click', e => {
   stockRange = btn.dataset.range;
   document.querySelectorAll('#rangeButtons button').forEach(b => b.classList.toggle('active', b === btn));
   renderStockChart();
+});
+document.getElementById('macroCycleRangeButtons').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-range]');
+  if (!btn) return;
+  macroCycleRange = btn.dataset.range;
+  document.querySelectorAll('#macroCycleRangeButtons button').forEach(b => b.classList.toggle('active', b === btn));
+  renderMacroCycleChart();
 });
 
 /* ---------- Zoom : sélecteur de plage (5/10/20 ans) + CAGR sur les graphiques
@@ -3518,6 +3837,7 @@ loadAlertesBaseline();
 initFicheModal();
 initAnalyseModal();
 initCerveauImagePicker();
+renderMacroFundamentalsPlaceholder();
 document.getElementById('openAnalyseTag').addEventListener('click', () => { if (activeCompany) openAnalyse(activeCompany); });
 loadCerveauData();
 loadIdeesBaseline();

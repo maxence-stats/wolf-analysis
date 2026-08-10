@@ -6,6 +6,43 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 ## [Non publié]
 
 ### Ajouté
+- **Nouvel onglet « Macroéconomie »** : 3 nouvelles sources sur le même Google Sheet
+  publié (gids dédiés), chargées en parallèle du reste (même pattern CSV+gviz, chaque
+  source avec son propre `responseHandler`) via un loader générique factorisé
+  (`loadSheetDual()`).
+  - **Cycle de Marché — Offensif vs Défensif** : ratio (Technologie+Finance+Industrie)
+    / (Santé+Conso. de base+Services publics), déjà calculé dans le Sheet (EMA 20,
+    écarts-types ±1σ/±2σ) — lu directement, aucun recalcul côté app. Sélecteur de plage
+    5/10/20 ans/Max, badge Euphorie/Panique basé sur les indicateurs déjà présents dans
+    la feuille, bouton zoom.
+  - **Rotation Sectorielle GICS vs S&P 500** : 11 secteurs déjà exprimés en ratio
+    rebasé (~3 ans d'historique disponible), ligne de repère horizontale à 1.00 (pas de
+    série S&P 500 séparée à tracer — chaque secteur est déjà "vs S&P 500"), bouton zoom.
+  - **Tableau de force relative sectorielle** : 11 secteurs × 10 lignes (Classement,
+    Power 1 an/3 mois, performance 1/2/3/6 mois et 1/2/3 ans), coloration automatique
+    selon la valeur (rouge vif < -3%, rouge clair [-3%,0%), vert clair [0%,5.5%), vert
+    vif ≥ 5.5%), catégorie Cyclique/Défensif/Sensible affichée sous chaque secteur.
+  - **Indicateurs macroéconomiques US (PIB, taux, inflation)** : en attente de 2 clés
+    API gratuites (BEA + FRED) fournies par l'utilisateur pour un chargement et une
+    mise à jour automatiques — message explicite affiché en attendant (voir CLAUDE.md).
+- **Graphique boursier, nouvelles couleurs** : courbe de clôture en blanc, moyenne
+  mobile 200 semaines en jaune gras, nouvelle moyenne mobile **30 semaines** en violet
+  fin (seule exception au violet "jamais utilisé pour de la donnée" du design system,
+  décidée explicitement pour cette ligne), les 4 bandes d'écart-type (±1σ, ±2σ) en bleu
+  pointillé uniformément (au lieu d'un rouge pointillé sur ±2σ auparavant).
+- **Zoom scénario (Valorisation), refonte** : agrandir un scénario déplace maintenant
+  la carte entière (FCF actuel, sliders CAGR/multiple toujours ajustables en direct,
+  4 résultats, médiane P/FCF 10 et 20 ans, graphique) au lieu de ne montrer qu'un
+  graphique isolé et figé comme avant.
+- **Export PDF, refonte visuelle** : habillage sombre + or reprenant le design system
+  de l'app (fond, cartes, typographie) à la place du style blanc générique précédent.
+  Le donut Portfolio exporté inclut désormais le logo Wolf au centre (chargé avec
+  CORS explicitement pour cet export, contrairement aux logos de position).
+- **Cerveau numérique, cartes** : tailles à 3 niveaux (bouton cycle S/M/L) et
+  glisser-déposer pour réordonner les cartes entreprise et les blocs libres au sein
+  d'une phase.
+- **Correction** : le sélecteur d'entreprise dans une phase (Cerveau) n'ajoutait rien
+  quand on cliquait une suggestion de la liste déroulante — seul Entrée fonctionnait.
 - **Export PDF** (5 cibles) : bouton « 🖨 Exporter PDF » sur Idées de développement,
   Watchlist, composition Wolf Portfolio, fiche Analyse développée et chaîne de valeur
   du Cerveau numérique. Implémenté via `window.print()` + une feuille `@media print`

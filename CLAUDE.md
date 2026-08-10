@@ -240,12 +240,27 @@ différents du même fichier — les deux sont codés en dur en haut de `app.js`
     précis illisible en pixels. Pas de contournement possible sur ce canvas-là sans
     réintroduire le bug Air Liquide. Fix : pour l'export PDF uniquement,
     `buildPortfolioExportChartImg()` reconstruit un graphique **jetable hors-écran**,
-    sans les plugins de logos custom (juste les segments + légende Chart.js standard)
-    — ce graphique ne dessine aucune image externe, donc jamais tainté, `toDataURL()`
-    fonctionne normalement. Le donut affiché à l'écran n'est pas touché. Les 3
-    graphiques camembert de l'Analyse développée n'ont pas ce problème (aucune image
-    externe dessinée dessus), `chartCanvasToImgHtml()` marche directement sur leur
-    canvas réel.
+    sans les logos de POSITION custom (juste les segments + légende Chart.js standard)
+    — mais **avec le logo Wolf au centre** : contrairement aux logos de position
+    (CORS non garanti selon l'hébergeur de chaque entreprise), le logo Wolf est
+    hébergé sur postimg.cc qui envoie bien `Access-Control-Allow-Origin` (vérifié),
+    donc le charger avec `crossOrigin='anonymous'` sur CE canvas jetable ne le tainte
+    pas. Le donut affiché à l'écran n'est pas touché. Les 3 graphiques camembert de
+    l'Analyse développée n'ont pas ce problème (aucune image externe dessinée dessus),
+    `chartCanvasToImgHtml()` marche directement sur leur canvas réel.
+14. **Toujours lire le CSV réel d'un nouvel onglet Sheet colonne par colonne avant de
+    coder le mapping — même quand l'utilisateur donne des lettres de colonne précises.**
+    Pour le graphique "Cycle de Marché", l'utilisateur avait indiqué la colonne K pour
+    le ratio Technologie ; en inspectant le CSV réel, K contenait en fait `XLK/100`
+    (le prix brut de l'ETF, pas un ratio) — la vraie colonne "vs S&P 500" nommée
+    `Technologie` était O, exactement le même schéma que les colonnes Santé/Finance/
+    Industrie que l'utilisateur avait lui-même correctement identifiées par leur nom de
+    secteur (pas par calcul). Confirmé en comparant les valeurs (`O ≈ K/N` sur
+    plusieurs lignes). Un mapping non vérifié aurait donné un graphique silencieusement
+    faux (pas d'erreur, juste une mauvaise colonne) — même famille de piège que le
+    point 11, mais ici l'erreur venait de la dictée de l'utilisateur, pas d'une
+    supposition de Claude : vérifier reste la bonne pratique par défaut, quelle que
+    soit la source de l'information sur la structure d'un Sheet.
 
 ## Design system
 
@@ -455,11 +470,22 @@ champs déjà présents dans `companies` (aucune nouvelle colonne `COL` nécessa
   horizontale « Prix juste » (or) + ligne pointillée horizontale « Prix est. (5a) »
   (couleur du scénario) + « Ligne projection » en tirets (couleur du scénario, du dernier
   point historique jusqu'au point de projection à horizon+5 ans, labellisé `AAAA (Est.)`).
-  **Bouton agrandir (⤢)** sur chaque graphique de scénario, réutilise `#zoomModal`
-  (`openScenarioZoom(key)` reconstruit la config via `buildScenarioChartConfig()`,
-  factory partagée avec le rendu normal — même pattern que le donut Portfolio et les
-  graphiques de l'Analyse développée). **Tuile « Prix actuel »** ajoutée en premier dans
-  le résumé (`#voPrixActuel`, donnée déjà en mémoire, aucun nouvel appel réseau).
+  **Bouton agrandir (⤢)** sur chaque carte de scénario, ouvre une modale dédiée
+  `#scenarioZoomModal` — **pas** le système générique `#zoomModal`/`chartConfigs`
+  (celui-ci ne pousse qu'un canvas isolé, insuffisant ici puisque l'utilisateur doit
+  garder accès aux sliders CAGR/multiple, au FCF, au prix juste, à la médiane P/FCF
+  10/20 ans en zoomant). `openScenarioZoom(key)` **déplace la carte `.scenario-card`
+  existante dans le DOM** (`body.appendChild`) plutôt que de reconstruire un rendu
+  séparé : sliders, résultats et canvas restent le même élément vivant, donc toujours
+  synchronisés sans dupliquer la logique de rendu. `closeScenarioZoom()` la replace à
+  sa position d'origine (`_zoomHome` retient le parent + le sibling suivant). Le
+  `scenarioChart.resize()` est appelé après chaque déplacement (Chart.js ne détecte pas
+  seul un changement de conteneur). La médiane P/FCF 10/20 ans (normalement seulement
+  dans les tuiles de résumé au-dessus de la grille, invisibles une fois zoomé en plein
+  écran) est dupliquée dans un bloc `.scenario-fcf-history`, présent dans le HTML de la
+  carte mais `display:none` par CSS sauf sous `.scenario-card-zoomed`. **Tuile « Prix
+  actuel »** ajoutée en premier dans le résumé (`#voPrixActuel`, donnée déjà en
+  mémoire, aucun nouvel appel réseau).
 - **Historique des objectifs** : fiche par entreprise où l'utilisateur peut enregistrer
   (bouton « Enregistrer cet objectif ») un instantané daté des 3 scénarios (CAGR + multiple
   de chacun). Chaque entrée a un bouton **« ↻ Charger »** (`applyObjectif(nom, idx)`) qui
@@ -606,6 +632,16 @@ datées (texte + images uploadées/collées + croquis à main levée).
   `cerveauImagePickerTarget` (référence directe à l'objet `{image}` en cours d'édition,
   posée juste avant `.click()` sur l'input cachée) — même famille de pattern que
   `draggedImageRef` pour le glisser-déposer des images de l'Analyse développée.
+- **Tailles de bloc et réorganisation** : chaque carte entreprise et bloc libre a un
+  champ `taille` (`S`/`M`/`L`, migration automatique à `M` pour les entrées existantes
+  sans ce champ) et un bouton cycle (⤢, `data-action="ent-size"`/`"free-size"`) qui
+  fait défiler les 3 tailles — CSS `[data-taille="S"|"L"]` ajuste largeur de la carte et
+  hauteur de la zone image. **Glisser-déposer pour réordonner** les cartes entre elles
+  ET les blocs libres entre eux (`wireCerveauBlockDrag()`, `draggedCerveauBlockRef`,
+  même famille de pattern que `draggedImageRef`) — **pas de glisser inter-listes** (une
+  carte entreprise ne peut pas devenir un bloc libre, les deux types ne partagent pas
+  le même tableau de données), le `drop` est ignoré si la liste cible n'est pas celle
+  d'origine.
 - **Fiche entité** (`openFiche(nom)` / modale `#ficheModal`) : journal append-only (une
   nouvelle entrée par sauvegarde, jamais d'édition rétroactive — même logique que
   l'historique des objectifs). Éditeur : `<textarea>` + upload d'images (`<input
@@ -700,7 +736,13 @@ travail nativement). **Ne pas réintroduire de librairie PDF sans en rediscuter.
   propose « Enregistrer en PDF » nativement dans sa boîte de dialogue d'impression, pas
   besoin d'un vrai clic "télécharger" séparé. Classes utilitaires partagées :
   `.print-section` (bloc avec titre `<h3>`), `.print-img-row`/`.print-chart-img`
-  (images), `.print-table` (tableaux).
+  (images), `.print-table` (tableaux). **Habillage sombre + or reprenant le design
+  system de l'app** (fond `var(--bg)`, cartes `var(--panel-2)`, titres en or,
+  `Space Grotesk`) plutôt qu'un style blanc générique — demande explicite ("ça doit
+  ressembler fortement à l'application"). `*{print-color-adjust:exact}` force
+  l'impression des fonds de couleur (sans quoi certains navigateurs les ignorent par
+  défaut pour économiser l'encre) — la case « graphismes d'arrière-plan » de la boîte
+  de dialogue d'impression doit rester cochée côté utilisateur, hors de portée du CSS.
 - **Graphiques Chart.js capturés en image** (`chartCanvasToImgHtml(canvasId)`, via
   `canvas.toDataURL('image/png')`) — un `<canvas>` ne peut pas être déplacé/cloné dans
   `#printArea` sans perdre son rendu (Chart.js dessine sur un contexte précis).
@@ -758,9 +800,17 @@ plage (1a/2a/3a/5a/10a/20a/Max, `#rangeButtons`) recalcule l'affichage sans refa
 fetch. **Canal de régression linéaire** (`computeRegressionChannel()`) superposé au
 graphique : moyenne ± 1/2 écarts-types calculés sur les 20 dernières années de clôtures
 hebdo (ou tout l'historique dispo si plus court), indépendant du sélecteur de plage —
-sur une plage plus courte on ne voit qu'un extrait du même canal. Couleurs demandées
-explicitement (pas les couleurs sémantiques habituelles pos/neg) : moyenne en rouge,
-±1σ en bleu, ±2σ en rouge pointillé.
+sur une plage plus courte on ne voit qu'un extrait du même canal. **Palette du
+graphique boursier** (`renderStockChart()`, revue complète — pas les couleurs
+sémantiques habituelles pos/neg du reste du site, ce sont des repères visuels/
+statistiques) : clôture hebdo en **blanc** (`THEME.white`), moyenne mobile **200
+semaines** en **jaune gras** (`THEME.yellow`, `borderWidth:2.5`), moyenne mobile
+**30 semaines** (nouvelle, `computeSMA(closes,30)`) en **violet fin** (`THEME.violet`
+— seule exception au design system, où le violet est autrement "jamais utilisé pour de
+la donnée", décidée explicitement par l'utilisateur pour cette ligne précise), ligne de
+régression centrale toujours en rouge, et les **4 bandes d'écart-type (±1σ, ±2σ) en
+bleu pointillé uniformément** (avant : ±1σ bleu, ±2σ rouge pointillé — simplifié à la
+demande explicite).
 
 **Piège confirmé — ni Yahoo ni Stooq n'ont de CORS.** Aucun des deux endpoints
 n'envoie `Access-Control-Allow-Origin` (vérifié directement), donc un `fetch()` direct
@@ -821,9 +871,90 @@ sans un moyen de contourner cette limitation.)*
   « 📊 Analyse développée » sur l'onglet Analyse, qui passe le nom directement sans
   passer par `closeFiche()`) fonctionnait normalement, d'où l'impression d'aléatoire.
   Corrigé en capturant le nom dans une variable locale avant l'appel à `closeFiche()`.
+- **Sélecteur d'entreprise (Cerveau, champ « Ajouter une entreprise ») n'ajoutait rien
+  au clic sur une suggestion** : seul `keydown Enter` déclenchait l'ajout — cliquer une
+  option de la `<datalist>` avec la souris ne déclenche pas d'événement clavier, donc
+  le champ se remplissait sans que rien ne se passe. Corrigé en ajoutant un listener
+  `input` qui soumet automatiquement dès que la valeur correspond exactement à une
+  entreprise suivie (donc bien une suggestion choisie, pas juste une frappe en cours).
+
+### Onglet Macroéconomie (fait, 3 sur 4 sections — la 4e attend des clés API)
+3 sources sur le même Sheet publié, gids dédiés, chargées en parallèle du reste
+(`loadMacroCycleData()`/`loadMacroRotationData()`/`loadMacroPowerData()`, tous les
+trois via `loadSheetDual()` — factory générique CSV+gviz+responseHandler dédié,
+introduite ici pour ne pas réécrire 3 fois de plus le boilerplate déjà dupliqué pour
+Portfolio/historique de prix). `colToIdx('AB')` convertit une lettre de colonne Sheet
+en index 0-based, utilisé partout dans ce module plutôt que des indices en dur.
+
+- **Cycle de Marché — Offensif vs Défensif** (`MACRO_CYCLE_GID = "1014329874"`) :
+  ratio (Technologie + Finance + Industrie) / (Santé + Conso. de base + Services
+  publics), **déjà calculé dans le Sheet** (colonnes AV=ratio, AW=EMA20, AX=écart-type,
+  AY/AZ=±2σ, BA/BB=±1σ, BD/BE=flags Euphorie/Panique) — lu tel quel, aucun recalcul
+  côté app. Colonne date G, commune à tout l'onglet (vérifiée alignée pour toutes les
+  entreprises avant d'écrire le parsing). **Piège trouvé et corrigé** : la colonne
+  Technologie donnée par l'utilisateur (K) contenait en réalité le prix brut XLK/100,
+  pas un ratio — la vraie colonne (nommée `Technologie`, même schéma que les autres
+  secteurs) est O (voir "Pièges techniques" point 14). Sélecteur de plage 5/10/20 ans/
+  Max (`#macroCycleRangeButtons`, même pattern que le cours de bourse), badge Euphorie/
+  Panique/Neutre basé sur les 2 dernières colonnes flag, bouton zoom dédié
+  (`openMacroCycleZoom()`, réutilise `#zoomModal` avec une config reconstruite —
+  pas de sliders ici contrairement au zoom scénario, donc pas besoin de déplacer un
+  élément DOM vivant).
+- **Rotation Sectorielle GICS vs S&P 500** (`MACRO_ROTATION_GID = "1706659327"`) :
+  11 secteurs déjà exprimés en ratio rebasé (~1.00 au début de la fenêtre disponible
+  sur cet onglet, ~3 ans d'historique) — **pas de série S&P 500 séparée à tracer**,
+  chaque secteur est déjà "vs S&P 500" ; une ligne de repère horizontale à 1.00 sert de
+  référence visuelle (confirmé par la capture de référence de l'utilisateur : sa
+  légende ne liste que les 11 secteurs, pas de S&P 500). Pas de sélecteur de plage
+  (l'onglet source n'a que ~3 ans de données, un sélecteur 10/20 ans n'aurait pas de
+  sens). Bouton zoom (`openMacroRotationZoom()`), même pattern que ci-dessus.
+- **Tableau de force relative sectorielle** (`MACRO_POWER_GID = "30985186"`, onglet
+  "Dashboard cycle") : **seul tableau de tout le projet dont le parsing utilise des
+  positions de ligne fixes** (lignes 12 à 24, colonnes P à AA) plutôt qu'une
+  reconnaissance de contenu — exception volontaire au principe habituel (voir "Pièges
+  techniques" point 10) car ce n'est pas un onglet "tableau de bord" à plusieurs blocs
+  avec espacements variables comme Wolf Portfolio, juste un unique petit bloc à mise en
+  page stable, vérifiée directement sur le CSV réel avant d'écrire le code. Ligne 12 =
+  catégorie (Sensible/Défensif/Cyclique, affichée en sous-texte sous chaque en-tête de
+  colonne), ligne 14 = noms de secteur (lus depuis le Sheet, pas codés en dur), lignes
+  15-24 = les 10 mesures (Classement, Power 1 an, Power 3 mois, puis performance
+  1/2/3/6 mois et 1/2/3 ans) × 11 secteurs. **Coloration automatique** par seuil sur
+  chaque cellule (`macroPowerColorClass()`) : < -3% rouge vif (`.mp-red-strong`), entre
+  -3% et 0% rouge clair (`.mp-red-light`), entre 0% et 5.5% vert clair
+  (`.mp-green-light`), ≥ 5.5% vert vif (`.mp-green-strong`) — seuils donnés
+  explicitement par l'utilisateur. Tableau scrollable horizontalement (`overflow-x`),
+  première colonne (libellés de ligne) fixée en `position:sticky`.
+- **Indicateurs macroéconomiques US** (PIB, consommation, investissement, dépenses
+  publiques, balance commerciale, taux à 10/2 ans, spread, inflation, taux réel) — **en
+  attente de 2 clés API gratuites fournies par l'utilisateur**, voir section suivante.
+  `renderMacroFundamentalsPlaceholder()` affiche un message explicite avec les liens
+  d'inscription en attendant, plutôt qu'un bloc vide sans explication.
+
+#### Automatisation prévue : BEA (direct) + FRED (via relais CORS)
+Décision prise avec l'utilisateur après vérification technique (`curl` sur les deux
+API avec une clé factice, en observant la présence ou non de l'en-tête
+`Access-Control-Allow-Origin`) :
+- **API BEA** (`apps.bea.gov/api/data`, données PIB/NIPA : consommation, investissement,
+  dépenses publiques, balance commerciale) — **envoie `Access-Control-Allow-Origin: *`**
+  (vérifié), donc appelable en direct depuis le navigateur, sans proxy. Clé gratuite,
+  inscription instantanée, sans CB (`apps.bea.gov/API/signup/`).
+- **API FRED** (`api.stlouisfed.org/fred`, séries `DGS10`/`DGS2`/CPI pour les taux et
+  l'inflation) — **n'envoie aucun en-tête CORS** (vérifié, même comportement que
+  Yahoo Finance/Stooq, voir "Cours de bourse"), donc `fetch()` direct toujours bloqué.
+  Doit passer par le même relais déjà en place (`corsProxyUrls()`/`fetchWithRetry()`).
+  Clé gratuite, même processus (`fredaccount.stlouisfed.org/apikeys`).
+- **Ne pas implémenter avant d'avoir reçu les 2 clés de l'utilisateur** — il n'y a
+  pas de clé partagée/publique utilisable, chaque clé est personnelle et gratuite mais
+  doit être créée par lui.
+- Une fois les clés fournies : fetch complet de l'historique (pas seulement la donnée
+  la plus récente, les deux API renvoient des séries complètes) au chargement de
+  l'app, avec un cache `localStorage` daté pour éviter de re-fetcher à chaque visite
+  dans la même journée — pas besoin du système d'export/sync via `data/*.json` utilisé
+  pour les autres onglets (Idées, Watchlist...), puisque la source de vérité est
+  directement l'API, pas une saisie de l'utilisateur.
 
 ### Demandé, non commencé — nécessite une décision d'architecture
-Ces 3 fonctionnalités ne sont **pas réalisables en site statique pur** sans backend :
+Ces 2 fonctionnalités ne sont **pas réalisables en site statique pur** sans backend :
 
 1. **Onglet Superinvestors (13F)** — pas d'API gratuite fiable et accessible en CORS
    pour les données 13F de la SEC. Options : API payante (WhaleWisdom...), ou compilation
@@ -833,11 +964,6 @@ Ces 3 fonctionnalités ne sont **pas réalisables en site statique pur** sans ba
    client pur : nécessite recherche web + génération de texte, donc un backend avec clé
    API. Alternative proposée : demander le résumé directement en conversation (ponctuel
    ou tâche récurrente programmée), et le coller dans le Sheet/site si besoin d'affichage.
-3. **Onglet Macroéconomie (FRED US + zone euro)** — FRED nécessite une clé API et n'est
-   pas pensé pour un appel direct depuis un navigateur public (pas de garantie CORS,
-   risque de clé exposée côté client). Alternative proposée : recherche/compilation
-   manuelle par Claude → table collée dans un nouvel onglet Sheet → le site l'affiche
-   avec le même système de fetch fiable déjà en place.
 
 ## Conventions de code
 

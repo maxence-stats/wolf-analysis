@@ -55,6 +55,7 @@
       <button class="page-nav-btn" data-page="pageCerveau">Cerveau numérique</button>
       <button class="page-nav-btn" data-page="pageAlertes">Alertes</button>
       <button class="page-nav-btn" data-page="pageIdees">Idées</button>
+      <button class="page-nav-btn" data-page="pageMacro">Macroéconomie</button>
     </div>
 
     <div id="pageAnalyse" class="page active">
@@ -355,6 +356,44 @@
     <div id="pageIdees" class="page">
       <div class="section-label">Idées de développement</div>
       <div id="ideesContent"></div>
+    </div>
+
+    <div id="pageMacro" class="page">
+      <div class="section-label">Macroéconomie</div>
+
+      <div class="chart-card macro-cycle-card">
+        <div class="chart-card-head">
+          <div><h3>Cycle de Marché — Offensif vs Défensif</h3><p class="chart-subtitle">(Technologie + Finance + Industrie) / (Santé + Conso. de base + Services publics) — EMA 20 &amp; écarts-types</p></div>
+          <div class="chart-card-actions">
+            <span class="macro-cycle-badge" id="macroCycleBadge"></span>
+            <button class="zoom-btn" onclick="openMacroCycleZoom()" aria-label="Agrandir">⤢</button>
+          </div>
+        </div>
+        <div class="range-buttons" id="macroCycleRangeButtons">
+          <button data-range="5">5a</button><button data-range="10">10a</button><button class="active" data-range="20">20a</button><button data-range="max">Max</button>
+        </div>
+        <div class="chart-holder" style="height:380px;"><canvas id="chartMacroCycle"></canvas></div>
+        <div id="macroCycleStatus" class="stock-status" style="display:none;"></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-card-head">
+          <div><h3>Rotation Sectorielle GICS vs S&amp;P 500</h3><p class="chart-subtitle">Base 1.00 — historique disponible sur la feuille (~3 ans)</p></div>
+          <div class="chart-card-actions"><button class="zoom-btn" onclick="openMacroRotationZoom()" aria-label="Agrandir">⤢</button></div>
+        </div>
+        <div class="chart-holder" style="height:420px;"><canvas id="chartMacroRotation"></canvas></div>
+        <div id="macroRotationStatus" class="stock-status" style="display:none;"></div>
+      </div>
+
+      <div class="section-label">Force relative sectorielle</div>
+      <div class="macro-power-card">
+        <div id="macroPowerTable" class="macro-power-table-wrap"></div>
+      </div>
+
+      <div class="section-label">Indicateurs macroéconomiques (États-Unis)</div>
+      <div class="macro-power-card">
+        <div id="macroFundamentalsTable"></div>
+      </div>
     </div>
 
     <footer>

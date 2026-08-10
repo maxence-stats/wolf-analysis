@@ -591,3 +591,27 @@
     @page{margin:14mm;background:var(--bg);}
   }
 
+  /* ---------- MACROÉCONOMIE ---------- */
+  .macro-cycle-card{margin-bottom:20px;}
+  .macro-cycle-badge{font-family:var(--font-mono);font-size:11px;padding:4px 10px;border-radius:20px;border:1px solid var(--hair);color:var(--text-dim);}
+  .macro-cycle-badge.euphorie{border-color:var(--red);color:var(--red);background:rgba(229,99,107,0.1);}
+  .macro-cycle-badge.panique{border-color:var(--blue);color:var(--blue);background:rgba(74,159,224,0.1);}
+  .macro-power-card{background:var(--card-bg);border:var(--card-border);border-radius:14px;padding:18px 20px;box-shadow:var(--shadow-card);margin-bottom:24px;}
+  .macro-power-table-wrap{overflow-x:auto;}
+  .macro-power-table{width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap;}
+  .macro-power-table th, .macro-power-table td{padding:7px 10px;text-align:center;}
+  .macro-power-table th{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:.03em;color:var(--text-dim);border-bottom:1px solid var(--hair);}
+  .macro-power-table td:first-child, .macro-power-table th:first-child{text-align:left;position:sticky;left:0;background:var(--panel-2);color:var(--text-dim);font-size:11px;}
+  .macro-power-table .mp-cat{display:block;font-size:9px;color:var(--text-faint);font-weight:400;text-transform:none;}
+  .macro-power-table tbody tr:hover td{background:rgba(255,255,255,0.02);}
+  .macro-power-table tbody tr:hover td:first-child{background:var(--panel-2);}
+  .mp-red-strong{background:rgba(229,99,107,0.32);color:#fff;font-weight:700;}
+  .mp-red-light{background:rgba(229,99,107,0.14);color:var(--text);}
+  .mp-green-light{background:rgba(79,209,165,0.14);color:var(--text);}
+  .mp-green-strong{background:rgba(79,209,165,0.32);color:#fff;font-weight:700;}
+  .macro-fund-table{width:100%;border-collapse:collapse;font-size:12px;}
+  .macro-fund-table th, .macro-fund-table td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--hair);}
+  .macro-fund-table th:first-child, .macro-fund-table td:first-child{text-align:left;}
+  .macro-fund-table th{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;color:var(--text-dim);}
+  .macro-fund-note{font-size:12px;color:var(--text-dim);line-height:1.6;}
+
