@@ -2569,6 +2569,9 @@ const SCENARIOS = [
 
 let scenarioValues = {};
 let scenarioCharts = {};
+// Raccourcis de multiple les plus utilisés par l'utilisateur pour la médiane FCF/OCF —
+// un clic règle directement le champ plutôt que de devoir taper la valeur.
+const SCENARIO_QUICK_MULTIPLES = [10, 15, 20, 25];
 
 function computeScenario(fcfActuel, prixActuel, cagr, multiple){
   const prixJusteSim = fcfActuel * multiple;
@@ -2594,11 +2597,14 @@ function scenarioCardHtml(s){
       </div>
       <div class="scenario-row">
         <div class="scenario-row-head"><span>CAGR ${valorisationMetric.toUpperCase()} Prévu (%)</span><span class="val" id="vo-${s.key}-cagrVal">—</span></div>
-        <input type="range" class="scenario-slider" id="vo-${s.key}-cagr" min="-10" max="30" step="0.1">
+        <input type="number" class="scenario-number" id="vo-${s.key}-cagr" step="0.1">
       </div>
       <div class="scenario-row">
         <div class="scenario-row-head"><span>Médiane ${valorisationMetric.toUpperCase()} (Multiple)</span><span class="val" id="vo-${s.key}-multVal">—</span></div>
-        <input type="range" class="scenario-slider" id="vo-${s.key}-mult" min="1" max="50" step="0.1">
+        <input type="number" class="scenario-number" id="vo-${s.key}-mult" min="0" step="0.1">
+        <div class="scenario-quick-picks">
+          ${SCENARIO_QUICK_MULTIPLES.map(v => `<button type="button" class="scenario-quick-btn" data-quick-mult="${v}">${v}x</button>`).join('')}
+        </div>
       </div>
       <div class="scenario-results">
         <div><div class="r-k">Prix juste sim.</div><div class="r-v" id="vo-${s.key}-prixJuste">—</div></div>
@@ -2678,13 +2684,31 @@ function wireScenarioCard(s, hist, fcfActuel, prixActuel){
   cagrInput.value = scenarioValues[s.key].cagr;
   multInput.value = scenarioValues[s.key].multiple;
 
+  const card = document.querySelector(`.scenario-card[data-key="${s.key}"]`);
+  function syncQuickButtons(){
+    if (!card) return;
+    card.querySelectorAll('.scenario-quick-btn').forEach(b => {
+      b.classList.toggle('active', parseFloat(b.dataset.quickMult) === scenarioValues[s.key].multiple);
+    });
+  }
   function update(){
     scenarioValues[s.key].cagr = parseFloat(cagrInput.value);
     scenarioValues[s.key].multiple = parseFloat(multInput.value);
+    syncQuickButtons();
     updateScenarioCard(s, hist, fcfActuel, prixActuel);
   }
   cagrInput.addEventListener('input', update);
   multInput.addEventListener('input', update);
+  syncQuickButtons();
+
+  if (card){
+    card.querySelectorAll('.scenario-quick-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        multInput.value = btn.dataset.quickMult;
+        update();
+      });
+    });
+  }
 
   updateScenarioCard(s, hist, fcfActuel, prixActuel);
 }
