@@ -745,27 +745,59 @@ function renderPortfolioHoldingsList(){
     }).join('') : '<div class="objectifs-empty">Données du portefeuille indisponibles pour l\'instant.</div>';
 }
 
-// Le donut affiché à l'écran dessine les logos des positions directement sur son canvas
+// Le donut affiché à l'écran dessine les logos DES POSITIONS directement sur son canvas
 // sans crossOrigin (voir portfolioSegmentLogosPlugin — volontaire, sinon les logos sans
-// en-tête CORS comme Air Liquide ne se chargeraient plus). Ça "tainte" ce canvas : impossible
-// d'en extraire une image (toDataURL lève SecurityError). Pour le PDF, on reconstruit donc un
-// graphique jetable hors-écran, sans les logos custom (juste les segments + légende), qui lui
-// n'est jamais taintée puisqu'il ne dessine aucune image externe.
-function buildPortfolioExportChartImg(holdings){
+// en-tête CORS comme Air Liquide ne se chargeraient plus). Ça "tainte" ce canvas :
+// impossible d'en extraire une image (toDataURL lève SecurityError). Pour le PDF, on
+// reconstruit donc un graphique jetable hors-écran — sans les logos de position custom —
+// mais AVEC le logo Wolf au centre : contrairement aux logos de position (CORS non
+// garanti selon l'hébergeur), le logo Wolf est hébergé sur postimg.cc qui envoie bien
+// Access-Control-Allow-Origin (vérifié), donc le charger avec crossOrigin='anonymous'
+// ici ne casse rien et ne tainte pas ce canvas dédié à l'export.
+function loadImageCorsSafe(src){
+  return new Promise(resolve => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+async function buildPortfolioExportChartImg(holdings){
   const canvas = document.createElement('canvas');
-  canvas.width = 640; canvas.height = 420;
+  canvas.width = 640; canvas.height = 480;
+  const wolfImg = await loadImageCorsSafe(WOLF_LOGO_URL);
+  const centerLogoPlugin = {
+    id:'exportCenterLogo',
+    afterDatasetsDraw(chart){
+      if (!wolfImg) return;
+      const meta = chart.getDatasetMeta(0);
+      if (!meta.data[0]) return;
+      const arc = meta.data[0];
+      const size = arc.innerRadius * 1.55;
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(arc.x, arc.y, arc.innerRadius * 0.92, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(wolfImg, arc.x - size / 2, arc.y - size / 2, size, size);
+      ctx.restore();
+    }
+  };
   const chart = new Chart(canvas.getContext('2d'), {
     type:'doughnut',
-    data:{ labels: holdings.map(h => h.nom), datasets:[{ data: holdings.map(h => h.valorisation), backgroundColor: holdings.map((_, i) => PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length]), borderColor:'#fff', borderWidth:2 }] },
-    options:{ responsive:false, animation:false, plugins:{ legend:{ position:'right', labels:{ boxWidth:10, font:{ size:11 } } } } }
+    data:{ labels: holdings.map(h => h.nom), datasets:[{ data: holdings.map(h => h.valorisation), backgroundColor: holdings.map((_, i) => PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length]), borderColor:'#151A1F', borderWidth:2 }] },
+    options:{ responsive:false, animation:false, cutout:'46%',
+      plugins:{ legend:{ position:'right', labels:{ boxWidth:10, font:{ size:11 }, color:'#E9EBEE' } } } },
+    plugins:[centerLogoPlugin]
   });
   let dataUrl = '';
-  try{ dataUrl = canvas.toDataURL('image/png'); }catch(e){ /* improbable ici, pas d'image externe dessinée */ }
+  try{ dataUrl = canvas.toDataURL('image/png'); }catch(e){ /* improbable ici : seule image externe = logo Wolf, CORS-safe */ }
   chart.destroy();
   return dataUrl ? `<img class="print-chart-img" src="${dataUrl}" alt="Répartition du portefeuille">` : '';
 }
 
-function exportPortfolioAsPdf(){
+async function exportPortfolioAsPdf(){
   const summary = `<div class="print-section"><h3>Résumé</h3>
     <table class="print-table"><tbody>
       <tr><th>Capital investi</th><td>${document.getElementById('pfCapitalInvesti').textContent}</td></tr>
@@ -776,7 +808,7 @@ function exportPortfolioAsPdf(){
     </tbody></table></div>`;
 
   const holdingsForChart = portfolioData.holdings.filter(h => h.valorisation != null && h.valorisation > 0);
-  const chartImg = buildPortfolioExportChartImg(holdingsForChart);
+  const chartImg = await buildPortfolioExportChartImg(holdingsForChart);
   const chartSection = chartImg ? `<div class="print-section"><h3>Répartition</h3>${chartImg}</div>` : '';
 
   const holdings = portfolioData.holdings.filter(h => h.valorisation != null).slice().sort((a, b) => b.valorisation - a.valorisation);
@@ -1084,7 +1116,10 @@ const THEME = {
   green: css.getPropertyValue('--green').trim(),
   red: css.getPropertyValue('--red').trim(),
   dim: css.getPropertyValue('--text-dim').trim(),
-  hair: css.getPropertyValue('--hair').trim()
+  hair: css.getPropertyValue('--hair').trim(),
+  violet: css.getPropertyValue('--violet').trim(),
+  white: '#FFFFFF',
+  yellow: '#F0D63D'
 };
 function configureChartDefaults(){
   Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
@@ -1447,6 +1482,10 @@ async function fetchStooqWeekly(symbol){
   return { dates: rows.map(r => r.Date), closes: rows.map(r => parseFloat(r.Close)) };
 }
 
+function computeSMA(closes, period){
+  return closes.map((_, i) => i < period - 1 ? null : average(closes.slice(i - period + 1, i + 1)));
+}
+
 function setStockSourceNote(text){
   const el = document.getElementById('stockSourceNote');
   if (el) el.textContent = text;
@@ -1464,8 +1503,9 @@ async function loadStockChart(ticker, nom){
   if (nom){
     const sheetSeries = fetchPriceHistorySeries(nom);
     if (sheetSeries){
-      const sma = sheetSeries.closes.map((_, i) => i < 199 ? null : average(sheetSeries.closes.slice(i - 199, i + 1)));
-      stockFull = { dates: sheetSeries.dates, closes: sheetSeries.closes, sma };
+      const sma = computeSMA(sheetSeries.closes, 200);
+      const sma30 = computeSMA(sheetSeries.closes, 30);
+      stockFull = { dates: sheetSeries.dates, closes: sheetSeries.closes, sma, sma30 };
       statusEl.style.display = 'none';
       setStockSourceNote('Source : historique Wolf Analysis (Google Sheet)');
       renderStockChart();
@@ -1485,8 +1525,9 @@ async function loadStockChart(ticker, nom){
   try{
     const { dates, closes } = await fetchYahooWeekly(ySymbol);
     if (myId !== stockRequestId) return;
-    const sma = closes.map((_, i) => i < 199 ? null : average(closes.slice(i - 199, i + 1)));
-    stockFull = { dates, closes, sma };
+    const sma = computeSMA(closes, 200);
+    const sma30 = computeSMA(closes, 30);
+    stockFull = { dates, closes, sma, sma30 };
     statusEl.style.display = 'none';
     setStockSourceNote('Source : Yahoo Finance (symbole ' + ySymbol + ')');
     renderStockChart();
@@ -1500,8 +1541,9 @@ async function loadStockChart(ticker, nom){
   try{
     const res = await fetchStooqWeekly(sSymbol);
     if (myId !== stockRequestId) return;
-    const sma = res.closes.map((_, i) => i < 199 ? null : average(res.closes.slice(i - 199, i + 1)));
-    stockFull = { dates: res.dates, closes: res.closes, sma };
+    const sma = computeSMA(res.closes, 200);
+    const sma30 = computeSMA(res.closes, 30);
+    stockFull = { dates: res.dates, closes: res.closes, sma, sma30 };
     statusEl.style.display = 'none';
     setStockSourceNote('Source : Stooq (repli, Yahoo Finance indisponible pour ce ticker — symbole ' + sSymbol + ')');
     renderStockChart();
@@ -1515,7 +1557,7 @@ async function loadStockChart(ticker, nom){
 
 function renderStockChart(){
   if (!stockFull) return;
-  const { dates, closes, sma } = stockFull;
+  const { dates, closes, sma, sma30 } = stockFull;
   let startIdx = 0;
   if (stockRange !== 'max'){
     const years = parseInt(stockRange, 10);
@@ -1528,31 +1570,33 @@ function renderStockChart(){
   const labels = dates.slice(startIdx);
   const dataClose = closes.slice(startIdx);
   const dataSma = sma.slice(startIdx);
+  const dataSma30 = sma30.slice(startIdx);
 
   const reg = computeRegressionChannel(dates, closes);
   const regLine = (offset) => labels.map(d => (reg && reg.byDate[d] != null) ? reg.byDate[d] + offset * reg.stdDev : null);
 
   if (chartInstances.stock) chartInstances.stock.destroy();
 
-  // Couleurs demandées explicitement : moyenne en rouge, ±1σ en bleu, ±2σ en rouge
-  // pointillé (pas les couleurs sémantiques habituelles pos/neg du site — ce sont des
-  // repères statistiques, pas un jugement positif/négatif).
-  const regStyle = (offset, label, showInLegend) => {
-    const abs = Math.abs(offset);
-    return {
-      label, data: regLine(offset),
-      borderColor: abs === 1 ? THEME.blue : THEME.red,
-      borderWidth: offset === 0 ? 1.75 : 1.25,
-      borderDash: abs === 2 ? [5,4] : [],
-      pointRadius:0, spanGaps:false, tension:0, _legend: !!showInLegend
-    };
-  };
+  // Couleurs demandées explicitement : clôture en blanc, SMA200 en jaune gras, SMA30
+  // (nouvelle) en violet fin — seule exception au "violet jamais utilisé pour de la
+  // donnée" du design system, décidée explicitement par l'utilisateur pour cette
+  // ligne précise. Les 4 bandes d'écart-type (±1σ, ±2σ) en bleu pointillé uniformément
+  // (l'ancien rouge pointillé sur ±2σ est abandonné) ; la ligne de régression centrale
+  // reste rouge, inchangée.
+  const regStyle = (offset, label, showInLegend) => ({
+    label, data: regLine(offset),
+    borderColor: offset === 0 ? THEME.red : THEME.blue,
+    borderWidth: offset === 0 ? 1.75 : 1.25,
+    borderDash: offset === 0 ? [] : [5,4],
+    pointRadius:0, spanGaps:false, tension:0, _legend: !!showInLegend
+  });
 
   const config = {
     type:'line',
     data:{ labels, datasets:[
-      { label:'Clôture hebdo', data:dataClose, borderColor:THEME.gold, backgroundColor:'rgba(217,164,65,0.08)', fill:true, tension:0.12, pointRadius:0, borderWidth:1.5, _legend:true },
-      { label:'Moyenne mobile 200 sem.', data:dataSma, borderColor:THEME.blue, borderWidth:1.5, pointRadius:0, spanGaps:true, tension:0.12, _legend:true },
+      { label:'Clôture hebdo', data:dataClose, borderColor:THEME.white, backgroundColor:'rgba(255,255,255,0.06)', fill:true, tension:0.12, pointRadius:0, borderWidth:1.5, _legend:true },
+      { label:'Moyenne mobile 200 sem.', data:dataSma, borderColor:THEME.yellow, borderWidth:2.5, pointRadius:0, spanGaps:true, tension:0.12, _legend:true },
+      { label:'Moyenne mobile 30 sem.', data:dataSma30, borderColor:THEME.violet, borderWidth:1, pointRadius:0, spanGaps:true, tension:0.12, _legend:true },
       regStyle(0, 'Régression linéaire (20 ans max)', true),
       regStyle(1, '+1σ', false), regStyle(-1, '−1σ', false),
       regStyle(2, '+2σ', false), regStyle(-2, '−2σ', false)
@@ -1730,6 +1774,10 @@ function scenarioCardHtml(s){
         <h3 class="scenario-title">${s.label}</h3>
         <button class="zoom-btn scenario-zoom-btn" data-zoom-scenario="${s.key}" title="Agrandir">⤢</button>
       </div>
+      <div class="scenario-fcf-history">
+        <span>Médiane P/FCF 10 ans <b>${document.getElementById('voMedianeHist').textContent}</b></span>
+        <span>Médiane P/FCF 20 ans <b>${document.getElementById('voMediane20').textContent}</b></span>
+      </div>
       <div class="scenario-row fixe">
         <div class="scenario-row-head"><span>FCF Actuel (Fixe)</span><span class="val" id="vo-${s.key}-fcf">—</span></div>
       </div>
@@ -1863,25 +1911,36 @@ function buildScenarioChartConfig(s, hist, prixJusteSim, prixEst5A){
   };
 }
 
-let lastScenarioContext = {};
 function renderScenarioChart(s, hist, prixJusteSim, prixEst5A){
-  lastScenarioContext[s.key] = { s, hist, prixJusteSim, prixEst5A };
   if (scenarioCharts[s.key]) scenarioCharts[s.key].destroy();
   scenarioCharts[s.key] = new Chart(document.getElementById('vo-' + s.key + '-chart').getContext('2d'), buildScenarioChartConfig(s, hist, prixJusteSim, prixEst5A));
 }
 
-// Zoom dédié (comme le donut Portfolio et les graphiques de l'Analyse développée) :
-// réutilise #zoomModal sans les lignes plage/CAGR, pas de notion d'années glissantes ici.
+// Zoom scénario : au lieu de reconstruire un graphique isolé (ce qui perdait les
+// sliders/FCF/CAGR/prix juste déjà visibles sur la petite carte), on DÉPLACE la carte
+// entière (DOM) dans la modale — sliders, résultats et canvas restent le même élément,
+// donc toujours vivants et synchronisés, pas de duplication de logique de rendu.
 function openScenarioZoom(key){
-  const ctx = lastScenarioContext[key];
-  if (!ctx) return;
-  document.getElementById('zoomTitle').textContent = ctx.s.label;
-  document.getElementById('zoomRangeRow').innerHTML = '';
-  document.getElementById('zoomCagrRow').innerHTML = '';
-  zoomKey = null;
-  if (window.__zoomChart) window.__zoomChart.destroy();
-  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), buildScenarioChartConfig(ctx.s, ctx.hist, ctx.prixJusteSim, ctx.prixEst5A));
-  document.getElementById('zoomModal').style.display = 'flex';
+  const card = document.querySelector('.scenario-card[data-key="' + key + '"]');
+  const body = document.getElementById('scenarioZoomBody');
+  if (!card || !body) return;
+  card._zoomHome = { parent: card.parentNode, next: card.nextSibling };
+  body.appendChild(card);
+  card.classList.add('scenario-card-zoomed');
+  document.getElementById('scenarioZoomModal').style.display = 'flex';
+  if (scenarioCharts[key]) scenarioCharts[key].resize();
+}
+function closeScenarioZoom(){
+  const body = document.getElementById('scenarioZoomBody');
+  const card = body.firstElementChild;
+  if (card && card._zoomHome){
+    card.classList.remove('scenario-card-zoomed');
+    const { parent, next } = card._zoomHome;
+    if (next) parent.insertBefore(card, next); else parent.appendChild(card);
+    const key = card.dataset.key;
+    if (scenarioCharts[key]) scenarioCharts[key].resize();
+  }
+  document.getElementById('scenarioZoomModal').style.display = 'none';
 }
 
 /* ============================================================
@@ -2452,12 +2511,15 @@ function renderCerveauChaines(box){
 // Migration : les anciennes chaînes stockaient ph.entreprises comme un tableau de noms
 // (string). Passage à des objets {nom,image,legende} pour les cartes illustrées — les
 // entrées string existantes sont converties sans perte au premier chargement.
+const CERVEAU_TAILLES = ['S', 'M', 'L'];
 function migrateCerveauChains(){
   Object.keys(cerveauData.chains).forEach(sec => {
     (cerveauData.chains[sec] || []).forEach(chain => {
       (chain.phases || []).forEach(ph => {
-        ph.entreprises = (ph.entreprises || []).map(e => typeof e === 'string' ? { nom:e, image:'', legende:'' } : e);
+        ph.entreprises = (ph.entreprises || []).map(e => typeof e === 'string' ? { nom:e, image:'', legende:'', taille:'M' } : e);
+        ph.entreprises.forEach(e => { if (!e.taille) e.taille = 'M'; });
         if (!Array.isArray(ph.blocsLibres)) ph.blocsLibres = [];
+        ph.blocsLibres.forEach(b => { if (!b.taille) b.taille = 'M'; });
       });
     });
   });
@@ -2481,11 +2543,12 @@ function cerveauEntityCard(ent, phaseIdx, entIdx){
   const tracked = companies[ent.nom];
   const logo = tracked ? companies[ent.nom][companies[ent.nom].length - 1].lienImage : '';
   const noteCount = (cerveauData.notes[ent.nom] || []).length;
-  return `<div class="cerveau-entity-card" data-phase="${phaseIdx}" data-ent="${entIdx}">
+  return `<div class="cerveau-entity-card" draggable="true" data-taille="${ent.taille || 'M'}" data-phase="${phaseIdx}" data-ent="${entIdx}">
     ${cerveauImageZoneHtml(ent.image, 'ent')}
     <div class="cec-head">
       ${logo ? `<img class="cec-mini-logo" src="${logo}" alt="">` : `<span class="cerveau-entity-initial">${ent.nom.charAt(0).toUpperCase()}</span>`}
       <span class="cec-name" title="${safe}">${ent.nom}</span>${noteCount ? `<span class="cerveau-note-badge">${noteCount}</span>` : ''}
+      <button class="cec-size-btn" data-action="ent-size" title="Changer la taille">⤢</button>
       <button class="cec-remove" data-action="ent-delete" title="Retirer de la phase">✕</button>
     </div>
     <input type="text" class="cec-legend" data-action="ent-legend" placeholder="Légende…" value="${(ent.legende || '').replace(/"/g, '&quot;')}">
@@ -2494,10 +2557,13 @@ function cerveauEntityCard(ent, phaseIdx, entIdx){
 }
 
 function cerveauFreeBlockHtml(bloc, phaseIdx, blocIdx){
-  return `<div class="cerveau-freeblock" data-phase="${phaseIdx}" data-bloc="${blocIdx}">
+  return `<div class="cerveau-freeblock" draggable="true" data-taille="${bloc.taille || 'M'}" data-phase="${phaseIdx}" data-bloc="${blocIdx}">
     ${cerveauImageZoneHtml(bloc.image, 'free')}
     <textarea class="cec-free-text" data-action="free-text" placeholder="Texte libre…">${(bloc.texte || '').replace(/</g, '&lt;')}</textarea>
-    <button class="cec-remove cec-remove-free" data-action="free-delete">✕ Retirer ce bloc</button>
+    <div class="cec-free-actions">
+      <button class="cec-size-btn" data-action="free-size" title="Changer la taille">⤢</button>
+      <button class="cec-remove cec-remove-free" data-action="free-delete">✕ Retirer ce bloc</button>
+    </div>
   </div>`;
 }
 
@@ -2541,11 +2607,19 @@ function renderCerveauPhases(box){
   document.getElementById('cerveauChainExportPdfBtn').addEventListener('click', () => exportChainAsPdf(chain, secteur));
 
   box.querySelectorAll('.cerveau-add-entity input').forEach(input => {
-    input.addEventListener('keydown', e => {
-      if (e.key !== 'Enter' || !input.value.trim()) return;
+    const submit = () => {
+      if (!input.value.trim()) return;
       chain.phases[parseInt(input.dataset.phase, 10)].entreprises.push({ nom: input.value.trim(), image:'', legende:'' });
       persistCerveauData();
       renderCerveau();
+    };
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+    // Cliquer une suggestion de la <datalist> ne déclenche pas 'keydown Enter' (c'est
+    // une sélection souris, pas une frappe clavier) — seul 'input' se déclenche dans ce
+    // cas. On soumet automatiquement uniquement quand la valeur correspond exactement à
+    // une entreprise suivie (donc bien une suggestion choisie, pas une frappe en cours).
+    input.addEventListener('input', () => {
+      if (companies[input.value.trim()]) submit();
     });
   });
 
@@ -2570,6 +2644,12 @@ function renderCerveauPhases(box){
       persistCerveauData();
       renderCerveau();
     });
+    card.querySelector('[data-action="ent-size"]').addEventListener('click', () => {
+      const i = CERVEAU_TAILLES.indexOf(ent.taille || 'M');
+      ent.taille = CERVEAU_TAILLES[(i + 1) % CERVEAU_TAILLES.length];
+      persistCerveauData();
+      renderCerveau();
+    });
     const legend = card.querySelector('[data-action="ent-legend"]');
     const saveLegend = () => { ent.legende = legend.value; persistCerveauData(); };
     legend.addEventListener('blur', saveLegend);
@@ -2585,9 +2665,50 @@ function renderCerveauPhases(box){
       persistCerveauData();
       renderCerveau();
     });
+    card.querySelector('[data-action="free-size"]').addEventListener('click', () => {
+      const i = CERVEAU_TAILLES.indexOf(bloc.taille || 'M');
+      bloc.taille = CERVEAU_TAILLES[(i + 1) % CERVEAU_TAILLES.length];
+      persistCerveauData();
+      renderCerveau();
+    });
     const text = card.querySelector('[data-action="free-text"]');
     const saveText = () => { bloc.texte = text.value; persistCerveauData(); };
     text.addEventListener('blur', saveText);
+  });
+
+  wireCerveauBlockDrag(box, chain);
+}
+
+// Glisser-déposer pour réordonner les blocs (cartes entreprise entre elles, blocs
+// libres entre eux — pas de glisser inter-listes, les deux types de blocs ne
+// partagent pas le même tableau de données) — même pattern que le glisser-déposer des
+// images de l'Analyse développée (draggedImageRef).
+let draggedCerveauBlockRef = null;
+function wireCerveauBlockDrag(box, chain){
+  box.querySelectorAll('.cerveau-entity-list, .cerveau-freeblock-list').forEach(list => {
+    const phaseIdx = parseInt(list.dataset.phase, 10);
+    const isFree = list.classList.contains('cerveau-freeblock-list');
+    const arr = isFree ? chain.phases[phaseIdx].blocsLibres : chain.phases[phaseIdx].entreprises;
+    const selector = isFree ? '.cerveau-freeblock' : '.cerveau-entity-card';
+    const idxAttr = isFree ? 'bloc' : 'ent';
+
+    list.querySelectorAll(selector).forEach(block => {
+      block.addEventListener('dragstart', e => {
+        draggedCerveauBlockRef = { arr, idx: parseInt(block.dataset[idxAttr], 10) };
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      block.addEventListener('dragover', e => e.preventDefault());
+      block.addEventListener('drop', e => {
+        e.preventDefault();
+        if (!draggedCerveauBlockRef || draggedCerveauBlockRef.arr !== arr) { draggedCerveauBlockRef = null; return; }
+        const targetIdx = parseInt(block.dataset[idxAttr], 10);
+        const [moved] = arr.splice(draggedCerveauBlockRef.idx, 1);
+        arr.splice(targetIdx, 0, moved);
+        draggedCerveauBlockRef = null;
+        persistCerveauData();
+        renderCerveau();
+      });
+    });
   });
 }
 

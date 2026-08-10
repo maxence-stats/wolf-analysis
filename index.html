@@ -445,6 +445,17 @@
 
 <div id="printArea"></div>
 
+<div id="scenarioZoomModal" onclick="if(event.target===this) closeScenarioZoom()">
+  <div class="zoom-panel scenario-zoom-panel">
+    <div class="zoom-panel-head">
+      <h3>Scénario — vue agrandie</h3>
+      <button class="zoom-close" onclick="closeScenarioZoom()" aria-label="Fermer">✕</button>
+    </div>
+    <div class="scenario-zoom-body" id="scenarioZoomBody"></div>
+    <div class="zoom-footer">Données fournies par Wolf Analysis<img src="https://i.postimg.cc/43WmYDB1/20260714-LOGO-WINTER-PNG.png" alt="Wolf Analysis"></div>
+  </div>
+</div>
+
 <script src="js/app.js"></script>
 </body>
 </html>

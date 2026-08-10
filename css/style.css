@@ -235,7 +235,15 @@
 
   /* Carte entreprise illustrée (image + légende + accès fiche), remplace l'ancienne puce
      texte seule — objectif : composer visuellement la phase en un coup d'œil. */
-  .cerveau-entity-card, .cerveau-freeblock{width:200px;background:var(--panel-2);border:var(--card-border);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;}
+  .cerveau-entity-card, .cerveau-freeblock{width:200px;background:var(--panel-2);border:var(--card-border);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;cursor:grab;}
+  .cerveau-entity-card:active, .cerveau-freeblock:active{cursor:grabbing;}
+  .cerveau-entity-card[data-taille="S"], .cerveau-freeblock[data-taille="S"]{width:140px;}
+  .cerveau-entity-card[data-taille="S"] .cec-image, .cerveau-freeblock[data-taille="S"] .cec-image{height:75px;}
+  .cerveau-entity-card[data-taille="L"], .cerveau-freeblock[data-taille="L"]{width:300px;}
+  .cerveau-entity-card[data-taille="L"] .cec-image, .cerveau-freeblock[data-taille="L"] .cec-image{height:180px;}
+  .cec-size-btn{background:transparent;border:none;color:var(--text-faint);cursor:pointer;font-size:12px;padding:2px;flex-shrink:0;}
+  .cec-size-btn:hover{color:var(--gold);}
+  .cec-free-actions{display:flex;align-items:center;justify-content:space-between;margin:0 10px 10px;}
   .cec-image{position:relative;height:110px;background:var(--panel);display:flex;align-items:center;justify-content:center;cursor:pointer;}
   .cec-image img{width:100%;height:100%;object-fit:cover;}
   .cec-image-plus{font-size:11.5px;color:var(--text-faint);}
@@ -260,7 +268,7 @@
   .cec-fiche-btn:hover{background:rgba(217,164,65,0.12);}
   .cec-free-text{margin:8px 10px;background:var(--panel);border:1px solid var(--hair);border-radius:6px;padding:6px 8px;color:var(--text);font-size:11.5px;outline:none;resize:vertical;min-height:50px;font-family:var(--font-body);}
   .cec-free-text:focus{border-color:var(--gold);}
-  .cec-remove-free{margin:0 10px 10px;text-align:left;font-size:11px;}
+  .cec-remove-free{margin:0;text-align:left;font-size:11px;}
   .cerveau-add-free{align-self:flex-start;background:transparent;border:1px dashed var(--hair);color:var(--text-dim);border-radius:8px;padding:6px 12px;font-size:11.5px;cursor:pointer;margin-bottom:10px;}
   .cerveau-add-free:hover{border-color:var(--gold);color:var(--gold);}
   .cerveau-add-entity input{width:100%;background:var(--panel);border:1px solid var(--hair);border-radius:8px;padding:8px 10px;color:var(--text);font-size:12.5px;outline:none;}
@@ -500,6 +508,24 @@
 
   /* ---------- ZOOM MODAL ---------- */
   #zoomModal{display:none;position:fixed;inset:0;background:rgba(4,5,7,0.78);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);z-index:1000;align-items:center;justify-content:center;padding:24px;}
+  #scenarioZoomModal{display:none;position:fixed;inset:0;background:rgba(4,5,7,0.78);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);z-index:1000;align-items:center;justify-content:center;padding:24px;}
+  .scenario-zoom-panel{width:min(920px,96vw);height:auto;max-height:94vh;overflow-y:auto;}
+  .scenario-zoom-body{display:flex;}
+  .scenario-zoom-body .scenario-card{width:100%;border-top-width:4px;}
+  .scenario-fcf-history{display:none;gap:20px;font-size:12px;color:var(--text-dim);margin:-8px 0 20px;padding-bottom:16px;border-bottom:1px solid var(--hair);}
+  .scenario-fcf-history b{color:var(--text);font-family:var(--font-mono);margin-left:5px;}
+  .scenario-card-zoomed{padding:28px;}
+  .scenario-card-zoomed .scenario-fcf-history{display:flex;}
+  .scenario-card-zoomed .scenario-title-row{margin-bottom:22px;}
+  .scenario-card-zoomed .scenario-title{font-size:22px;}
+  .scenario-card-zoomed .scenario-zoom-btn{display:none;}
+  .scenario-card-zoomed .scenario-row{margin-bottom:22px;}
+  .scenario-card-zoomed .scenario-row-head{font-size:14px;}
+  .scenario-card-zoomed .scenario-row-head .val{font-size:16px;}
+  .scenario-card-zoomed .scenario-results{grid-template-columns:repeat(4,1fr);margin:24px 0;}
+  .scenario-card-zoomed .scenario-results .r-k{font-size:11px;}
+  .scenario-card-zoomed .scenario-results .r-v{font-size:20px;}
+  .scenario-card-zoomed .scenario-chart-holder{height:420px;margin-top:10px;}
   .zoom-panel{background:var(--card-bg);border:var(--card-border);border-radius:16px;padding:22px 24px;width:min(1700px,98vw);height:97vh;max-height:97vh;display:flex;flex-direction:column;box-shadow:0 24px 60px -20px rgba(0,0,0,0.7);}
   .zoom-panel-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
   .zoom-panel-head h3{font-family:var(--font-display);font-size:18px;font-weight:600;margin:0;}
@@ -531,30 +557,37 @@
      #printArea reste invisible à l'écran en permanence ; à l'impression, tout LE
      RESTE de la page est masqué et seule cette zone s'affiche — pas de dépendance
      externe (pas de jsPDF/html2canvas), le navigateur propose "Enregistrer en PDF"
-     nativement sur la boîte de dialogue d'impression. */
+     nativement sur la boîte de dialogue d'impression. Habillage sombre + or reprenant
+     le design system de l'app (demande explicite : "ça doit ressembler fortement à
+     l'application", pas un export blanc générique) — print-color-adjust:exact force
+     l'impression des fonds de couleur (sans quoi certains navigateurs les ignorent par
+     défaut ; la case "graphismes d'arrière-plan" de la boîte de dialogue d'impression
+     doit rester cochée côté utilisateur, hors de notre contrôle CSS). */
   #printArea{display:none;}
   @media print{
     body > *:not(#printArea){display:none !important;}
-    body{background:#fff;}
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;}
+    body{background:var(--bg);}
     #printArea{
       display:block !important;
-      background:#fff;color:#111;font-family:var(--font-body);
+      background:var(--bg);color:var(--text);font-family:var(--font-body);
       padding:0;margin:0;
     }
-    .print-header{display:flex;align-items:center;gap:14px;border-bottom:2px solid #D9A441;padding-bottom:14px;margin-bottom:20px;}
-    .print-header img{height:44px;width:auto;border-radius:8px;}
-    .print-title{font-family:var(--font-display);font-size:20px;font-weight:700;color:#111;}
-    .print-subtitle{font-size:11px;color:#555;margin-top:2px;}
-    .print-section{margin-bottom:22px;page-break-inside:avoid;}
-    .print-section h3{font-family:var(--font-display);font-size:14px;font-weight:700;color:#111;border-bottom:1px solid #ddd;padding-bottom:6px;margin:0 0 10px;}
-    .print-section p{font-size:12px;line-height:1.5;color:#222;white-space:pre-wrap;margin:0 0 8px;}
+    .print-header{display:flex;align-items:center;gap:14px;border-bottom:2px solid var(--gold);padding-bottom:14px;margin-bottom:22px;}
+    .print-header img{height:46px;width:auto;border-radius:8px;}
+    .print-title{font-family:var(--font-display);font-size:21px;font-weight:700;color:var(--text);}
+    .print-subtitle{font-size:11px;color:var(--text-dim);margin-top:3px;font-family:var(--font-mono);}
+    .print-section{margin-bottom:18px;padding:16px 18px;background:var(--panel-2);border:1px solid rgba(255,255,255,0.06);border-radius:12px;page-break-inside:avoid;}
+    .print-section h3{font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--gold);border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:8px;margin:0 0 12px;}
+    .print-section p{font-size:12px;line-height:1.6;color:var(--text);white-space:pre-wrap;margin:0 0 8px;}
     .print-img-row{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0;}
-    .print-img-row img{max-width:220px;max-height:160px;object-fit:contain;border:1px solid #ddd;border-radius:6px;}
-    .print-chart-img{max-width:100%;border:1px solid #ddd;border-radius:8px;margin:8px 0;}
+    .print-img-row img{max-width:220px;max-height:160px;object-fit:contain;border-radius:8px;background:#fff;padding:4px;}
+    .print-chart-img{max-width:100%;border-radius:10px;margin:8px 0;}
     .print-table{width:100%;border-collapse:collapse;font-size:11.5px;margin:8px 0;}
-    .print-table th, .print-table td{border-bottom:1px solid #eee;padding:5px 8px;text-align:left;}
-    .print-table th{color:#555;font-weight:600;}
-    .print-footer{margin-top:24px;padding-top:10px;border-top:1px solid #ddd;font-size:10px;color:#888;text-align:right;}
-    @page{margin:16mm;}
+    .print-table th, .print-table td{border-bottom:1px solid rgba(255,255,255,0.08);padding:7px 10px;text-align:left;color:var(--text);}
+    .print-table th{color:var(--gold-2);font-weight:600;font-family:var(--font-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;}
+    .print-table tr:nth-child(even) td{background:rgba(255,255,255,0.02);}
+    .print-footer{margin-top:22px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);font-size:10px;color:var(--text-faint);text-align:right;font-family:var(--font-mono);}
+    @page{margin:14mm;background:var(--bg);}
   }
 
