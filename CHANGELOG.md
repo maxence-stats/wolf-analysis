@@ -6,6 +6,47 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 ## [Non publié]
 
 ### Ajouté
+- **Export PDF** (5 cibles) : bouton « 🖨 Exporter PDF » sur Idées de développement,
+  Watchlist, composition Wolf Portfolio, fiche Analyse développée et chaîne de valeur
+  du Cerveau numérique. Implémenté via `window.print()` + une feuille `@media print`
+  dédiée (`#printArea`), pas de librairie externe (jsPDF/html2canvas auraient ajouté
+  une dépendance CDN fragile) — le navigateur propose "Enregistrer en PDF" nativement.
+  Les graphiques Chart.js sont capturés en image (`canvas.toDataURL()`) ; le donut
+  Portfolio est reconstruit hors-écran sans les logos custom pour cet export car son
+  canvas normal est "tainté" par les logos dessinés sans CORS (voir "Pièges
+  techniques").
+- **Nouvelle source de prix historiques** : un onglet Google Sheet dédié (20 ans de
+  clôtures hebdomadaires, saisies manuellement par l'utilisateur, une paire de
+  colonnes date+clôture par entreprise) remplace le relais CORS Yahoo/Stooq comme
+  source **principale** du graphique boursier + canal de régression — celui-ci reste
+  en repli automatique pour toute entreprise absente de cet onglet. Fiabilité nette :
+  plus de dépendance à un proxy CORS public pour les 20 entreprises couvertes.
+- **Idées : archivage mensuel automatique** — à chaque ouverture du site, si un
+  nouveau mois a commencé depuis la dernière visite, l'état précédent de la liste est
+  figé silencieusement dans un historique consultable (pas de vrai cron possible sans
+  backend, mais plus besoin de déclencher l'archivage à la main). La liste active
+  n'est jamais vidée.
+- **Classement en 4 colonnes** : la liste "Rendement du dividende" est coupée en 2
+  colonnes pour ne plus s'étirer inutilement en hauteur ; "Opportunité de
+  valorisation" est séparée en "Sous-valorisées" / "Survalorisées" selon le signe de
+  l'écart, au lieu d'une seule liste triée mêlant les deux.
+- **Valorisation** : prix actuel affiché en tuile de résumé, bouton agrandir sur
+  chacun des 3 graphiques de scénario (réutilise la modale de zoom générique).
+- **Cerveau numérique : cartes entreprise illustrées dans les 4 phases** — chaque
+  entreprise ajoutée à une phase (Amont/Transformation/...) est désormais une carte
+  avec sa propre image de couverture (upload ou lien collé, éditable directement,
+  sans ouvrir de fenêtre), une légende courte, et un bouton "📇 Ouvrir la fiche" net
+  et cliquable (l'ancien design n'avait qu'une puce texte+logo minuscule). Ajout d'une
+  **zone libre par phase** pour des blocs image+texte non rattachés à une entreprise
+  précise. Le champ "Ajouter une entreprise" propose désormais une autocomplétion sur
+  les entreprises déjà suivies (logo garanti), tout en gardant la saisie libre.
+- **Correction** : le bouton "📊" de la fiche journal (Cerveau numérique) pour ouvrir
+  l'Analyse développée n'ouvrait plus jamais la bonne entreprise (toujours "null") —
+  `closeFiche()` remettait `ficheEntite` à `null` avant que ce nom soit lu comme
+  argument de `openAnalyse()`. Corrigé en capturant le nom dans une variable locale
+  avant l'appel à `closeFiche()`.
+
+### Ajouté (précédent)
 - **Analyse développée, suite** : graphique camembert ajouté pour l'**actionnariat**
   principal (même mécanique que revenus par pays/secteur), en plus des deux
   graphiques revenus déjà existants — les 3 graphiques utilisent désormais un même

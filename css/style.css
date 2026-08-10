@@ -106,7 +106,8 @@
   .scenario-card.optimiste{border-top-color:var(--green);}
   .scenario-card.realiste{border-top-color:var(--blue);}
   .scenario-card.pessimiste{border-top-color:var(--red);}
-  .scenario-title{font-family:var(--font-display);font-weight:700;font-size:16px;margin:0 0 16px;}
+  .scenario-title-row{display:flex;align-items:center;justify-content:space-between;margin:0 0 16px;}
+  .scenario-title{font-family:var(--font-display);font-weight:700;font-size:16px;margin:0;}
   .scenario-card.optimiste .scenario-title{color:var(--green);}
   .scenario-card.realiste .scenario-title{color:var(--blue);}
   .scenario-card.pessimiste .scenario-title{color:var(--red);}
@@ -177,6 +178,8 @@
   .classement-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;}
   .classement-card{background:var(--card-bg);border:var(--card-border);border-radius:14px;padding:20px 22px;box-shadow:var(--shadow-card);}
   .classement-card h3{font-family:var(--font-display);font-size:16px;font-weight:700;margin:0 0 14px;}
+  .classement-subgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 18px;}
+  .classement-sublabel{font-family:var(--font-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);margin-bottom:6px;}
   .classement-list{display:flex;flex-direction:column;gap:4px;}
   .classement-row{display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:10px;cursor:pointer;transition:background .12s ease;}
   .classement-row:hover{background:var(--panel-2);}
@@ -189,6 +192,9 @@
   .classement-value.neg{color:var(--red);}
   @media (max-width:1300px){
     .classement-grid{grid-template-columns:1fr;}
+  }
+  @media (max-width:640px){
+    .classement-subgrid{grid-template-columns:1fr;gap:14px 0;}
   }
 
   /* ---------- WATCHLIST ---------- */
@@ -224,12 +230,39 @@
   .cerveau-chain-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(240px, 1fr));gap:14px;}
   .cerveau-phase-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;}
   .cerveau-phase{padding:22px;min-height:420px;display:flex;flex-direction:column;}
-  .cerveau-entity-list{display:flex;flex-direction:column;gap:10px;min-height:20px;margin-bottom:14px;flex:1;}
-  .cerveau-entity-chip{display:flex;align-items:center;gap:10px;background:var(--panel-2);border:var(--card-border);border-radius:10px;padding:9px 12px;cursor:pointer;font-size:13px;}
-  .cerveau-entity-chip:hover{border-color:var(--gold);}
-  .cerveau-entity-chip img{width:28px;height:28px;object-fit:contain;background:#fff;border-radius:4px;flex-shrink:0;}
-  .cerveau-entity-initial{width:28px;height:28px;border-radius:4px;background:var(--hair);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;}
-  .cerveau-note-badge{margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--text-faint);}
+  .cerveau-entity-list{display:flex;flex-wrap:wrap;gap:12px;min-height:20px;margin-bottom:10px;}
+  .cerveau-freeblock-list{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:10px;}
+
+  /* Carte entreprise illustrée (image + légende + accès fiche), remplace l'ancienne puce
+     texte seule — objectif : composer visuellement la phase en un coup d'œil. */
+  .cerveau-entity-card, .cerveau-freeblock{width:200px;background:var(--panel-2);border:var(--card-border);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;}
+  .cec-image{position:relative;height:110px;background:var(--panel);display:flex;align-items:center;justify-content:center;cursor:pointer;}
+  .cec-image img{width:100%;height:100%;object-fit:cover;}
+  .cec-image-plus{font-size:11.5px;color:var(--text-faint);}
+  .cec-img-url, .cec-img-remove{position:absolute;top:5px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(4,5,7,0.65);color:var(--text);font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+  .cec-img-url{right:5px;}
+  .cec-img-remove{right:31px;}
+  .cec-img-url:hover, .cec-img-remove:hover{background:rgba(4,5,7,0.9);}
+  .cec-url-row{display:flex;gap:6px;padding:8px;background:var(--panel);}
+  .cec-url-input{flex:1;min-width:0;background:var(--panel-2);border:1px solid var(--hair);border-radius:6px;padding:5px 8px;color:var(--text);font-size:11.5px;outline:none;}
+  .cec-url-ok{background:var(--gold);border:none;border-radius:6px;padding:0 10px;font-size:11.5px;font-weight:700;cursor:pointer;color:#1a1305;}
+  .cec-head{display:flex;align-items:center;gap:7px;padding:9px 10px 4px;}
+  .cec-mini-logo{width:20px;height:20px;object-fit:contain;background:#fff;border-radius:4px;flex-shrink:0;}
+  .cerveau-entity-initial{width:20px;height:20px;border-radius:4px;background:var(--hair);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;}
+  .cec-name{flex:1;font-size:12.5px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cec-name:hover{color:var(--gold);}
+  .cerveau-note-badge{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);}
+  .cec-remove{background:transparent;border:none;color:var(--text-faint);cursor:pointer;font-size:12px;padding:2px;flex-shrink:0;}
+  .cec-remove:hover{color:var(--red);}
+  .cec-legend{margin:2px 10px 8px;background:var(--panel);border:1px solid var(--hair);border-radius:6px;padding:5px 8px;color:var(--text);font-size:11.5px;outline:none;}
+  .cec-legend:focus{border-color:var(--gold);}
+  .cec-fiche-btn{margin:0 10px 10px;background:transparent;border:1px solid var(--gold);color:var(--gold);border-radius:8px;padding:7px 0;font-size:12px;font-weight:600;cursor:pointer;}
+  .cec-fiche-btn:hover{background:rgba(217,164,65,0.12);}
+  .cec-free-text{margin:8px 10px;background:var(--panel);border:1px solid var(--hair);border-radius:6px;padding:6px 8px;color:var(--text);font-size:11.5px;outline:none;resize:vertical;min-height:50px;font-family:var(--font-body);}
+  .cec-free-text:focus{border-color:var(--gold);}
+  .cec-remove-free{margin:0 10px 10px;text-align:left;font-size:11px;}
+  .cerveau-add-free{align-self:flex-start;background:transparent;border:1px dashed var(--hair);color:var(--text-dim);border-radius:8px;padding:6px 12px;font-size:11.5px;cursor:pointer;margin-bottom:10px;}
+  .cerveau-add-free:hover{border-color:var(--gold);color:var(--gold);}
   .cerveau-add-entity input{width:100%;background:var(--panel);border:1px solid var(--hair);border-radius:8px;padding:8px 10px;color:var(--text);font-size:12.5px;outline:none;}
   .cerveau-add-entity input:focus{border-color:var(--gold);}
   @media (max-width:900px){ .cerveau-phase-grid{grid-template-columns:1fr;} }
@@ -388,7 +421,7 @@
   @media (max-width:760px){ .alerte-row{grid-template-columns:36px 1fr;grid-template-rows:auto auto;} }
 
   /* ---------- IDÉES DE DÉVELOPPEMENT ---------- */
-  .idees-actions{margin-bottom:16px;}
+  .idees-actions{display:flex;gap:10px;margin-bottom:16px;}
   .idees-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
   .idees-column{background:var(--card-bg);border:var(--card-border);border-radius:14px;padding:16px;box-shadow:var(--shadow-card);}
   .idees-column h3{font-family:var(--font-display);font-size:14px;font-weight:700;margin:0 0 12px;}
@@ -406,6 +439,15 @@
   .idee-add-btn:hover{border-color:var(--gold);color:var(--text);}
   @media (max-width:1300px){ .idees-grid{grid-template-columns:repeat(2,1fr);} }
   @media (max-width:760px){ .idees-grid{grid-template-columns:1fr;} }
+
+  .idees-archive{margin-top:24px;}
+  .idees-archive-title{font-family:var(--font-display);font-size:14px;font-weight:700;margin:0 0 12px;color:var(--text-dim);}
+  .idees-archive-months{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;}
+  .idees-archive-month{background:var(--panel-2);border:1px solid var(--hair);color:var(--text-dim);border-radius:20px;padding:6px 14px;font-size:12px;cursor:pointer;}
+  .idees-archive-month:hover{border-color:var(--gold);color:var(--text);}
+  .idees-archive-month.active{border-color:var(--gold);color:var(--gold);background:rgba(217,164,65,0.1);}
+  .idees-archive-view{opacity:0.85;}
+  .idee-item.readonly{background:transparent;padding:5px 8px;}
 
   /* ---------- GAUGE ---------- */
   .gauge-card{margin-top:16px;padding:22px 26px 20px;background:var(--card-bg);border:var(--card-border);border-radius:14px;box-shadow:var(--shadow-card);}
@@ -483,5 +525,36 @@
     .price-block{text-align:left;padding-left:0;}
     .header{flex-direction:column;align-items:flex-start;}
     .wrap{padding:20px 16px 60px;}
+  }
+
+  /* ---------- EXPORT PDF (window.print() + zone dédiée) ----------
+     #printArea reste invisible à l'écran en permanence ; à l'impression, tout LE
+     RESTE de la page est masqué et seule cette zone s'affiche — pas de dépendance
+     externe (pas de jsPDF/html2canvas), le navigateur propose "Enregistrer en PDF"
+     nativement sur la boîte de dialogue d'impression. */
+  #printArea{display:none;}
+  @media print{
+    body > *:not(#printArea){display:none !important;}
+    body{background:#fff;}
+    #printArea{
+      display:block !important;
+      background:#fff;color:#111;font-family:var(--font-body);
+      padding:0;margin:0;
+    }
+    .print-header{display:flex;align-items:center;gap:14px;border-bottom:2px solid #D9A441;padding-bottom:14px;margin-bottom:20px;}
+    .print-header img{height:44px;width:auto;border-radius:8px;}
+    .print-title{font-family:var(--font-display);font-size:20px;font-weight:700;color:#111;}
+    .print-subtitle{font-size:11px;color:#555;margin-top:2px;}
+    .print-section{margin-bottom:22px;page-break-inside:avoid;}
+    .print-section h3{font-family:var(--font-display);font-size:14px;font-weight:700;color:#111;border-bottom:1px solid #ddd;padding-bottom:6px;margin:0 0 10px;}
+    .print-section p{font-size:12px;line-height:1.5;color:#222;white-space:pre-wrap;margin:0 0 8px;}
+    .print-img-row{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0;}
+    .print-img-row img{max-width:220px;max-height:160px;object-fit:contain;border:1px solid #ddd;border-radius:6px;}
+    .print-chart-img{max-width:100%;border:1px solid #ddd;border-radius:8px;margin:8px 0;}
+    .print-table{width:100%;border-collapse:collapse;font-size:11.5px;margin:8px 0;}
+    .print-table th, .print-table td{border-bottom:1px solid #eee;padding:5px 8px;text-align:left;}
+    .print-table th{color:#555;font-weight:600;}
+    .print-footer{margin-top:24px;padding-top:10px;border-top:1px solid #ddd;font-size:10px;color:#888;text-align:right;}
+    @page{margin:16mm;}
   }
 

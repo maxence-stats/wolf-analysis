@@ -230,6 +230,7 @@
           <div class="chart-card-head">
             <div><h3>Répartition</h3><p>Poids de chaque position, cash inclus</p></div>
             <div class="chart-card-actions">
+              <button class="zoom-btn" onclick="exportPortfolioAsPdf()" title="Exporter PDF" aria-label="Exporter PDF">🖨</button>
               <button class="zoom-btn" onclick="openPortfolioZoom()" aria-label="Agrandir">⤢</button>
             </div>
           </div>
@@ -263,6 +264,7 @@
         (CAGR FCF) et le multiple (médiane P/FCF) de chaque scénario — Prix Juste = FCF × Médiane.</p>
 
       <div class="ratio-grid valo-summary">
+        <div class="ratio-card"><div class="k">Prix actuel</div><div class="v" id="voPrixActuel">—</div><div class="sub">cours au dernier exercice</div></div>
         <div class="ratio-card"><div class="k">FCF actuel</div><div class="v" id="voFcfActuel">—</div><div class="sub">dernier exercice, par action</div></div>
         <div class="ratio-card"><div class="k">CAGR FCF (historique)</div><div class="v" id="voCagrHist">—</div><div class="sub">croissance sur 10 ans</div></div>
         <div class="ratio-card"><div class="k">Médiane P/FCF (historique)</div><div class="v" id="voMedianeHist">—</div><div class="sub">multiple médian sur 10 ans</div></div>
@@ -294,11 +296,23 @@
       <div class="classement-grid">
         <div class="classement-card">
           <h3>Meilleur rendement du dividende</h3>
-          <div class="classement-list" id="classementDiv"></div>
+          <div class="classement-subgrid">
+            <div class="classement-list" id="classementDivLeft"></div>
+            <div class="classement-list" id="classementDivRight"></div>
+          </div>
         </div>
         <div class="classement-card">
           <h3>Meilleure opportunité de valorisation</h3>
-          <div class="classement-list" id="classementValo"></div>
+          <div class="classement-subgrid">
+            <div class="classement-sublist">
+              <div class="classement-sublabel">Sous-valorisées</div>
+              <div class="classement-list" id="classementValoSous"></div>
+            </div>
+            <div class="classement-sublist">
+              <div class="classement-sublabel">Survalorisées</div>
+              <div class="classement-list" id="classementValoSurvalo"></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -313,6 +327,7 @@
           <input type="text" id="watchlistSearch" class="search-input" placeholder="Chercher une entreprise dans la liste…" autocomplete="off">
         </div>
         <button class="zoom-btn objectifs-export" id="watchlistExportBtn">⭳ Exporter</button>
+        <button class="zoom-btn objectifs-export" id="watchlistExportPdfBtn">🖨 Exporter PDF</button>
       </div>
 
       <div class="watchlist-pool" id="watchlistPool"></div>
@@ -407,6 +422,7 @@
       <button class="cerveau-btn-cancel" id="analyseDuplicateBtn">⧉ Dupliquer cette version</button>
       <button class="cerveau-btn-cancel" id="analyseNewBtn">+ Nouvelle fiche vierge</button>
       <button class="cerveau-btn-cancel" id="analyseDeleteBtn">🗑 Supprimer cette fiche</button>
+      <button class="cerveau-btn-cancel" id="analyseExportPdfBtn">🖨 Exporter PDF</button>
       <span class="analyse-updated" id="analyseUpdatedLabel"></span>
       <button class="refresh-btn" id="analyseSaveBtn">💾 Enregistrer</button>
     </div>
@@ -424,6 +440,10 @@
     <img id="imageZoomImg" src="" alt="">
   </div>
 </div>
+
+<input type="file" id="cerveauImageFileInput" accept="image/*" hidden>
+
+<div id="printArea"></div>
 
 <script src="js/app.js"></script>
 </body>

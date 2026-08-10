@@ -36,6 +36,17 @@ const PCOL = {
 };
 let portfolioData = { holdings:[], monthly:[], capitalInvesti:null, valorisationTotale:null, gainsEuros:null, gainsPct:null, cashEuros:null };
 
+/* Onglet historique de prix dédié (20 ans, saisi manuellement par l'utilisateur pour
+   contourner le manque de fiabilité du relais CORS Yahoo/Stooq) — même fichier publié,
+   gid différent. Mise en page : row1 = nom d'entreprise (colonnes paires 0-indexées A,C,E…),
+   row2 = libellés "Date,Close" (sans intérêt), row3+ = données. Chaque entreprise a SA
+   PROPRE colonne de dates juste avant sa colonne de clôtures (pas d'axe de dates partagé —
+   les historiques démarrent à des dates différentes selon l'entreprise), donc on apparie
+   toujours date et prix de la même paire de colonnes, jamais contre une colonne A globale. */
+const PRICE_HISTORY_GID = "1420785203";
+const PRICE_HISTORY_CSV_URL = `https://docs.google.com/spreadsheets/d/e/${PUBLISHED_ID}/pub?gid=${PRICE_HISTORY_GID}&single=true&output=csv`;
+let priceHistoryData = {}; // { nomBrutDuSheet: [{date:'YYYY-MM-DD', close:number}, ...] tri croissant }
+
 /* ============================================================
    CHARGEMENT DES DONNÉES — 2 méthodes, avec repli automatique
    1) fetch() sur le CSV publié — la méthode standard une fois hébergé en ligne
@@ -249,6 +260,7 @@ function handleCsvRows(rows){
   setSync('ok');
 
   loadPortfolioData();
+  loadPriceHistoryData();
 }
 
 /* ============================================================
@@ -378,8 +390,163 @@ function handlePortfolioRows(rows){
   renderPortfolio();
 }
 
+/* ============================================================
+   HISTORIQUE DE PRIX DÉDIÉ — remplace le relais CORS Yahoo/Stooq comme source
+   PRINCIPALE du graphique boursier (celui-ci reste en repli pour toute entreprise
+   absente de cet onglet). Même chargement double CSV+gviz que les autres sources,
+   avec son propre responseHandler gviz (3e source gviz simultanée sur la page —
+   voir "Pièges techniques" point 9, chaque source gviz supplémentaire a besoin du
+   sien, jamais du point d'entrée global partagé).
+   ============================================================ */
+let priceHistoryLoadSettled = false;
+
+function loadPriceHistoryData(){
+  priceHistoryLoadSettled = false;
+  tryFetchPriceHistoryCSV();
+  tryGvizPriceHistoryScript();
+  setTimeout(() => { priceHistoryLoadSettled = true; }, 9000);
+}
+
+function tryFetchPriceHistoryCSV(){
+  const controller = new AbortController();
+  const hardTimeout = setTimeout(() => controller.abort(), 8000);
+  fetch(PRICE_HISTORY_CSV_URL + '&_=' + Date.now(), { signal: controller.signal, cache:'no-store' })
+    .then(async res => {
+      if (priceHistoryLoadSettled) return;
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const text = await res.text();
+      if (text.trim().toLowerCase().startsWith('<!doctype') || text.trim().toLowerCase().startsWith('<html')){
+        throw new Error('Réponse HTML au lieu de CSV');
+      }
+      const parsed = Papa.parse(text.trim(), { skipEmptyLines:false });
+      if (!parsed.data || parsed.data.length < 3) throw new Error('CSV vide ou illisible');
+      if (priceHistoryLoadSettled) return;
+      priceHistoryLoadSettled = true;
+      clearTimeout(hardTimeout);
+      handlePriceHistoryRows(parsed.data);
+    })
+    .catch(() => { clearTimeout(hardTimeout); });
+}
+
+function tryGvizPriceHistoryScript(){
+  const old = document.getElementById('gvizPriceHistoryScript');
+  if (old) old.remove();
+
+  window.__handlePriceHistoryGviz = function(data){
+    if (priceHistoryLoadSettled) return;
+    try{
+      if (!data || !data.table || !data.table.cols) throw new Error('table vide');
+      const rows = [data.table.cols.map(c => c.label)].concat(
+        (data.table.rows || []).map(r => (r.c || []).map(cell => cell ? (cell.f != null ? cell.f : cell.v) : ''))
+      );
+      priceHistoryLoadSettled = true;
+      handlePriceHistoryRows(rows);
+    }catch(e){ /* silencieux : le repli CSV ou le timeout de secours prendront le relais */ }
+  };
+
+  const script = document.createElement('script');
+  script.id = 'gvizPriceHistoryScript';
+  script.src = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json;responseHandler:__handlePriceHistoryGviz&gid=${PRICE_HISTORY_GID}&headers=1&_=${Date.now()}`;
+  document.body.appendChild(script);
+}
+
+// Format du Sheet (voir commentaire sur PRICE_HISTORY_GID) : row0 = noms d'entreprise
+// (colonnes paires 0-indexées), row1 = libellés "Date,Close" sans intérêt, row2+ =
+// données. Chaque entreprise a SA PROPRE paire [colonne date, colonne clôture] — jamais
+// d'axe de dates partagé entre entreprises (leurs historiques démarrent à des dates
+// différentes), donc on n'apparie jamais une clôture à autre chose qu'à la date de SA
+// propre colonne.
+function parseFrenchSheetDate(str){
+  const m = String(str || '').match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (!m) return null;
+  return m[3] + '-' + m[2] + '-' + m[1]; // YYYY-MM-DD, même convention que Yahoo/Stooq
+}
+
+function handlePriceHistoryRows(rows){
+  if (!rows || rows.length < 3) return;
+  const header = rows[0];
+  const nbEntreprises = Math.floor(header.length / 2);
+  const result = {};
+
+  for (let i = 0; i < nbEntreprises; i++){
+    const nom = parseStr(header[2 * i]);
+    if (!nom) continue;
+    const dateCol = 2 * i, closeCol = 2 * i + 1;
+    const series = [];
+    for (let r = 2; r < rows.length; r++){
+      const row = rows[r];
+      if (!row) continue;
+      const date = parseFrenchSheetDate(row[dateCol]);
+      const close = parseNum(row[closeCol]);
+      if (date && close != null) series.push({ date, close });
+    }
+    if (series.length) result[nom] = series.sort((a, b) => a.date < b.date ? -1 : 1);
+  }
+
+  priceHistoryData = result;
+
+  // Si l'entreprise actuellement affichée vient d'obtenir sa source dédiée (chargée en
+  // parallèle du reste, peut arriver après le premier rendu de l'onglet Analyse), on
+  // relance le graphique boursier pour basculer dessus — stockRequestId invalide
+  // proprement toute requête Yahoo/Stooq encore en vol pour l'ancienne source.
+  if (activeCompany && companies[activeCompany]){
+    const latest = companies[activeCompany][companies[activeCompany].length - 1];
+    loadStockChart(latest.ticker, activeCompany);
+  }
+}
+
+function findPriceHistoryForCompany(nom){
+  const target = stripAccents(nom.toLowerCase());
+  const key = Object.keys(priceHistoryData).find(k => stripAccents(k.toLowerCase()) === target);
+  return key ? priceHistoryData[key] : null;
+}
+
+function fetchPriceHistorySeries(nom){
+  const series = findPriceHistoryForCompany(nom);
+  if (!series || series.length < 50) return null;
+  return resampleWeekly(series.map(p => p.date), series.map(p => p.close));
+}
+
 const PORTFOLIO_COLORS = ['#D9A441','#4A9FE0','#F0C877','#7DBEEA','#B8842E','#2E6FA3','#F5DDA3','#A8D4F0','#8A6420','#1F4E73'];
 const WOLF_LOGO_URL = 'https://i.postimg.cc/43WmYDB1/20260714-LOGO-WINTER-PNG.png';
+
+/* ============================================================
+   EXPORT PDF — window.print() + zone dédiée (#printArea), pas de librairie externe
+   (jsPDF/html2canvas auraient ajouté une dépendance CDN fragile pour un site qui a
+   déjà dû contourner ce problème pour Chart.js — voir "Pièges techniques"). Le
+   bouton "Exporter PDF" construit le HTML imprimable dans #printArea puis déclenche
+   window.print() ; la feuille @media print (style.css) masque tout le reste de la
+   page et n'affiche que cette zone — le navigateur propose "Enregistrer en PDF"
+   nativement dans sa boîte de dialogue d'impression.
+   ============================================================ */
+function printImagesRowHtml(images){
+  if (!images || !images.length) return '';
+  return `<div class="print-img-row">${images.map(src => `<img src="${src}" alt="">`).join('')}</div>`;
+}
+function exportSectionAsPdf(title, subtitle, bodyHtml){
+  const area = document.getElementById('printArea');
+  const dateLabel = new Date().toLocaleDateString('fr-FR', { year:'numeric', month:'long', day:'numeric' });
+  area.innerHTML = `
+    <div class="print-header">
+      <img src="${WOLF_LOGO_URL}" alt="">
+      <div>
+        <div class="print-title">${title}</div>
+        <div class="print-subtitle">${subtitle ? subtitle + ' — ' : ''}${dateLabel}</div>
+      </div>
+    </div>
+    ${bodyHtml}
+    <div class="print-footer">Wolf Analysis — document généré automatiquement</div>`;
+  window.print();
+}
+// Capture un canvas Chart.js vivant en image (le canvas lui-même ne peut pas être
+// déplacé/cloné dans #printArea sans perdre son rendu — Chart.js dessine sur un
+// contexte précis, une copie DOM du <canvas> serait vierge).
+function chartCanvasToImgHtml(canvasId, altLabel){
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return '';
+  try{ return `<img class="print-chart-img" src="${canvas.toDataURL('image/png')}" alt="${altLabel || ''}">`; }
+  catch(e){ return ''; } // canvas taint (image cross-origin) — on omet simplement l'image
+}
 
 function portfolioEntityLogo(nom){
   const match = Object.keys(companies).find(n => stripAccents(n.toLowerCase()) === stripAccents(nom.toLowerCase()));
@@ -578,6 +745,51 @@ function renderPortfolioHoldingsList(){
     }).join('') : '<div class="objectifs-empty">Données du portefeuille indisponibles pour l\'instant.</div>';
 }
 
+// Le donut affiché à l'écran dessine les logos des positions directement sur son canvas
+// sans crossOrigin (voir portfolioSegmentLogosPlugin — volontaire, sinon les logos sans
+// en-tête CORS comme Air Liquide ne se chargeraient plus). Ça "tainte" ce canvas : impossible
+// d'en extraire une image (toDataURL lève SecurityError). Pour le PDF, on reconstruit donc un
+// graphique jetable hors-écran, sans les logos custom (juste les segments + légende), qui lui
+// n'est jamais taintée puisqu'il ne dessine aucune image externe.
+function buildPortfolioExportChartImg(holdings){
+  const canvas = document.createElement('canvas');
+  canvas.width = 640; canvas.height = 420;
+  const chart = new Chart(canvas.getContext('2d'), {
+    type:'doughnut',
+    data:{ labels: holdings.map(h => h.nom), datasets:[{ data: holdings.map(h => h.valorisation), backgroundColor: holdings.map((_, i) => PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length]), borderColor:'#fff', borderWidth:2 }] },
+    options:{ responsive:false, animation:false, plugins:{ legend:{ position:'right', labels:{ boxWidth:10, font:{ size:11 } } } } }
+  });
+  let dataUrl = '';
+  try{ dataUrl = canvas.toDataURL('image/png'); }catch(e){ /* improbable ici, pas d'image externe dessinée */ }
+  chart.destroy();
+  return dataUrl ? `<img class="print-chart-img" src="${dataUrl}" alt="Répartition du portefeuille">` : '';
+}
+
+function exportPortfolioAsPdf(){
+  const summary = `<div class="print-section"><h3>Résumé</h3>
+    <table class="print-table"><tbody>
+      <tr><th>Capital investi</th><td>${document.getElementById('pfCapitalInvesti').textContent}</td></tr>
+      <tr><th>Valorisation actuelle</th><td>${document.getElementById('pfValorisation').textContent}</td></tr>
+      <tr><th>Cash disponible</th><td>${document.getElementById('pfCash').textContent}</td></tr>
+      <tr><th>Gains / pertes</th><td>${document.getElementById('pfGainsEuros').textContent}</td></tr>
+      <tr><th>Performance</th><td>${document.getElementById('pfGainsPct').textContent}</td></tr>
+    </tbody></table></div>`;
+
+  const holdingsForChart = portfolioData.holdings.filter(h => h.valorisation != null && h.valorisation > 0);
+  const chartImg = buildPortfolioExportChartImg(holdingsForChart);
+  const chartSection = chartImg ? `<div class="print-section"><h3>Répartition</h3>${chartImg}</div>` : '';
+
+  const holdings = portfolioData.holdings.filter(h => h.valorisation != null).slice().sort((a, b) => b.valorisation - a.valorisation);
+  const total = holdings.reduce((s, h) => s + h.valorisation, 0);
+  const rows = holdings.map(h => {
+    const pct = total ? (h.valorisation / total * 100) : 0;
+    return `<tr><td>${h.nom}</td><td>${pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</td><td>${h.perf != null ? (h.perf >= 0 ? '+' : '') + fmtPct(h.perf) : '—'}</td></tr>`;
+  }).join('');
+  const table = `<div class="print-section"><h3>Positions</h3><table class="print-table"><thead><tr><th>Entreprise</th><th>Poids</th><th>Performance</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+
+  exportSectionAsPdf('Wolf Portfolio — Composition', null, summary + chartSection + table);
+}
+
 let portfolioVsSpxChart = null;
 function renderPortfolioVsSpx(){
   const canvas = document.getElementById('chartPortfolioVsSpx');
@@ -746,9 +958,11 @@ function populateClassementSecteurFilter(){
 }
 
 function renderClassement(){
-  const divBox = document.getElementById('classementDiv');
-  const valoBox = document.getElementById('classementValo');
-  if (!divBox || !valoBox) return;
+  const divLeftBox = document.getElementById('classementDivLeft');
+  const divRightBox = document.getElementById('classementDivRight');
+  const valoSousBox = document.getElementById('classementValoSous');
+  const valoSurvaloBox = document.getElementById('classementValoSurvalo');
+  if (!divLeftBox || !valoSousBox) return;
   populateClassementSecteurFilter();
 
   const secteurFiltre = document.getElementById('classementSecteurFilter').value;
@@ -762,19 +976,27 @@ function renderClassement(){
   }).filter(r => !secteurFiltre || r.secteurKey === secteurFiltre);
 
   const byDiv = rows.filter(r => r.rendementDiv != null).sort((a, b) => b.rendementDiv - a.rendementDiv);
-  const byValo = rows.filter(r => r.ecartValeur != null).sort((a, b) => a.ecartValeur - b.ecartValeur);
+  const half = Math.ceil(byDiv.length / 2);
+  const divLeft = byDiv.slice(0, half);
+  const divRight = byDiv.slice(half);
+  const empty = '<div class="objectifs-empty">Aucune donnée disponible pour ce secteur.</div>';
 
-  divBox.innerHTML = byDiv.length
-    ? byDiv.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.rendementDiv))).join('')
-    : '<div class="objectifs-empty">Aucune donnée disponible pour ce secteur.</div>';
+  divLeftBox.innerHTML = divLeft.length ? divLeft.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.rendementDiv))).join('') : empty;
+  divRightBox.innerHTML = divRight.map((r, i) => classementRowHtml(r.nom, r.logo, half + i + 1, fmtPct(r.rendementDiv))).join('');
 
-  valoBox.innerHTML = byValo.length
-    ? byValo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartValeur * 100), r.ecartValeur < 0 ? 'pos' : 'neg')).join('')
-    : '<div class="objectifs-empty">Aucune donnée disponible pour ce secteur.</div>';
+  const sousValo = rows.filter(r => r.ecartValeur != null && r.ecartValeur < 0).sort((a, b) => a.ecartValeur - b.ecartValeur);
+  const survalo = rows.filter(r => r.ecartValeur != null && r.ecartValeur >= 0).sort((a, b) => a.ecartValeur - b.ecartValeur);
+
+  valoSousBox.innerHTML = sousValo.length
+    ? sousValo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartValeur * 100), 'pos')).join('')
+    : '<div class="objectifs-empty">Aucune entreprise sous-valorisée.</div>';
+  valoSurvaloBox.innerHTML = survalo.length
+    ? survalo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartValeur * 100), 'neg')).join('')
+    : '<div class="objectifs-empty">Aucune entreprise survalorisée.</div>';
 }
 
 function initClassement(){
-  ['classementDiv', 'classementValo'].forEach(id => {
+  ['classementDivLeft', 'classementDivRight', 'classementValoSous', 'classementValoSurvalo'].forEach(id => {
     const box = document.getElementById(id);
     if (!box) return;
     box.addEventListener('click', e => {
@@ -936,12 +1158,17 @@ function renderCompany(nom){
   setBadge('badgeFcf', 'CAGR FCF 10a', latest.cagrFcf10);
   setBadge('badgeActions', 'CAGR actions 20a', latest.cagrActions);
 
-  loadStockChart(latest.ticker);
   renderValorisation(nom);
 
   const series = k => hist.map(r => r[k]);
 
+  // destroyCharts() vide chartInstances en bloc — appelé avant loadStockChart() pour ne
+  // pas effacer le graphique boursier juste après sa création (piège révélé par la
+  // nouvelle source de prix synchrone : contrairement à l'ancien relais Yahoo/Stooq,
+  // toujours asynchrone, elle peut créer chartInstances.stock avant même que
+  // destroyCharts() ne s'exécute plus loin dans cette fonction).
   destroyCharts();
+  loadStockChart(latest.ticker, nom);
 
   chartInstances.div = makeChart('div', 'chartDiv', {
     type:'bar',
@@ -1225,11 +1452,26 @@ function setStockSourceNote(text){
   if (el) el.textContent = text;
 }
 
-async function loadStockChart(ticker){
+async function loadStockChart(ticker, nom){
   const statusEl = document.getElementById('stockStatus');
   const myId = ++stockRequestId;
   stockFull = null;
   if (chartInstances.stock){ chartInstances.stock.destroy(); delete chartInstances.stock; }
+
+  // Source principale : l'onglet historique dédié du Sheet (fiable, pas de CORS) —
+  // le relais Yahoo/Stooq ci-dessous ne sert que de repli pour une entreprise absente
+  // de cet onglet.
+  if (nom){
+    const sheetSeries = fetchPriceHistorySeries(nom);
+    if (sheetSeries){
+      const sma = sheetSeries.closes.map((_, i) => i < 199 ? null : average(sheetSeries.closes.slice(i - 199, i + 1)));
+      stockFull = { dates: sheetSeries.dates, closes: sheetSeries.closes, sma };
+      statusEl.style.display = 'none';
+      setStockSourceNote('Source : historique Wolf Analysis (Google Sheet)');
+      renderStockChart();
+      return;
+    }
+  }
 
   if (!ticker){
     statusEl.textContent = 'Ticker manquant pour cette entreprise, impossible de charger le cours.';
@@ -1484,7 +1726,10 @@ function computeScenario(fcfActuel, prixActuel, cagr, multiple){
 function scenarioCardHtml(s){
   return `
     <div class="scenario-card ${s.key}" data-key="${s.key}">
-      <h3 class="scenario-title">${s.label}</h3>
+      <div class="scenario-title-row">
+        <h3 class="scenario-title">${s.label}</h3>
+        <button class="zoom-btn scenario-zoom-btn" data-zoom-scenario="${s.key}" title="Agrandir">⤢</button>
+      </div>
       <div class="scenario-row fixe">
         <div class="scenario-row-head"><span>FCF Actuel (Fixe)</span><span class="val" id="vo-${s.key}-fcf">—</span></div>
       </div>
@@ -1516,6 +1761,7 @@ function renderValorisation(nom){
   const cagrHist = latest.cagrFcf10;
   const medianeHist = latest.medianePFCF;
 
+  document.getElementById('voPrixActuel').textContent = prixActuel != null ? fmtEUR(prixActuel) : 'N/D';
   document.getElementById('voFcfActuel').textContent = fcfActuel != null ? fmtEUR(fcfActuel) : 'N/D';
   document.getElementById('voCagrHist').textContent = cagrHist != null ? fmtPct(cagrHist) : 'N/D';
   document.getElementById('voMedianeHist').textContent = medianeHist != null ? medianeHist.toLocaleString('fr-FR', {minimumFractionDigits:1}) + 'x' : 'N/D';
@@ -1532,7 +1778,11 @@ function renderValorisation(nom){
   Object.values(scenarioCharts).forEach(ch => ch && ch.destroy());
   scenarioCharts = {};
 
-  document.getElementById('scenarioGrid').innerHTML = SCENARIOS.map(scenarioCardHtml).join('');
+  const scenarioGrid = document.getElementById('scenarioGrid');
+  scenarioGrid.innerHTML = SCENARIOS.map(scenarioCardHtml).join('');
+  scenarioGrid.querySelectorAll('[data-zoom-scenario]').forEach(btn => {
+    btn.addEventListener('click', () => openScenarioZoom(btn.dataset.zoomScenario));
+  });
 
   SCENARIOS.forEach(s => wireScenarioCard(s, hist, fcfActuel, prixActuel));
 
@@ -1580,7 +1830,7 @@ function updateScenarioCard(s, hist, fcfActuel, prixActuel){
   renderScenarioChart(s, hist, prixJusteSim, prixEst5A);
 }
 
-function renderScenarioChart(s, hist, prixJusteSim, prixEst5A){
+function buildScenarioChartConfig(s, hist, prixJusteSim, prixEst5A){
   const years = hist.map(r => r.annee);
   const prices = hist.map(r => r.prixActuel);
   const targetYear = years[years.length - 1] + 5;
@@ -1595,9 +1845,7 @@ function renderScenarioChart(s, hist, prixJusteSim, prixEst5A){
 
   const accent = THEME[s.color];
 
-  if (scenarioCharts[s.key]) scenarioCharts[s.key].destroy();
-
-  scenarioCharts[s.key] = new Chart(document.getElementById('vo-' + s.key + '-chart').getContext('2d'), {
+  return {
     type:'line',
     data:{ labels, datasets:[
       { label:'Historique', data:histData, borderColor:THEME.blue, backgroundColor:'transparent', tension:0.15, pointRadius:2, borderWidth:1.5, spanGaps:false },
@@ -1612,7 +1860,28 @@ function renderScenarioChart(s, hist, prixJusteSim, prixEst5A){
         y:{ grid:baseGrid, ticks:{color:THEME.dim, font:{size:9.5}, callback:v=>v+' €'} }
       }
     }
-  });
+  };
+}
+
+let lastScenarioContext = {};
+function renderScenarioChart(s, hist, prixJusteSim, prixEst5A){
+  lastScenarioContext[s.key] = { s, hist, prixJusteSim, prixEst5A };
+  if (scenarioCharts[s.key]) scenarioCharts[s.key].destroy();
+  scenarioCharts[s.key] = new Chart(document.getElementById('vo-' + s.key + '-chart').getContext('2d'), buildScenarioChartConfig(s, hist, prixJusteSim, prixEst5A));
+}
+
+// Zoom dédié (comme le donut Portfolio et les graphiques de l'Analyse développée) :
+// réutilise #zoomModal sans les lignes plage/CAGR, pas de notion d'années glissantes ici.
+function openScenarioZoom(key){
+  const ctx = lastScenarioContext[key];
+  if (!ctx) return;
+  document.getElementById('zoomTitle').textContent = ctx.s.label;
+  document.getElementById('zoomRangeRow').innerHTML = '';
+  document.getElementById('zoomCagrRow').innerHTML = '';
+  zoomKey = null;
+  if (window.__zoomChart) window.__zoomChart.destroy();
+  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), buildScenarioChartConfig(ctx.s, ctx.hist, ctx.prixJusteSim, ctx.prixEst5A));
+  document.getElementById('zoomModal').style.display = 'flex';
 }
 
 /* ============================================================
@@ -1761,6 +2030,18 @@ function exportWatchlist(){
   URL.revokeObjectURL(url);
 }
 
+const WATCHLIST_LABELS = { achat:"Liste d'achat", idee:'Idée du moment', surveiller:'À surveiller', analyser:'À analyser' };
+function exportWatchlistAsPdf(){
+  const body = WATCHLIST_LISTS.map(key => {
+    const noms = watchlistStore[key] || [];
+    const rows = noms.length
+      ? `<table class="print-table"><thead><tr><th>Entreprise</th></tr></thead><tbody>${noms.map(n => `<tr><td>${n.replace(/</g,'&lt;')}</td></tr>`).join('')}</tbody></table>`
+      : '<p style="color:#999">Aucune entreprise dans cette liste.</p>';
+    return `<div class="print-section"><h3>${WATCHLIST_LABELS[key]} (${noms.length})</h3>${rows}</div>`;
+  }).join('');
+  exportSectionAsPdf('Watchlist', null, body);
+}
+
 function watchlistLocationOf(nom){
   return WATCHLIST_LISTS.find(key => watchlistStore[key].includes(nom)) || null;
 }
@@ -1850,6 +2131,8 @@ function initWatchlist(){
 
   const exportBtn = document.getElementById('watchlistExportBtn');
   if (exportBtn) exportBtn.addEventListener('click', exportWatchlist);
+  const exportPdfBtn = document.getElementById('watchlistExportPdfBtn');
+  if (exportPdfBtn) exportPdfBtn.addEventListener('click', exportWatchlistAsPdf);
 }
 
 /* ============================================================
@@ -2060,6 +2343,7 @@ async function loadCerveauData(){
     }
   }catch(e){ /* IndexedDB indisponible (navigation privée stricte...) — non bloquant */ }
 
+  migrateCerveauChains();
   renderCerveau();
 }
 
@@ -2152,8 +2436,8 @@ function renderCerveauChaines(box){
     const nom = nameInput.value.trim();
     if (!nom){ nameInput.focus(); return; }
     const phasesRaw = document.getElementById('cerveauChainPhases').value;
-    const phases = phasesRaw.split(',').map(p => p.trim()).filter(Boolean).map(p => ({ nom:p, entreprises:[] }));
-    const chain = { id:'c' + Date.now(), nom, phases: phases.length ? phases : [{ nom:'Amont', entreprises:[] }] };
+    const phases = phasesRaw.split(',').map(p => p.trim()).filter(Boolean).map(p => ({ nom:p, entreprises:[], blocsLibres:[] }));
+    const chain = { id:'c' + Date.now(), nom, phases: phases.length ? phases : [{ nom:'Amont', entreprises:[], blocsLibres:[] }] };
     cerveauData.chains[secteur].push(chain);
     persistCerveauData();
     cerveauView = { level:'phases', secteur, chainId: chain.id };
@@ -2165,15 +2449,73 @@ function renderCerveauChaines(box){
   });
 }
 
-function cerveauEntityChip(nom){
-  const safe = nom.replace(/"/g, '&quot;');
-  const tracked = companies[nom];
-  const logo = tracked ? companies[nom][companies[nom].length - 1].lienImage : '';
-  const noteCount = (cerveauData.notes[nom] || []).length;
-  return `<div class="cerveau-entity-chip" data-nom="${safe}">
-    ${logo ? `<img src="${logo}" alt="">` : `<span class="cerveau-entity-initial">${nom.charAt(0).toUpperCase()}</span>`}
-    <span>${nom}</span>${noteCount ? `<span class="cerveau-note-badge">${noteCount}</span>` : ''}
+// Migration : les anciennes chaînes stockaient ph.entreprises comme un tableau de noms
+// (string). Passage à des objets {nom,image,legende} pour les cartes illustrées — les
+// entrées string existantes sont converties sans perte au premier chargement.
+function migrateCerveauChains(){
+  Object.keys(cerveauData.chains).forEach(sec => {
+    (cerveauData.chains[sec] || []).forEach(chain => {
+      (chain.phases || []).forEach(ph => {
+        ph.entreprises = (ph.entreprises || []).map(e => typeof e === 'string' ? { nom:e, image:'', legende:'' } : e);
+        if (!Array.isArray(ph.blocsLibres)) ph.blocsLibres = [];
+      });
+    });
+  });
+}
+
+function cerveauImageZoneHtml(image, actionPrefix){
+  return `
+    <div class="cec-image ${image ? '' : 'cec-image-empty'}" data-action="${actionPrefix}-pick">
+      ${image ? `<img src="${image}" alt="">` : `<span class="cec-image-plus">+ image</span>`}
+      <button class="cec-img-url" data-action="${actionPrefix}-url" title="Ajouter par lien">🔗</button>
+      ${image ? `<button class="cec-img-remove" data-action="${actionPrefix}-clear" title="Retirer l'image">✕</button>` : ''}
+    </div>
+    <div class="cec-url-row" data-role="url-row" style="display:none">
+      <input type="text" class="cec-url-input" placeholder="Coller un lien d'image…">
+      <button class="cec-url-ok" data-action="${actionPrefix}-url-ok">OK</button>
+    </div>`;
+}
+
+function cerveauEntityCard(ent, phaseIdx, entIdx){
+  const safe = ent.nom.replace(/"/g, '&quot;');
+  const tracked = companies[ent.nom];
+  const logo = tracked ? companies[ent.nom][companies[ent.nom].length - 1].lienImage : '';
+  const noteCount = (cerveauData.notes[ent.nom] || []).length;
+  return `<div class="cerveau-entity-card" data-phase="${phaseIdx}" data-ent="${entIdx}">
+    ${cerveauImageZoneHtml(ent.image, 'ent')}
+    <div class="cec-head">
+      ${logo ? `<img class="cec-mini-logo" src="${logo}" alt="">` : `<span class="cerveau-entity-initial">${ent.nom.charAt(0).toUpperCase()}</span>`}
+      <span class="cec-name" title="${safe}">${ent.nom}</span>${noteCount ? `<span class="cerveau-note-badge">${noteCount}</span>` : ''}
+      <button class="cec-remove" data-action="ent-delete" title="Retirer de la phase">✕</button>
+    </div>
+    <input type="text" class="cec-legend" data-action="ent-legend" placeholder="Légende…" value="${(ent.legende || '').replace(/"/g, '&quot;')}">
+    <button class="cec-fiche-btn" data-action="ent-fiche">📇 Ouvrir la fiche</button>
   </div>`;
+}
+
+function cerveauFreeBlockHtml(bloc, phaseIdx, blocIdx){
+  return `<div class="cerveau-freeblock" data-phase="${phaseIdx}" data-bloc="${blocIdx}">
+    ${cerveauImageZoneHtml(bloc.image, 'free')}
+    <textarea class="cec-free-text" data-action="free-text" placeholder="Texte libre…">${(bloc.texte || '').replace(/</g, '&lt;')}</textarea>
+    <button class="cec-remove cec-remove-free" data-action="free-delete">✕ Retirer ce bloc</button>
+  </div>`;
+}
+
+function printCerveauEntityHtml(ent){
+  const imgs = ent.image ? `<div class="print-img-row"><img src="${ent.image}" alt=""></div>` : '';
+  return `<div style="margin-bottom:10px"><strong>${ent.nom.replace(/</g, '&lt;')}</strong>${ent.legende ? `<p>${ent.legende.replace(/</g, '&lt;')}</p>` : ''}${imgs}</div>`;
+}
+function printCerveauFreeBlockHtml(bloc){
+  const imgs = bloc.image ? `<div class="print-img-row"><img src="${bloc.image}" alt=""></div>` : '';
+  return `<div style="margin-bottom:10px">${bloc.texte ? `<p>${bloc.texte.replace(/</g, '&lt;')}</p>` : ''}${imgs}</div>`;
+}
+function exportChainAsPdf(chain, secteur){
+  const body = chain.phases.map(ph => {
+    const entHtml = ph.entreprises.map(printCerveauEntityHtml).join('') || '<p style="color:#999">Aucune entreprise.</p>';
+    const freeHtml = (ph.blocsLibres || []).map(printCerveauFreeBlockHtml).join('');
+    return `<div class="print-section"><h3>${ph.nom}</h3>${entHtml}${freeHtml}</div>`;
+  }).join('');
+  exportSectionAsPdf('Chaîne de valeur — ' + chain.nom, cerveauSectorLabel(secteur), body);
 }
 
 function renderCerveauPhases(box){
@@ -2183,28 +2525,118 @@ function renderCerveauPhases(box){
 
   box.innerHTML = `
     <div class="cerveau-breadcrumb"><a data-back="secteurs">Secteurs</a> / <a data-back="chaines">${cerveauSectorLabel(secteur)}</a> / ${chain.nom}</div>
+    <div class="cerveau-actions"><button class="zoom-btn objectifs-export" id="cerveauChainExportPdfBtn">🖨 Exporter PDF</button></div>
+    <datalist id="cerveauCompanyList">${Object.keys(companies).map(n => `<option value="${n.replace(/"/g, '&quot;')}">`).join('')}</datalist>
     <div class="cerveau-phase-grid">${chain.phases.map((ph, i) => `
       <div class="scenario-card cerveau-phase">
         <h3 class="scenario-title">${ph.nom}</h3>
-        <div class="cerveau-entity-list" data-phase="${i}">${ph.entreprises.map(cerveauEntityChip).join('')}</div>
-        <div class="cerveau-add-entity"><input type="text" placeholder="Ajouter une entreprise, Entrée pour valider…" data-phase="${i}"></div>
+        <div class="cerveau-entity-list" data-phase="${i}">${ph.entreprises.map((e, j) => cerveauEntityCard(e, i, j)).join('')}</div>
+        <div class="cerveau-freeblock-list" data-phase="${i}">${(ph.blocsLibres || []).map((b, j) => cerveauFreeBlockHtml(b, i, j)).join('')}</div>
+        <button class="cerveau-add-free" data-phase="${i}" data-action="free-add">+ Bloc libre (image / texte)</button>
+        <div class="cerveau-add-entity"><input type="text" list="cerveauCompanyList" placeholder="Ajouter une entreprise, Entrée pour valider…" data-phase="${i}"></div>
       </div>`).join('')}</div>`;
 
   box.querySelector('[data-back="secteurs"]').addEventListener('click', () => { cerveauView = { level:'secteurs' }; renderCerveau(); });
   box.querySelector('[data-back="chaines"]').addEventListener('click', () => { cerveauView = { level:'chaines', secteur }; renderCerveau(); });
-  box.querySelectorAll('.cerveau-entity-list').forEach(list => {
-    list.addEventListener('click', e => {
-      const chip = e.target.closest('.cerveau-entity-chip[data-nom]');
-      if (chip) openFiche(chip.dataset.nom);
-    });
-  });
+  document.getElementById('cerveauChainExportPdfBtn').addEventListener('click', () => exportChainAsPdf(chain, secteur));
+
   box.querySelectorAll('.cerveau-add-entity input').forEach(input => {
     input.addEventListener('keydown', e => {
       if (e.key !== 'Enter' || !input.value.trim()) return;
-      chain.phases[parseInt(input.dataset.phase, 10)].entreprises.push(input.value.trim());
+      chain.phases[parseInt(input.dataset.phase, 10)].entreprises.push({ nom: input.value.trim(), image:'', legende:'' });
       persistCerveauData();
       renderCerveau();
     });
+  });
+
+  box.querySelectorAll('.cerveau-add-free').forEach(btn => {
+    btn.addEventListener('click', () => {
+      chain.phases[parseInt(btn.dataset.phase, 10)].blocsLibres.push({ image:'', texte:'' });
+      persistCerveauData();
+      renderCerveau();
+    });
+  });
+
+  wireCerveauImageZones(box, chain);
+
+  box.querySelectorAll('.cerveau-entity-card').forEach(card => {
+    const phaseIdx = parseInt(card.dataset.phase, 10);
+    const entIdx = parseInt(card.dataset.ent, 10);
+    const ent = chain.phases[phaseIdx].entreprises[entIdx];
+    card.querySelector('[data-action="ent-fiche"]').addEventListener('click', () => openFiche(ent.nom));
+    card.querySelector('.cec-name').addEventListener('click', () => openFiche(ent.nom));
+    card.querySelector('[data-action="ent-delete"]').addEventListener('click', () => {
+      chain.phases[phaseIdx].entreprises.splice(entIdx, 1);
+      persistCerveauData();
+      renderCerveau();
+    });
+    const legend = card.querySelector('[data-action="ent-legend"]');
+    const saveLegend = () => { ent.legende = legend.value; persistCerveauData(); };
+    legend.addEventListener('blur', saveLegend);
+    legend.addEventListener('keydown', e => { if (e.key === 'Enter') legend.blur(); });
+  });
+
+  box.querySelectorAll('.cerveau-freeblock').forEach(card => {
+    const phaseIdx = parseInt(card.dataset.phase, 10);
+    const blocIdx = parseInt(card.dataset.bloc, 10);
+    const bloc = chain.phases[phaseIdx].blocsLibres[blocIdx];
+    card.querySelector('[data-action="free-delete"]').addEventListener('click', () => {
+      chain.phases[phaseIdx].blocsLibres.splice(blocIdx, 1);
+      persistCerveauData();
+      renderCerveau();
+    });
+    const text = card.querySelector('[data-action="free-text"]');
+    const saveText = () => { bloc.texte = text.value; persistCerveauData(); };
+    text.addEventListener('blur', saveText);
+  });
+}
+
+// Gère les zones image des cartes entreprise ET des blocs libres (upload fichier + URL
+// collée), pour un même input fichier global réutilisé (cerveauImagePickerTarget retient
+// la cible en cours : {getEntity} renvoie l'objet {image} à muter, entité ou bloc libre).
+let cerveauImagePickerTarget = null;
+function wireCerveauImageZones(box, chain){
+  box.querySelectorAll('.cerveau-entity-card, .cerveau-freeblock').forEach(card => {
+    const phaseIdx = parseInt(card.dataset.phase, 10);
+    const isFree = card.classList.contains('cerveau-freeblock');
+    const target = isFree
+      ? chain.phases[phaseIdx].blocsLibres[parseInt(card.dataset.bloc, 10)]
+      : chain.phases[phaseIdx].entreprises[parseInt(card.dataset.ent, 10)];
+    const urlRow = card.querySelector('[data-role="url-row"]');
+
+    card.querySelector('[data-action$="-pick"]').addEventListener('click', e => {
+      if (e.target.closest('[data-action$="-url"], [data-action$="-clear"]')) return;
+      cerveauImagePickerTarget = target;
+      document.getElementById('cerveauImageFileInput').click();
+    });
+    card.querySelector('[data-action$="-url"]').addEventListener('click', () => {
+      urlRow.style.display = urlRow.style.display === 'none' ? 'flex' : 'none';
+      if (urlRow.style.display === 'flex') urlRow.querySelector('.cec-url-input').focus();
+    });
+    card.querySelector('[data-action$="-url-ok"]').addEventListener('click', () => {
+      const val = urlRow.querySelector('.cec-url-input').value.trim();
+      if (!val) return;
+      target.image = val;
+      persistCerveauData();
+      renderCerveau();
+    });
+    const clearBtn = card.querySelector('[data-action$="-clear"]');
+    if (clearBtn) clearBtn.addEventListener('click', () => {
+      target.image = '';
+      persistCerveauData();
+      renderCerveau();
+    });
+  });
+}
+
+function initCerveauImagePicker(){
+  document.getElementById('cerveauImageFileInput').addEventListener('change', async function(){
+    if (!cerveauImagePickerTarget || !this.files[0]) return;
+    cerveauImagePickerTarget.image = await readFileAsDataURL(this.files[0]);
+    persistCerveauData();
+    cerveauImagePickerTarget = null;
+    this.value = '';
+    renderCerveau();
   });
 }
 
@@ -2227,8 +2659,9 @@ function openFiche(nom){
 
 function openAnalyseFromFiche(){
   if (!ficheEntite) return;
+  const nom = ficheEntite;
   closeFiche();
-  openAnalyse(ficheEntite);
+  openAnalyse(nom);
 }
 function closeFiche(){
   document.getElementById('ficheModal').style.display = 'none';
@@ -2512,6 +2945,33 @@ function openAnalyseChartZoom(key){
   document.getElementById('zoomModal').style.display = 'flex';
 }
 
+function printAnalyseSectionHtml(s, data){
+  const imgs = printImagesRowHtml(data.images);
+  const text = (data.texte || '').replace(/</g, '&lt;');
+  return `<div class="print-section"><h3>${s.label}</h3>${text ? `<p>${text}</p>` : ''}${imgs}</div>`;
+}
+function printAnalyseChartHtml(key, rows){
+  if (!rows || !rows.length) return '';
+  return `<div class="print-section"><h3>${ANALYSE_CHART_LABELS[key]}</h3>${chartCanvasToImgHtml('analyseChart_' + key, ANALYSE_CHART_LABELS[key])}</div>`;
+}
+function printAnalyseConcurrentsHtml(list){
+  if (!list || !list.length) return '';
+  const body = list.map(c => `<div style="margin-bottom:10px"><strong>${(c.nom || 'Sans nom').replace(/</g, '&lt;')}</strong><p>${(c.texte || '').replace(/</g, '&lt;')}</p>${printImagesRowHtml(c.images)}</div>`).join('');
+  return `<div class="print-section"><h3>Concurrents</h3>${body}</div>`;
+}
+function exportAnalyseAsPdf(){
+  const v = currentAnalyseVersion();
+  if (!v || !analyseEntite) return;
+  const body = CERVEAU_ANALYSE_SECTIONS_TOP.map(s => printAnalyseSectionHtml(s, v.sections[s.key])).join('')
+    + printAnalyseChartHtml('revenusPays', v.revenusPays)
+    + printAnalyseChartHtml('revenusSecteurs', v.revenusSecteurs)
+    + printAnalyseConcurrentsHtml(v.concurrents)
+    + CERVEAU_ANALYSE_SECTIONS_MID.map(s => printAnalyseSectionHtml(s, v.sections[s.key])).join('')
+    + printAnalyseChartHtml('actionnariat', v.actionnariat)
+    + CERVEAU_ANALYSE_SECTIONS_BOTTOM.map(s => printAnalyseSectionHtml(s, v.sections[s.key])).join('');
+  exportSectionAsPdf('Analyse développée — ' + analyseEntite, v.label, body);
+}
+
 // Récupère le tableau d'images (et son objet propriétaire pour la sauvegarde) à partir
 // d'un élément qui porte soit data-key (section fixe), soit data-competitor (concurrent).
 function analyseImagesArrayFromEl(v, el){
@@ -2680,6 +3140,7 @@ function initAnalyseModal(){
     }
     deleteAnalyseVersion();
   });
+  document.getElementById('analyseExportPdfBtn').addEventListener('click', exportAnalyseAsPdf);
 }
 
 function openImageZoom(src){
@@ -2706,12 +3167,48 @@ const IDEES_CATS = [
 ];
 let ideesStore = { urgent:[], bientot:[], plus_tard:[] };
 
+// Archivage mensuel automatique (pas de backend => pas de vrai cron ; à chaque ouverture
+// du site, si un nouveau mois a commencé depuis la dernière visite, l'état précédent est
+// figé silencieusement dans ideesArchive avant que la liste active continue d'évoluer).
+const IDEES_ARCHIVE_LS_KEY = 'wolfAnalysisIdeesArchive';
+const IDEES_LAST_MONTH_LS_KEY = 'wolfAnalysisIdeesLastMonth';
+let ideesArchive = [];
+let ideesArchiveViewing = null;
+
+const MOIS_NOMS_FR = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+function formatMoisLabel(moisKey){
+  const [y, m] = moisKey.split('-').map(Number);
+  return MOIS_NOMS_FR[m - 1] + ' ' + y;
+}
+
+function checkAndArchiveIdeesIfNewMonth(){
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  let lastMonth = null;
+  try{ lastMonth = localStorage.getItem(IDEES_LAST_MONTH_LS_KEY); }catch(e){ /* ignore */ }
+  if (lastMonth === currentMonth) return;
+  if (lastMonth){
+    const hasContent = IDEES_CATS.some(c => (ideesStore[c.key] || []).length > 0);
+    if (hasContent){
+      const data = {};
+      IDEES_CATS.forEach(c => { data[c.key] = (ideesStore[c.key] || []).map(i => ({ ...i })); });
+      ideesArchive.push({ mois: lastMonth, label: formatMoisLabel(lastMonth), archivedAt: new Date().toISOString(), data });
+      persistIdeesArchiveLocal();
+    }
+  }
+  try{ localStorage.setItem(IDEES_LAST_MONTH_LS_KEY, currentMonth); }catch(e){ /* ignore */ }
+}
+
+function persistIdeesArchiveLocal(){
+  try{ localStorage.setItem(IDEES_ARCHIVE_LS_KEY, JSON.stringify(ideesArchive)); }catch(e){ /* quota / navigateur privé */ }
+}
+
 async function loadIdeesBaseline(){
   try{
     const res = await fetch(IDEES_BASELINE_URL, { cache:'no-store' });
     if (res.ok){
       const json = await res.json();
       IDEES_CATS.forEach(c => { if (json && Array.isArray(json[c.key])) ideesStore[c.key] = json[c.key]; });
+      if (json && Array.isArray(json.archive)) ideesArchive = json.archive;
     }
   }catch(e){ /* socle absent ou fetch bloqué (ex. file://) — non bloquant */ }
   try{
@@ -2721,6 +3218,14 @@ async function loadIdeesBaseline(){
       IDEES_CATS.forEach(c => { if (Array.isArray(parsed[c.key])) ideesStore[c.key] = parsed[c.key]; });
     }
   }catch(e){ /* localStorage indisponible ou JSON corrompu */ }
+  try{
+    const rawArchive = localStorage.getItem(IDEES_ARCHIVE_LS_KEY);
+    if (rawArchive){
+      const parsedArchive = JSON.parse(rawArchive);
+      if (Array.isArray(parsedArchive) && parsedArchive.length) ideesArchive = parsedArchive;
+    }
+  }catch(e){ /* localStorage indisponible ou JSON corrompu */ }
+  checkAndArchiveIdeesIfNewMonth();
   renderIdees();
 }
 
@@ -2729,7 +3234,7 @@ function persistIdeesLocal(){
 }
 
 function exportIdees(){
-  const blob = new Blob([JSON.stringify(ideesStore, null, 2)], { type:'application/json' });
+  const blob = new Blob([JSON.stringify({ ...ideesStore, archive: ideesArchive }, null, 2)], { type:'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -2740,11 +3245,37 @@ function exportIdees(){
   URL.revokeObjectURL(url);
 }
 
+function exportIdeesAsPdf(){
+  const body = IDEES_CATS.map(c => {
+    const items = ideesStore[c.key] || [];
+    const rows = items.length
+      ? items.map(i => `<p>${i.done ? '☑' : '☐'} ${i.texte.replace(/</g, '&lt;')}</p>`).join('')
+      : '<p style="color:#999">Aucune idée.</p>';
+    return `<div class="print-section"><h3>${c.label}</h3>${rows}</div>`;
+  }).join('');
+  exportSectionAsPdf('Idées de développement', null, body);
+}
+
+function ideesArchiveViewHtml(entry){
+  if (!entry) return '';
+  return `<div class="idees-grid idees-archive-view">${IDEES_CATS.map(c => `
+    <div class="idees-column idees-${c.key}">
+      <h3>${c.label}</h3>
+      <div class="idees-list">${(entry.data[c.key] || []).map(item => `
+        <div class="idee-item readonly${item.done ? ' done' : ''}">
+          <span class="idee-text">${item.texte.replace(/</g, '&lt;')}</span>
+        </div>`).join('') || '<div class="objectifs-empty">Vide.</div>'}</div>
+    </div>`).join('')}</div>`;
+}
+
 function renderIdees(){
   const box = document.getElementById('ideesContent');
   if (!box) return;
   box.innerHTML = `
-    <div class="idees-actions"><button class="zoom-btn objectifs-export" id="ideesExportBtn">⭳ Exporter</button></div>
+    <div class="idees-actions">
+      <button class="zoom-btn objectifs-export" id="ideesExportBtn">⭳ Exporter</button>
+      <button class="zoom-btn objectifs-export" id="ideesExportPdfBtn">🖨 Exporter PDF</button>
+    </div>
     <div class="idees-grid">${IDEES_CATS.map(c => `
       <div class="idees-column idees-${c.key}">
         <h3>${c.label}</h3>
@@ -2758,9 +3289,23 @@ function renderIdees(){
           <input type="text" placeholder="Nouvelle idée…" data-cat="${c.key}">
           <button class="idee-add-btn" data-cat="${c.key}">+ Ajouter</button>
         </div>
-      </div>`).join('')}</div>`;
+      </div>`).join('')}</div>
+    ${ideesArchive.length ? `
+    <div class="idees-archive">
+      <h3 class="idees-archive-title">📅 Historique mensuel</h3>
+      <div class="idees-archive-months">${ideesArchive.slice().reverse().map(a => `
+        <button class="idees-archive-month${ideesArchiveViewing === a.mois ? ' active' : ''}" data-mois="${a.mois}">${a.label}</button>`).join('')}</div>
+      ${ideesArchiveViewing ? ideesArchiveViewHtml(ideesArchive.find(a => a.mois === ideesArchiveViewing)) : ''}
+    </div>` : ''}`;
 
   document.getElementById('ideesExportBtn').addEventListener('click', exportIdees);
+  document.getElementById('ideesExportPdfBtn').addEventListener('click', exportIdeesAsPdf);
+  box.querySelectorAll('.idees-archive-month').forEach(btn => {
+    btn.addEventListener('click', () => {
+      ideesArchiveViewing = ideesArchiveViewing === btn.dataset.mois ? null : btn.dataset.mois;
+      renderIdees();
+    });
+  });
   box.querySelectorAll('.idee-check').forEach(cb => {
     cb.addEventListener('change', e => {
       const item = e.target.closest('.idee-item');
@@ -2851,6 +3396,7 @@ initAlertes();
 loadAlertesBaseline();
 initFicheModal();
 initAnalyseModal();
+initCerveauImagePicker();
 document.getElementById('openAnalyseTag').addEventListener('click', () => { if (activeCompany) openAnalyse(activeCompany); });
 loadCerveauData();
 loadIdeesBaseline();

@@ -206,6 +206,46 @@ différents du même fichier — les deux sont codés en dur en haut de `app.js`
     pratique. Toujours parser par **reconnaissance de contenu** (ignorer les libellés
     d'en-tête connus, chercher la première valeur qui parse comme un nombre) plutôt
     que par position.
+11. **Ne jamais faire confiance à une description verbale de la mise en page d'un
+    Sheet — toujours lire le CSV publié directement avant d'écrire le parsing.**
+    L'utilisateur avait décrit l'onglet historique de prix comme « colonne A = toutes
+    les dates, colonnes B/D/F/H = clôtures ». En lisant le CSV réel (`curl` sur l'URL
+    publiée), la structure était différente : chaque entreprise a sa **propre** paire
+    [colonne date, colonne clôture], sans axe de dates partagé — les historiques
+    démarrent à des dates différentes selon l'entreprise (Ferrari en 2016, TotalEnergies
+    en 2006), donc utiliser la colonne A comme axe commun aurait décalé les prix des
+    entreprises à historique plus court de plusieurs années. Coder le parsing sur la
+    description verbale sans vérifier aurait produit des graphiques silencieusement
+    faux (pas d'erreur, juste des données mal alignées) — un bug bien plus difficile à
+    repérer qu'un crash. Vérifier la structure réelle avant d'écrire le code de
+    parsing est plus rapide que de découvrir le problème après coup.
+12. **`destroyCharts()` vide `chartInstances` en bloc (`chartInstances = {}`), donc
+    l'ordre d'appel compte pour tout graphique créé de façon synchrone.** Avant
+    l'ajout de la source de prix Sheet (synchrone), `loadStockChart()` était toujours
+    asynchrone (attente d'un fetch Yahoo/Stooq) et se terminait donc forcément
+    **après** `destroyCharts()` dans `renderCompany()` — l'ordre d'appel dans le code
+    source n'avait jamais d'importance en pratique. Rendre le chemin Sheet synchrone
+    (pas d'attente réseau) a révélé le bug : le graphique boursier se créait, puis
+    `destroyCharts()` (appelé juste après dans `renderCompany()`) l'effaçait
+    silencieusement sans rien recréer à la place — `stockFull` restait correctement
+    peuplé, mais `chartInstances.stock` disparaissait. Fix : `loadStockChart()` est
+    maintenant appelé **après** `destroyCharts()` dans `renderCompany()`. Piège à
+    surveiller pour tout futur chemin de chargement qui deviendrait synchrone.
+13. **Un `<canvas>` Chart.js qui a dessiné une image cross-origin sans `crossOrigin`
+    devient "tainté" : `canvas.toDataURL()` lève `SecurityError`, capture impossible.**
+    Rencontré en implémentant l'export PDF du donut Portfolio : ses logos de position
+    sont dessinés volontairement **sans** `crossOrigin='anonymous'` (voir point sur
+    `portfolioImageCache` plus bas — l'exiger casserait le chargement de tout logo dont
+    l'hébergeur ne renvoie pas d'en-tête CORS, ex. Air Liquide), ce qui rend ce canvas
+    précis illisible en pixels. Pas de contournement possible sur ce canvas-là sans
+    réintroduire le bug Air Liquide. Fix : pour l'export PDF uniquement,
+    `buildPortfolioExportChartImg()` reconstruit un graphique **jetable hors-écran**,
+    sans les plugins de logos custom (juste les segments + légende Chart.js standard)
+    — ce graphique ne dessine aucune image externe, donc jamais tainté, `toDataURL()`
+    fonctionne normalement. Le donut affiché à l'écran n'est pas touché. Les 3
+    graphiques camembert de l'Analyse développée n'ont pas ce problème (aucune image
+    externe dessinée dessus), `chartCanvasToImgHtml()` marche directement sur leur
+    canvas réel.
 
 ## Design system
 
@@ -345,7 +385,7 @@ avec le chargement principal sinon).
   `PORTFOLIO_COLORS`, tons or/bleu uniquement — jamais de violet, réservé au décoratif,
   voir "Design system") + liste des positions triée par poids décroissant, avec logo
   (`portfolioEntityLogo()`, correspondance par nom avec `companies`, repli sur une
-  initiale sinon, même pattern que `cerveauEntityChip()`), pourcentage du portefeuille
+  initiale sinon, même pattern que `cerveauEntityCard()`), pourcentage du portefeuille
   et performance individuelle. **Logo Wolf Analysis au centre + logo de chaque position
   directement sur son segment** : deux plugins Chart.js custom
   (`portfolioCenterImagePlugin()`, `portfolioSegmentLogosPlugin()`, hooks
@@ -415,6 +455,11 @@ champs déjà présents dans `companies` (aucune nouvelle colonne `COL` nécessa
   horizontale « Prix juste » (or) + ligne pointillée horizontale « Prix est. (5a) »
   (couleur du scénario) + « Ligne projection » en tirets (couleur du scénario, du dernier
   point historique jusqu'au point de projection à horizon+5 ans, labellisé `AAAA (Est.)`).
+  **Bouton agrandir (⤢)** sur chaque graphique de scénario, réutilise `#zoomModal`
+  (`openScenarioZoom(key)` reconstruit la config via `buildScenarioChartConfig()`,
+  factory partagée avec le rendu normal — même pattern que le donut Portfolio et les
+  graphiques de l'Analyse développée). **Tuile « Prix actuel »** ajoutée en premier dans
+  le résumé (`#voPrixActuel`, donnée déjà en mémoire, aucun nouvel appel réseau).
 - **Historique des objectifs** : fiche par entreprise où l'utilisateur peut enregistrer
   (bouton « Enregistrer cet objectif ») un instantané daté des 3 scénarios (CAGR + multiple
   de chacun). Chaque entrée a un bouton **« ↻ Charger »** (`applyObjectif(nom, idx)`) qui
@@ -435,15 +480,23 @@ champs déjà présents dans `companies` (aucune nouvelle colonne `COL` nécessa
   "pas de backend" du projet).
 
 ### Onglet Classement (fait, fonctionnel)
-Deux listes triées côte à côte, aucune donnée nouvelle (tout déjà mappé) :
-- Meilleur rendement du dividende : `rendementDiv` (colonne V), tri décroissant.
-- Meilleure opportunité de valorisation : `ecartValeur` (colonne K), tri **croissant**
-  (négatif = sous-valorisé = plus intéressant, positif = survalorisé — sémantique donnée
-  par l'utilisateur pour ce classement précis ; distincte de la lecture "marge de
-  sécurité" documentée plus haut pour la carte "Écart de valeur" de l'onglet Analyse,
-  qui elle reste inchangée. Les deux widgets affichent la même donnée brute mais avec
-  une intention de lecture différente — ne pas essayer d'unifier sans en reparler avec
-  l'utilisateur).
+Deux cartes, chacune divisée en **2 colonnes** pour ne pas s'étirer inutilement en
+hauteur (`renderClassement()`, 4 conteneurs DOM au total) — aucune donnée nouvelle
+(tout déjà mappé) :
+- Meilleur rendement du dividende : `rendementDiv` (colonne V), tri décroissant, coupé
+  en 2 colonnes de longueur égale (`classementDivLeft`/`classementDivRight`, numérotation
+  continue 1..N — un pur découpage visuel de la même liste, pas deux classements
+  distincts).
+- Meilleure opportunité de valorisation : `ecartValeur` (colonne K), **séparée en deux
+  groupes distincts** selon le signe plutôt qu'une seule liste triée mêlant les deux —
+  `classementValoSous` (ecartValeur < 0, sous-valorisées, tri croissant = la plus
+  intéressante en premier) et `classementValoSurvalo` (ecartValeur ≥ 0, survalorisées,
+  tri croissant = la moins chère en premier). Sémantique inchangée : négatif =
+  sous-valorisé = plus intéressant, positif = survalorisé — donnée par l'utilisateur
+  pour ce classement précis ; distincte de la lecture "marge de sécurité" documentée
+  plus haut pour la carte "Écart de valeur" de l'onglet Analyse, qui elle reste
+  inchangée. Les deux widgets affichent la même donnée brute mais avec une intention de
+  lecture différente — ne pas essayer d'unifier sans en reparler avec l'utilisateur.
 `renderClassement()` reconstruit les deux listes à chaque chargement de données. Clic sur
 une ligne → `goToAnalyse(nom)`.
 - **Filtre secteur** : sélecteur `#classementSecteurFilter` (peuplé une fois via
@@ -459,9 +512,10 @@ liste à la fois — la déplacer d'une liste à l'autre la retire automatiqueme
 l'ancienne (`moveToWatchlist(nom, listKey)`, `listKey=null` = retour au pool). Clic sur
 un logo (hors drag) → `goToAnalyse(nom)`. Persistance identique au pattern de l'onglet
 Valorisation : `localStorage` (`wolfAnalysisWatchlist`) + `data/watchlist.json` en socle
-+ bouton Exporter. Recherche (`#watchlistSearch`) filtre le pool en direct
-(`applyWatchlistSearchFilter()`, `stripAccents()`) pour trouver une entreprise sans
-scroller.
++ bouton Exporter (JSON) + bouton **Exporter PDF** (`exportWatchlistAsPdf()`, les 4
+listes en tableaux, voir "Export PDF" plus bas). Recherche (`#watchlistSearch`) filtre
+le pool en direct (`applyWatchlistSearchFilter()`, `stripAccents()`) pour trouver une
+entreprise sans scroller.
 
 ### Onglet Alertes de prix (fait, fonctionnel)
 Widget sous le prix actuel de l'onglet Analyse (`#priceAlertWidget`,
@@ -484,7 +538,22 @@ Bloc-notes à 3 priorités fixes (`IDEES_CATS` : urgent / bientôt / plus_tard),
 cocher par idée (`item.done`), bouton « + Ajouter » à côté de chaque champ (pas
 seulement Entrée — leçon retenue après un retour utilisateur : un champ texte sans
 bouton visible n'est pas assez découvrable). Persistance identique aux autres onglets :
-`localStorage` (`wolfAnalysisIdees`) + `data/idees.json` + bouton Exporter.
+`localStorage` (`wolfAnalysisIdees`) + `data/idees.json` + bouton Exporter (JSON, inclut
+aussi l'archive sous la clé `archive`) + bouton **Exporter PDF**
+(`exportIdeesAsPdf()`).
+- **Archivage mensuel automatique** (`checkAndArchiveIdeesIfNewMonth()`, appelé à
+  chaque chargement de `loadIdeesBaseline()`) : pas de vrai cron possible sans backend
+  (site 100% statique — même limite que les alertes de prix, voir "Onglet Alertes de
+  prix"), donc le déclenchement se fait **à l'ouverture du site** : le mois courant
+  (`YYYY-MM`) est comparé au dernier mois connu (`localStorage`,
+  `wolfAnalysisIdeesLastMonth`) ; si un nouveau mois a commencé et que la liste active
+  contient au moins une idée, un instantané daté est ajouté à `ideesArchive`
+  (`localStorage` séparé `wolfAnalysisIdeesArchive`, fusionné avec `data/idees.json` au
+  chargement via la clé `archive`) — **la liste active n'est jamais vidée**, elle
+  continue d'évoluer normalement. Rien n'est archivé au tout premier lancement (pas de
+  mois précédent à figer) ni si la liste était vide ce mois-là. Consultation en lecture
+  seule via une rangée de pastilles mensuelles sous les 3 colonnes actives
+  (`ideesArchiveViewHtml()`), un clic affiche/masque le contenu du mois choisi.
 
 ### Onglet Cerveau numérique (fait, fonctionnel)
 Base de connaissances visuelle : 11 secteurs GICS (+ "Autre") navigables → chaînes de
@@ -506,12 +575,37 @@ datées (texte + images uploadées/collées + croquis à main levée).
   optionnel (même pattern que les autres onglets), fusionné au chargement puis complété
   par IndexedDB. Bouton « Exporter » sur la vue "Secteurs" (niveau racine).
 - **Modèle de données** : `cerveauData = { chains: { [secteurKey]: [{id, nom, phases:
-  [{nom, entreprises:[nomLibre,...]}]}] }, notes: { [nomEntite]: [{date, texte, images:
-  [dataURL,...], sketches:[dataURL,...]}] }, analyses: { [nomEntite]: [{id, label,
-  dateCreated, dateModified, sections:{...}, revenusPays:[], revenusSecteurs:[],
-  concurrents:[]}, ...] } }`. Les clés de `notes`/`analyses` sont des noms libres
-  (pas forcément dans `companies`) — `cerveauEntityChip()` affiche le vrai logo si
-  l'entité correspond à une entreprise suivie, sinon une initiale.
+  [{nom, entreprises:[{nom,image,legende},...], blocsLibres:[{image,texte},...]}]}] },
+  notes: { [nomEntite]: [{date, texte, images: [dataURL,...], sketches:[dataURL,...]}] },
+  analyses: { [nomEntite]: [{id, label, dateCreated, dateModified, sections:{...},
+  revenusPays:[], revenusSecteurs:[], actionnariat:[], concurrents:[]}, ...] } }`. Les
+  clés de `notes`/`analyses` sont des noms libres (pas forcément dans `companies`) —
+  `cerveauEntityCard()` affiche le vrai logo si l'entité correspond à une entreprise
+  suivie, sinon une initiale. **`ph.entreprises` a changé de forme** : anciennement un
+  tableau de noms (string), désormais un tableau d'objets `{nom, image, legende}` pour
+  porter une image de couverture par entreprise (voir plus bas) — `migrateCerveauChains()`
+  convertit automatiquement toute ancienne entrée string au premier chargement, sans
+  perte (même logique que `migrateAlertesFormat()`).
+- **Cartes entreprise illustrées dans les 4 phases** (`cerveauEntityCard()`,
+  `renderCerveauPhases()`) : chaque entreprise ajoutée à une phase est une carte avec
+  sa propre image de couverture (upload fichier **ou** URL collée, éditée directement
+  sur place — clic sur la zone image, sans ouvrir de fenêtre), une légende courte
+  (`<input>` toujours visible, sauvegarde au blur), et un bouton **« 📇 Ouvrir la fiche »**
+  net et libellé (remplace l'ancienne puce texte+logo minuscule qui servait à la fois de
+  zone cliquable ET de seul accès à la fiche — peu découvrable et peu lisible). Cliquer
+  sur le nom ouvre aussi la fiche (raccourci, en plus du bouton). Bouton ✕ dédié pour
+  retirer l'entreprise de la phase. **Zone libre par phase** (`ph.blocsLibres`, bouton
+  « + Bloc libre (image / texte) ») : mêmes mécaniques d'image que les cartes entreprise,
+  plus un `<textarea>`, pour du contenu qui n'est pas rattaché à une entreprise précise —
+  permet de composer visuellement la phase (image + note) sans forcément passer par une
+  entité suivie. Champ « Ajouter une entreprise » : `<input list="cerveauCompanyList">`
+  avec une `<datalist>` peuplée des entreprises déjà suivies (logo garanti si on
+  sélectionne une suggestion), tout en gardant la saisie 100% libre pour une entreprise
+  hors Sheet. Toutes les zones image (cartes ET blocs libres) partagent un seul
+  `<input type=file>` caché (`#cerveauImageFileInput`) réutilisé via
+  `cerveauImagePickerTarget` (référence directe à l'objet `{image}` en cours d'édition,
+  posée juste avant `.click()` sur l'input cachée) — même famille de pattern que
+  `draggedImageRef` pour le glisser-déposer des images de l'Analyse développée.
 - **Fiche entité** (`openFiche(nom)` / modale `#ficheModal`) : journal append-only (une
   nouvelle entrée par sauvegarde, jamais d'édition rétroactive — même logique que
   l'historique des objectifs). Éditeur : `<textarea>` + upload d'images (`<input
@@ -589,21 +683,76 @@ datées (texte + images uploadées/collées + croquis à main levée).
     (`openAnalyseFromFiche()`) et tag « 📊 Analyse développée » dans l'en-tête de
     l'onglet Analyse (`#openAnalyseTag`, pour l'entreprise actuellement affichée).
 
+### Export PDF (fait, fonctionnel)
+Bouton « 🖨 Exporter PDF » sur 5 cibles : Idées de développement, Watchlist,
+composition Wolf Portfolio, fiche Analyse développée, chaîne de valeur du Cerveau
+numérique. **Choix technique explicite : `window.print()` + une feuille `@media print`
+dédiée, pas de librairie externe** (jsPDF/html2canvas auraient ajouté une dépendance
+CDN de plus — le site a déjà dû contourner ce genre de fragilité pour Chart.js, voir
+"Pièges techniques" point 1 — pour un gain marginal, `window.print()` fait déjà tout le
+travail nativement). **Ne pas réintroduire de librairie PDF sans en rediscuter.**
+
+- **Mécanisme partagé** (`exportSectionAsPdf(title, subtitle, bodyHtml)`) : construit
+  le HTML imprimable dans une zone dédiée `#printArea` (toujours `display:none` à
+  l'écran) avec un en-tête brandé (logo Wolf Analysis + titre + date), puis appelle
+  `window.print()`. La feuille `@media print` (fin de `style.css`) masque tout LE RESTE
+  de la page (`body > *:not(#printArea)`) et n'affiche que `#printArea` — le navigateur
+  propose « Enregistrer en PDF » nativement dans sa boîte de dialogue d'impression, pas
+  besoin d'un vrai clic "télécharger" séparé. Classes utilitaires partagées :
+  `.print-section` (bloc avec titre `<h3>`), `.print-img-row`/`.print-chart-img`
+  (images), `.print-table` (tableaux).
+- **Graphiques Chart.js capturés en image** (`chartCanvasToImgHtml(canvasId)`, via
+  `canvas.toDataURL('image/png')`) — un `<canvas>` ne peut pas être déplacé/cloné dans
+  `#printArea` sans perdre son rendu (Chart.js dessine sur un contexte précis).
+  Fonctionne directement sur les 3 graphiques camembert de l'Analyse développée (aucune
+  image externe dessinée dessus, jamais tainté). **Ne fonctionne PAS sur le donut
+  Portfolio** (tainté par les logos de position dessinés sans `crossOrigin`, voir
+  "Pièges techniques" point 13) — `buildPortfolioExportChartImg()` reconstruit à la
+  place un donut jetable hors-écran, sans les plugins de logos custom, uniquement pour
+  cet export.
+- **JSON reste le format de synchronisation multi-appareils** (voir "Conventions de
+  code") — le PDF est un format de lecture/partage en plus, jamais un remplacement :
+  ne pas faire dépendre `data/*.json` d'un export PDF.
+
 ### Palette graphiques (fait)
 `THEME` expose `blue` (`css.getPropertyValue('--blue').trim()`) en plus de `gold`. Les
 9 graphiques Chart.js (dont le cours de bourse) utilisent uniquement or/bleu pour leurs
 séries de données. Vert/rouge restent réservés au sémantique positif/négatif : badges
 CAGR (classes CSS `.pos`/`.neg`) et jauge de valorisation (marqueurs CIBLE/JUSTE/ACTUEL).
 
-### Cours de bourse — Yahoo Finance + repli Stooq (fait, mais peu fiable — voir plus bas)
-`loadStockChart(ticker)` tente `fetchYahooWeekly()` en premier — qui malgré son nom
+### Cours de bourse — historique Sheet dédié (source principale) + repli Yahoo/Stooq (fait)
+**Source principale : onglet Google Sheet dédié** (`PRICE_HISTORY_GID = "1420785203"`,
+même fichier/`PUBLISHED_ID` que le reste, chargé en parallèle du Portfolio via son
+propre `responseHandler` gviz `__handlePriceHistoryGviz` — voir "Pièges techniques"
+point 9, 3e source gviz simultanée sur la page). L'utilisateur y a saisi lui-même 20 ans
+de clôtures hebdomadaires par entreprise pour contourner le manque de fiabilité du
+relais CORS Yahoo/Stooq (voir plus bas). **Mise en page réelle du Sheet (différente de
+sa description verbale initiale, vérifiée directement par lecture du CSV publié avant
+d'écrire le parsing — voir "Pièges techniques" point 10)** : row1 = nom d'entreprise
+dans les colonnes **paires** 0-indexées (A, C, E…), row2 = libellés "Date,Close" sans
+intérêt, row3+ = données. **Chaque entreprise a sa propre paire [colonne date, colonne
+clôture]** juste avant sa colonne de clôture — **pas d'axe de dates partagé en colonne
+A** comme décrit verbalement au départ : les historiques démarrent à des dates
+différentes selon l'entreprise (ex. Ferrari démarre en 2016, TotalEnergies en 2006),
+donc `handlePriceHistoryRows()` apparie toujours une clôture à la date de **sa propre**
+colonne, jamais à une colonne de référence commune. Correspondance avec `companies` par
+nom (`findPriceHistoryForCompany()`, `stripAccents()` + `trim()` + casse insensible,
+même pattern que `portfolioEntityLogo()`) — les 20 entreprises du Sheet correspondent
+toutes exactement aux entreprises suivies (vérifié en test), mais si un nom ne matche
+pas, l'entreprise bascule simplement sur le repli Yahoo/Stooq ci-dessous, sans erreur.
+`fetchPriceHistorySeries(nom)` repasse les points par `resampleWeekly()` (même fonction
+que le chemin Yahoo) par sécurité/cohérence, même si la cadence est déjà hebdomadaire.
+
+**Repli automatique : Yahoo Finance + Stooq**, inchangés, utilisés uniquement pour une
+entreprise absente du Sheet dédié. `loadStockChart(ticker, nom)` tente d'abord la
+source Sheet (via `nom`) ; si absente, `fetchYahooWeekly()` — qui malgré son nom
 récupère du **quotidien** via `period1`/`period2` explicites (pas `range=max`, voir
 "Pièges techniques" point 3) puis rééchantillonne en hebdomadaire côté client
 (`resampleWeekly()`). Mapping `mapTickerToYahoo` : `.PA` Paris, pas de suffixe
 Nasdaq/NYSE, `.L` Londres, `.DE` Francfort, `.AS` Amsterdam, `.MC` Madrid, `.MI` Milan,
-`.SW` Suisse, `.T` Tokyo. En cas d'échec, repli automatique sur `fetchStooqWeekly()`
-(mapping `mapTickerToStooq`). La source active et le symbole utilisé sont affichés sous
-le graphique (`#stockSourceNote`). En cas d'échec des deux sources, message d'erreur
+`.SW` Suisse, `.T` Tokyo. En cas d'échec, repli sur `fetchStooqWeekly()` (mapping
+`mapTickerToStooq`). La source active et le symbole utilisé sont affichés sous le
+graphique (`#stockSourceNote`). En cas d'échec des trois sources, message d'erreur
 explicite et actionnable dans `#stockStatus` (jamais d'échec silencieux). Sélecteur de
 plage (1a/2a/3a/5a/10a/20a/Max, `#rangeButtons`) recalcule l'affichage sans refaire de
 fetch. **Canal de régression linéaire** (`computeRegressionChannel()`) superposé au
@@ -627,7 +776,8 @@ la vraie amélioration de fiabilité, pas juste augmenter le délai sur un seul.
 de fiabilité totale se confirme un jour : **Twelve Data** (`api.twelvedata.com`), qui
 envoie `Access-Control-Allow-Origin: *` en direct (vérifié, y compris pour du Euronext
 Paris), donc plus besoin de proxy du tout — nécessite une clé API gratuite (inscription
-~10s, sans CB) à obtenir par l'utilisateur.
+~10s, sans CB) à obtenir par l'utilisateur. **Maintenant secondaire depuis l'ajout du
+Sheet dédié** : ne concerne plus que les entreprises hors de cet onglet.
 
 *(Historique : un widget TradingView a brièvement remplacé cette solution, abandonné
 suite à une limitation de données bloquante pour les bourses non-américaines — voir
@@ -662,6 +812,15 @@ sans un moyen de contourner cette limitation.)*
   très bien (testé indépendamment), mais l'utilisateur n'avait jamais rien à voir puisque
   la création elle-même échouait silencieusement. Corrigé en remplaçant les deux
   `prompt()` par un formulaire en ligne (nom + phases, boutons Créer/Annuler).
+- **Bouton « 📊 » de la fiche journal (Cerveau numérique) ouvrait toujours l'Analyse
+  développée de « null »** au lieu de la bonne entreprise (`openAnalyseFromFiche()`
+  appelait `closeFiche()` — qui remet `ficheEntite` à `null` — **avant** de lire
+  `ficheEntite` comme argument de `openAnalyse()`). Symptôme décrit par l'utilisateur
+  comme intermittent (« des fois ça ne marche pas ») alors qu'en réalité ce point
+  d'entrée précis échouait **systématiquement** ; l'autre point d'entrée (tag
+  « 📊 Analyse développée » sur l'onglet Analyse, qui passe le nom directement sans
+  passer par `closeFiche()`) fonctionnait normalement, d'où l'impression d'aléatoire.
+  Corrigé en capturant le nom dans une variable locale avant l'appel à `closeFiche()`.
 
 ### Demandé, non commencé — nécessite une décision d'architecture
 Ces 3 fonctionnalités ne sont **pas réalisables en site statique pur** sans backend :
