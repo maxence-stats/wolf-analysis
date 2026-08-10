@@ -1958,6 +1958,7 @@ function renderCompany(nom){
   setBadge('badgeActions', 'CAGR actions 20a', latest.cagrActions);
 
   renderValorisation(nom);
+  renderAnalyseValoSummary(nom);
 
   const series = k => hist.map(r => r[k]);
 
@@ -2947,6 +2948,51 @@ function applyObjectif(nom, idx){
   const latest = hist[hist.length - 1];
   const { fcfActuel } = valorisationInputs(latest);
   SCENARIOS.forEach(s => updateScenarioCard(s, hist, fcfActuel, latest.prixActuel));
+}
+
+// Connecte l'onglet Analyse à l'onglet Valorisation : affiche un résumé compact du
+// dernier objectif enregistré (FCF et/ou OCF) directement sous les ratios clés, sans
+// devoir changer d'onglet — demande explicite de l'utilisateur ("créer du sens entre
+// les deux"). Purement une lecture de objectifsStore, aucun nouveau calcul/état.
+function renderAnalyseValoSummary(nom){
+  const label = document.getElementById('analyseValoSectionLabel');
+  const box = document.getElementById('analyseValoCard');
+  if (!label || !box) return;
+  const hist = companies[nom];
+  const latest = hist[hist.length - 1];
+
+  const blocks = ['fcf', 'ocf'].map(metric => {
+    const entry = lastObjectifForMetric(nom, metric);
+    if (!entry) return '';
+    const metricActuel = metric === 'ocf'
+      ? (latest.prixActuel != null && latest.pOcf ? latest.prixActuel / latest.pOcf : null)
+      : latest.fcfParAction;
+    const rows = SCENARIOS.map(s => {
+      const v = entry.scenarios[s.key];
+      if (!v || metricActuel == null || latest.prixActuel == null) return '';
+      const { prixJusteSim, rendement5A } = computeScenario(metricActuel, latest.prixActuel, v.cagr, v.multiple);
+      const rendCls = rendement5A >= 0 ? 'pos' : 'neg';
+      return `<div class="analyse-valo-row ${s.color}">
+        <span class="analyse-valo-scen">${s.label.replace('Scénario ', '')}</span>
+        <span class="analyse-valo-pj">Prix juste ${fmtEUR(prixJusteSim)}</span>
+        <span class="analyse-valo-rend ${rendCls}">${(rendement5A >= 0 ? '+' : '') + rendement5A.toLocaleString('fr-FR', { minimumFractionDigits:1, maximumFractionDigits:1 })}%</span>
+      </div>`;
+    }).filter(Boolean).join('');
+    if (!rows) return '';
+    return `<div class="analyse-valo-block">
+      <div class="analyse-valo-block-head"><span class="objectifs-metric-tag ${metric}">${metric.toUpperCase()}</span><span class="analyse-valo-date">${entry.date}</span></div>
+      ${rows}
+    </div>`;
+  }).filter(Boolean);
+
+  if (blocks.length === 0){
+    label.style.display = 'none';
+    box.style.display = 'none';
+    return;
+  }
+  label.style.display = '';
+  box.style.display = '';
+  box.innerHTML = blocks.join('') + `<button class="analyse-valo-link" onclick="switchPage('pageValorisation')">Ouvrir dans Valorisation →</button>`;
 }
 
 function exportObjectifs(){
