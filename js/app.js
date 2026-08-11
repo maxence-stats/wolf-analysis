@@ -2585,11 +2585,28 @@ function initClassement(){
    ============================================================ */
 const DIVIDEND_LS_KEY = 'wolfAnalysisDividendPortfolio';
 const DIVIDEND_BASELINE_URL = 'data/dividende.json';
-let dividendPortfolioStore = { positions: {} }; // { [nom]: montantInvesti en € }
+// positions[nom] = % du capital total (pas un montant € — retour utilisateur explicite :
+// "je ne dois pas rentrer un prix, je dois rentrer un pourcentage de taille de position,
+// c'est à toi de calculer le prix"). totalCapital = capital total à répartir, saisi une
+// fois pour tout le portefeuille.
+let dividendPortfolioStore = { positions: {}, totalCapital: 0 };
+
+// Migration : les stores existants (créés avant ce changement) ont positions[nom] en €
+// bruts — reconvertit en % du total (déduit de la somme existante) une seule fois, sans
+// perte de répartition relative. Détectée par l'absence de totalCapital > 0.
+function migrateDividendPortfolioToPercent(){
+  const noms = Object.keys(dividendPortfolioStore.positions);
+  if (!noms.length || dividendPortfolioStore.totalCapital) return;
+  const sum = noms.reduce((s, n) => s + (dividendPortfolioStore.positions[n] || 0), 0);
+  if (!sum) return;
+  dividendPortfolioStore.totalCapital = sum;
+  noms.forEach(n => { dividendPortfolioStore.positions[n] = (dividendPortfolioStore.positions[n] / sum) * 100; });
+  persistDividendPortfolioLocal();
+}
 
 function addDividendPosition(nom){
   if (dividendPortfolioStore.positions[nom] != null) return;
-  dividendPortfolioStore.positions[nom] = 1000;
+  dividendPortfolioStore.positions[nom] = 10;
   persistDividendPortfolioLocal();
 }
 
@@ -2598,6 +2615,7 @@ function mergeDividendPortfolio(extra){
   Object.keys(extra.positions).forEach(k => {
     if (dividendPortfolioStore.positions[k] == null) dividendPortfolioStore.positions[k] = extra.positions[k];
   });
+  if (!dividendPortfolioStore.totalCapital && extra.totalCapital) dividendPortfolioStore.totalCapital = extra.totalCapital;
 }
 
 async function loadDividendPortfolioBaseline(){
@@ -2612,6 +2630,7 @@ async function loadDividendPortfolioBaseline(){
     const raw = localStorage.getItem(DIVIDEND_LS_KEY);
     if (raw) mergeDividendPortfolio(JSON.parse(raw));
   }catch(e){ /* localStorage indisponible ou JSON corrompu */ }
+  migrateDividendPortfolioToPercent();
   renderDividendPortfolio();
 }
 
@@ -2633,14 +2652,15 @@ function exportDividendPortfolio(){
 
 let dividendProjectionChart = null;
 
-function dividendPositionMetrics(nom, montant){
+function dividendPositionMetrics(nom, pct, totalCapital){
   const hist = companies[nom];
   if (!hist) return null;
   const latest = hist[hist.length - 1];
   const rendement = latest.rendementDiv;
+  const montant = totalCapital * pct / 100;
   const dividendeAnnuel = (rendement != null) ? montant * rendement / 100 : null;
   return {
-    nom, montant, logo: latest.lienImage,
+    nom, pct, montant, logo: latest.lienImage,
     rendement, dividendeAnnuel,
     cagr5: latest.cagrDiv5, cagr10: latest.cagrDiv10, cagr20: latest.cagrDiv20
   };
@@ -2651,32 +2671,36 @@ function renderDividendPortfolio(){
   const listBox = document.getElementById('dividendeList');
   if (!summaryBox || !listBox) return;
 
-  const noms = Object.keys(dividendPortfolioStore.positions);
-  const rows = noms.map(nom => dividendPositionMetrics(nom, dividendPortfolioStore.positions[nom])).filter(Boolean);
+  const totalCapitalInput = document.getElementById('dividendeTotalCapital');
+  if (totalCapitalInput && document.activeElement !== totalCapitalInput) totalCapitalInput.value = dividendPortfolioStore.totalCapital || '';
+  const totalCapital = dividendPortfolioStore.totalCapital || 0;
 
-  const capitalTotal = rows.reduce((s, r) => s + r.montant, 0);
+  const noms = Object.keys(dividendPortfolioStore.positions);
+  const rows = noms.map(nom => dividendPositionMetrics(nom, dividendPortfolioStore.positions[nom], totalCapital)).filter(Boolean);
+
+  const pctAlloue = rows.reduce((s, r) => s + r.pct, 0);
+  const capitalInvesti = rows.reduce((s, r) => s + r.montant, 0);
   const dividendeAnnuelTotal = rows.reduce((s, r) => s + (r.dividendeAnnuel || 0), 0);
-  const rendementMoyen = capitalTotal ? (dividendeAnnuelTotal / capitalTotal * 100) : null;
-  // CAGR moyen pondéré par le capital investi (10 ans, fenêtre la plus
+  const rendementMoyen = capitalInvesti ? (dividendeAnnuelTotal / capitalInvesti * 100) : null;
+  // CAGR moyen pondéré par le poids (%) de chaque position (10 ans, fenêtre la plus
   // représentative — même horizon que le reste du site), utilisé pour la projection.
-  const cagrPondereSum = rows.reduce((s, r) => s + (r.cagr10 != null ? r.cagr10 * r.montant : 0), 0);
-  const cagrPondereWeight = rows.reduce((s, r) => s + (r.cagr10 != null ? r.montant : 0), 0);
+  const cagrPondereSum = rows.reduce((s, r) => s + (r.cagr10 != null ? r.cagr10 * r.pct : 0), 0);
+  const cagrPondereWeight = rows.reduce((s, r) => s + (r.cagr10 != null ? r.pct : 0), 0);
   const cagrMoyen = cagrPondereWeight ? (cagrPondereSum / cagrPondereWeight) : null;
 
   summaryBox.innerHTML = `
-    <div class="ratio-card"><div class="k">Capital investi</div><div class="v">${fmtEUR(capitalTotal, 0)}</div><div class="sub">${rows.length} position${rows.length > 1 ? 's' : ''}</div></div>
+    <div class="ratio-card"><div class="k">Capital investi</div><div class="v">${fmtEUR(capitalInvesti, 0)}</div><div class="sub">${rows.length} position${rows.length > 1 ? 's' : ''}</div></div>
+    <div class="ratio-card"><div class="k">Alloué</div><div class="v${Math.round(pctAlloue) === 100 ? '' : ' warn'}">${pctAlloue.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</div><div class="sub">${Math.round(pctAlloue) === 100 ? 'du capital total' : 'sur 100% du capital total'}</div></div>
     <div class="ratio-card"><div class="k">Dividendes annuels estimés</div><div class="v">${fmtEUR(dividendeAnnuelTotal, 0)}</div><div class="sub">au rendement actuel</div></div>
-    <div class="ratio-card"><div class="k">Rendement moyen pondéré</div><div class="v">${rendementMoyen != null ? fmtPct(rendementMoyen) : 'N/D'}</div><div class="sub">sur capital investi</div></div>
-    <div class="ratio-card"><div class="k">CAGR dividende moyen (10 ans)</div><div class="v">${cagrMoyen != null ? fmtPct(cagrMoyen) : 'N/D'}</div><div class="sub">pondéré par le capital investi</div></div>`;
+    <div class="ratio-card"><div class="k">Rendement moyen pondéré</div><div class="v">${rendementMoyen != null ? fmtPct(rendementMoyen) : 'N/D'}</div><div class="sub">sur capital investi</div></div>`;
 
   listBox.innerHTML = rows.length ? rows.map(r => {
-    const pct = capitalTotal ? (r.montant / capitalTotal * 100) : 0;
     const safe = r.nom.replace(/"/g,'&quot;');
     return `<div class="dividende-row" data-nom="${safe}">
       <div class="dividende-row-logo"><img src="${r.logo || ''}" alt=""></div>
       <div class="dividende-row-name">${r.nom}</div>
-      <div class="dividende-row-field"><label>Montant investi</label><input type="number" class="dividende-amount-input" data-nom="${safe}" value="${r.montant}" min="0" step="50"></div>
-      <div class="dividende-row-field"><label>Poids</label><span>${pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</span></div>
+      <div class="dividende-row-field"><label>Poids (%)</label><input type="number" class="dividende-amount-input" data-nom="${safe}" value="${r.pct.toLocaleString('fr-FR',{maximumFractionDigits:2})}" min="0" max="100" step="0.5"></div>
+      <div class="dividende-row-field"><label>Montant</label><span>${fmtEUR(r.montant, 0)}</span></div>
       <div class="dividende-row-field"><label>Rendement</label><span>${r.rendement != null ? fmtPct(r.rendement) : 'N/D'}</span></div>
       <div class="dividende-row-field"><label>Div. annuel</label><span>${r.dividendeAnnuel != null ? fmtEUR(r.dividendeAnnuel, 0) : 'N/D'}</span></div>
       <div class="dividende-row-field"><label>CAGR 5/10/20a</label><span>${fmtPct(r.cagr5)} / ${fmtPct(r.cagr10)} / ${fmtPct(r.cagr20)}</span></div>
@@ -2685,12 +2709,21 @@ function renderDividendPortfolio(){
   }).join('') : '<div class="objectifs-empty">Aucune position — ajoute des entreprises depuis l\'onglet Classement (liste "Meilleur rendement du dividende").</div>';
 
   wireDividendRows();
-  renderDividendGoal(rendementMoyen);
-  updateDividendSimDefaults(capitalTotal, rendementMoyen, cagrMoyen);
+  updateDividendSimDefaults(capitalInvesti, rendementMoyen, cagrMoyen);
   computeDividendSimChart();
 }
 
 function wireDividendRows(){
+  const totalCapitalInput = document.getElementById('dividendeTotalCapital');
+  if (totalCapitalInput && !totalCapitalInput.dataset.wired){
+    totalCapitalInput.dataset.wired = '1';
+    totalCapitalInput.addEventListener('change', () => {
+      const val = parseFloat(totalCapitalInput.value);
+      dividendPortfolioStore.totalCapital = isNaN(val) ? 0 : val;
+      persistDividendPortfolioLocal();
+      renderDividendPortfolio();
+    });
+  }
   document.querySelectorAll('.dividende-amount-input').forEach(input => {
     input.addEventListener('change', () => {
       const val = parseFloat(input.value);
@@ -2708,20 +2741,6 @@ function wireDividendRows(){
   });
 }
 
-function renderDividendGoal(rendementMoyen){
-  const input = document.getElementById('dividendeGoalInput');
-  const result = document.getElementById('dividendeGoalResult');
-  if (!input || !result) return;
-  const compute = () => {
-    const goal = parseFloat(input.value);
-    if (!goal || !rendementMoyen){ result.textContent = '—'; return; }
-    const montantNecessaire = goal / (rendementMoyen / 100);
-    result.textContent = `≈ ${fmtEUR(montantNecessaire, 0)} à investir (même répartition qu'aujourd'hui)`;
-  };
-  input.oninput = compute;
-  compute();
-}
-
 // ============================================================
 // SIMULATEUR DE CROISSANCE — capital de départ + versement mensuel + rendement +
 // croissance du dividende, composé sur un horizon choisi (5/10/15/20 ans). Distinct du
@@ -2730,11 +2749,15 @@ function renderDividendGoal(rendementMoyen){
 // graphique"), les 3 premiers champs sont pré-remplis depuis les positions réelles au
 // premier rendu puis restent librement éditables (dividendSimTouched évite d'écraser une
 // saisie utilisateur à chaque re-rendu du portefeuille).
-// Modèle : capital(t) = capital0 + versementMensuel×12×t (accumulation simple, pas
-// d'hypothèse de plus-value boursière) ; dividende(t) = capital(t) × rendement% ×
-// (1+croissance%)^t (le rendement sur le capital ajouté reste au taux actuel, tandis que
-// le dividende par action déjà détenu continue de croître au CAGR — cohérent avec un
-// portefeuille dividende réel où le rendement sur coût augmente avec le temps).
+// Modèle année par année (boucle, pas de formule fermée — nécessaire dès qu'on
+// réinvestit, le capital de l'année t dépend du dividende de l'année t-1) :
+// capital(t) = capital(t-1) + versementMensuel×12 [+ dividende(t-1) si réinvestissement
+// actif cette année-là] ; rendementSurCout(t) = rendementSurCout(t-1) × (1+croissance%)
+// (le rendement sur le coût de base augmente avec la croissance du dividende, modèle
+// "yield on cost") ; dividende(t) = capital(t) × rendementSurCout(t).
+// Réinvestissement optionnel (retour utilisateur explicite : "pendant vingt ans je les
+// réinvestis, ensuite je les prends") — désactivable, et désactivable À PARTIR d'une
+// année donnée (dividendeSimStopYear) tout en gardant les années précédentes composées.
 let dividendSimTouched = false;
 let dividendSimHorizon = 10;
 function updateDividendSimDefaults(capitalTotal, rendementMoyen, cagrMoyen){
@@ -2748,19 +2771,37 @@ function updateDividendSimDefaults(capitalTotal, rendementMoyen, cagrMoyen){
 }
 function dividendSimInputs(){
   const num = id => { const v = parseFloat(document.getElementById(id)?.value); return isNaN(v) ? 0 : v; };
+  const stopYearRaw = document.getElementById('dividendeSimStopYear')?.value;
   return {
     capital0: num('dividendeSimCapital'),
     monthly: num('dividendeSimMonthly'),
     yieldPct: num('dividendeSimYield'),
     cagr: num('dividendeSimCagr'),
-    horizon: dividendSimHorizon
+    horizon: dividendSimHorizon,
+    reinvest: !!document.getElementById('dividendeSimReinvest')?.checked,
+    stopYear: stopYearRaw ? parseInt(stopYearRaw, 10) : null
   };
 }
-function computeDividendSimSeries(){
-  const { capital0, monthly, yieldPct, cagr, horizon } = dividendSimInputs();
-  const years = Array.from({ length: horizon + 1 }, (_, t) => t);
-  const capital = years.map(t => capital0 + monthly * 12 * t);
-  const dividende = years.map(t => capital[t] * (yieldPct / 100) * Math.pow(1 + cagr / 100, t));
+// overrides optionnel : {capital0, monthly} pour la recherche binaire de l'objectif,
+// sans dépendre des valeurs actuellement affichées dans les champs.
+function computeDividendSimSeries(overrides){
+  const base = dividendSimInputs();
+  const { yieldPct, cagr, horizon, reinvest, stopYear } = base;
+  const capital0 = overrides && overrides.capital0 != null ? overrides.capital0 : base.capital0;
+  const monthly = overrides && overrides.monthly != null ? overrides.monthly : base.monthly;
+  const years = [0];
+  const capital = [capital0];
+  const dividende = [capital0 * (yieldPct / 100)];
+  let yieldOnCost = yieldPct;
+  for (let t = 1; t <= horizon; t++){
+    const reinvestThisYear = reinvest && (stopYear == null || t <= stopYear);
+    let cap = capital[t - 1] + monthly * 12;
+    if (reinvestThisYear) cap += dividende[t - 1];
+    yieldOnCost *= (1 + cagr / 100);
+    years.push(t);
+    capital.push(cap);
+    dividende.push(cap * (yieldOnCost / 100));
+  }
   return { years, capital, dividende };
 }
 function computeDividendSimChart(){
@@ -2786,6 +2827,39 @@ function computeDividendSimChart(){
       <div><div class="k">Dividendes annuels (année ${n})</div><div class="v">${fmtEUR(dividende[n], 0)}</div></div>
       <div><div class="k">Croissance div. moyenne</div><div class="v">${dividendSimInputs().cagr.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%/an</div></div>`;
   }
+  solveDividendGoal();
+}
+
+// Objectif inversé, intégré au simulateur (retour utilisateur explicite : "que ça fasse
+// partie du simulateur", pas un widget séparé déconnecté du réinvestissement) : "si je
+// veux X€/mois à l'horizon choisi, combien dois-je mettre" — résolu par recherche
+// binaire sur computeDividendSimSeries() (le modèle composé, avec réinvestissement,
+// n'a pas de formule fermée simple à inverser), en ajustant soit le capital de départ
+// soit le versement mensuel au choix, l'autre restant fixé à sa valeur actuelle.
+function solveDividendGoal(){
+  const goalInput = document.getElementById('dividendeGoalInput');
+  const result = document.getElementById('dividendeGoalResult');
+  if (!goalInput || !result) return;
+  const goalRaw = parseFloat(goalInput.value);
+  if (!goalRaw){ result.textContent = '—'; return; }
+  const period = document.getElementById('dividendeGoalPeriod')?.value || 'month';
+  const goalAnnual = period === 'month' ? goalRaw * 12 : goalRaw;
+  const lever = document.getElementById('dividendeGoalLever')?.value || 'capital0';
+  const horizon = dividendSimHorizon;
+
+  const dividendeAtHorizon = overrides => computeDividendSimSeries(overrides).dividende[horizon];
+
+  let lo = 0, hi = 10000000;
+  if (dividendeAtHorizon({ [lever]: hi }) < goalAnnual){
+    result.textContent = "Objectif hors de portée à cet horizon, même avec un montant très élevé — augmente le rendement, la croissance ou l'horizon.";
+    return;
+  }
+  for (let i = 0; i < 60; i++){
+    const mid = (lo + hi) / 2;
+    if (dividendeAtHorizon({ [lever]: mid }) < goalAnnual) lo = mid; else hi = mid;
+  }
+  const leverLabel = lever === 'capital0' ? 'de capital de départ' : 'de versement mensuel';
+  result.textContent = `≈ ${fmtEUR(hi, 0)} ${leverLabel} pour atteindre ${fmtEUR(goalAnnual, 0)}/an de dividendes en année ${horizon} (réinvestissement ${dividendSimInputs().reinvest ? 'activé' : 'désactivé'}).`;
 }
 
 function openDividendeSimZoom(){
@@ -2815,9 +2889,15 @@ function initDividendPortfolio(){
   const exportBtn = document.getElementById('dividendeExportBtn');
   if (exportBtn) exportBtn.addEventListener('click', exportDividendPortfolio);
 
-  ['dividendeSimCapital', 'dividendeSimMonthly', 'dividendeSimYield', 'dividendeSimCagr'].forEach(id => {
+  ['dividendeSimCapital', 'dividendeSimMonthly', 'dividendeSimYield', 'dividendeSimCagr', 'dividendeSimStopYear'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('input', () => { dividendSimTouched = true; computeDividendSimChart(); });
+  });
+  const reinvestBox = document.getElementById('dividendeSimReinvest');
+  if (reinvestBox) reinvestBox.addEventListener('change', () => { dividendSimTouched = true; computeDividendSimChart(); });
+  ['dividendeGoalInput', 'dividendeGoalPeriod', 'dividendeGoalLever'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', solveDividendGoal);
   });
   const horizonRow = document.getElementById('dividendeSimHorizonButtons');
   if (horizonRow){

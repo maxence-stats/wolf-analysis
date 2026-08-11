@@ -249,10 +249,21 @@
   .dividende-goal-card{background:var(--card-bg);border:var(--card-border);border-radius:14px;padding:18px 22px;box-shadow:var(--shadow-card);margin:18px 0;}
   .dividende-goal-card label{display:block;font-size:11.5px;color:var(--text-dim);margin-bottom:8px;}
   .dividende-goal-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
-  .dividende-goal-row input{background:var(--panel);border:1px solid var(--hair);border-radius:8px;padding:8px 12px;color:var(--text);font-family:var(--font-body);font-size:14px;width:160px;outline:none;}
-  .dividende-goal-row input:focus{border-color:var(--gold);}
-  .dividende-goal-result{font-family:var(--font-mono);font-weight:700;color:var(--gold);font-size:13.5px;}
-  .dividende-actions{display:flex;justify-content:flex-end;margin:18px 0 10px;}
+  .dividende-goal-row input, .dividende-goal-row select{background:var(--panel);border:1px solid var(--hair);border-radius:8px;padding:8px 12px;color:var(--text);font-family:var(--font-body);font-size:13px;outline:none;}
+  .dividende-goal-row input{width:120px;}
+  .dividende-goal-row select{cursor:pointer;}
+  .dividende-goal-row input:focus, .dividende-goal-row select:focus{border-color:var(--gold);}
+  .dividende-goal-result{font-family:var(--font-mono);font-weight:700;color:var(--gold);font-size:13px;margin-top:10px;line-height:1.5;}
+  .dividende-actions{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:18px 0 10px;}
+  .dividende-total-capital{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--text-dim);}
+  .dividende-total-capital input{background:var(--panel);border:1px solid var(--hair);border-radius:7px;padding:6px 10px;color:var(--text);font-family:var(--font-mono);font-size:13px;width:130px;outline:none;}
+  .dividende-total-capital input:focus{border-color:var(--gold);}
+  .dividende-sim-reinvest-row{display:flex;flex-direction:column;gap:8px;margin:4px 0 12px;font-size:11.5px;color:var(--text-dim);}
+  .dividende-checkbox{display:flex;align-items:center;gap:7px;cursor:pointer;}
+  .dividende-checkbox input{accent-color:var(--gold);}
+  #dividendeSimStopYearLabel{display:flex;align-items:center;gap:7px;}
+  #dividendeSimStopYearLabel input{background:var(--panel);border:1px solid var(--hair);border-radius:7px;padding:5px 9px;color:var(--text);font-family:var(--font-mono);font-size:12px;width:70px;outline:none;}
+  #dividendeSimStopYearLabel input:focus{border-color:var(--gold);}
   .dividende-list{display:flex;flex-direction:column;gap:10px;}
   .dividende-row{position:relative;display:flex;align-items:center;gap:16px;flex-wrap:wrap;background:var(--card-bg);border:var(--card-border);border-radius:12px;padding:12px 40px 12px 14px;box-shadow:var(--shadow-card);}
   .dividende-row-logo{width:36px;height:36px;background:#fff;border-radius:7px;display:flex;align-items:center;justify-content:center;padding:5px;flex-shrink:0;}

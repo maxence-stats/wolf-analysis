@@ -361,23 +361,18 @@
     <div id="pageDividende" class="page">
       <div class="section-label">Portefeuille Dividende</div>
       <p class="valo-intro">Construit depuis l'onglet Classement (bouton « + » sur la liste "Meilleur rendement du
-        dividende"). Montant investi saisi manuellement par position — poids, rendement et projection calculés
+        dividende"). Chaque position se règle en % du capital total à répartir — le montant en € est calculé
         automatiquement.</p>
 
       <div class="ratio-grid" id="dividendeSummary"></div>
-
-      <div class="dividende-goal-card">
-        <label for="dividendeGoalInput">Objectif de dividendes annuels (€)</label>
-        <div class="dividende-goal-row">
-          <input type="number" id="dividendeGoalInput" placeholder="ex. 2000" min="0" step="50">
-          <span id="dividendeGoalResult" class="dividende-goal-result">—</span>
-        </div>
-      </div>
 
       <div class="dividende-main-row">
         <div class="dividende-positions-col">
           <div class="section-label">Positions</div>
           <div class="dividende-actions">
+            <label class="dividende-total-capital">Capital total à répartir (€)
+              <input type="number" id="dividendeTotalCapital" step="100" min="0">
+            </label>
             <button class="zoom-btn objectifs-export" id="dividendeExportBtn">⭳ Exporter</button>
           </div>
           <div class="dividende-list" id="dividendeList"></div>
@@ -400,8 +395,21 @@
               <button data-horizon="15">15 ans</button>
               <button data-horizon="20">20 ans</button>
             </div>
+            <div class="dividende-sim-reinvest-row">
+              <label class="dividende-checkbox"><input type="checkbox" id="dividendeSimReinvest" checked> Réinvestir les dividendes (intérêts composés)</label>
+              <label id="dividendeSimStopYearLabel">Arrêter le réinvestissement après <input type="number" id="dividendeSimStopYear" min="0" step="1" placeholder="jamais"> ans (optionnel)</label>
+            </div>
             <div class="chart-holder" style="height:260px;"><canvas id="chartDividendeProjection"></canvas></div>
             <div class="dividende-sim-results" id="dividendeSimResults"></div>
+            <div class="dividende-goal-card">
+              <label for="dividendeGoalInput">Objectif de dividendes à l'horizon choisi</label>
+              <div class="dividende-goal-row">
+                <input type="number" id="dividendeGoalInput" placeholder="ex. 1000" min="0" step="50">
+                <select id="dividendeGoalPeriod"><option value="month">€/mois</option><option value="year">€/an</option></select>
+                <select id="dividendeGoalLever"><option value="capital0">en ajustant le capital de départ</option><option value="monthly">en ajustant le versement mensuel</option></select>
+              </div>
+              <div id="dividendeGoalResult" class="dividende-goal-result">—</div>
+            </div>
           </div>
         </div>
       </div>
