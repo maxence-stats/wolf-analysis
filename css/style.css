@@ -539,6 +539,9 @@
   @media (max-width:900px){ .portfolio-compare-grid{grid-template-columns:1fr;} }
   @media (max-width:760px){ .portfolio-summary{grid-template-columns:repeat(2,1fr);} .portfolio-donut-card .chart-holder{height:380px !important;} }
 
+  .perso-blurred{filter:blur(6px);user-select:none;transition:filter .15s ease;}
+  .perso-blurred:hover{filter:blur(2px);}
+  #persoBlurToggleBtn.active{background:rgba(217,164,65,0.14);border-color:var(--gold);color:var(--gold);}
   .perso-accounts-row{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;}
   .perso-account-col .portfolio-summary{grid-template-columns:repeat(2,1fr);margin-bottom:14px;}
   .perso-account-col .chart-card{margin-bottom:14px;}

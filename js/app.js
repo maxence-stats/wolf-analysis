@@ -70,12 +70,14 @@ const PERSO_GID = "1457758875";
 const PEA_COL = {
   mois:1, versement:2, valeurApresFlux:3, valeurPart:4, rendementPeriode:5, rendementCumule:6,
   cac40:7, valeurPartCac40:8, rendementPeriodeCac40:9,
-  actif:11, valorisation:12, poids:13, valorisationTotale:14, valeurAchat:15, perfPct:16, perfEur:17
+  actif:11, valorisation:12, poids:13, valorisationTotale:14, valeurAchat:15, perfPct:16, perfEur:17,
+  valeurAchatTotalCol:18 // "Valeur d'achat total" — capital investi réel (positions + cash), colonne S
 };
 const CTO_COL = {
   mois:20, versement:21, valeurApresFlux:22, valeurPart:23, rendementPeriode:24, rendementCumule:25,
   cac40:26, valeurPartCac40:27, rendementPeriodeCac40:28,
-  actif:31, valorisation:32, poids:33, valorisationTotale:34, valeurAchat:35, perfPct:36, perfEur:37
+  actif:31, valorisation:32, poids:33, valorisationTotale:34, valeurAchat:35, perfPct:36, perfEur:37,
+  valeurAchatTotalCol:38 // "Valeur d'achat total" — capital investi réel (positions + cash), colonne AM
 };
 let persoData = { pea:{ monthly:[], positions:[], valorisationTotale:null }, cto:{ monthly:[], positions:[], valorisationTotale:null } };
 
@@ -513,7 +515,14 @@ function parsePersoBlock(rows, col){
       if (valorisationTotale == null) valorisationTotale = parseNum(r[col.valorisationTotale]);
     }
   }
-  return { monthly, positions, valorisationTotale };
+  // "Valeur d'achat total" (capital réellement investi : positions + cash apporté au
+  // compte, pas juste la somme des coûts d'acquisition des positions) — colonne dédiée
+  // du Sheet, vérifiée valeur par valeur (PEA : 5 287,83€, cohérent avec la somme des
+  // positions ; CTO : 6 180,20€, supérieur à la somme des positions car inclut le cash
+  // du compte). Le libellé est sur une ligne, la valeur juste en dessous, même colonne.
+  const labelCell = findPersoCellByLabel(rows, col.valeurAchatTotalCol, 2, "Valeur d'achat total");
+  const capitalInvestiTotal = labelCell ? parseNum(rows[labelCell.row + 1] && rows[labelCell.row + 1][labelCell.col]) : null;
+  return { monthly, positions, valorisationTotale, capitalInvestiTotal };
 }
 
 // Cash (LDDS + Livret A) et Immobilier : blocs distincts, vérifiés colonne par colonne
@@ -568,14 +577,14 @@ function parsePersoCashImmo(rows){
     immobilier
   };
 }
-// Bug trouvé en test : "LDDS"/"LIVRET A" sont des lignes à UNE seule cellule remplie
-// (~69 colonnes vides sur 70) — le point d'entrée gviz les compresse silencieusement
-// (heuristique "ligne quasi vide" → supprimée), contrairement au CSV qui les garde tel
-// quel. "Total" (bloc Immobilier) survit car sa ligne a plusieurs cellules remplies.
-// Plutôt que de deviner un décalage, on refait un fetch CSV dédié (léger, un seul petit
-// fichier) rien que pour cashImmo dès que la source gviz a gagné la course — le CSV
-// donne toujours la bonne structure pour ces deux libellés.
-async function refetchPersoCashImmoViaCsv(){
+// Bug trouvé en test : "LDDS"/"LIVRET A"/"Valeur d'achat total" sont des lignes à UNE
+// seule cellule remplie (~69 colonnes vides sur 70) — le point d'entrée gviz les
+// compresse silencieusement (heuristique "ligne quasi vide" → supprimée), contrairement
+// au CSV qui les garde tel quel. "Total" (bloc Immobilier) survit car sa ligne a
+// plusieurs cellules remplies. Plutôt que de deviner un décalage, on refait un fetch CSV
+// dédié (léger, un seul petit fichier) pour recalculer ces champs précis dès que la
+// source gviz a gagné la course — le CSV donne toujours la bonne structure ici.
+async function refetchPersoSparseFieldsViaCsv(){
   try{
     const csvUrl = `https://docs.google.com/spreadsheets/d/e/${PERSO_PUBLISHED_ID}/pub?gid=${PERSO_GID}&single=true&output=csv&_=${Date.now()}`;
     const res = await fetch(csvUrl, { cache:'no-store' });
@@ -583,17 +592,19 @@ async function refetchPersoCashImmoViaCsv(){
     const text = await res.text();
     const parsed = Papa.parse(text.trim(), { skipEmptyLines:false });
     const cashImmo = parsePersoCashImmo(parsed.data);
-    if (cashImmo.ldds != null || cashImmo.livretA != null){
-      persoData.cashImmo = cashImmo;
-      renderPersoOverview();
-    }
-  }catch(e){ /* le repli reste ce que parsePersoCashImmo a trouvé (ou N/D), non bloquant */ }
+    if (cashImmo.ldds != null || cashImmo.livretA != null) persoData.cashImmo = cashImmo;
+    const peaTotal = parsePersoBlock(parsed.data, PEA_COL).capitalInvestiTotal;
+    const ctoTotal = parsePersoBlock(parsed.data, CTO_COL).capitalInvestiTotal;
+    if (peaTotal != null) persoData.pea.capitalInvestiTotal = peaTotal;
+    if (ctoTotal != null) persoData.cto.capitalInvestiTotal = ctoTotal;
+    renderPersoPortfolio();
+  }catch(e){ /* les valeurs restent ce qu'on a pu trouver au premier passage, non bloquant */ }
 }
 function handlePersoRows(rows){
   persoData = { pea: parsePersoBlock(rows, PEA_COL), cto: parsePersoBlock(rows, CTO_COL), cashImmo: parsePersoCashImmo(rows) };
-  if (persoData.cashImmo.ldds == null && persoData.cashImmo.livretA == null){
-    refetchPersoCashImmoViaCsv();
-  }
+  const needsRefetch = (persoData.cashImmo.ldds == null && persoData.cashImmo.livretA == null)
+    || persoData.pea.capitalInvestiTotal == null || persoData.cto.capitalInvestiTotal == null;
+  if (needsRefetch) refetchPersoSparseFieldsViaCsv();
   renderPersoPortfolio();
 }
 
@@ -2082,7 +2093,11 @@ function renderPortfolio(){
 // le début du journal mensuel). Le coût d'acquisition par position est la source fiable.
 function persoAccountStats(block){
   const positions = block.positions.filter(p => p.nom.toUpperCase() !== 'CASH');
-  const capitalInvesti = positions.reduce((s, p) => s + (p.valeurAchat || 0), 0);
+  // "Valeur d'achat total" du Sheet (positions + cash réellement apporté au compte) est
+  // la source la plus fiable quand disponible — la somme des coûts d'acquisition par
+  // position (repli) sous-estime le capital investi si une partie est restée en cash
+  // (constaté sur le CTO : 6 180€ au total contre ~5 039€ de somme positions seules).
+  const capitalInvesti = block.capitalInvestiTotal != null ? block.capitalInvestiTotal : positions.reduce((s, p) => s + (p.valeurAchat || 0), 0);
   const valorisationActuelle = block.valorisationTotale;
   const gainsEuros = positions.reduce((s, p) => s + (p.perfEur || 0), 0);
   const gainsPct = capitalInvesti ? (gainsEuros / capitalInvesti * 100) : null;
@@ -2293,6 +2308,7 @@ function renderPersoPortfolio(){
   renderPersoDonut('cto', persoData.cto);
   renderPersoVsCacChart('pea', persoData.pea, 'PEA');
   renderPersoVsCacChart('cto', persoData.cto, 'CTO');
+  applyPersoBlur();
 }
 
 /* ============================================================
@@ -4651,34 +4667,15 @@ const CERVEAU_FONT_SIZE_MAX = 32;
 // hauteur/largeur du bloc ne pouvait donc jamais suivre un texte court). Le texte
 // occupe maintenant toute la largeur disponible, le bloc peut donc vraiment épouser sa
 // taille (court = étroit/bas, long = large/haut).
-// Gras sur la sélection, implémentation manuelle (Range API) plutôt que
-// document.execCommand('bold') — remplace un essai précédent jugé peu fiable/pas clair
-// pour l'utilisateur (execCommand est déprécié et son comportement dépend fortement de
-// si le navigateur considère le clic comme un "vrai" geste utilisateur, ce qui donnait
-// des résultats incohérents en test). Bascule : si la sélection est déjà DANS un <b>,
-// on le déballe (retire le gras) ; sinon on l'enveloppe dans un nouveau <b>. Permet de
-// mettre en gras juste un mot/titre au milieu d'un bloc de texte normal, sans avoir à
-// créer un second bloc séparé rien que pour ça.
-function toggleBoldOnSelection(container){
-  const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
-  const range = sel.getRangeAt(0);
-  if (!container.contains(range.commonAncestorContainer)) return;
-  let node = range.commonAncestorContainer;
-  if (node.nodeType === 3) node = node.parentElement;
-  const alreadyBold = node && (node.tagName === 'B' || node.tagName === 'STRONG') && node !== container && container.contains(node);
-  if (alreadyBold){
-    const parent = node.parentNode;
-    while (node.firstChild) parent.insertBefore(node.firstChild, node);
-    parent.removeChild(node);
-  } else {
-    const frag = range.extractContents();
-    const b = document.createElement('b');
-    b.appendChild(frag);
-    range.insertNode(b);
-  }
-  sel.removeAllRanges();
-}
+// Gras sur la sélection : document.execCommand('bold') — un essai précédent avec une
+// implémentation manuelle (Range API, extractContents/insertNode) produisait des
+// résultats imprévisibles sur de vraies sélections souris (mettait en gras plus que la
+// zone sélectionnée dès que la sélection touchait un <b> existant, confirmé en test
+// réel avec de vrais clics/glissés). execCommand('bold') est le comportement NATIF du
+// navigateur pour ce geste précis (toggle correct y compris sur sélections partielles/
+// imbriquées, exactement le comportement "comme sur Word" demandé) — fiable ici car
+// déclenché par un vrai clic utilisateur (mousedown+preventDefault juste avant préserve
+// la sélection sans perdre le geste "trusted").
 function cerveauTextBlockHtml(tb){
   const size = tb.fontSize || CERVEAU_FONT_SIZE_DEFAULTS[tb.style || 'corps'];
   const html = tb.texteHtml != null ? tb.texteHtml : escapeHtml(tb.texte || '');
@@ -4928,7 +4925,12 @@ function renderCerveauPhases(box){
       const text = tbEl.querySelector('[data-action="free-text"]');
       if (boldBtn){
         boldBtn.addEventListener('mousedown', e => e.preventDefault());
-        boldBtn.addEventListener('click', () => { toggleBoldOnSelection(text); tb.texteHtml = text.innerHTML; persistCerveauData(); });
+        boldBtn.addEventListener('click', () => {
+          text.focus();
+          document.execCommand('bold');
+          tb.texteHtml = text.innerHTML;
+          persistCerveauData();
+        });
       }
       text.addEventListener('blur', () => { tb.texteHtml = text.innerHTML; persistCerveauData(); });
     });
@@ -6173,6 +6175,26 @@ loadDividendPortfolioBaseline();
 loadPersoData();
 document.getElementById('peaDonutZoomBtn').addEventListener('click', () => openPersoDonutZoom('pea', persoData.pea, 'PEA — Crédit Agricole'));
 document.getElementById('ctoDonutZoomBtn').addEventListener('click', () => openPersoDonutZoom('cto', persoData.cto, 'CTO — Saxo'));
+
+// Floutage des montants (pas les %) — activable/désactivable, pour partager un écran/
+// une capture du portefeuille perso sans montrer les sommes exactes. Approche par
+// CONTENU (pas par template à marquer partout) : n'importe quelle valeur affichée dans
+// #pagePerso dont le texte ne se termine PAS par "%" est considérée comme un montant.
+let persoBlurEnabled = false;
+function applyPersoBlur(){
+  const page = document.getElementById('pagePerso');
+  if (!page) return;
+  page.querySelectorAll('.ratio-card .v').forEach(el => {
+    const isPct = el.textContent.trim().endsWith('%');
+    el.classList.toggle('perso-blurred', persoBlurEnabled && !isPct);
+  });
+}
+document.getElementById('persoBlurToggleBtn').addEventListener('click', function(){
+  persoBlurEnabled = !persoBlurEnabled;
+  this.textContent = persoBlurEnabled ? '👁 Afficher les montants' : '🙈 Flouter les montants';
+  this.classList.toggle('active', persoBlurEnabled);
+  applyPersoBlur();
+});
 
 (async function init(){
   const ok = await ensureChartJs();
