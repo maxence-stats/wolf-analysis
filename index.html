@@ -47,7 +47,7 @@
 
     <div class="page-nav">
       <button class="page-nav-btn active" data-page="pageAnalyse">Analyse</button>
-      <button class="page-nav-btn" data-page="pagePortfolio">Wolf Portfolio</button>
+      <button class="page-nav-btn" data-page="pagePortfolio" data-group="portfolio">💼 Portefeuille</button>
       <button class="page-nav-btn" data-page="pageSecteur">Secteur</button>
       <button class="page-nav-btn" data-page="pageClassement">Classement</button>
       <button class="page-nav-btn" data-page="pageWatchlist">Watchlist</button>
@@ -56,6 +56,12 @@
       <button class="page-nav-btn" data-page="pageIdees">Idées</button>
       <button class="page-nav-btn" data-page="pageRevue">Revue de la semaine</button>
       <button class="page-nav-btn" data-page="pageMacro">Macroéconomie</button>
+    </div>
+
+    <div class="page-subnav" id="portfolioSubnav" style="display:none;">
+      <button class="page-subnav-btn active" data-page="pagePortfolio">Wolf Portfolio</button>
+      <button class="page-subnav-btn" data-page="pageDividende">Dividende</button>
+      <button class="page-subnav-btn" data-page="pagePerso">Perso (PEA/CTO)</button>
     </div>
 
     <div id="pageAnalyse" class="page active">
@@ -125,6 +131,12 @@
           <button data-range="10">10a</button>
           <button data-range="20">20a</button>
           <button data-range="max" class="active">Max</button>
+        </div>
+        <div class="range-buttons stock-indicator-toggles" id="stockIndicatorToggles">
+          <button data-indicator="regression" class="active">Régression linéaire</button>
+          <button data-indicator="sma200" class="active">SMA 200</button>
+          <button data-indicator="sma30" class="active">SMA 30</button>
+          <button data-indicator="prixJusteCible">Prix juste / cible</button>
         </div>
         <div class="chart-holder" style="height:320px;"><canvas id="chartStock"></canvas></div>
         <div class="stock-status" id="stockStatus"></div>
@@ -288,6 +300,92 @@
           <h3>Performance mensuelle</h3>
           <p class="chart-subtitle">Variation d'un mois sur l'autre</p>
           <div class="chart-holder" style="height:280px;"><canvas id="chartPortfolioVsSpxMonthly"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="pageDividende" class="page">
+      <div class="section-label">Portefeuille Dividende</div>
+      <p class="valo-intro">Construit depuis l'onglet Classement (bouton « + » sur la liste "Meilleur rendement du
+        dividende"). Montant investi saisi manuellement par position — poids, rendement et projection calculés
+        automatiquement.</p>
+
+      <div class="ratio-grid" id="dividendeSummary"></div>
+
+      <div class="dividende-goal-card">
+        <label for="dividendeGoalInput">Objectif de dividendes annuels (€)</label>
+        <div class="dividende-goal-row">
+          <input type="number" id="dividendeGoalInput" placeholder="ex. 2000" min="0" step="50">
+          <span id="dividendeGoalResult" class="dividende-goal-result">—</span>
+        </div>
+      </div>
+
+      <div class="dividende-main-row">
+        <div class="dividende-positions-col">
+          <div class="section-label">Positions</div>
+          <div class="dividende-actions">
+            <button class="zoom-btn objectifs-export" id="dividendeExportBtn">⭳ Exporter</button>
+          </div>
+          <div class="dividende-list" id="dividendeList"></div>
+        </div>
+        <div class="dividende-sim-col">
+          <div class="chart-card" id="dividendeSimCard">
+            <div class="chart-card-head">
+              <div><h3>Simulateur de croissance</h3><p>Capital de départ + versement mensuel, composé au rendement et à la croissance choisis</p></div>
+              <div class="chart-card-actions"><button class="zoom-btn" id="dividendeSimZoomBtn" aria-label="Agrandir">⤢</button></div>
+            </div>
+            <div class="dividende-sim-inputs">
+              <label>Capital investi (€)<input type="number" id="dividendeSimCapital" step="100" min="0"></label>
+              <label>Versement mensuel (€)<input type="number" id="dividendeSimMonthly" step="10" min="0" value="0"></label>
+              <label>Rendement moyen (%)<input type="number" id="dividendeSimYield" step="0.1" min="0"></label>
+              <label>Croissance div. moy. (%/an)<input type="number" id="dividendeSimCagr" step="0.1"></label>
+            </div>
+            <div class="range-buttons" id="dividendeSimHorizonButtons">
+              <button data-horizon="5">5 ans</button>
+              <button data-horizon="10" class="active">10 ans</button>
+              <button data-horizon="15">15 ans</button>
+              <button data-horizon="20">20 ans</button>
+            </div>
+            <div class="chart-holder" style="height:260px;"><canvas id="chartDividendeProjection"></canvas></div>
+            <div class="dividende-sim-results" id="dividendeSimResults"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="pagePerso" class="page">
+      <div class="section-label">Portefeuille Perso — PEA &amp; CTO</div>
+      <p class="valo-intro">Sourcé depuis un Google Sheet dédié (PEA Crédit Agricole + CTO Saxo), comparé au CAC 40.</p>
+
+      <div class="section-label">Comparaison PEA / CTO</div>
+      <div class="portfolio-compare-grid" id="persoCompareGrid"></div>
+
+      <div class="perso-accounts-row">
+        <div class="perso-account-col">
+          <div class="section-label">PEA — Crédit Agricole</div>
+          <div class="portfolio-summary" id="peaSummary"></div>
+          <div class="chart-card portfolio-donut-card">
+            <div class="chart-card-head"><div><h3>Répartition PEA</h3><p>Poids de chaque position</p></div></div>
+            <div class="chart-holder" style="height:340px;"><canvas id="chartPeaDonut"></canvas></div>
+          </div>
+          <div class="portfolio-holdings-list" id="peaHoldingsList"></div>
+          <div class="chart-card">
+            <h3>PEA vs CAC 40</h3><p class="chart-subtitle">Valeur de part, base 100</p>
+            <div class="chart-holder" style="height:260px;"><canvas id="chartPeaVsCac"></canvas></div>
+          </div>
+        </div>
+        <div class="perso-account-col">
+          <div class="section-label">CTO — Saxo</div>
+          <div class="portfolio-summary" id="ctoSummary"></div>
+          <div class="chart-card portfolio-donut-card">
+            <div class="chart-card-head"><div><h3>Répartition CTO</h3><p>Poids de chaque position</p></div></div>
+            <div class="chart-holder" style="height:340px;"><canvas id="chartCtoDonut"></canvas></div>
+          </div>
+          <div class="portfolio-holdings-list" id="ctoHoldingsList"></div>
+          <div class="chart-card">
+            <h3>CTO vs CAC 40</h3><p class="chart-subtitle">Valeur de part, base 100</p>
+            <div class="chart-holder" style="height:260px;"><canvas id="chartCtoVsCac"></canvas></div>
+          </div>
         </div>
       </div>
     </div>
@@ -567,6 +665,17 @@
       <button class="zoom-close" onclick="closeScenarioZoom()" aria-label="Fermer">✕</button>
     </div>
     <div class="scenario-zoom-body" id="scenarioZoomBody"></div>
+    <div class="zoom-footer">Données fournies par Wolf Analysis<img src="https://i.postimg.cc/43WmYDB1/20260714-LOGO-WINTER-PNG.png" alt="Wolf Analysis"></div>
+  </div>
+</div>
+
+<div id="dividendeSimZoomModal" onclick="if(event.target===this) closeDividendeSimZoom()">
+  <div class="zoom-panel scenario-zoom-panel">
+    <div class="zoom-panel-head">
+      <h3>Simulateur de croissance — vue agrandie</h3>
+      <button class="zoom-close" onclick="closeDividendeSimZoom()" aria-label="Fermer">✕</button>
+    </div>
+    <div class="scenario-zoom-body" id="dividendeSimZoomBody"></div>
     <div class="zoom-footer">Données fournies par Wolf Analysis<img src="https://i.postimg.cc/43WmYDB1/20260714-LOGO-WINTER-PNG.png" alt="Wolf Analysis"></div>
   </div>
 </div>

@@ -53,6 +53,32 @@ const PRICE_HISTORY_GID = "1420785203";
 const PRICE_HISTORY_CSV_URL = `https://docs.google.com/spreadsheets/d/e/${PUBLISHED_ID}/pub?gid=${PRICE_HISTORY_GID}&single=true&output=csv`;
 let priceHistoryData = {}; // { nomBrutDuSheet: [{date:'YYYY-MM-DD', close:number}, ...] tri croissant }
 
+/* Portefeuille Perso (PEA + CTO) — Google Sheet DÉDIÉ, distinct de "DATA BASE 20 ans"
+   (fichier différent, donc PUBLISHED_ID/SHEET_ID propres, pas les constantes globales
+   ci-dessus). Mise en page vérifiée directement sur le CSV réel avant d'écrire le
+   parsing (piège technique déjà rencontré sur ce projet : ne jamais coder un mapping
+   sur une description verbale) : deux blocs "tableau de bord" côte à côte sur les mêmes
+   lignes — PEA (colonnes B à R) et CTO (colonnes U à AL) — chacun avec un sous-bloc
+   évolution mensuelle + un sous-bloc positions. Le sous-bloc positions du CTO démarre
+   UNE LIGNE PLUS BAS que celui du PEA (son titre "CTO - Saxo" occupe la ligne où le PEA
+   a déjà ses en-têtes de colonnes) — d'où un parsing par RECONNAISSANCE DE CONTENU
+   (ligne valide = nom de position non vide + valorisation numérique), jamais par
+   position de ligne fixe, seule façon de rester correct malgré ce décalage. */
+const PERSO_PUBLISHED_ID = "2PACX-1vQOpTAjavq-PV4Lg4_rWoI4fKbPNi9MnaQXm8SY1MmdJYNUIyr-Tg9ul4FwHVVjiW08GY7KqfByuBq6";
+const PERSO_SHEET_ID = "1LeDGlvjnUZB_4S_jRAqwd7ynUn5hQLGIjTuEJB-IV34";
+const PERSO_GID = "1457758875";
+const PEA_COL = {
+  mois:1, versement:2, valeurApresFlux:3, valeurPart:4, rendementPeriode:5, rendementCumule:6,
+  cac40:7, valeurPartCac40:8, rendementPeriodeCac40:9,
+  actif:11, valorisation:12, poids:13, valorisationTotale:14, valeurAchat:15, perfPct:16, perfEur:17
+};
+const CTO_COL = {
+  mois:20, versement:21, valeurApresFlux:22, valeurPart:23, rendementPeriode:24, rendementCumule:25,
+  cac40:26, valeurPartCac40:27, rendementPeriodeCac40:28,
+  actif:31, valorisation:32, poids:33, valorisationTotale:34, valeurAchat:35, perfPct:36, perfEur:37
+};
+let persoData = { pea:{ monthly:[], positions:[], valorisationTotale:null }, cto:{ monthly:[], positions:[], valorisationTotale:null } };
+
 /* ============================================================
    CHARGEMENT DES DONNÉES — 2 méthodes, avec repli automatique
    1) fetch() sur le CSV publié — la méthode standard une fois hébergé en ligne
@@ -188,6 +214,9 @@ function parseNum(raw){
 function parseStr(raw){
   return raw == null ? '' : String(raw).trim();
 }
+function escapeHtml(s){
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
 
 function handleCsvRows(rows){
   if (!rows || rows.length < 2){
@@ -263,6 +292,7 @@ function handleCsvRows(rows){
   renderClassement();
   renderWatchlist();
   renderAlertesTab();
+  renderDividendPortfolio();
 
   document.getElementById('loadingScreen').style.display = 'none';
   document.getElementById('errorScreen').style.display = 'none';
@@ -401,6 +431,91 @@ function handlePortfolioRows(rows){
 
   portfolioData = Object.assign({ holdings, monthly }, summary);
   renderPortfolio();
+}
+
+/* ============================================================
+   PORTEFEUILLE PERSO (PEA + CTO) — chargement CSV+gviz dédié (fichier
+   Sheet différent de "DATA BASE 20 ans", voir commentaire sur PERSO_PUBLISHED_ID).
+   Même pattern double-méthode que le reste du site, mais paramétré sur ce fichier
+   précis (loadSheetDual() reste réservé aux onglets du fichier principal).
+   ============================================================ */
+let persoLoadSettled = false;
+
+function loadPersoData(){
+  persoLoadSettled = false;
+  const csvUrl = `https://docs.google.com/spreadsheets/d/e/${PERSO_PUBLISHED_ID}/pub?gid=${PERSO_GID}&single=true&output=csv`;
+  const controller = new AbortController();
+  const hardTimeout = setTimeout(() => controller.abort(), 8000);
+  fetch(csvUrl + '&_=' + Date.now(), { signal: controller.signal, cache:'no-store' })
+    .then(async res => {
+      if (persoLoadSettled) return;
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const text = await res.text();
+      if (text.trim().toLowerCase().startsWith('<')) throw new Error('HTML au lieu de CSV');
+      const parsed = Papa.parse(text.trim(), { skipEmptyLines:false });
+      if (!parsed.data || parsed.data.length < 3) throw new Error('CSV vide ou illisible');
+      if (persoLoadSettled) return;
+      persoLoadSettled = true;
+      clearTimeout(hardTimeout);
+      handlePersoRows(parsed.data);
+    })
+    .catch(() => { clearTimeout(hardTimeout); });
+
+  const old = document.getElementById('gviz_persoPortfolio');
+  if (old) old.remove();
+  window.__handlePersoGviz = function(data){
+    if (persoLoadSettled) return;
+    try{
+      if (!data || !data.table || !data.table.cols) throw new Error('table vide');
+      const rows = [data.table.cols.map(c => c.label)].concat(
+        (data.table.rows || []).map(r => (r.c || []).map(cell => cell ? (cell.f != null ? cell.f : cell.v) : ''))
+      );
+      persoLoadSettled = true;
+      handlePersoRows(rows);
+    }catch(e){ /* silencieux : le repli CSV ou le timeout de secours prendront le relais */ }
+  };
+  const script = document.createElement('script');
+  script.id = 'gviz_persoPortfolio';
+  script.src = `https://docs.google.com/spreadsheets/d/${PERSO_SHEET_ID}/gviz/tq?tqx=out:json;responseHandler:__handlePersoGviz&gid=${PERSO_GID}&headers=1&_=${Date.now()}`;
+  document.body.appendChild(script);
+  setTimeout(() => { persoLoadSettled = true; }, 9000);
+}
+
+function parsePersoBlock(rows, col){
+  const monthly = [];
+  const positions = [];
+  let valorisationTotale = null;
+  for (let i = 0; i < rows.length; i++){
+    const r = rows[i];
+    if (!r) continue;
+    const mois = parseStr(r[col.mois]);
+    if (mois && mois.toUpperCase() !== 'MOIS'){
+      monthly.push({
+        mois, versement: parseNum(r[col.versement]), valeurApresFlux: parseNum(r[col.valeurApresFlux]),
+        valeurPart: parseNum(r[col.valeurPart]), rendementPeriode: parseNum(r[col.rendementPeriode]),
+        rendementCumule: parseNum(r[col.rendementCumule]), cac40: parseNum(r[col.cac40]),
+        valeurPartCac40: parseNum(r[col.valeurPartCac40]), rendementPeriodeCac40: parseNum(r[col.rendementPeriodeCac40])
+      });
+    }
+    const actif = parseStr(r[col.actif]);
+    const valorisation = parseNum(r[col.valorisation]);
+    // Ligne de position valide = nom non vide (hors en-tête "Action") ET valorisation
+    // numérique — exclut aussi le titre de bloc ("PEA - Crédit Agricole"/"CTO - Saxo"),
+    // qui partage la même colonne mais n'a jamais de valorisation en face.
+    if (actif && actif.toUpperCase() !== 'ACTION' && valorisation != null){
+      positions.push({
+        nom: actif, valorisation, poids: parseNum(r[col.poids]),
+        valeurAchat: parseNum(r[col.valeurAchat]), perfPct: parseNum(r[col.perfPct]), perfEur: parseNum(r[col.perfEur])
+      });
+      if (valorisationTotale == null) valorisationTotale = parseNum(r[col.valorisationTotale]);
+    }
+  }
+  return { monthly, positions, valorisationTotale };
+}
+
+function handlePersoRows(rows){
+  persoData = { pea: parsePersoBlock(rows, PEA_COL), cto: parsePersoBlock(rows, CTO_COL) };
+  renderPersoPortfolio();
 }
 
 /* ============================================================
@@ -853,24 +968,50 @@ function loadMacroPowerData(){
   loadSheetDual(MACRO_POWER_GID, '__handleMacroPowerGviz', handleMacroPowerRows);
 }
 
+// Parsing par RECONNAISSANCE DE CONTENU (plus par position de ligne fixe — l'exception
+// documentée à l'origine s'est révélée fausse : gviz et CSV ne compressent pas les
+// lignes vides de la même façon sur ce fichier, voir "Pièges techniques" point 10, donc
+// une ligne 15 fixe pointait vers autre chose selon la méthode de chargement gagnante,
+// ce qui a fait disparaître silencieusement "Classement"/"Power 1 ans"/"Power 3 mois"/
+// "1 moi"/"2 mois"/"3 mois" — bug constaté en test). headerRow = première ligne dont une
+// cellule des colonnes Q à AA se termine par "(%)" ; catRow = la ligne juste au-dessus
+// (toujours adjacente, la compression de lignes vides ne change pas l'ordre relatif) ;
+// dataRows = toute ligne sous headerRow avec un libellé en colonne P ET au moins une
+// valeur numérique en Q..AA (exclut les lignes de libellé sans données).
 function handleMacroPowerRows(rows){
   const pIdx = colToIdx('P');
   const colStart = colToIdx('Q'), colEnd = colToIdx('AA');
-  const catRow = rows[12] || [];
-  const headerRow = rows[14] || [];
+  let headerRowIdx = -1;
+  for (let r = 0; r < rows.length; r++){
+    const row = rows[r];
+    if (!row) continue;
+    for (let c = colStart; c <= colEnd; c++){
+      if (/\(%\)\s*$/.test(parseStr(row[c]))){ headerRowIdx = r; break; }
+    }
+    if (headerRowIdx >= 0) break;
+  }
+  if (headerRowIdx < 0) return;
+  const headerRow = rows[headerRowIdx];
+  const catRow = rows[headerRowIdx - 1] || [];
   const categories = [], headers = [];
   for (let c = colStart; c <= colEnd; c++){
     categories.push(parseStr(catRow[c]));
     headers.push(parseStr(headerRow[c]));
   }
   const dataRows = [];
-  for (let r = 15; r <= 24; r++){
+  for (let r = headerRowIdx + 1; r < rows.length; r++){
     const row = rows[r];
     if (!row) continue;
     const label = parseStr(row[pIdx]);
     if (!label) continue;
     const values = [];
-    for (let c = colStart; c <= colEnd; c++) values.push(parseNum(row[c]));
+    let hasNumber = false;
+    for (let c = colStart; c <= colEnd; c++){
+      const v = parseNum(row[c]);
+      if (v != null) hasNumber = true;
+      values.push(v);
+    }
+    if (!hasNumber) continue;
     dataRows.push({ label, values });
   }
   macroPowerData = { categories, headers, rows: dataRows };
@@ -972,14 +1113,28 @@ const MACRO_CHART_GETTERS = {
 // (dpr=1) un export PNG/JPEG/PDF ressort flou une fois zoomé/imprimé. On force temporairement
 // une densité de 3x avant la capture, puis on restaure (resize() est nécessaire des deux
 // côtés, Chart.js ne redimensionne pas le canvas tant qu'on ne le lui demande pas).
+// Bug remonté (export PDF Analyse/Macro complète : graphiques absents) : `chart.resize()`
+// sans argument redimensionne le canvas sur la taille COURANTE de son conteneur, telle
+// que Chart.js/le navigateur la connaît à cet instant précis — dépend donc d'un
+// ResizeObserver ayant déjà eu l'occasion de tourner. Constaté en test : un canvas peut
+// se retrouver avec une taille de 0×0 (donc `toBase64Image()` renvoie l'image cassée
+// "data:," ) si ce cycle n'a pas encore eu lieu, ce qui produit un bloc PDF vide sans
+// erreur visible. Fix : lire la taille RÉELLE du conteneur DOM (`getBoundingClientRect`)
+// et la passer explicitement à `resize(w, h)`, qui ne dépend d'aucun cycle implicite.
 function chartToHiResDataUrl(chart, mime, scale){
   if (!chart) return null;
   const original = chart.options.devicePixelRatio || window.devicePixelRatio || 1;
   const HI_RES = scale || 3;
   const bump = original < HI_RES;
-  if (bump){ chart.options.devicePixelRatio = HI_RES; chart.resize(); }
-  const dataUrl = chart.toBase64Image(mime || 'image/png', 1.0);
-  if (bump){ chart.options.devicePixelRatio = original; chart.resize(); }
+  const holder = chart.canvas && chart.canvas.parentElement;
+  const rect = holder ? holder.getBoundingClientRect() : null;
+  if (bump) chart.options.devicePixelRatio = HI_RES;
+  if (rect && rect.width > 0 && rect.height > 0) chart.resize(rect.width, rect.height);
+  else chart.resize();
+  let dataUrl = chart.toBase64Image(mime || 'image/png', 1.0);
+  if (dataUrl === 'data:,') dataUrl = null; // canvas toujours à 0×0 malgré tout — on omet plutôt qu'embarquer une image cassée
+  if (bump) chart.options.devicePixelRatio = original;
+  chart.resize();
   return dataUrl;
 }
 // Export PDF regroupant PLUSIEURS graphiques dans un seul document (Analyse complète,
@@ -1103,7 +1258,9 @@ function exportAnalyseFullAsPdf(){
   const chartsHtml = ANALYSE_CHART_EXPORT_LIST.map(([key, title]) => {
     const chart = chartInstances[key];
     if (!chart) return '';
-    return `<div class="print-section"><h3>${title}</h3><img class="print-chart-img" src="${chartToPrintDataUrl(chart)}" alt=""></div>`;
+    const url = chartToPrintDataUrl(chart);
+    if (!url) return '';
+    return `<div class="print-section"><h3>${title}</h3><img class="print-chart-img" src="${url}" alt=""></div>`;
   }).join('');
   exportSectionAsPdf(activeCompany, (latest.ticker || '') + ' — Analyse complète', ratiosHtml + valoHtml + chartsHtml, logo);
 }
@@ -1174,7 +1331,9 @@ function exportMacroFullPageAsPdf(){
   const chartHtml = MACRO_EXPORT_ALL_CHARTS.map(([key, title]) => {
     const chart = MACRO_CHART_GETTERS[key] && MACRO_CHART_GETTERS[key]();
     if (!chart) return '';
-    return `<div class="print-section"><h3>${title}</h3><img class="print-chart-img" src="${chartToPrintDataUrl(chart)}" alt=""></div>`;
+    const url = chartToPrintDataUrl(chart);
+    if (!url) return '';
+    return `<div class="print-section"><h3>${title}</h3><img class="print-chart-img" src="${url}" alt=""></div>`;
   }).join('');
   const tableHtml = MACRO_EXPORT_ALL_TABLES.map(([id, title]) => {
     const box = document.getElementById(id);
@@ -1398,6 +1557,19 @@ function companyLogoUrl(nom){
   return match ? companies[match][companies[match].length - 1].lienImage || null : null;
 }
 
+// Bug remonté : sur un export à PLUSIEURS graphiques (page Analyse/Macro complète),
+// les images de graphique n'apparaissaient pas dans le PDF alors que le texte/les
+// tableaux s'affichaient bien. Cause trouvée : window.print() était appelé de façon
+// SYNCHRONE juste après avoir posé les <img src="data:..."> dans le DOM — même une
+// image en data URI (donc déjà "chargée" en mémoire) prend un tick asynchrone pour être
+// décodée/mise en page par le navigateur avant de pouvoir être peinte à l'impression.
+// Sur un export à une seule image, le navigateur a presque toujours le temps de
+// rattraper avant que la boîte de dialogue d'impression ne se construise (d'où
+// l'impression que ça marchait) ; sur 9 images cumulées (Analyse complète) ou 4+tableaux
+// (Macro complète), la probabilité qu'au moins une ne soit pas encore décodée au moment
+// du print() grimpe fortement. Fix : attendre que toutes les <img> du bloc à imprimer
+// aient chargé (ou échoué) avant d'appeler window.print(), avec un filet de sécurité
+// (timeout) pour ne jamais bloquer l'impression indéfiniment si une image traîne.
 function exportSectionAsPdf(title, subtitle, bodyHtml, entityLogoUrl){
   const area = document.getElementById('printArea');
   const dateLabel = new Date().toLocaleDateString('fr-FR', { year:'numeric', month:'long', day:'numeric' });
@@ -1412,7 +1584,16 @@ function exportSectionAsPdf(title, subtitle, bodyHtml, entityLogoUrl){
     </div>
     ${bodyHtml}
     <div class="print-footer">Wolf Analysis — document généré automatiquement</div>`;
-  window.print();
+
+  const imgs = Array.from(area.querySelectorAll('img'));
+  const waits = imgs.map(img => img.complete ? Promise.resolve() : new Promise(res => {
+    img.addEventListener('load', res, { once:true });
+    img.addEventListener('error', res, { once:true });
+  }));
+  Promise.race([
+    Promise.all(waits),
+    new Promise(res => setTimeout(res, 4000)) // filet de sécurité, jamais de blocage indéfini
+  ]).then(() => window.print());
 }
 // Capture un canvas Chart.js vivant en image (le canvas lui-même ne peut pas être
 // déplacé/cloné dans #printArea sans perdre son rendu — Chart.js dessine sur un
@@ -1795,6 +1976,152 @@ function renderPortfolio(){
 }
 
 /* ============================================================
+   PORTEFEUILLE PERSO (PEA + CTO) — rendu. Composition en donut
+   Chart.js standard (pas les plugins de logos custom du Wolf
+   Portfolio — inutile ici, les logos suffisent dans la liste de
+   positions, réutilise le même pattern que portfolioHoldingsList)
+   + évolution vs CAC 40 (valeur de part, base 100, déjà calculée
+   dans le Sheet — pas de recalcul) + comparaison PEA/CTO en tête.
+   ============================================================ */
+// Capital investi/gains dérivés des positions (valeurAchat/perfEur, déjà calculés par
+// le Sheet), PAS d'une somme des versements mensuels : le suivi mensuel ne remonte pas
+// forcément jusqu'au tout premier apport (vu en test — "Valeur après flux" de mars
+// dépassait largement le seul versement de mars, preuve d'un capital déjà présent avant
+// le début du journal mensuel). Le coût d'acquisition par position est la source fiable.
+function persoAccountStats(block){
+  const positions = block.positions.filter(p => p.nom.toUpperCase() !== 'CASH');
+  const capitalInvesti = positions.reduce((s, p) => s + (p.valeurAchat || 0), 0);
+  const valorisationActuelle = block.valorisationTotale;
+  const gainsEuros = positions.reduce((s, p) => s + (p.perfEur || 0), 0);
+  const gainsPct = capitalInvesti ? (gainsEuros / capitalInvesti * 100) : null;
+  return { capitalInvesti, valorisationActuelle, gainsEuros, gainsPct };
+}
+
+function renderPersoCompare(){
+  const box = document.getElementById('persoCompareGrid');
+  if (!box) return;
+  const peaStats = persoAccountStats(persoData.pea);
+  const ctoStats = persoAccountStats(persoData.cto);
+  const total = (peaStats.valorisationActuelle || 0) + (ctoStats.valorisationActuelle || 0);
+  const block = (label, stats) => {
+    const poids = total ? ((stats.valorisationActuelle || 0) / total * 100) : null;
+    const perfClass = stats.gainsPct == null ? '' : (stats.gainsPct >= 0 ? 'pos' : 'neg');
+    return `<div class="chart-card">
+      <h3>${label}</h3>
+      <div class="ratio-grid" style="grid-template-columns:repeat(2,1fr);margin-top:10px;">
+        <div class="ratio-card"><div class="k">Valorisation actuelle</div><div class="v">${stats.valorisationActuelle != null ? fmtEUR(stats.valorisationActuelle, 0) : 'N/D'}</div></div>
+        <div class="ratio-card"><div class="k">Performance</div><div class="v ${perfClass}">${stats.gainsPct != null ? (stats.gainsPct >= 0 ? '+' : '') + fmtPct(stats.gainsPct) : 'N/D'}</div></div>
+        <div class="ratio-card"><div class="k">Poids dans le total</div><div class="v">${poids != null ? fmtPct(poids) : 'N/D'}</div></div>
+        <div class="ratio-card"><div class="k">Capital investi</div><div class="v">${fmtEUR(stats.capitalInvesti, 0)}</div></div>
+      </div>
+    </div>`;
+  };
+  box.innerHTML = block('PEA — Crédit Agricole', peaStats) + block('CTO — Saxo', ctoStats);
+}
+
+function renderPersoAccountSummary(prefix, block){
+  const box = document.getElementById(prefix + 'Summary');
+  if (!box) return;
+  const stats = persoAccountStats(block);
+  const perfClass = stats.gainsPct == null ? '' : (stats.gainsPct >= 0 ? 'pos' : 'neg');
+  box.innerHTML = `
+    <div class="ratio-card"><div class="k">Capital investi</div><div class="v">${fmtEUR(stats.capitalInvesti, 0)}</div></div>
+    <div class="ratio-card"><div class="k">Valorisation actuelle</div><div class="v">${stats.valorisationActuelle != null ? fmtEUR(stats.valorisationActuelle, 0) : 'N/D'}</div></div>
+    <div class="ratio-card"><div class="k">Gains / pertes</div><div class="v ${perfClass}">${stats.gainsEuros != null ? (stats.gainsEuros >= 0 ? '+' : '') + fmtEUR(stats.gainsEuros, 0) : 'N/D'}</div></div>
+    <div class="ratio-card"><div class="k">Performance</div><div class="v ${perfClass}">${stats.gainsPct != null ? (stats.gainsPct >= 0 ? '+' : '') + fmtPct(stats.gainsPct) : 'N/D'}</div></div>`;
+}
+
+function renderPersoHoldingsList(prefix, block){
+  const box = document.getElementById(prefix + 'HoldingsList');
+  if (!box) return;
+  const holdings = block.positions.filter(h => h.valorisation != null);
+  const total = holdings.reduce((s, h) => s + h.valorisation, 0);
+  box.innerHTML = holdings.length ? holdings
+    .slice().sort((a, b) => b.valorisation - a.valorisation)
+    .map(h => {
+      const pct = total ? (h.valorisation / total * 100) : 0;
+      const logo = companyLogoUrl(h.nom);
+      const swatch = PORTFOLIO_COLORS[holdings.indexOf(h) % PORTFOLIO_COLORS.length];
+      const perfClass = h.perfPct == null ? '' : (h.perfPct >= 0 ? 'pos' : 'neg');
+      return `<div class="portfolio-holding-row">
+        <span class="portfolio-holding-swatch" style="background:${swatch}"></span>
+        <div class="portfolio-holding-logo">${logo ? `<img src="${logo}" alt="">` : h.nom.toUpperCase() === 'CASH' ? `<span>💶</span>` : `<span>${h.nom.charAt(0).toUpperCase()}</span>`}</div>
+        <div class="portfolio-holding-name">${h.nom}</div>
+        <div class="portfolio-holding-pct">${pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</div>
+        <div class="portfolio-holding-perf ${perfClass}">${h.perfPct != null ? (h.perfPct >= 0 ? '+' : '') + fmtPct(h.perfPct) : '—'}</div>
+      </div>`;
+    }).join('') : '<div class="objectifs-empty">Données indisponibles pour l\'instant.</div>';
+}
+
+// Logos directement sur les segments (mêmes plugins custom que le donut Wolf Portfolio,
+// portfolioSegmentLogosPlugin() — générique, ne dépend pas de portfolioData) : demande
+// explicite de l'utilisateur ("il faut mettre les logos des entreprises... si tu préfères
+// avec des tirets si c'est plus visible"). Pas de logo central Wolf ici (contrairement au
+// Wolf Portfolio) — 3 donuts sur le site avec le même centre serait redondant, non demandé.
+let persoDonutCharts = { pea:null, cto:null };
+function renderPersoDonut(prefix, block){
+  const canvasId = 'chart' + prefix.charAt(0).toUpperCase() + prefix.slice(1) + 'Donut';
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  if (persoDonutCharts[prefix]) persoDonutCharts[prefix].destroy();
+  const holdings = block.positions.filter(h => h.valorisation != null && h.valorisation > 0);
+  if (!holdings.length) return;
+  const logos = holdings.map(h => companyLogoUrl(h.nom));
+  const config = {
+    type:'doughnut',
+    data:{ labels: holdings.map(h => h.nom), datasets:[{
+      data: holdings.map(h => h.valorisation),
+      backgroundColor: holdings.map((_, i) => PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length]),
+      borderColor:THEME.hair, borderWidth:2, _logos: logos
+    }] },
+    options:{ responsive:true, maintainAspectRatio:false, cutout:'46%',
+      plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true, color:THEME.dim, font:{size:10.5} } } } },
+    plugins:[portfolioSegmentLogosPlugin()]
+  };
+  Promise.all(logos.map(loadImageCached)).then(() => { if (persoDonutCharts[prefix]) persoDonutCharts[prefix].update(); });
+  persoDonutCharts[prefix] = new Chart(canvas.getContext('2d'), config);
+}
+
+let persoVsCacCharts = { pea:null, cto:null };
+function renderPersoVsCacChart(prefix, block, label){
+  const canvasId = 'chart' + prefix.charAt(0).toUpperCase() + prefix.slice(1) + 'VsCac';
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  if (persoVsCacCharts[prefix]) persoVsCacCharts[prefix].destroy();
+  const monthly = block.monthly.filter(m => m.valeurPart != null && m.valeurPartCac40 != null);
+  if (!monthly.length) return;
+  persoVsCacCharts[prefix] = new Chart(canvas.getContext('2d'), {
+    type:'line',
+    data:{
+      labels: monthly.map(m => m.mois),
+      datasets:[
+        { label, data: monthly.map(m => m.valeurPart), borderColor:THEME.gold, backgroundColor:'rgba(217,164,65,0.08)', fill:true, tension:0.2, pointRadius:2, spanGaps:true },
+        { label:'CAC 40', data: monthly.map(m => m.valeurPartCac40), borderColor:THEME.blue, borderWidth:1.5, pointRadius:2, tension:0.2, spanGaps:true }
+      ]
+    },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true, color:THEME.dim } } },
+      scales:{
+        x:{ grid:{display:false}, ticks:{color:THEME.dim}, border:{color:THEME.hair} },
+        y:{ grid:baseGrid, ticks:{color:THEME.dim} }
+      }
+    }
+  });
+}
+
+function renderPersoPortfolio(){
+  renderPersoCompare();
+  renderPersoAccountSummary('pea', persoData.pea);
+  renderPersoAccountSummary('cto', persoData.cto);
+  renderPersoHoldingsList('pea', persoData.pea);
+  renderPersoHoldingsList('cto', persoData.cto);
+  renderPersoDonut('pea', persoData.pea);
+  renderPersoDonut('cto', persoData.cto);
+  renderPersoVsCacChart('pea', persoData.pea, 'PEA');
+  renderPersoVsCacChart('cto', persoData.cto, 'CTO');
+}
+
+/* ============================================================
    PAGE SECTEUR — répartition GICS
    ============================================================ */
 const GICS_SECTORS = [
@@ -1858,13 +2185,19 @@ function renderSectorView(){
    opportunité de valorisation (écart de valeur, colonne K,
    négatif = sous-valorisé = plus intéressant, tri croissant)
    ============================================================ */
-function classementRowHtml(nom, logo, rank, valueText, cls, rendHtml){
-  return `<div class="classement-row${rendHtml ? ' classement-row-valo' : ''}" data-nom="${nom.replace(/"/g,'&quot;')}">
+function classementRowHtml(nom, logo, rank, valueText, cls, rendHtml, showAddBtn){
+  const safe = nom.replace(/"/g,'&quot;');
+  const inDividendPortfolio = showAddBtn && dividendPortfolioStore.positions[nom] != null;
+  const addBtn = showAddBtn
+    ? `<button class="classement-add-btn${inDividendPortfolio ? ' active' : ''}" data-action="dividend-add" data-nom="${safe}" title="${inDividendPortfolio ? 'Déjà dans le portefeuille dividende' : 'Ajouter au portefeuille dividende'}">${inDividendPortfolio ? '✓' : '+'}</button>`
+    : '';
+  return `<div class="classement-row${rendHtml ? ' classement-row-valo' : ''}" data-nom="${safe}">
     <div class="classement-row-main">
       <span class="classement-rank">${rank}</span>
       <div class="classement-logo"><img src="${logo || ''}" alt=""></div>
       <span class="classement-name">${nom}</span>
       <span class="classement-value${cls ? ' ' + cls : ''}">${valueText}</span>
+      ${addBtn}
     </div>
     ${rendHtml || ''}
   </div>`;
@@ -1942,8 +2275,8 @@ function renderClassement(){
   const divRight = byDiv.slice(half);
   const empty = '<div class="objectifs-empty">Aucune donnée disponible pour ce secteur.</div>';
 
-  divLeftBox.innerHTML = divLeft.length ? divLeft.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.rendementDiv))).join('') : empty;
-  divRightBox.innerHTML = divRight.map((r, i) => classementRowHtml(r.nom, r.logo, half + i + 1, fmtPct(r.rendementDiv))).join('');
+  divLeftBox.innerHTML = divLeft.length ? divLeft.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.rendementDiv), null, null, true)).join('') : empty;
+  divRightBox.innerHTML = divRight.map((r, i) => classementRowHtml(r.nom, r.logo, half + i + 1, fmtPct(r.rendementDiv), null, null, true)).join('');
 
   const sousValo = rows.filter(r => r.ecartValeur != null && r.ecartValeur < 0).sort((a, b) => a.ecartValeur - b.ecartValeur);
   const survalo = rows.filter(r => r.ecartValeur != null && r.ecartValeur >= 0).sort((a, b) => a.ecartValeur - b.ecartValeur);
@@ -1961,12 +2294,278 @@ function initClassement(){
     const box = document.getElementById(id);
     if (!box) return;
     box.addEventListener('click', e => {
+      const addBtn = e.target.closest('[data-action="dividend-add"]');
+      if (addBtn){
+        addDividendPosition(addBtn.dataset.nom);
+        renderClassement();
+        renderDividendPortfolio();
+        return;
+      }
       const row = e.target.closest('.classement-row[data-nom]');
       if (row) goToAnalyse(row.dataset.nom);
     });
   });
   const filter = document.getElementById('classementSecteurFilter');
   if (filter) filter.addEventListener('change', renderClassement);
+}
+
+/* ============================================================
+   ONGLET PORTEFEUILLE DIVIDENDE — construit depuis l'onglet
+   Classement (bouton "+ Ajouter" sur la liste "Meilleur rendement
+   du dividende"). Montant investi par position saisi manuellement ;
+   poids, dividende annuel estimé, CAGR et projection calculés à
+   partir des données déjà mappées (rendementDiv, cagrDiv5/10/20),
+   aucun nouvel appel réseau. Persistance identique aux autres
+   onglets : localStorage + socle data/dividende.json + export JSON.
+   ============================================================ */
+const DIVIDEND_LS_KEY = 'wolfAnalysisDividendPortfolio';
+const DIVIDEND_BASELINE_URL = 'data/dividende.json';
+let dividendPortfolioStore = { positions: {} }; // { [nom]: montantInvesti en € }
+
+function addDividendPosition(nom){
+  if (dividendPortfolioStore.positions[nom] != null) return;
+  dividendPortfolioStore.positions[nom] = 1000;
+  persistDividendPortfolioLocal();
+}
+
+function mergeDividendPortfolio(extra){
+  if (!extra || !extra.positions) return;
+  Object.keys(extra.positions).forEach(k => {
+    if (dividendPortfolioStore.positions[k] == null) dividendPortfolioStore.positions[k] = extra.positions[k];
+  });
+}
+
+async function loadDividendPortfolioBaseline(){
+  try{
+    const res = await fetch(DIVIDEND_BASELINE_URL, { cache:'no-store' });
+    if (res.ok){
+      const json = await res.json();
+      if (json && typeof json === 'object') mergeDividendPortfolio(json);
+    }
+  }catch(e){ /* fichier absent ou fetch bloqué (ex. file://) — non bloquant */ }
+  try{
+    const raw = localStorage.getItem(DIVIDEND_LS_KEY);
+    if (raw) mergeDividendPortfolio(JSON.parse(raw));
+  }catch(e){ /* localStorage indisponible ou JSON corrompu */ }
+  renderDividendPortfolio();
+}
+
+function persistDividendPortfolioLocal(){
+  try{ localStorage.setItem(DIVIDEND_LS_KEY, JSON.stringify(dividendPortfolioStore)); }catch(e){ /* quota / navigateur privé */ }
+}
+
+function exportDividendPortfolio(){
+  const blob = new Blob([JSON.stringify(dividendPortfolioStore, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'wolf-analysis-portefeuille-dividende.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+let dividendProjectionChart = null;
+
+function dividendPositionMetrics(nom, montant){
+  const hist = companies[nom];
+  if (!hist) return null;
+  const latest = hist[hist.length - 1];
+  const rendement = latest.rendementDiv;
+  const dividendeAnnuel = (rendement != null) ? montant * rendement / 100 : null;
+  return {
+    nom, montant, logo: latest.lienImage,
+    rendement, dividendeAnnuel,
+    cagr5: latest.cagrDiv5, cagr10: latest.cagrDiv10, cagr20: latest.cagrDiv20
+  };
+}
+
+function renderDividendPortfolio(){
+  const summaryBox = document.getElementById('dividendeSummary');
+  const listBox = document.getElementById('dividendeList');
+  if (!summaryBox || !listBox) return;
+
+  const noms = Object.keys(dividendPortfolioStore.positions);
+  const rows = noms.map(nom => dividendPositionMetrics(nom, dividendPortfolioStore.positions[nom])).filter(Boolean);
+
+  const capitalTotal = rows.reduce((s, r) => s + r.montant, 0);
+  const dividendeAnnuelTotal = rows.reduce((s, r) => s + (r.dividendeAnnuel || 0), 0);
+  const rendementMoyen = capitalTotal ? (dividendeAnnuelTotal / capitalTotal * 100) : null;
+  // CAGR moyen pondéré par le capital investi (10 ans, fenêtre la plus
+  // représentative — même horizon que le reste du site), utilisé pour la projection.
+  const cagrPondereSum = rows.reduce((s, r) => s + (r.cagr10 != null ? r.cagr10 * r.montant : 0), 0);
+  const cagrPondereWeight = rows.reduce((s, r) => s + (r.cagr10 != null ? r.montant : 0), 0);
+  const cagrMoyen = cagrPondereWeight ? (cagrPondereSum / cagrPondereWeight) : null;
+
+  summaryBox.innerHTML = `
+    <div class="ratio-card"><div class="k">Capital investi</div><div class="v">${fmtEUR(capitalTotal, 0)}</div><div class="sub">${rows.length} position${rows.length > 1 ? 's' : ''}</div></div>
+    <div class="ratio-card"><div class="k">Dividendes annuels estimés</div><div class="v">${fmtEUR(dividendeAnnuelTotal, 0)}</div><div class="sub">au rendement actuel</div></div>
+    <div class="ratio-card"><div class="k">Rendement moyen pondéré</div><div class="v">${rendementMoyen != null ? fmtPct(rendementMoyen) : 'N/D'}</div><div class="sub">sur capital investi</div></div>
+    <div class="ratio-card"><div class="k">CAGR dividende moyen (10 ans)</div><div class="v">${cagrMoyen != null ? fmtPct(cagrMoyen) : 'N/D'}</div><div class="sub">pondéré par le capital investi</div></div>`;
+
+  listBox.innerHTML = rows.length ? rows.map(r => {
+    const pct = capitalTotal ? (r.montant / capitalTotal * 100) : 0;
+    const safe = r.nom.replace(/"/g,'&quot;');
+    return `<div class="dividende-row" data-nom="${safe}">
+      <div class="dividende-row-logo"><img src="${r.logo || ''}" alt=""></div>
+      <div class="dividende-row-name">${r.nom}</div>
+      <div class="dividende-row-field"><label>Montant investi</label><input type="number" class="dividende-amount-input" data-nom="${safe}" value="${r.montant}" min="0" step="50"></div>
+      <div class="dividende-row-field"><label>Poids</label><span>${pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</span></div>
+      <div class="dividende-row-field"><label>Rendement</label><span>${r.rendement != null ? fmtPct(r.rendement) : 'N/D'}</span></div>
+      <div class="dividende-row-field"><label>Div. annuel</label><span>${r.dividendeAnnuel != null ? fmtEUR(r.dividendeAnnuel, 0) : 'N/D'}</span></div>
+      <div class="dividende-row-field"><label>CAGR 5/10/20a</label><span>${fmtPct(r.cagr5)} / ${fmtPct(r.cagr10)} / ${fmtPct(r.cagr20)}</span></div>
+      <button class="cec-remove" data-action="dividende-remove" data-nom="${safe}" title="Retirer">✕</button>
+    </div>`;
+  }).join('') : '<div class="objectifs-empty">Aucune position — ajoute des entreprises depuis l\'onglet Classement (liste "Meilleur rendement du dividende").</div>';
+
+  wireDividendRows();
+  renderDividendGoal(rendementMoyen);
+  updateDividendSimDefaults(capitalTotal, rendementMoyen, cagrMoyen);
+  computeDividendSimChart();
+}
+
+function wireDividendRows(){
+  document.querySelectorAll('.dividende-amount-input').forEach(input => {
+    input.addEventListener('change', () => {
+      const val = parseFloat(input.value);
+      dividendPortfolioStore.positions[input.dataset.nom] = isNaN(val) ? 0 : val;
+      persistDividendPortfolioLocal();
+      renderDividendPortfolio();
+    });
+  });
+  document.querySelectorAll('[data-action="dividende-remove"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      delete dividendPortfolioStore.positions[btn.dataset.nom];
+      persistDividendPortfolioLocal();
+      renderDividendPortfolio();
+    });
+  });
+}
+
+function renderDividendGoal(rendementMoyen){
+  const input = document.getElementById('dividendeGoalInput');
+  const result = document.getElementById('dividendeGoalResult');
+  if (!input || !result) return;
+  const compute = () => {
+    const goal = parseFloat(input.value);
+    if (!goal || !rendementMoyen){ result.textContent = '—'; return; }
+    const montantNecessaire = goal / (rendementMoyen / 100);
+    result.textContent = `≈ ${fmtEUR(montantNecessaire, 0)} à investir (même répartition qu'aujourd'hui)`;
+  };
+  input.oninput = compute;
+  compute();
+}
+
+// ============================================================
+// SIMULATEUR DE CROISSANCE — capital de départ + versement mensuel + rendement +
+// croissance du dividende, composé sur un horizon choisi (5/10/15/20 ans). Distinct du
+// résumé "positions réelles" au-dessus : demande explicite de l'utilisateur ("mettre un
+// capital investi, combien on rajoute chaque mois, un rendement... que ça génère dans le
+// graphique"), les 3 premiers champs sont pré-remplis depuis les positions réelles au
+// premier rendu puis restent librement éditables (dividendSimTouched évite d'écraser une
+// saisie utilisateur à chaque re-rendu du portefeuille).
+// Modèle : capital(t) = capital0 + versementMensuel×12×t (accumulation simple, pas
+// d'hypothèse de plus-value boursière) ; dividende(t) = capital(t) × rendement% ×
+// (1+croissance%)^t (le rendement sur le capital ajouté reste au taux actuel, tandis que
+// le dividende par action déjà détenu continue de croître au CAGR — cohérent avec un
+// portefeuille dividende réel où le rendement sur coût augmente avec le temps).
+let dividendSimTouched = false;
+let dividendSimHorizon = 10;
+function updateDividendSimDefaults(capitalTotal, rendementMoyen, cagrMoyen){
+  if (dividendSimTouched) return;
+  const capitalEl = document.getElementById('dividendeSimCapital');
+  const yieldEl = document.getElementById('dividendeSimYield');
+  const cagrEl = document.getElementById('dividendeSimCagr');
+  if (capitalEl) capitalEl.value = Math.round(capitalTotal || 0);
+  if (yieldEl) yieldEl.value = rendementMoyen != null ? rendementMoyen.toFixed(1) : '';
+  if (cagrEl) cagrEl.value = cagrMoyen != null ? cagrMoyen.toFixed(1) : '';
+}
+function dividendSimInputs(){
+  const num = id => { const v = parseFloat(document.getElementById(id)?.value); return isNaN(v) ? 0 : v; };
+  return {
+    capital0: num('dividendeSimCapital'),
+    monthly: num('dividendeSimMonthly'),
+    yieldPct: num('dividendeSimYield'),
+    cagr: num('dividendeSimCagr'),
+    horizon: dividendSimHorizon
+  };
+}
+function computeDividendSimSeries(){
+  const { capital0, monthly, yieldPct, cagr, horizon } = dividendSimInputs();
+  const years = Array.from({ length: horizon + 1 }, (_, t) => t);
+  const capital = years.map(t => capital0 + monthly * 12 * t);
+  const dividende = years.map(t => capital[t] * (yieldPct / 100) * Math.pow(1 + cagr / 100, t));
+  return { years, capital, dividende };
+}
+function computeDividendSimChart(){
+  const canvas = document.getElementById('chartDividendeProjection');
+  const resultsBox = document.getElementById('dividendeSimResults');
+  if (!canvas) return;
+  const { years, capital, dividende } = computeDividendSimSeries();
+  if (dividendProjectionChart) dividendProjectionChart.destroy();
+  dividendProjectionChart = new Chart(canvas.getContext('2d'), {
+    type:'line',
+    data:{ labels: years.map(t => 'Année ' + t), datasets:[
+      { label:'Dividendes annuels (€)', data: dividende.map(v => Math.round(v)), borderColor:THEME.gold, backgroundColor:'rgba(217,164,65,0.12)', fill:true, tension:0.3, pointRadius:3 }
+    ] },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ display:false } },
+      scales:{ x:{ grid:{ display:false }, ticks:{ color:THEME.dim } }, y:{ grid:baseGrid, ticks:{ color:THEME.dim, callback:v=>v.toLocaleString('fr-FR')+' €' } } }
+    }
+  });
+  if (resultsBox){
+    const n = years.length - 1;
+    resultsBox.innerHTML = `
+      <div><div class="k">Montant investi (année ${n})</div><div class="v">${fmtEUR(capital[n], 0)}</div></div>
+      <div><div class="k">Dividendes annuels (année ${n})</div><div class="v">${fmtEUR(dividende[n], 0)}</div></div>
+      <div><div class="k">Croissance div. moyenne</div><div class="v">${dividendSimInputs().cagr.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%/an</div></div>`;
+  }
+}
+
+function openDividendeSimZoom(){
+  const card = document.getElementById('dividendeSimCard');
+  const body = document.getElementById('dividendeSimZoomBody');
+  if (!card || !body) return;
+  card._zoomHome = { parent: card.parentNode, next: card.nextSibling };
+  body.appendChild(card);
+  document.getElementById('dividendeSimZoomModal').style.display = 'flex';
+  requestAnimationFrame(() => { if (dividendProjectionChart) dividendProjectionChart.resize(); });
+}
+function closeDividendeSimZoom(){
+  const body = document.getElementById('dividendeSimZoomBody');
+  const card = body.firstElementChild;
+  if (card && card._zoomHome){
+    const { parent, next } = card._zoomHome;
+    try{
+      if (next && next.parentNode === parent) parent.insertBefore(card, next);
+      else parent.appendChild(card);
+    }catch(e){ parent.appendChild(card); }
+    requestAnimationFrame(() => { if (dividendProjectionChart) dividendProjectionChart.resize(); });
+  }
+  document.getElementById('dividendeSimZoomModal').style.display = 'none';
+}
+
+function initDividendPortfolio(){
+  const exportBtn = document.getElementById('dividendeExportBtn');
+  if (exportBtn) exportBtn.addEventListener('click', exportDividendPortfolio);
+
+  ['dividendeSimCapital', 'dividendeSimMonthly', 'dividendeSimYield', 'dividendeSimCagr'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', () => { dividendSimTouched = true; computeDividendSimChart(); });
+  });
+  const horizonRow = document.getElementById('dividendeSimHorizonButtons');
+  if (horizonRow){
+    horizonRow.addEventListener('click', e => {
+      const btn = e.target.closest('button[data-horizon]');
+      if (!btn) return;
+      dividendSimHorizon = parseInt(btn.dataset.horizon, 10);
+      horizonRow.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
+      computeDividendSimChart();
+    });
+  }
+  const zoomBtn = document.getElementById('dividendeSimZoomBtn');
+  if (zoomBtn) zoomBtn.addEventListener('click', openDividendeSimZoom);
 }
 
 function initSectorGrid(){
@@ -1983,9 +2582,15 @@ function goToAnalyse(nom){
   selectCompany(nom);
 }
 
+const PORTFOLIO_GROUP_PAGES = ['pagePortfolio', 'pageDividende', 'pagePerso'];
 function switchPage(pageId){
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === pageId));
-  document.querySelectorAll('.page-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.page === pageId));
+  document.querySelectorAll('.page-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.page === pageId || (b.dataset.group === 'portfolio' && PORTFOLIO_GROUP_PAGES.includes(pageId))));
+  const subnav = document.getElementById('portfolioSubnav');
+  if (subnav){
+    subnav.style.display = PORTFOLIO_GROUP_PAGES.includes(pageId) ? 'flex' : 'none';
+    subnav.querySelectorAll('.page-subnav-btn').forEach(b => b.classList.toggle('active', b.dataset.page === pageId));
+  }
 }
 
 function selectCompany(nom){
@@ -2239,6 +2844,9 @@ function sliceChartConfigByYears(config, nYears){
 let stockFull = null;   // { dates, closes, sma }
 let stockRange = 'max';
 let stockRequestId = 0;
+// Indicateurs affichables/masquables sur le graphique boursier (bouton par indicateur,
+// demande explicite : "beaucoup d'informations", pouvoir en isoler certains à la fois).
+let stockIndicators = { regression:true, sma200:true, sma30:true, prixJusteCible:false };
 
 function mapTickerToYahoo(ticker){
   if (!ticker) return null;
@@ -2519,16 +3127,33 @@ function buildStockChartConfig(range){
     pointRadius:0, spanGaps:false, tension:0, _legend: !!showInLegend
   });
 
-  const config = {
-    type:'line',
-    data:{ labels, datasets:[
-      { label:'Clôture hebdo', data:dataClose, borderColor:THEME.yellow, backgroundColor:'rgba(240,214,61,0.06)', fill:true, tension:0.12, pointRadius:0, borderWidth:1.5, _legend:true },
-      { label:'Moyenne mobile 200 sem.', data:dataSma, borderColor:THEME.white, borderWidth:2.5, pointRadius:0, spanGaps:true, tension:0.12, _legend:true },
-      { label:'Moyenne mobile 30 sem.', data:dataSma30, borderColor:THEME.violet, borderWidth:1, pointRadius:0, spanGaps:true, tension:0.12, _legend:true },
+  // Prix juste / prix cible : lignes horizontales constantes sur toute la plage
+  // affichée, mêmes couleurs sémantiques que la jauge de valorisation (JUSTE=or,
+  // CIBLE=vert) — activables/désactivables séparément des autres indicateurs
+  // (demande explicite, pour ne pas surcharger le graphique par défaut).
+  const latestStock = activeCompany && companies[activeCompany] ? companies[activeCompany][companies[activeCompany].length - 1] : null;
+  const flatLine = (value) => labels.map(() => value);
+
+  const datasets = [
+    { label:'Clôture hebdo', data:dataClose, borderColor:THEME.yellow, backgroundColor:'rgba(240,214,61,0.06)', fill:true, tension:0.12, pointRadius:0, borderWidth:1.5, _legend:true }
+  ];
+  if (stockIndicators.sma200) datasets.push({ label:'Moyenne mobile 200 sem.', data:dataSma, borderColor:THEME.white, borderWidth:2.5, pointRadius:0, spanGaps:true, tension:0.12, _legend:true });
+  if (stockIndicators.sma30) datasets.push({ label:'Moyenne mobile 30 sem.', data:dataSma30, borderColor:THEME.violet, borderWidth:1, pointRadius:0, spanGaps:true, tension:0.12, _legend:true });
+  if (stockIndicators.regression){
+    datasets.push(
       regStyle(0, 'Régression linéaire (20 ans max)', true),
       regStyle(1, '+1σ', false), regStyle(-1, '−1σ', false),
       regStyle(2, '+2σ', false), regStyle(-2, '−2σ', false)
-    ]},
+    );
+  }
+  if (stockIndicators.prixJusteCible && latestStock){
+    if (latestStock.prixJuste != null) datasets.push({ label:'Prix juste', data:flatLine(latestStock.prixJuste), borderColor:THEME.gold, borderWidth:1.5, borderDash:[6,3], pointRadius:0, spanGaps:false, tension:0, _legend:true });
+    if (latestStock.prixCible != null) datasets.push({ label:'Prix cible', data:flatLine(latestStock.prixCible), borderColor:THEME.green, borderWidth:1.5, borderDash:[6,3], pointRadius:0, spanGaps:false, tension:0, _legend:true });
+  }
+
+  const config = {
+    type:'line',
+    data:{ labels, datasets },
     options:{ responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true, filter: item => item.text && config.data.datasets[item.datasetIndex]._legend}} },
       scales:{
@@ -2551,6 +3176,14 @@ document.getElementById('rangeButtons').addEventListener('click', e => {
   if (!btn) return;
   stockRange = btn.dataset.range;
   document.querySelectorAll('#rangeButtons button').forEach(b => b.classList.toggle('active', b === btn));
+  renderStockChart();
+});
+document.getElementById('stockIndicatorToggles').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-indicator]');
+  if (!btn) return;
+  const key = btn.dataset.indicator;
+  stockIndicators[key] = !stockIndicators[key];
+  btn.classList.toggle('active', stockIndicators[key]);
   renderStockChart();
 });
 document.getElementById('macroCycleRangeButtons').addEventListener('click', e => {
@@ -3521,6 +4154,12 @@ const CERVEAU_STORE = 'state';
 let cerveauDB = null;
 let cerveauData = { chains:{}, notes:{}, analyses:{} };
 let cerveauView = { level:'secteurs' };
+// Phase agrandie en plein écran (index dans chain.phases, ou null) — CSS pur, pas de
+// déplacement de nœud DOM comme le zoom scénario : quasi toute interaction dans une
+// phase (ajouter une entreprise, éditer un texte...) redéclenche renderCerveauPhases()
+// qui reconstruit tout le HTML depuis zéro, ce qui casserait une référence DOM déplacée.
+// Un simple flag relu à chaque rendu survit intact à ces reconstructions.
+let cerveauZoomedPhase = null;
 
 function openCerveauDB(){
   return new Promise((resolve, reject) => {
@@ -3563,6 +4202,19 @@ async function loadCerveauData(){
   renderCerveau();
 }
 
+// ⚠️⚠️⚠️ DONNÉES CRITIQUES — NE JAMAIS SUPPRIMER/ÉCRASER cerveauData EN DEHORS D'UNE
+// ACTION UTILISATEUR EXPLICITE (bouton ✕/Retirer/Supprimer cliqué PAR l'utilisateur). ⚠️⚠️⚠️
+// L'utilisateur saisit ici des heures de contenu (chaînes de valeur, analyses, notes)
+// qu'il ne peut pas reconstituer facilement. Toute future modification de ce module —
+// migration de schéma, refactoring, changement de structure — DOIT être strictement
+// ADDITIVE : migrateCerveauChains() ne fait que convertir/compléter des champs
+// existants, jamais purger un champ dont la conversion échoue (voir son usage de
+// `|| valeurExistante` partout). Ne jamais réinitialiser cerveauData à {} avant un
+// rechargement IndexedDB, ne jamais remplacer un objet stocké au lieu de le fusionner
+// (voir loadCerveauData() : `Object.keys(stored.chains).forEach(k => cerveauData.chains[k] = ...)`,
+// jamais `cerveauData.chains = stored.chains`). En cas de doute sur une migration,
+// GARDER l'ancien champ en plus du nouveau plutôt que de le supprimer (coût de stockage
+// négligeable face au risque de perte de données).
 function persistCerveauData(){
   if (!cerveauDB) return;
   try{ cerveauDB.transaction(CERVEAU_STORE, 'readwrite').objectStore(CERVEAU_STORE).put(cerveauData, 'state'); }
@@ -3708,6 +4360,12 @@ function migrateCerveauChains(){
           }
           delete b.texte;
           delete b.style;
+          // texte en clair (texte) → HTML (texteHtml) pour permettre le gras inline via
+          // sélection (voir cerveauTextBlockHtml) — texte existant simplement échappé,
+          // aucune perte, migration idempotente (ne touche pas texteHtml déjà présent).
+          b.textBlocks.forEach(tb => {
+            if (tb.texteHtml == null) tb.texteHtml = escapeHtml(tb.texte || '');
+          });
         });
       });
     });
@@ -3766,15 +4424,24 @@ function cerveauEntityCard(ent, phaseIdx, entIdx){
 const CERVEAU_FONT_SIZE_DEFAULTS = { titre:17, soustitre:13, corps:12 };
 const CERVEAU_FONT_SIZE_MIN = 9;
 const CERVEAU_FONT_SIZE_MAX = 32;
-// Rangée horizontale : icônes de style + boutons +/- taille en colonne étroite à
-// GAUCHE, textarea à droite (flex:1) — libère la hauteur qu'occupait la rangée de
-// boutons pleine largeur au-dessus de chaque texte, important quand plusieurs blocs de
-// texte sont empilés sur la même carte.
+// Rangée horizontale : icônes de style + bouton gras + boutons +/- taille en colonne
+// étroite à GAUCHE, zone de texte à droite (flex:1) — libère la hauteur qu'occupait la
+// rangée de boutons pleine largeur au-dessus de chaque texte, important quand plusieurs
+// blocs de texte sont empilés sur la même carte. Zone de texte en `contenteditable`
+// (plus un `<textarea>`) : demande explicite — pouvoir surligner un passage et le mettre
+// en gras SANS changer le style de tout le bloc, pour composer titre+texte normal dans
+// un seul segment plutôt que d'empiler des blocs séparés. `texteHtml` (au lieu de
+// `texte` en clair) stocke ce gras inline ; migré automatiquement depuis `texte` par
+// migrateCerveauChains(). Bénéfice secondaire : un contenteditable sans hauteur fixée
+// épouse nativement la hauteur de son contenu, plus besoin d'autoGrowTextarea ici — un
+// titre d'une ligne reste donc aussi bas qu'une ligne.
 function cerveauTextBlockHtml(tb){
   const size = tb.fontSize || CERVEAU_FONT_SIZE_DEFAULTS[tb.style || 'corps'];
+  const html = tb.texteHtml != null ? tb.texteHtml : escapeHtml(tb.texte || '');
   return `<div class="cec-textblock" data-tb="${tb.id}">
     <div class="cec-textblock-side">
       ${cerveauTextStyleButtonsHtml('free-style', tb.style)}
+      <button class="cec-style-mini cec-bold-btn" data-action="free-bold" title="Gras sur la sélection"><b>G</b></button>
       <div class="cec-size-row">
         <button class="cec-size-btn" data-action="free-size-minus" title="Réduire">−</button>
         <span class="cec-size-val">${size}</span>
@@ -3782,7 +4449,7 @@ function cerveauTextBlockHtml(tb){
       </div>
       <button class="cec-remove" data-action="free-text-delete" title="Retirer ce texte">✕</button>
     </div>
-    <textarea class="cec-free-text cec-free-text-${tb.style || 'corps'}" style="font-size:${size}px" data-action="free-text" placeholder="Texte…">${(tb.texte || '').replace(/</g, '&lt;')}</textarea>
+    <div class="cec-free-text cec-free-text-${tb.style || 'corps'}" style="font-size:${size}px" contenteditable="true" data-action="free-text" data-placeholder="Texte…">${html}</div>
   </div>`;
 }
 function cerveauFreeBlockHtml(bloc, phaseIdx, blocIdx){
@@ -3798,13 +4465,27 @@ function cerveauFreeBlockHtml(bloc, phaseIdx, blocIdx){
   // par .cec-image) — on en ajoute une dédiée à la largeur seule sur le bloc.
   const widthOnlyHandle = showImage ? '' : `<div class="cec-resize-handle cec-resize-handle-width" data-action="free-resize-width" title="Redimensionner la largeur (glisser)"></div>`;
   const addImageBtn = showImage ? '' : `<button class="cec-add-text-btn" data-action="free-add-image">+ Image</button>`;
+  // Lien cliquable indépendant de l'image (URL vers un site/concurrent/produit) —
+  // demande explicite, distincte de "image ajoutée par URL" (qui existait déjà via le
+  // bouton 🔗 sur la zone image). Chip affichée si `bloc.lien` est défini ; sinon un
+  // champ de saisie si `bloc._linkOpen` (transitoire) ; sinon juste le bouton "+ Lien".
+  let linkZone = '';
+  if (bloc.lien){
+    const safeLien = bloc.lien.replace(/"/g, '&quot;');
+    linkZone = `<div class="cec-link-chip-row"><a class="cec-link-chip" href="${safeLien}" target="_blank" rel="noopener">🔗 ${escapeHtml(bloc.lien.replace(/^https?:\/\//,'').slice(0,40))}</a><button class="cec-remove" data-action="free-link-clear" title="Retirer le lien">✕</button></div>`;
+  } else if (bloc._linkOpen){
+    linkZone = `<div class="cec-url-row"><input type="text" class="cec-url-input" data-role="link-input" placeholder="Coller un lien (https://…)"><button class="cec-url-ok" data-action="free-link-ok">OK</button></div>`;
+  }
+  const addLinkBtn = (bloc.lien || bloc._linkOpen) ? '' : `<button class="cec-add-text-btn" data-action="free-add-link">+ Lien</button>`;
   return `<div class="cerveau-freeblock" style="width:${width}px;position:relative;" data-phase="${phaseIdx}" data-bloc="${blocIdx}">
     ${imageZone}
     <div class="cec-body">
       ${textZone}
+      ${linkZone}
       <div class="cerveau-freeblock-actions">
         <button class="cec-add-text-btn" data-action="free-add-text">+ Texte</button>
         ${addImageBtn}
+        ${addLinkBtn}
       </div>
       <button class="cec-remove cec-remove-free" data-action="free-delete">✕ Retirer ce bloc</button>
     </div>
@@ -3820,7 +4501,7 @@ function printCerveauEntityHtml(ent){
 }
 function printCerveauFreeBlockHtml(bloc){
   const imgs = bloc.image ? `<div class="print-img-row"><img src="${bloc.image}" alt=""></div>` : '';
-  const textHtml = (bloc.textBlocks || []).filter(tb => tb.texte).map(tb => `<p class="print-cec-text-${tb.style || 'corps'}">${tb.texte.replace(/</g, '&lt;')}</p>`).join('');
+  const textHtml = (bloc.textBlocks || []).filter(tb => (tb.texteHtml || tb.texte)).map(tb => `<p class="print-cec-text-${tb.style || 'corps'}">${tb.texteHtml != null ? tb.texteHtml : escapeHtml(tb.texte)}</p>`).join('');
   return `<div style="margin-bottom:10px">${textHtml}${imgs}</div>`;
 }
 function exportChainAsPdf(chain, secteur){
@@ -3841,17 +4522,28 @@ function renderCerveauPhases(box){
     <div class="cerveau-breadcrumb"><a data-back="secteurs">Secteurs</a> / <a data-back="chaines">${cerveauSectorLabel(secteur)}</a> / ${chain.nom}</div>
     <div class="cerveau-actions"><button class="zoom-btn objectifs-export" id="cerveauChainExportPdfBtn">🖨 Exporter PDF</button></div>
     <datalist id="cerveauCompanyList">${Object.keys(companies).map(n => `<option value="${n.replace(/"/g, '&quot;')}">`).join('')}</datalist>
+    ${cerveauZoomedPhase != null ? '<div class="cerveau-phase-backdrop" data-action="phase-zoom-close"></div>' : ''}
     <div class="cerveau-phase-grid">${chain.phases.map((ph, i) => `
-      <div class="scenario-card cerveau-phase">
-        <h3 class="scenario-title">${ph.nom}</h3>
+      <div class="scenario-card cerveau-phase${cerveauZoomedPhase === i ? ' cerveau-phase-zoomed' : ''}">
+        <h3 class="scenario-title">${ph.nom}<button class="zoom-btn cerveau-phase-zoom-btn" data-action="phase-zoom" data-phase-zoom="${i}" title="${cerveauZoomedPhase === i ? 'Réduire' : 'Agrandir en plein écran'}">${cerveauZoomedPhase === i ? '✕' : '⤢'}</button></h3>
         <div class="cerveau-entity-list" data-phase="${i}">${ph.entreprises.map((e, j) => cerveauEntityCard(e, i, j)).join('')}</div>
         <div class="cerveau-freeblock-list" data-phase="${i}">${(ph.blocsLibres || []).map((b, j) => cerveauFreeBlockHtml(b, i, j)).join('')}</div>
         <button class="cerveau-add-free" data-phase="${i}" data-action="free-add">+ Bloc libre (image / texte)</button>
         <div class="cerveau-add-entity"><input type="text" list="cerveauCompanyList" placeholder="Ajouter une entreprise, Entrée pour valider…" data-phase="${i}"></div>
       </div>`).join('')}</div>`;
 
-  box.querySelector('[data-back="secteurs"]').addEventListener('click', () => { cerveauView = { level:'secteurs' }; renderCerveau(); });
-  box.querySelector('[data-back="chaines"]').addEventListener('click', () => { cerveauView = { level:'chaines', secteur }; renderCerveau(); });
+  box.querySelectorAll('[data-action="phase-zoom"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = parseInt(btn.dataset.phaseZoom, 10);
+      cerveauZoomedPhase = cerveauZoomedPhase === i ? null : i;
+      renderCerveau();
+    });
+  });
+  const backdrop = box.querySelector('[data-action="phase-zoom-close"]');
+  if (backdrop) backdrop.addEventListener('click', () => { cerveauZoomedPhase = null; renderCerveau(); });
+
+  box.querySelector('[data-back="secteurs"]').addEventListener('click', () => { cerveauZoomedPhase = null; cerveauView = { level:'secteurs' }; renderCerveau(); });
+  box.querySelector('[data-back="chaines"]').addEventListener('click', () => { cerveauZoomedPhase = null; cerveauView = { level:'chaines', secteur }; renderCerveau(); });
   document.getElementById('cerveauChainExportPdfBtn').addEventListener('click', () => exportChainAsPdf(chain, secteur));
 
   box.querySelectorAll('.cerveau-add-entity input').forEach(input => {
@@ -3929,6 +4621,32 @@ function renderCerveauPhases(box){
         renderCerveau();
       });
     }
+    const addLinkBtn = card.querySelector('[data-action="free-add-link"]');
+    if (addLinkBtn){
+      addLinkBtn.addEventListener('click', () => { bloc._linkOpen = true; renderCerveau(); });
+    }
+    const linkInput = card.querySelector('[data-role="link-input"]');
+    if (linkInput){
+      linkInput.focus();
+      const submitLink = () => {
+        const v = linkInput.value.trim();
+        if (!v) return;
+        bloc.lien = /^https?:\/\//.test(v) ? v : 'https://' + v;
+        bloc._linkOpen = false;
+        persistCerveauData();
+        renderCerveau();
+      };
+      card.querySelector('[data-action="free-link-ok"]').addEventListener('click', submitLink);
+      linkInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitLink(); });
+    }
+    const linkClearBtn = card.querySelector('[data-action="free-link-clear"]');
+    if (linkClearBtn){
+      linkClearBtn.addEventListener('click', () => {
+        bloc.lien = '';
+        persistCerveauData();
+        renderCerveau();
+      });
+    }
     card.querySelectorAll('.cec-textblock').forEach(tbEl => {
       const tbId = tbEl.dataset.tb;
       const tb = bloc.textBlocks.find(t => t.id === tbId);
@@ -3955,10 +4673,25 @@ function renderCerveauPhases(box){
       };
       if (sizeMinus) sizeMinus.addEventListener('click', () => applySize(-1));
       if (sizePlus) sizePlus.addEventListener('click', () => applySize(1));
+      // Zone de texte en contenteditable (voir cerveauTextBlockHtml) : hauteur suit
+      // nativement le contenu, plus besoin d'autoGrowTextarea ici. Le bouton "G"
+      // applique le gras sur la SÉLECTION en cours (document.execCommand('bold'),
+      // encore largement supporté malgré son statut "déprécié" — suffisant pour ce
+      // besoin simple, pas de justification à réécrire un mini-éditeur maison).
+      // mousedown+preventDefault avant le click : sans ça, cliquer le bouton fait perdre
+      // la sélection de texte dans le contenteditable AVANT que execCommand ne s'exécute.
+      const boldBtn = tbEl.querySelector('[data-action="free-bold"]');
       const text = tbEl.querySelector('[data-action="free-text"]');
-      autoGrowTextarea(text);
-      text.addEventListener('input', () => autoGrowTextarea(text));
-      text.addEventListener('blur', () => { tb.texte = text.value; persistCerveauData(); });
+      if (boldBtn){
+        boldBtn.addEventListener('mousedown', e => e.preventDefault());
+        boldBtn.addEventListener('click', () => {
+          text.focus();
+          document.execCommand('bold');
+          tb.texteHtml = text.innerHTML;
+          persistCerveauData();
+        });
+      }
+      text.addEventListener('blur', () => { tb.texteHtml = text.innerHTML; persistCerveauData(); });
     });
   });
 
@@ -5073,6 +5806,9 @@ document.getElementById('refreshBtn').addEventListener('click', loadData);
 document.querySelectorAll('.page-nav-btn').forEach(btn => {
   btn.addEventListener('click', () => switchPage(btn.dataset.page));
 });
+document.querySelectorAll('.page-subnav-btn').forEach(btn => {
+  btn.addEventListener('click', () => switchPage(btn.dataset.page));
+});
 initSearch();
 initSectorGrid();
 initClassement();
@@ -5104,6 +5840,9 @@ document.getElementById('openAnalyseTag').addEventListener('click', () => { if (
 loadCerveauData();
 loadIdeesBaseline();
 loadRevueBaseline();
+initDividendPortfolio();
+loadDividendPortfolioBaseline();
+loadPersoData();
 
 (async function init(){
   const ok = await ensureChartJs();

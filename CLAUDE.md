@@ -432,6 +432,72 @@ avec le chargement principal sinon).
   Chart.js vivantes fait planter la seconde (Chart.js le mute en interne pour résoudre
   les valeurs scriptables comme `cutout`) — piège constaté en test, cf. CHANGELOG.
 
+### Regroupement de la navigation "Portefeuille" (fait, fonctionnel)
+Les 3 onglets liés au portefeuille (Wolf Portfolio, Dividende, Perso — voir plus bas)
+sont regroupés sous un seul bouton `💼 Portefeuille` dans la nav principale
+(`data-page="pagePortfolio" data-group="portfolio"`) plutôt que 3 boutons distincts —
+demande explicite de l'utilisateur ("on rajoute quand même pas mal d'onglets"). Une
+seconde barre `#portfolioSubnav` (`.page-subnav`/`.page-subnav-btn`, sous la nav
+principale) liste les 3 sous-onglets et n'est visible que quand une des 3 pages est
+active. `switchPage(pageId)` a été étendu (pas réécrit) : `PORTFOLIO_GROUP_PAGES =
+['pagePortfolio','pageDividende','pagePerso']`, le bouton principal reste actif si
+`pageId` appartient à ce tableau, et la sous-barre s'affiche/se met à jour en
+conséquence. **Aucun déplacement de DOM, aucune page renommée** : chaque page garde
+son id d'origine et son contenu/logique de rendu propre, seul l'habillage de la nav a
+changé — donc rien à re-brancher ailleurs.
+
+### Onglet Portefeuille Perso — PEA & CTO (fait, fonctionnel)
+Portefeuille personnel réel de l'utilisateur (distinct du Wolf Portfolio, qui est le
+portefeuille "modèle" de Wolf Academy), sourcé depuis un **second Google Sheet
+entièrement différent** (pas un onglet du fichier principal) : `PERSO_PUBLISHED_ID`/
+`PERSO_SHEET_ID`/`PERSO_GID` dédiés dans `app.js`, chargement CSV+gviz dédié
+(`loadPersoData()`, ne réutilise pas `loadSheetDual()` qui est câblée sur le fichier
+principal). Deux comptes sur le même onglet, côte à côte sur les mêmes lignes : PEA
+(Crédit Agricole, colonnes B à R) et CTO (Saxo, colonnes U à AL), chacun avec un
+sous-bloc évolution mensuelle + un sous-bloc positions.
+- **Mapping vérifié colonne par colonne sur le CSV réel avant d'écrire le parsing**
+  (voir "Pièges techniques" points 11/14 — jamais coder un mapping sur une description
+  verbale, même quand l'utilisateur donne des lettres de colonne précises) : `PEA_COL`/
+  `CTO_COL` dans `app.js`. **Piège trouvé en vérifiant** : le sous-bloc positions du CTO
+  démarre **une ligne plus bas** que celui du PEA (son titre "CTO - Saxo" occupe la
+  ligne où le PEA a déjà ses en-têtes de colonnes) — les lettres de colonnes dictées
+  étaient exactes, seul le décalage de ligne ne l'était pas. `parsePersoBlock(rows,
+  col)` parse **par reconnaissance de contenu** (ligne de position valide = nom non
+  vide, différent de "Action", ET valorisation numérique — exclut aussi le titre de
+  bloc qui partage la colonne mais n'a jamais de valorisation en face), donc insensible
+  à ce genre de décalage de ligne, voir "Pièges techniques" point 10.
+- **Capital investi / gains : dérivés des positions (`valeurAchat`/`perfEur`, déjà
+  calculés par le Sheet), jamais d'une somme des versements mensuels.** Premier essai
+  (somme de la colonne "Versement") donnait une performance PEA de +297%, manifestement
+  fausse — cause : le journal mensuel ne remonte pas jusqu'au tout premier apport
+  (`valeurApresFlux` de mars dépassait déjà largement le seul versement de mars,
+  preuve d'un capital déjà présent avant le début du suivi mensuel). `persoAccountStats()`
+  somme donc `valeurAchat`/`perfEur` sur les positions (hors CASH, qui n'a pas de coût
+  d'acquisition), cohérent avec le reste du projet ("lire les colonnes déjà calculées,
+  pas recalculer soi-même").
+- **Composition** : donut Chart.js **standard** (pas les plugins de logos custom du
+  Wolf Portfolio — inutile ici, un donut par compte suffit et les logos figurent déjà
+  dans la liste de positions juste à côté) + liste de positions réutilisant **telle
+  quelle** la CSS `.portfolio-holding-*` du Wolf Portfolio (aucune nouvelle règle CSS
+  nécessaire), logo résolu via `companyLogoUrl()` avec repli initiale/💶 pour les
+  positions hors univers suivi (S&P Global, Mastercard, Booking, Domino's, PepsiCo —
+  absentes de "DATA BASE 20 ans", comportement attendu, pas un bug).
+- **Comparaison PEA/CTO** (`#persoCompareGrid`, en tête de page) : valorisation
+  actuelle, performance, poids dans le total des deux comptes, capital investi —
+  côte à côte via `.portfolio-compare-grid` (déjà existante). Sous cette comparaison,
+  chaque compte a sa **propre section complète** (résumé 4 tuiles, composition,
+  graphique vs CAC 40) pour la vue individuelle.
+- **Évolution vs CAC 40** : utilise directement `valeurPart`/`valeurPartCac40` (deux
+  indices déjà rebasés base 100 par le Sheet), **pas un recalcul de rendement cumulé**
+  contrairement au Wolf Portfolio (qui, lui, compare des % de rendement cumulé
+  `AT`/`AW` — ce Sheet-ci n'a pas de colonne équivalente pour le CAC 40, seulement
+  l'indice base 100). Filtré sur les mois où les deux valeurs existent (exclut les
+  mois futurs pré-remplis en `#N/A` dans le Sheet, `parseNum()` les traite déjà comme
+  `null`).
+- **Aucune persistance locale/export** : contrairement à Watchlist/Idées/Objectifs,
+  cet onglet est en lecture seule depuis le Sheet (comme le Wolf Portfolio), pas de
+  `localStorage` ni de `data/perso.json`.
+
 ### Onglet Secteur (fait, fonctionnel)
 - 11 secteurs GICS + bucket "Autre / non classé"
 - Regroupement automatique des entreprises par secteur (normalisation par mots-clés
@@ -529,6 +595,42 @@ une ligne → `goToAnalyse(nom)`.
   `populateClassementSecteurFilter()`, réutilise `GICS_SECTORS` + "Autre / non classé"),
   restreint les deux listes au secteur choisi via `normalizeSector()` sur `latest.secteur`
   de chaque entreprise. "Tous les secteurs" (valeur vide) = comportement d'origine.
+
+### Onglet Portefeuille Dividende (fait, fonctionnel)
+Portefeuille personnel centré dividende, construit exclusivement depuis la liste
+"Meilleur rendement du dividende" de l'onglet Classement — bouton `+`
+(`classementRowHtml(...,showAddBtn)`, `data-action="dividend-add"`) qui ajoute
+l'entreprise à `dividendPortfolioStore.positions[nom]` (montant investi en €, 1000€
+par défaut, **saisie en montant, pas en nombre d'actions** — décision explicite de
+l'utilisateur). Le bouton devient une coche verte (`.classement-add-btn.active`) une
+fois la position ajoutée. Persistance identique aux autres onglets : `localStorage`
+(`wolfAnalysisDividendPortfolio`) + socle `data/dividende.json` + bouton Exporter
+(JSON). Aucune nouvelle colonne `COL`/nouvel appel réseau : tout dérive de
+`rendementDiv`/`cagrDiv5`/`cagrDiv10`/`cagrDiv20`, déjà mappés.
+- **Résumé** (`renderDividendPortfolio()`, 4 tuiles) : capital investi total,
+  dividendes annuels estimés (`Σ montant × rendementDiv/100`), rendement moyen
+  **pondéré par le capital investi** (pas une simple moyenne des rendements), CAGR
+  dividende moyen à 10 ans pondéré de la même façon (fenêtre 10 ans choisie comme la
+  plus représentative, cohérente avec le reste du site).
+- **Calculateur d'objectif** (`#dividendeGoalInput`/`#dividendeGoalResult`) :
+  `montant nécessaire = objectif € / (rendement moyen pondéré / 100)`, recalcul en
+  direct (`input` event), en gardant la répartition actuelle du portefeuille comme
+  hypothèse (pas de proposition de nouvelle répartition).
+- **Graphique de projection** (`chartDividendeProjection`, Chart.js) : dividende
+  annuel total composé sur 10 ans au CAGR moyen pondéré (`montant × (1+cagr)^n`) — une
+  seule courbe, pas de scénarios multiples (contrairement à l'onglet Valorisation).
+- **Liste des positions** (`#dividendeList`) : logo, montant investi (`<input
+  type=number>`, `change` → recalcul immédiat de tout le module), poids dans le
+  portefeuille, rendement, dividende annuel, CAGR 5/10/20 ans, bouton de retrait
+  (`✕`, `dividende-remove`).
+- **Rafraîchissement** : `renderDividendPortfolio()` est appelé à la fois au
+  chargement initial des données (`handleCsvRows()`, comme `renderClassement()`/
+  `renderWatchlist()`) et immédiatement après un ajout depuis le Classement — les
+  deux sont nécessaires : sans le premier, la page reste vide tant qu'aucune
+  interaction n'a eu lieu après le chargement (les positions dépendent de
+  `companies`, peuplé de façon asynchrone) ; sans le second, ajouter une position
+  depuis le Classement ne se reflète pas tant qu'on n'a pas changé de page et qu'un
+  autre événement n'a pas redéclenché un rendu.
 
 ### Onglet Watchlist (fait, fonctionnel)
 4 colonnes (Liste d'achat / Idée du moment / À surveiller / À analyser) + un "pool" en
@@ -909,6 +1011,110 @@ Sheet dédié** : ne concerne plus que les entreprises hors de cet onglet.
 suite à une limitation de données bloquante pour les bourses non-américaines — voir
 "Pièges techniques" point 8. Ne pas le réintroduire pour le cours de bourse principal
 sans un moyen de contourner cette limitation.)*
+
+### Cours de bourse — indicateurs activables/désactivables (fait)
+`stockIndicators = {regression, sma200, sma30, prixJusteCible}` (état global) + rangée
+de boutons `#stockIndicatorToggles` sous les boutons de plage — demande explicite pour
+alléger un graphique qui peut afficher beaucoup d'informations à la fois.
+`buildStockChartConfig()` construit `datasets` conditionnellement selon ce flag plutôt
+que de toujours pousser les 8 séries. `prixJusteCible` (nouveau, défaut désactivé)
+ajoute 2 lignes horizontales constantes (`latest.prixJuste`/`latest.prixCible`, mêmes
+couleurs sémantiques que la jauge de valorisation : or/vert) — les 3 indicateurs
+existants (régression, SMA200, SMA30) restent activés par défaut, comportement inchangé
+tant qu'on ne touche pas aux boutons.
+
+### Portefeuille Dividende — simulateur de croissance (fait)
+Remplace l'ancien graphique de projection fixe (10 ans, capital = somme des positions
+réelles) par un simulateur interactif : capital de départ, versement mensuel, rendement
+moyen et croissance du dividende sont 4 champs éditables (`#dividendeSimCapital/
+-Monthly/-Yield/-Cagr`), pré-remplis une seule fois depuis les positions réelles puis
+laissés libres (`dividendSimTouched`, évite qu'un re-rendu du portefeuille n'écrase une
+saisie utilisateur). Horizon 5/10/15/20 ans (`dividendSimHorizon`). Modèle
+(`computeDividendSimSeries()`) : `capital(t) = capital0 + versementMensuel×12×t`
+(accumulation simple, aucune hypothèse de plus-value boursière) ; `dividende(t) =
+capital(t) × rendement% × (1+croissance%)^t`. Mise en page 2 colonnes
+(`.dividende-main-row` : positions à gauche, simulateur à droite — demande explicite),
+zoom dédié (`openDividendeSimZoom()`/`#dividendeSimZoomModal`, même pattern de
+déplacement de nœud DOM que `openScenarioZoom()`) affichant les mêmes contrôles +
+résultats (montant investi/dividendes/croissance à l'horizon choisi) en plein écran.
+
+### Portefeuille Perso — mise en page côte à côte + logos sur les donuts (fait)
+PEA et CTO affichés **côte à côte** (`.perso-accounts-row`, grid 2 colonnes, empile sous
+1100px) plutôt qu'empilés — demande explicite pour comparer directement les deux
+comptes. Donuts PEA/CTO réutilisent désormais `portfolioSegmentLogosPlugin()` (même
+plugin Chart.js custom que le donut Wolf Portfolio, générique — juste besoin de
+`dataset._logos` et d'un préchargement via `loadImageCached()`), avec repli
+lettre/emoji pour les positions hors univers suivi, cohérent avec le reste du site.
+
+### Macro : correction du parsing "Force relative sectorielle" (fait)
+Bug trouvé en test (remonté par l'utilisateur : les lignes "1 moi"/"2 mois"/"3 mois" et
+"Classement" avaient disparu du tableau ET le graphique Classement sectoriel ne
+s'affichait plus) : `handleMacroPowerRows()` utilisait des indices de ligne FIXES
+(`rows[12]`, boucle `15..24`), une exception documentée au principe habituel de
+reconnaissance de contenu (voir "Pièges techniques" point 10). Cette exception s'est
+révélée fausse : **CSV et gviz ne compressent pas les lignes vides de la même façon
+sur ce fichier**, donc l'indice fixe pointait vers une ligne différente selon la
+méthode de chargement ayant gagné la course — confirmé en comparant les deux sources
+en direct (le CSV donnait les bonnes lignes à l'indice attendu, gviz non). Remplacé par
+une reconnaissance de contenu : `headerRowIdx` = première ligne dont une cellule
+Q..AA se termine par `"(%)"`, `catRow` = la ligne juste au-dessus (l'adjacence relative
+survit à la compression différentielle des lignes vides), `dataRows` = toute ligne avec
+un libellé en colonne P ET au moins une valeur numérique en Q..AA. Robuste à tout futur
+décalage de ligne dans ce fichier, contrairement à l'ancien code.
+
+### Export PDF multi-graphiques — cause racine des graphiques manquants (fait)
+Bug remonté deux fois (page Analyse complète ET page Macro complète : les blocs de
+texte/tableaux sortaient mais pas les images de graphique). Deux causes réelles
+trouvées et corrigées ensemble :
+1. **`window.print()` appelé de façon synchrone** juste après avoir inséré des
+   `<img src="data:...">` dans le DOM — `exportSectionAsPdf()` attend maintenant que
+   toutes les images du bloc à imprimer aient chargé (`img.complete`/évènements
+   `load`/`error`, avec un filet de sécurité de 4s) avant d'appeler `window.print()`.
+   Un export à une seule image avait presque toujours le temps de rattraper (d'où
+   l'impression que ça marchait), pas un export cumulant 9 images ou plus.
+2. **`chart.resize()` sans argument** (dans `chartToHiResDataUrl()`) redimensionne le
+   canvas sur la taille COURANTE connue du conteneur — dépend d'un cycle de mesure
+   (ResizeObserver) qui n'a pas toujours eu l'occasion de tourner, pouvant laisser un
+   canvas à 0×0 (`toBase64Image()` renvoie alors l'image cassée `"data:,"`) sans aucune
+   erreur visible. Fix : lire la taille RÉELLE du conteneur via
+   `getBoundingClientRect()` et la passer explicitement à `resize(w, h)` ; si le canvas
+   reste malgré tout à 0×0, l'image est omise proprement (`chartsHtml`/`chartHtml`
+   filtrent les URL nulles) plutôt que d'embarquer une image cassée.
+
+### Cerveau numérique — texte riche, blocs compacts, lien, zoom de phase (fait)
+- **Gras via sélection** (remplace le style figé par bloc) : la zone de texte
+  (`.cec-free-text`) est passée de `<textarea>` à `contenteditable`, stockée en
+  `tb.texteHtml` (au lieu de `tb.texte` en clair) — migration automatique
+  (`migrateCerveauChains()`, texte existant simplement échappé en HTML, sans perte).
+  Bouton "G" dédié (`data-action="free-bold"`) applique `document.execCommand('bold')`
+  sur la sélection courante (`mousedown+preventDefault` avant le `click`, sinon la
+  sélection est perdue avant que la commande ne s'exécute) — permet de mélanger
+  titre/texte normal DANS un seul bloc plutôt que d'empiler plusieurs blocs de styles
+  différents. Bénéfice secondaire : un `contenteditable` sans hauteur fixée épouse
+  nativement son contenu, `autoGrowTextarea()` n'est plus utilisé pour cette zone.
+- **Bloc compact pour un titre court** : la colonne de contrôles latérale (icônes de
+  style + bouton gras + stepper de taille + suppression) était assez haute pour forcer
+  tout le bloc à ~120px même pour un titre d'une ligne (flex row, la hauteur suit le
+  plus grand enfant) — chaque contrôle réduit (`.cec-style-mini` 20×18→16×14,
+  `.cec-size-btn` 20×14→16×11, gaps resserrés), suffisant pour qu'un titre court reste
+  visuellement bas (confirmé en test).
+- **Lien cliquable indépendant de l'image** (`bloc.lien`, bouton "+ Lien") : chip
+  `<a href target=_blank>` affichée sous le texte, distincte de "l'image ajoutée par
+  URL" (bouton 🔗 sur la zone image elle-même, déjà existant — confirmé toujours
+  fonctionnel en test, contrairement à ce que l'utilisateur pensait, probablement un
+  cache navigateur sur une ancienne version de `app.js`).
+- **Suppression individuelle d'un bloc texte** : déjà correctement implémentée
+  (`data-action="free-text-delete"` ne retire que le `textBlock` ciblé, testé en
+  isolant avant/après) — même remarque que ci-dessus sur un possible souci de cache.
+- **Warning permanent contre la suppression de données** : commentaire fort au-dessus
+  de `persistCerveauData()` (voir aussi mémoire long-terme dédiée) — aucune migration
+  future ne doit purger `cerveauData`, seule une action utilisateur explicite le peut.
+- **Zoom plein écran par phase** (Amont/Transformation/...), usage vidéo YouTube :
+  `cerveauZoomedPhase` (index ou `null`), CSS pur (`position:fixed`+backdrop) plutôt que
+  déplacement de nœud DOM comme `openScenarioZoom()` — choix délibéré, `renderCerveauPhases()`
+  reconstruit tout son HTML (`box.innerHTML = ...`) à quasi chaque interaction (ajouter
+  une entreprise, éditer un texte...), ce qui aurait cassé une référence DOM déplacée.
+  Un flag relu à chaque rendu survit intact à ces reconstructions fréquentes.
 
 ### Bugs corrigés
 - **Onglet Secteur inerte** : les boutons `.page-nav-btn` (Analyse/Secteur) n'avaient
