@@ -3301,8 +3301,8 @@ const STOCK_OVERLAY_METRICS = {
 // points connus). Écarté (> ~200 jours) si aucun label de la plage affichée ne
 // correspond réellement à cette année (ex. plage "1a" avec un historique de 20 ans) —
 // sans ce garde-fou, une valeur ancienne se retrouverait plaquée au bord du graphique.
-function mapAnnualSeriesToWeeklyLabels(labels, field){
-  const hist = (activeCompany && companies[activeCompany]) || [];
+function mapAnnualSeriesToWeeklyLabels(labels, field, nom){
+  const hist = ((nom || activeCompany) && companies[nom || activeCompany]) || [];
   const arr = labels.map(() => null);
   const MAX_DIFF_MS = 200 * 24 * 3600 * 1000;
   hist.forEach(row => {
@@ -3854,7 +3854,7 @@ document.getElementById('comparaisonRangeButtons').addEventListener('click', e =
   if (!btn) return;
   comparaisonRange = btn.dataset.range;
   document.querySelectorAll('#comparaisonRangeButtons button').forEach(b => b.classList.toggle('active', b === btn));
-  renderComparaisonPriceChart();
+  renderComparaisonCharts();
 });
 
 // Même chaîne de repli que loadStockChart() (Sheet dédié → Yahoo → Stooq), mais
@@ -3880,12 +3880,177 @@ async function ensureComparaisonPriceData(nom){
   return null;
 }
 
-async function renderComparaisonPriceChart(){
+// Refonte demandée explicitement : plus de 3 graphiques fixes (prix/dividende/FCF),
+// UN seul graphique où n'importe quelle métrique est activable/désactivable, pour
+// n'importe quelle entreprise sélectionnée, toutes indexées base 100. L'axe est
+// TOUJOURS l'axe hebdomadaire du cours (même si "Prix" est désactivé) : c'est le seul
+// axe assez fin pour rester lisible une fois zoomé, et mapAnnualSeriesToWeeklyLabels()
+// sait déjà reprojeter n'importe quelle métrique annuelle dessus.
+const COMPARAISON_METRICS = {
+  price:     { label:'Prix',                   field:null,           cagr:null },
+  div:       { label:'Dividende/action',       field:'dividende',    cagr:{5:'cagrDiv5',10:'cagrDiv10',20:'cagrDiv20'} },
+  ca:        { label:'Chiffre d\'affaires',    field:'ca',           cagr:{5:'cagrCA5',10:'cagrCA10',20:'cagrCA20'} },
+  margeOp:   { label:'Marge opérationnelle',   field:'margeOp',      cagr:null },
+  roic:      { label:'ROIC',                   field:'roic',         cagr:null },
+  fcfAction: { label:'FCF/action',             field:'fcfParAction', cagr:{5:'cagrFcf5',10:'cagrFcf10',20:'cagrFcf20'} },
+  pfcf:      { label:'P/FCF',                  field:'pFcf',         cagr:null },
+  actions:   { label:'Actions en circulation', field:'actions',      cagr:{20:'cagrActions'} },
+  detteOcf:  { label:'Dette/OCF',              field:'detteOCF',     cagr:null },
+  cash:      { label:'Trésorerie',             field:'cash',         cagr:null }
+};
+let comparaisonMetrics = { price:true, div:false, ca:false, margeOp:false, roic:false, fcfAction:false, pfcf:false, actions:false, detteOcf:false, cash:false };
+// Un trait par métrique (en plus de la couleur par entreprise) pour les distinguer sur
+// le même graphique — légende Chart.js cliquable pour masquer une combinaison précise
+// si ça devient trop chargé (retour utilisateur déjà appliqué au overlay boursier).
+const COMPARAISON_METRIC_DASHES = [[],[6,3],[2,2],[8,3,2,3],[1,3],[10,2],[4,4],[6,2,2,2],[3,3,1,3],[12,3]];
+
+// CAGR d'une métrique pour une entreprise : réutilise le champ précalculé du Sheet
+// quand il existe (cohérent avec le reste du site), sinon calcul direct premier/dernier
+// point sur la fenêtre demandée (couvre marge op./ROIC/P/FCF/dette-OCF/trésorerie, qui
+// n'ont pas de CAGR précalculé dans le Sheet).
+function computeMetricCagr(nom, key, years){
+  const meta = COMPARAISON_METRICS[key];
+  const hist = companies[nom];
+  if (!hist || !hist.length || !meta.field) return null;
+  const latest = hist[hist.length - 1];
+  if (meta.cagr && meta.cagr[years] && latest[meta.cagr[years]] != null) return latest[meta.cagr[years]];
+  const past = [...hist].reverse().find(r => r.annee <= latest.annee - years);
+  if (!past || past[meta.field] == null || latest[meta.field] == null || past[meta.field] <= 0 || latest[meta.field] <= 0) return null;
+  return (Math.pow(latest[meta.field] / past[meta.field], 1 / years) - 1) * 100;
+}
+
+// Même chaîne de repli que loadStockChart() (Sheet dédié → Yahoo → Stooq), mais
+// paramétrable par entreprise et mise en cache — sert d'axe hebdomadaire même quand
+// "Prix" est désactivé (voir plus haut).
+async function ensureComparaisonPriceData(nom){
+  if (comparaisonPriceCache[nom]) return comparaisonPriceCache[nom];
+  const sheetSeries = fetchPriceHistorySeries(nom);
+  if (sheetSeries){ comparaisonPriceCache[nom] = sheetSeries; return sheetSeries; }
+  const rows = companies[nom];
+  const ticker = rows && rows[rows.length - 1].ticker;
+  if (!ticker) return null;
+  try{
+    const r = await fetchYahooWeekly(mapTickerToYahoo(ticker));
+    comparaisonPriceCache[nom] = r;
+    return r;
+  }catch(e){}
+  try{
+    const r = await fetchStooqWeekly(mapTickerToStooq(ticker));
+    comparaisonPriceCache[nom] = r;
+    return r;
+  }catch(e){}
+  return null;
+}
+
+// Construction SYNCHRONE de la config (lit comparaisonPriceCache déjà rempli) — sur le
+// même principe que buildStockChartConfig(), réutilisable telle quelle par la carte ET
+// par le zoom (voir zoomSpecialChartConfig()).
+function buildComparaisonChartConfig(range){
+  let cutoffTime = null;
+  if (range !== 'max'){
+    const cutoff = new Date();
+    cutoff.setFullYear(cutoff.getFullYear() - parseInt(range, 10));
+    cutoffTime = cutoff.getTime();
+  }
+  const dateSet = new Set();
+  comparaisonSelected.forEach(nom => {
+    const s = comparaisonPriceCache[nom];
+    if (!s) return;
+    s.dates.forEach(d => { if (cutoffTime == null || new Date(d).getTime() >= cutoffTime) dateSet.add(d); });
+  });
+  const labels = Array.from(dateSet).sort();
+
+  const datasets = [];
+  comparaisonSelected.forEach((nom, i) => {
+    const { color } = comparaisonColor(i);
+    Object.keys(comparaisonMetrics).forEach((key, mi) => {
+      if (!comparaisonMetrics[key]) return;
+      const meta = COMPARAISON_METRICS[key];
+      let raw;
+      if (key === 'price'){
+        const s = comparaisonPriceCache[nom];
+        if (!s) return;
+        const byDate = {};
+        s.dates.forEach((d, j) => { byDate[d] = s.closes[j]; });
+        raw = labels.map(d => byDate[d] != null ? byDate[d] : null);
+      } else {
+        raw = mapAnnualSeriesToWeeklyLabels(labels, meta.field, nom);
+      }
+      const base = raw.find(v => v != null && v !== 0);
+      if (base == null) return;
+      const data = raw.map(v => v == null ? null : (v / base) * 100);
+      datasets.push({
+        label: `${nom} — ${meta.label}`, data,
+        borderColor:color, backgroundColor:color, borderWidth:1.5,
+        borderDash: COMPARAISON_METRIC_DASHES[mi % COMPARAISON_METRIC_DASHES.length],
+        pointRadius:0, spanGaps:true, tension:0.12
+      });
+    });
+  });
+
+  return {
+    type:'line',
+    data:{ labels, datasets },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true, font:{size:8.5}}} },
+      scales:{
+        x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:8} },
+        y:{ grid:baseGrid, ticks:{color:THEME.dim}, title:{display:true, text:'Base 100', color:THEME.dim} }
+      }
+    }
+  };
+}
+
+// Badges au-dessus du graphique : performance sur la plage choisie (si "Prix" actif) +
+// CAGR 5/10/20a par métrique active × entreprise (retour utilisateur explicite : "même
+// quand je zoome, tu vas me marquer chacun leur croissance... quand je clique sur un an,
+// ça va me marquer en haut la performance sur un an").
+function comparaisonBadgesHtml(){
+  if (!comparaisonSelected.length) return '';
+  let html = '';
+  if (comparaisonMetrics.price){
+    let cutoffTime = null;
+    if (comparaisonRange !== 'max'){
+      const cutoff = new Date(); cutoff.setFullYear(cutoff.getFullYear() - parseInt(comparaisonRange, 10));
+      cutoffTime = cutoff.getTime();
+    }
+    html += comparaisonSelected.map(nom => {
+      const s = comparaisonPriceCache[nom];
+      if (!s) return '';
+      const pts = s.dates.map((d, i) => ({ d, c: s.closes[i] })).filter(p => cutoffTime == null || new Date(p.d).getTime() >= cutoffTime);
+      if (pts.length < 2) return '';
+      const perf = ((pts[pts.length - 1].c / pts[0].c) - 1) * 100;
+      const perfTxt = (perf >= 0 ? '+' : '') + perf.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%';
+      return `<span class="chart-badge mediane-badge">${escapeHtml(nom)} · Perf. <b>${perfTxt}</b></span>`;
+    }).join('');
+  }
+  Object.keys(COMPARAISON_METRICS).forEach(key => {
+    if (key === 'price' || !comparaisonMetrics[key]) return;
+    comparaisonSelected.forEach(nom => {
+      const c5 = computeMetricCagr(nom, key, 5), c10 = computeMetricCagr(nom, key, 10), c20 = computeMetricCagr(nom, key, 20);
+      if (c5 == null && c10 == null && c20 == null) return;
+      const fmt = v => v != null ? (v >= 0 ? '+' : '') + v.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%' : '—';
+      html += `<span class="chart-badge mediane-badge">${escapeHtml(nom)} · ${COMPARAISON_METRICS[key].label} CAGR <b>${fmt(c5)}/${fmt(c10)}/${fmt(c20)}</b></span>`;
+    });
+  });
+  return html;
+}
+function renderComparaisonBadges(){
+  const html = comparaisonBadgesHtml();
+  const box = document.getElementById('comparaisonBadgesRow');
+  if (box) box.innerHTML = html;
+  const zoomBox = document.getElementById('zoomComparaisonBadgesRow');
+  if (zoomBox && zoomKey === 'comparaison') zoomBox.innerHTML = html;
+}
+
+async function renderComparaisonCharts(){
   const statusEl = document.getElementById('comparaisonStatus');
   if (!comparaisonSelected.length){
-    if (comparaisonChartInstances.price){ comparaisonChartInstances.price.destroy(); delete comparaisonChartInstances.price; }
+    if (comparaisonChartInstances.unified){ comparaisonChartInstances.unified.destroy(); delete comparaisonChartInstances.unified; }
     statusEl.textContent = 'Sélectionne au moins une entreprise pour afficher la comparaison.';
     statusEl.style.display = 'block';
+    renderComparaisonBadges();
+    if (zoomKey === 'comparaison') renderZoomChart();
     return;
   }
   statusEl.textContent = 'Chargement des historiques de cours…';
@@ -3894,96 +4059,34 @@ async function renderComparaisonPriceChart(){
   const selection = comparaisonSelected.slice();
   const results = await Promise.all(selection.map(ensureComparaisonPriceData));
   if (myToken !== comparaisonPriceRequestId) return; // sélection changée entre-temps, résultat obsolète
+  const missing = selection.filter((nom, i) => !results[i]);
 
-  let cutoffTime = null;
-  if (comparaisonRange !== 'max'){
-    const cutoff = new Date();
-    cutoff.setFullYear(cutoff.getFullYear() - parseInt(comparaisonRange, 10));
-    cutoffTime = cutoff.getTime();
-  }
-
-  // Axe des labels = union des dates réelles de chaque entreprise sélectionnée (dans la
-  // plage) — chaque entreprise retrouve donc exactement ses propres dates sans besoin
-  // de rapprochement, les dates des AUTRES entreprises restent à null (spanGaps relie).
-  const dateSet = new Set();
-  selection.forEach((nom, i) => {
-    const s = results[i];
-    if (!s) return;
-    s.dates.forEach(d => { if (cutoffTime == null || new Date(d).getTime() >= cutoffTime) dateSet.add(d); });
-  });
-  const labels = Array.from(dateSet).sort();
-
-  const datasets = [];
-  const missing = [];
-  selection.forEach((nom, i) => {
-    const s = results[i];
-    if (!s){ missing.push(nom); return; }
-    const byDate = {};
-    s.dates.forEach((d, j) => { byDate[d] = s.closes[j]; });
-    const data = labels.map(d => byDate[d] != null ? byDate[d] : null);
-    const base = data.find(v => v != null && v !== 0);
-    if (base == null){ missing.push(nom); return; }
-    const { color, dash } = comparaisonColor(i);
-    datasets.push({ label:nom, data:data.map(v => v == null ? null : (v / base) * 100), borderColor:color, backgroundColor:color, borderWidth:1.75, borderDash:dash, pointRadius:0, spanGaps:true, tension:0.12 });
-  });
-
-  if (comparaisonChartInstances.price) comparaisonChartInstances.price.destroy();
-  comparaisonChartInstances.price = makeChart('comparaisonPrice', 'chartComparaisonPrice', {
-    type:'line',
-    data:{ labels, datasets },
-    options:{ responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true, font:{size:9}}} },
-      scales:{
-        x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:8} },
-        y:{ grid:baseGrid, ticks:{color:THEME.dim}, title:{display:true, text:'Base 100', color:THEME.dim} }
-      }
-    }
-  });
+  if (comparaisonChartInstances.unified) comparaisonChartInstances.unified.destroy();
+  comparaisonChartInstances.unified = makeChart('comparaison', 'chartComparaison', buildComparaisonChartConfig(comparaisonRange));
   statusEl.textContent = missing.length ? ('Cours indisponible pour : ' + missing.join(', ')) : '';
   statusEl.style.display = missing.length ? 'block' : 'none';
+  renderComparaisonBadges();
+  if (zoomKey === 'comparaison') renderZoomChart();
 }
 
-// Dividende/action et FCF/action : données annuelles déjà en mémoire (companies[nom]),
-// aucun fetch nécessaire — union triée des années disponibles sur la sélection, chaque
-// série indexée sur sa propre première valeur non nulle.
-function renderComparaisonAnnualChart(instanceKey, canvasId, field){
-  if (!comparaisonSelected.length){
-    if (comparaisonChartInstances[instanceKey]){ comparaisonChartInstances[instanceKey].destroy(); delete comparaisonChartInstances[instanceKey]; }
-    return;
-  }
-  const yearSet = new Set();
-  comparaisonSelected.forEach(nom => (companies[nom] || []).forEach(r => { if (r[field] != null) yearSet.add(r.annee); }));
-  const years = Array.from(yearSet).sort((a,b) => a - b);
-
-  const datasets = [];
-  comparaisonSelected.forEach((nom, i) => {
-    const byYear = {};
-    (companies[nom] || []).forEach(r => { byYear[r.annee] = r[field]; });
-    const data = years.map(y => byYear[y] != null ? byYear[y] : null);
-    const base = data.find(v => v != null && v !== 0);
-    if (base == null) return;
-    const { color, dash } = comparaisonColor(i);
-    datasets.push({ label:nom, data:data.map(v => v == null ? null : (v / base) * 100), borderColor:color, backgroundColor:color, borderWidth:1.75, borderDash:dash, pointRadius:2, spanGaps:true, tension:0.15 });
-  });
-
-  if (comparaisonChartInstances[instanceKey]) comparaisonChartInstances[instanceKey].destroy();
-  comparaisonChartInstances[instanceKey] = makeChart(instanceKey, canvasId, {
-    type:'line',
-    data:{ labels:years, datasets },
-    options:{ responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true, font:{size:9}}} },
-      scales:{
-        x:{ grid:{display:false}, ticks:{color:THEME.dim} },
-        y:{ grid:baseGrid, ticks:{color:THEME.dim}, title:{display:true, text:'Base 100', color:THEME.dim} }
-      }
-    }
-  });
+function toggleComparaisonMetric(key){
+  comparaisonMetrics[key] = !comparaisonMetrics[key];
+  document.querySelectorAll(`[data-metric="${key}"]`).forEach(b => b.classList.toggle('active', comparaisonMetrics[key]));
+  renderComparaisonCharts();
 }
+document.getElementById('comparaisonMetricToggles').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-metric]');
+  if (btn) toggleComparaisonMetric(btn.dataset.metric);
+});
+document.getElementById('zoomComparaisonMetricToggles').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-metric]');
+  if (btn) toggleComparaisonMetric(btn.dataset.metric);
+});
 
-function renderComparaisonCharts(){
-  renderComparaisonPriceChart();
-  renderComparaisonAnnualChart('comparaisonDiv', 'chartComparaisonDiv', 'dividende');
-  renderComparaisonAnnualChart('comparaisonFcf', 'chartComparaisonFcf', 'fcfParAction');
+let zoomComparaisonRange = '5';
+function openComparaisonZoom(){
+  zoomComparaisonRange = comparaisonRange;
+  openZoom('comparaison', 'Comparaison multi-entreprises');
 }
 
 document.getElementById('macroCycleRangeButtons').addEventListener('click', e => {
@@ -4053,12 +4156,14 @@ function renderZoomCagrRow(){
 let zoomMacroRankingRow = 'Classement';
 const ZOOM_SPECIAL_RANGES = {
   stock: ZOOM_STOCK_RANGES,
+  comparaison: ZOOM_STOCK_RANGES,
   macroCycle: ZOOM_MACRO_CYCLE_RANGES,
   macroRotation: ZOOM_MACRO_ROTATION_RANGES,
   macroRanking: MACRO_RANKING_OPTIONS
 };
 function zoomSpecialRangeGet(){
   if (zoomKey === 'stock') return zoomStockRange;
+  if (zoomKey === 'comparaison') return zoomComparaisonRange;
   if (zoomKey === 'macroCycle') return zoomMacroCycleRange;
   if (zoomKey === 'macroRotation') return zoomMacroRotationRange;
   if (zoomKey === 'macroRanking') return zoomMacroRankingRow;
@@ -4066,12 +4171,14 @@ function zoomSpecialRangeGet(){
 }
 function zoomSpecialRangeSet(val){
   if (zoomKey === 'stock') zoomStockRange = val;
+  else if (zoomKey === 'comparaison'){ zoomComparaisonRange = val; comparaisonRange = val; document.querySelectorAll('#comparaisonRangeButtons button').forEach(b => b.classList.toggle('active', b.dataset.range === val)); }
   else if (zoomKey === 'macroCycle') zoomMacroCycleRange = val;
   else if (zoomKey === 'macroRotation') zoomMacroRotationRange = val;
   else if (zoomKey === 'macroRanking') zoomMacroRankingRow = val;
 }
 function zoomSpecialChartConfig(){
   if (zoomKey === 'stock') return buildStockChartConfig(zoomStockRange);
+  if (zoomKey === 'comparaison') return buildComparaisonChartConfig(zoomComparaisonRange);
   if (zoomKey === 'macroCycle') return buildMacroCycleChartConfig(zoomMacroCycleRange);
   if (zoomKey === 'macroRotation') return buildMacroRotationChartConfig(zoomMacroRotationRange);
   if (zoomKey === 'macroRanking') return buildMacroRankingChartConfig(zoomMacroRankingRow);
@@ -4147,6 +4254,14 @@ function openZoom(key, title){
   }
   pfcfPocfRow.style.display = key === 'pfcfpocf' ? 'flex' : 'none';
   if (key === 'pfcfpocf') pfcfPocfRow.querySelectorAll('button[data-series]').forEach(b => b.classList.toggle('active', pfcfPocfVisible[b.dataset.series]));
+  const comparaisonMetricRow = document.getElementById('zoomComparaisonMetricToggles');
+  comparaisonMetricRow.style.display = key === 'comparaison' ? 'flex' : 'none';
+  if (key === 'comparaison'){
+    comparaisonMetricRow.querySelectorAll('button[data-metric]').forEach(b => b.classList.toggle('active', comparaisonMetrics[b.dataset.metric]));
+    document.getElementById('zoomComparaisonBadgesRow').innerHTML = comparaisonBadgesHtml();
+  } else {
+    document.getElementById('zoomComparaisonBadgesRow').innerHTML = '';
+  }
   // Logo de l'entreprise affiché UNIQUEMENT en zoom (pas sur la petite carte, demande
   // explicite) — pour que l'export PDF d'un graphique zoomé reste identifiable. Ne
   // concerne que les graphiques liés à une entreprise (historiques + cours de bourse),

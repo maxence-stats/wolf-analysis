@@ -540,33 +540,35 @@
         <div class="comparaison-company-list" id="comparaisonCompanyList"></div>
       </div>
 
-      <div class="chart-grid">
-        <div class="chart-card wide">
-          <div class="chart-card-head">
-            <div><h3>Cours de bourse — indexé base 100</h3><p>Performance relative depuis le début de la période affichée</p></div>
-          </div>
-          <div class="range-buttons" id="comparaisonRangeButtons">
-            <button data-range="1">1a</button>
-            <button data-range="2">2a</button>
-            <button data-range="3">3a</button>
-            <button data-range="5" class="active">5a</button>
-            <button data-range="10">10a</button>
-            <button data-range="20">20a</button>
-            <button data-range="max">Max</button>
-          </div>
-          <div class="stock-status" id="comparaisonStatus"></div>
-          <div class="chart-holder" style="height:340px;"><canvas id="chartComparaisonPrice"></canvas></div>
+      <div class="chart-card wide">
+        <div class="chart-card-head">
+          <div><h3>Comparaison — indexé base 100</h3><p>Active n'importe quelle métrique pour les entreprises sélectionnées</p></div>
+          <div class="chart-card-actions"><button class="zoom-btn" onclick="openComparaisonZoom()" aria-label="Agrandir">⤢</button></div>
         </div>
-
-        <div class="chart-card">
-          <div class="chart-card-head"><div><h3>Dividende/action — indexé base 100</h3><p>Croissance comparée du dividende</p></div></div>
-          <div class="chart-holder"><canvas id="chartComparaisonDiv"></canvas></div>
+        <div class="range-buttons" id="comparaisonRangeButtons">
+          <button data-range="1">1a</button>
+          <button data-range="2">2a</button>
+          <button data-range="3">3a</button>
+          <button data-range="5" class="active">5a</button>
+          <button data-range="10">10a</button>
+          <button data-range="20">20a</button>
+          <button data-range="max">Max</button>
         </div>
-
-        <div class="chart-card">
-          <div class="chart-card-head"><div><h3>FCF/action — indexé base 100</h3><p>Croissance comparée du cash généré</p></div></div>
-          <div class="chart-holder"><canvas id="chartComparaisonFcf"></canvas></div>
+        <div class="range-buttons" id="comparaisonMetricToggles">
+          <button data-metric="price" class="active">Prix</button>
+          <button data-metric="div">Dividende</button>
+          <button data-metric="ca">CA</button>
+          <button data-metric="margeOp">Marge op.</button>
+          <button data-metric="roic">ROIC</button>
+          <button data-metric="fcfAction">FCF/action</button>
+          <button data-metric="pfcf">P/FCF</button>
+          <button data-metric="actions">Actions en circ.</button>
+          <button data-metric="detteOcf">Dette/OCF</button>
+          <button data-metric="cash">Trésorerie</button>
         </div>
+        <div class="mediane-badges-row" id="comparaisonBadgesRow"></div>
+        <div class="stock-status" id="comparaisonStatus"></div>
+        <div class="chart-holder" style="height:380px;"><canvas id="chartComparaison"></canvas></div>
       </div>
     </div>
 
@@ -737,6 +739,19 @@
       <button data-overlay="cash">+ Trésorerie</button>
     </div>
     <div class="stock-source" id="zoomStockScaleNote" style="display:none;"></div>
+    <div class="range-buttons" id="zoomComparaisonMetricToggles" style="display:none;">
+      <button data-metric="price">Prix</button>
+      <button data-metric="div">Dividende</button>
+      <button data-metric="ca">CA</button>
+      <button data-metric="margeOp">Marge op.</button>
+      <button data-metric="roic">ROIC</button>
+      <button data-metric="fcfAction">FCF/action</button>
+      <button data-metric="pfcf">P/FCF</button>
+      <button data-metric="actions">Actions en circ.</button>
+      <button data-metric="detteOcf">Dette/OCF</button>
+      <button data-metric="cash">Trésorerie</button>
+    </div>
+    <div class="mediane-badges-row" id="zoomComparaisonBadgesRow"></div>
     <div class="zoom-canvas-holder"><canvas id="zoomCanvas"></canvas></div>
     <div class="macro-export-row zoom-export-row" id="zoomExportRow">
       <button onclick="exportZoomChartAsPdf()">PDF</button>
