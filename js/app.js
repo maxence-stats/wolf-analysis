@@ -3180,7 +3180,7 @@ function renderAnalyseValoSummary(nom){
   }
   label.style.display = '';
   box.style.display = '';
-  box.innerHTML = blocks.join('') + `<button class="analyse-valo-link" onclick="switchPage('pageValorisation')">Ouvrir dans Valorisation →</button>`;
+  box.innerHTML = blocks.join('') + `<button class="analyse-valo-link" onclick="document.getElementById('pageValorisation').scrollIntoView({behavior:'smooth'})">Voir la Valorisation ↓</button>`;
 }
 
 function exportObjectifs(){

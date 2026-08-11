@@ -49,7 +49,6 @@
       <button class="page-nav-btn active" data-page="pageAnalyse">Analyse</button>
       <button class="page-nav-btn" data-page="pagePortfolio">Wolf Portfolio</button>
       <button class="page-nav-btn" data-page="pageSecteur">Secteur</button>
-      <button class="page-nav-btn" data-page="pageValorisation">Valorisation</button>
       <button class="page-nav-btn" data-page="pageClassement">Classement</button>
       <button class="page-nav-btn" data-page="pageWatchlist">Watchlist</button>
       <button class="page-nav-btn" data-page="pageCerveau">Cerveau numérique</button>
@@ -69,6 +68,7 @@
           <span class="tag" id="secteurTag">Secteur —</span>
           <span class="tag" id="sousSecteurTag">Sous-secteur —</span>
           <span class="tag tag-link" id="openAnalyseTag">📊 Analyse développée</span>
+          <span class="tag tag-link" onclick="document.getElementById('pageValorisation').scrollIntoView({behavior:'smooth'})">💰 Valorisation</span>
           <span class="tag tag-link" onclick="exportAnalyseFullAsPdf()">🖨 Exporter PDF</span>
         </div>
       </div>
@@ -215,6 +215,39 @@
         <div class="chart-holder"><canvas id="chartCash"></canvas></div>
       </div>
     </div>
+
+    <div id="pageValorisation" class="valorisation-section">
+      <div class="section-label" id="valorisationSectionLabel">Simulations scénarisées</div>
+      <p class="valo-intro">Le Free Cash Flow (ou l'Operating Cash Flow, au choix) est fixé selon les derniers
+        résultats. Ajuste la croissance et le multiple de chaque scénario — Prix Juste = Métrique × Médiane.</p>
+
+      <div class="range-buttons" id="valoMetricToggle" style="margin-bottom:16px;">
+        <button class="active" data-metric="fcf" onclick="setValorisationMetric('fcf')">Valoriser avec le FCF</button>
+        <button data-metric="ocf" onclick="setValorisationMetric('ocf')">Valoriser avec l'OCF</button>
+        <button class="objectifs-export" style="margin-left:auto;" onclick="exportValorisationFullAsPdf()">🖨 Exporter PDF</button>
+      </div>
+
+      <div class="ratio-grid valo-summary">
+        <div class="ratio-card"><div class="k">Prix actuel</div><div class="v" id="voPrixActuel">—</div><div class="sub">cours au dernier exercice</div></div>
+        <div class="ratio-card"><div class="k" id="voFcfLabel">FCF actuel</div><div class="v" id="voFcfActuel">—</div><div class="sub">dernier exercice, par action</div></div>
+        <div class="ratio-card"><div class="k" id="voCagrLabel">CAGR (historique)</div><div class="v" id="voCagrHist">—</div><div class="sub">croissance sur 10 ans</div></div>
+        <div class="ratio-card"><div class="k" id="voMedianeLabel">Médiane (historique)</div><div class="v" id="voMedianeHist">—</div><div class="sub">multiple médian sur 10 ans</div></div>
+        <div class="ratio-card"><div class="k" id="voMediane20Label">Médiane (20 ans)</div><div class="v" id="voMediane20">—</div><div class="sub">multiple médian sur 20 ans</div></div>
+      </div>
+
+      <div class="scenario-grid" id="scenarioGrid"></div>
+
+      <div class="section-label">Historique de vos objectifs</div>
+      <div class="objectifs-card">
+        <div class="objectifs-actions">
+          <button class="refresh-btn" id="saveObjectifBtn">Enregistrer cet objectif</button>
+          <button class="zoom-btn objectifs-export" id="exportObjectifsBtn" title="Exporter tous les objectifs en JSON">⭳ Exporter</button>
+        </div>
+        <div class="objectifs-list" id="objectifsList"></div>
+        <p class="objectifs-note">Sauvegardé dans ce navigateur. Utilise « Exporter » pour transmettre le fichier
+          et le rendre disponible sur tous tes appareils.</p>
+      </div>
+    </div>
     </div>
 
     <div id="pagePortfolio" class="page">
@@ -262,39 +295,6 @@
     <div id="pageSecteur" class="page">
       <div class="section-label">Répartition par secteur (GICS)</div>
       <div class="sector-grid" id="sectorGrid"></div>
-    </div>
-
-    <div id="pageValorisation" class="page">
-      <div class="section-label">Simulations scénarisées</div>
-      <p class="valo-intro">Le Free Cash Flow (ou l'Operating Cash Flow, au choix) est fixé selon les derniers
-        résultats. Ajuste la croissance et le multiple de chaque scénario — Prix Juste = Métrique × Médiane.</p>
-
-      <div class="range-buttons" id="valoMetricToggle" style="margin-bottom:16px;">
-        <button class="active" data-metric="fcf" onclick="setValorisationMetric('fcf')">Valoriser avec le FCF</button>
-        <button data-metric="ocf" onclick="setValorisationMetric('ocf')">Valoriser avec l'OCF</button>
-        <button class="objectifs-export" style="margin-left:auto;" onclick="exportValorisationFullAsPdf()">🖨 Exporter PDF</button>
-      </div>
-
-      <div class="ratio-grid valo-summary">
-        <div class="ratio-card"><div class="k">Prix actuel</div><div class="v" id="voPrixActuel">—</div><div class="sub">cours au dernier exercice</div></div>
-        <div class="ratio-card"><div class="k" id="voFcfLabel">FCF actuel</div><div class="v" id="voFcfActuel">—</div><div class="sub">dernier exercice, par action</div></div>
-        <div class="ratio-card"><div class="k" id="voCagrLabel">CAGR (historique)</div><div class="v" id="voCagrHist">—</div><div class="sub">croissance sur 10 ans</div></div>
-        <div class="ratio-card"><div class="k" id="voMedianeLabel">Médiane (historique)</div><div class="v" id="voMedianeHist">—</div><div class="sub">multiple médian sur 10 ans</div></div>
-        <div class="ratio-card"><div class="k" id="voMediane20Label">Médiane (20 ans)</div><div class="v" id="voMediane20">—</div><div class="sub">multiple médian sur 20 ans</div></div>
-      </div>
-
-      <div class="scenario-grid" id="scenarioGrid"></div>
-
-      <div class="section-label">Historique de vos objectifs</div>
-      <div class="objectifs-card">
-        <div class="objectifs-actions">
-          <button class="refresh-btn" id="saveObjectifBtn">Enregistrer cet objectif</button>
-          <button class="zoom-btn objectifs-export" id="exportObjectifsBtn" title="Exporter tous les objectifs en JSON">⭳ Exporter</button>
-        </div>
-        <div class="objectifs-list" id="objectifsList"></div>
-        <p class="objectifs-note">Sauvegardé dans ce navigateur. Utilise « Exporter » pour transmettre le fichier
-          et le rendre disponible sur tous tes appareils.</p>
-      </div>
     </div>
 
     <div id="pageClassement" class="page">
