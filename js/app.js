@@ -4530,6 +4530,34 @@ const CERVEAU_FONT_SIZE_MAX = 32;
 // hauteur/largeur du bloc ne pouvait donc jamais suivre un texte court). Le texte
 // occupe maintenant toute la largeur disponible, le bloc peut donc vraiment épouser sa
 // taille (court = étroit/bas, long = large/haut).
+// Gras sur la sélection, implémentation manuelle (Range API) plutôt que
+// document.execCommand('bold') — remplace un essai précédent jugé peu fiable/pas clair
+// pour l'utilisateur (execCommand est déprécié et son comportement dépend fortement de
+// si le navigateur considère le clic comme un "vrai" geste utilisateur, ce qui donnait
+// des résultats incohérents en test). Bascule : si la sélection est déjà DANS un <b>,
+// on le déballe (retire le gras) ; sinon on l'enveloppe dans un nouveau <b>. Permet de
+// mettre en gras juste un mot/titre au milieu d'un bloc de texte normal, sans avoir à
+// créer un second bloc séparé rien que pour ça.
+function toggleBoldOnSelection(container){
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+  const range = sel.getRangeAt(0);
+  if (!container.contains(range.commonAncestorContainer)) return;
+  let node = range.commonAncestorContainer;
+  if (node.nodeType === 3) node = node.parentElement;
+  const alreadyBold = node && (node.tagName === 'B' || node.tagName === 'STRONG') && node !== container && container.contains(node);
+  if (alreadyBold){
+    const parent = node.parentNode;
+    while (node.firstChild) parent.insertBefore(node.firstChild, node);
+    parent.removeChild(node);
+  } else {
+    const frag = range.extractContents();
+    const b = document.createElement('b');
+    b.appendChild(frag);
+    range.insertNode(b);
+  }
+  sel.removeAllRanges();
+}
 function cerveauTextBlockHtml(tb){
   const size = tb.fontSize || CERVEAU_FONT_SIZE_DEFAULTS[tb.style || 'corps'];
   const html = tb.texteHtml != null ? tb.texteHtml : escapeHtml(tb.texte || '');
@@ -4779,12 +4807,7 @@ function renderCerveauPhases(box){
       const text = tbEl.querySelector('[data-action="free-text"]');
       if (boldBtn){
         boldBtn.addEventListener('mousedown', e => e.preventDefault());
-        boldBtn.addEventListener('click', () => {
-          text.focus();
-          document.execCommand('bold');
-          tb.texteHtml = text.innerHTML;
-          persistCerveauData();
-        });
+        boldBtn.addEventListener('click', () => { toggleBoldOnSelection(text); tb.texteHtml = text.innerHTML; persistCerveauData(); });
       }
       text.addEventListener('blur', () => { tb.texteHtml = text.innerHTML; persistCerveauData(); });
     });
@@ -5686,6 +5709,31 @@ const GEMINI_API_KEY = 'AQ.Ab8RN6JotMiA1nAwJ8iQyLscEQ9R7Z45VjZYrC_Drk4JC96jtQ';
 // "no longer available to new users" en test) — évite de se retrouver bloqué à chaque
 // dépréciation de version par Google.
 const GEMINI_MODEL = 'gemini-flash-latest';
+// Le quota gratuit Gemini (surtout avec le grounding Google Search) est limité en
+// requêtes/minute, pas seulement en requêtes/mois — un 429 "quota exceeded" peut donc
+// être temporaire et disparaître après une pause, pas forcément un quota mensuel épuisé.
+// Réessaie automatiquement toutes les 60s (jusqu'à 15 fois, ~15 min) UNIQUEMENT sur 429 ;
+// les autres erreurs (clé invalide, requête malformée) échouent immédiatement, ça ne
+// sert à rien de les réessayer à l'identique.
+async function callGeminiWithRetry(body, status, maxAttempts){
+  for (let attempt = 1; attempt <= maxAttempts; attempt++){
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (res.ok) return res.json();
+    if (res.status !== 429 || attempt === maxAttempts){
+      const errText = await res.text();
+      throw new Error('HTTP ' + res.status + ' — ' + errText.slice(0, 200));
+    }
+    const waitS = 60;
+    for (let s = waitS; s > 0; s--){
+      status.textContent = `Quota Gemini momentanément dépassé — nouvelle tentative ${attempt}/${maxAttempts} dans ${s}s…`;
+      await new Promise(r => setTimeout(r, 1000));
+    }
+  }
+}
 async function runGeminiRevueSearch(){
   const btn = document.getElementById('revueGeminiBtn');
   const status = document.getElementById('revueGeminiStatus');
@@ -5696,20 +5744,11 @@ async function runGeminiRevueSearch(){
   try{
     const prompt = `Cherche sur le web des notes d'analystes et articles financiers publiés durant les 7 derniers jours (aujourd'hui : ${new Date().toLocaleDateString('fr-FR')}) qui identifient des opportunités d'actions sous-valorisées, dans un style "value investing" (marge de sécurité, fondamentaux solides, prix inférieur à la valeur intrinsèque). Réponds UNIQUEMENT avec un tableau JSON valide (pas de texte autour, pas de balises markdown), au format exact :
 [{"entreprise":"nom de l'entreprise","source":"nom de la source/analyste","lien":"URL de la source","objectifCours":"objectif de cours si mentionné, sinon chaîne vide","points":["point clé 1","point clé 2","point clé 3"]}]
-Maximum 8 entreprises. Si tu ne trouves rien de pertinent, réponds avec un tableau vide [].`;
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`, {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json' },
-      body: JSON.stringify({
-        contents:[{ parts:[{ text: prompt }] }],
-        tools:[{ google_search:{} }]
-      })
-    });
-    if (!res.ok){
-      const errText = await res.text();
-      throw new Error('HTTP ' + res.status + ' — ' + errText.slice(0, 200));
-    }
-    const data = await res.json();
+Maximum 5 entreprises (volontairement réduit pour rester dans le quota gratuit). Si tu ne trouves rien de pertinent, réponds avec un tableau vide [].`;
+    const data = await callGeminiWithRetry({
+      contents:[{ parts:[{ text: prompt }] }],
+      tools:[{ google_search:{} }]
+    }, status, 15);
     const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
     const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (!jsonMatch) throw new Error('Réponse Gemini sans JSON exploitable : ' + text.slice(0, 200));
