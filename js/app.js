@@ -5145,10 +5145,43 @@ function cerveauImageZoneHtml(image, actionPrefix, imgHeight){
 // Corps" empilés au-dessus de chaque texte prenaient trop de place dès qu'on ajoute
 // plusieurs blocs de texte. Positionnées sur le CÔTÉ (colonne verticale à gauche du
 // textarea, voir cerveauTextBlockHtml) plutôt qu'au-dessus.
-const CERVEAU_TEXT_STYLES = [['titre', 'Titre', 'cec-b-bold'], ['soustitre', 'Sous-titre', 'cec-b-italic'], ['corps', 'Corps', 'cec-b-regular']];
-function cerveauTextStyleButtonsHtml(actionName, current){
-  return CERVEAU_TEXT_STYLES.map(([key, label, cls]) => `<button class="cec-style-mini ${cls}${(current || 'corps') === key ? ' active' : ''}" data-action="${actionName}" data-style="${key}" title="${label}">B</button>`).join('');
+// Toolbar globale unique (retour utilisateur explicite : "que tu le mettes une seule
+// fois tout en haut de l'écran", plus de contrôles répétés sur chaque bloc) — agit sur
+// le DERNIER bloc de texte ayant reçu le focus (cerveauActiveTB), quelle que soit la
+// carte/phase où il se trouve. Gras/italique via execCommand sur la SÉLECTION en cours
+// (comme avant, comportement fiable confirmé en test réel) ; style/taille sur tout le
+// bloc actif (un point de police par caractère isolé n'existe pas dans le modèle de
+// données actuel, ni dans la demande — "je sélectionne mon texte, en bold ou pas").
+let cerveauActiveTB = null;
+function syncCerveauToolbarState(){
+  const toolbar = document.getElementById('cerveauTextToolbar');
+  if (!toolbar) return;
+  const active = cerveauActiveTB && document.body.contains(cerveauActiveTB.el);
+  toolbar.classList.toggle('cerveau-toolbar-disabled', !active);
+  toolbar.querySelectorAll('[data-style]').forEach(b => b.classList.toggle('active', active && (cerveauActiveTB.tb.style || 'corps') === b.dataset.style));
 }
+(function initCerveauTextToolbar(){
+  const toolbar = document.getElementById('cerveauTextToolbar');
+  if (!toolbar) return;
+  toolbar.addEventListener('mousedown', e => { if (e.target.closest('button')) e.preventDefault(); });
+  toolbar.addEventListener('click', e => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn || !cerveauActiveTB || !document.body.contains(cerveauActiveTB.el)) return;
+    const { tb, el } = cerveauActiveTB;
+    if (btn.dataset.action === 'tb-bold'){
+      el.focus(); document.execCommand('bold'); tb.texteHtml = el.innerHTML; persistCerveauData();
+    } else if (btn.dataset.action === 'tb-italic'){
+      el.focus(); document.execCommand('italic'); tb.texteHtml = el.innerHTML; persistCerveauData();
+    } else if (btn.dataset.action === 'tb-style'){
+      tb.style = btn.dataset.style; persistCerveauData(); cerveauActiveTB = null; renderCerveau();
+    } else if (btn.dataset.action === 'tb-size-minus' || btn.dataset.action === 'tb-size-plus'){
+      const delta = btn.dataset.action === 'tb-size-plus' ? 1 : -1;
+      const current = tb.fontSize || CERVEAU_FONT_SIZE_DEFAULTS[tb.style || 'corps'];
+      tb.fontSize = Math.max(CERVEAU_FONT_SIZE_MIN, Math.min(CERVEAU_FONT_SIZE_MAX, current + delta));
+      persistCerveauData(); cerveauActiveTB = null; renderCerveau();
+    }
+  });
+})();
 
 function cerveauEntityCard(ent, phaseIdx, entIdx){
   const safe = ent.nom.replace(/"/g, '&quot;');
@@ -5204,19 +5237,16 @@ const CERVEAU_FONT_SIZE_MAX = 32;
 // imbriquées, exactement le comportement "comme sur Word" demandé) — fiable ici car
 // déclenché par un vrai clic utilisateur (mousedown+preventDefault juste avant préserve
 // la sélection sans perdre le geste "trusted").
+// Contrôles de style/gras/taille RETIRÉS d'ici (retour utilisateur explicite : répétés
+// sur chaque bloc, prenaient trop de place dès qu'on empile plusieurs textes) — déplacés
+// une seule fois en haut de l'écran, voir #cerveauTextToolbar/cerveauApplyToolbarAction()
+// plus bas. Ne reste ici que le bouton de suppression, propre à CE bloc précis.
 function cerveauTextBlockHtml(tb){
   const size = tb.fontSize || CERVEAU_FONT_SIZE_DEFAULTS[tb.style || 'corps'];
   const html = tb.texteHtml != null ? tb.texteHtml : escapeHtml(tb.texte || '');
   return `<div class="cec-textblock" data-tb="${tb.id}">
     <div class="cec-free-text cec-free-text-${tb.style || 'corps'}" style="font-size:${size}px" contenteditable="true" data-action="free-text" data-placeholder="Texte…">${html}</div>
     <div class="cec-textblock-controls">
-      ${cerveauTextStyleButtonsHtml('free-style', tb.style)}
-      <button class="cec-style-mini cec-bold-btn" data-action="free-bold" title="Gras sur la sélection"><b>G</b></button>
-      <div class="cec-size-row">
-        <button class="cec-size-btn" data-action="free-size-minus" title="Réduire">−</button>
-        <span class="cec-size-val">${size}</span>
-        <button class="cec-size-btn" data-action="free-size-plus" title="Agrandir">+</button>
-      </div>
       <button class="cec-remove" data-action="free-text-delete" title="Retirer ce texte">✕ Retirer ce texte</button>
     </div>
   </div>`;
@@ -5425,41 +5455,12 @@ function renderCerveauPhases(box){
         persistCerveauData();
         renderCerveau();
       });
-      tbEl.querySelectorAll('[data-action="free-style"]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          tb.style = btn.dataset.style;
-          persistCerveauData();
-          renderCerveau();
-        });
-      });
-      const sizeMinus = tbEl.querySelector('[data-action="free-size-minus"]');
-      const sizePlus = tbEl.querySelector('[data-action="free-size-plus"]');
-      const applySize = delta => {
-        const current = tb.fontSize || CERVEAU_FONT_SIZE_DEFAULTS[tb.style || 'corps'];
-        tb.fontSize = Math.max(CERVEAU_FONT_SIZE_MIN, Math.min(CERVEAU_FONT_SIZE_MAX, current + delta));
-        persistCerveauData();
-        renderCerveau();
-      };
-      if (sizeMinus) sizeMinus.addEventListener('click', () => applySize(-1));
-      if (sizePlus) sizePlus.addEventListener('click', () => applySize(1));
       // Zone de texte en contenteditable (voir cerveauTextBlockHtml) : hauteur suit
-      // nativement le contenu, plus besoin d'autoGrowTextarea ici. Le bouton "G"
-      // applique le gras sur la SÉLECTION en cours (document.execCommand('bold'),
-      // encore largement supporté malgré son statut "déprécié" — suffisant pour ce
-      // besoin simple, pas de justification à réécrire un mini-éditeur maison).
-      // mousedown+preventDefault avant le click : sans ça, cliquer le bouton fait perdre
-      // la sélection de texte dans le contenteditable AVANT que execCommand ne s'exécute.
-      const boldBtn = tbEl.querySelector('[data-action="free-bold"]');
+      // nativement le contenu, plus besoin d'autoGrowTextarea ici. Gras/italique/style/
+      // taille pilotés depuis la toolbar globale (#cerveauTextToolbar) — ce bloc se
+      // contente de signaler qu'il est actif au focus, voir cerveauActiveTB plus bas.
       const text = tbEl.querySelector('[data-action="free-text"]');
-      if (boldBtn){
-        boldBtn.addEventListener('mousedown', e => e.preventDefault());
-        boldBtn.addEventListener('click', () => {
-          text.focus();
-          document.execCommand('bold');
-          tb.texteHtml = text.innerHTML;
-          persistCerveauData();
-        });
-      }
+      text.addEventListener('focus', () => { cerveauActiveTB = { el: text, tb }; syncCerveauToolbarState(); });
       text.addEventListener('blur', () => { tb.texteHtml = text.innerHTML; persistCerveauData(); });
     });
   });
