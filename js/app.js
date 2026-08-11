@@ -3728,9 +3728,14 @@ function cerveauImageZoneHtml(image, actionPrefix, imgHeight){
     </div>`;
 }
 
-const CERVEAU_TEXT_STYLES = [['titre', 'Titre'], ['soustitre', 'Sous-titre'], ['corps', 'Corps']];
+// Icônes "B" compactes (gras=Titre, italique=Sous-titre, normal=Corps) plutôt que des
+// boutons texte pleine largeur — demande explicite : les libellés "Titre/Sous-titre/
+// Corps" empilés au-dessus de chaque texte prenaient trop de place dès qu'on ajoute
+// plusieurs blocs de texte. Positionnées sur le CÔTÉ (colonne verticale à gauche du
+// textarea, voir cerveauTextBlockHtml) plutôt qu'au-dessus.
+const CERVEAU_TEXT_STYLES = [['titre', 'Titre', 'cec-b-bold'], ['soustitre', 'Sous-titre', 'cec-b-italic'], ['corps', 'Corps', 'cec-b-regular']];
 function cerveauTextStyleButtonsHtml(actionName, current){
-  return `<div class="cec-style-row">${CERVEAU_TEXT_STYLES.map(([key, label]) => `<button class="cec-style-btn${(current || 'corps') === key ? ' active' : ''}" data-action="${actionName}" data-style="${key}">${label}</button>`).join('')}</div>`;
+  return CERVEAU_TEXT_STYLES.map(([key, label, cls]) => `<button class="cec-style-mini ${cls}${(current || 'corps') === key ? ' active' : ''}" data-action="${actionName}" data-style="${key}" title="${label}">B</button>`).join('');
 }
 
 function cerveauEntityCard(ent, phaseIdx, entIdx){
@@ -3758,26 +3763,52 @@ function cerveauEntityCard(ent, phaseIdx, entIdx){
 // "+ Texte" AJOUTE un nouveau segment empilé sous les précédents (plutôt que de n'en
 // permettre qu'un seul) — permet de composer par ex. un titre + un sous-titre + un
 // corps sur la même carte, chacun avec son propre style et sa propre suppression.
-function cerveauTextBlockHtml(tb, blocIdx){
+const CERVEAU_FONT_SIZE_DEFAULTS = { titre:17, soustitre:13, corps:12 };
+const CERVEAU_FONT_SIZE_MIN = 9;
+const CERVEAU_FONT_SIZE_MAX = 32;
+// Rangée horizontale : icônes de style + boutons +/- taille en colonne étroite à
+// GAUCHE, textarea à droite (flex:1) — libère la hauteur qu'occupait la rangée de
+// boutons pleine largeur au-dessus de chaque texte, important quand plusieurs blocs de
+// texte sont empilés sur la même carte.
+function cerveauTextBlockHtml(tb){
+  const size = tb.fontSize || CERVEAU_FONT_SIZE_DEFAULTS[tb.style || 'corps'];
   return `<div class="cec-textblock" data-tb="${tb.id}">
-    <div class="cec-textblock-head">
+    <div class="cec-textblock-side">
       ${cerveauTextStyleButtonsHtml('free-style', tb.style)}
+      <div class="cec-size-row">
+        <button class="cec-size-btn" data-action="free-size-minus" title="Réduire">−</button>
+        <span class="cec-size-val">${size}</span>
+        <button class="cec-size-btn" data-action="free-size-plus" title="Agrandir">+</button>
+      </div>
       <button class="cec-remove" data-action="free-text-delete" title="Retirer ce texte">✕</button>
     </div>
-    <textarea class="cec-free-text cec-free-text-${tb.style || 'corps'}" data-action="free-text" placeholder="Texte…">${(tb.texte || '').replace(/</g, '&lt;')}</textarea>
+    <textarea class="cec-free-text cec-free-text-${tb.style || 'corps'}" style="font-size:${size}px" data-action="free-text" placeholder="Texte…">${(tb.texte || '').replace(/</g, '&lt;')}</textarea>
   </div>`;
 }
 function cerveauFreeBlockHtml(bloc, phaseIdx, blocIdx){
   const width = bloc.width || 200;
   const textBlocks = bloc.textBlocks || [];
-  const textZone = textBlocks.map(tb => cerveauTextBlockHtml(tb, blocIdx)).join('');
-  return `<div class="cerveau-freeblock" style="width:${width}px;" data-phase="${phaseIdx}" data-bloc="${blocIdx}">
-    ${cerveauImageZoneHtml(bloc.image, 'free', bloc.imgHeight || 110)}
+  const textZone = textBlocks.map(tb => cerveauTextBlockHtml(tb)).join('');
+  // Zone image optionnelle, symétrique au texte : affichée seulement si une image
+  // existe déjà ou si l'utilisateur vient de cliquer "+ Image" (bloc._imageOpen,
+  // transitoire) — sinon un bloc purement texte n'a plus besoin d'y consacrer de place.
+  const showImage = !!bloc.image || bloc._imageOpen;
+  const imageZone = showImage ? cerveauImageZoneHtml(bloc.image, 'free', bloc.imgHeight || 110) : '';
+  // Sans zone image, il n'y a plus de poignée de redimensionnement (normalement portée
+  // par .cec-image) — on en ajoute une dédiée à la largeur seule sur le bloc.
+  const widthOnlyHandle = showImage ? '' : `<div class="cec-resize-handle cec-resize-handle-width" data-action="free-resize-width" title="Redimensionner la largeur (glisser)"></div>`;
+  const addImageBtn = showImage ? '' : `<button class="cec-add-text-btn" data-action="free-add-image">+ Image</button>`;
+  return `<div class="cerveau-freeblock" style="width:${width}px;position:relative;" data-phase="${phaseIdx}" data-bloc="${blocIdx}">
+    ${imageZone}
     <div class="cec-body">
       ${textZone}
-      <button class="cec-add-text-btn" data-action="free-add-text">+ Texte</button>
+      <div class="cerveau-freeblock-actions">
+        <button class="cec-add-text-btn" data-action="free-add-text">+ Texte</button>
+        ${addImageBtn}
+      </div>
       <button class="cec-remove cec-remove-free" data-action="free-delete">✕ Retirer ce bloc</button>
     </div>
+    ${widthOnlyHandle}
   </div>`;
 }
 
@@ -3888,6 +3919,16 @@ function renderCerveauPhases(box){
         if (newTa) newTa.focus();
       });
     }
+    // Zone image optionnelle : "+ Image" la révèle (bloc._imageOpen, transitoire, pas
+    // persisté), symétrique à "+ Texte" — un bloc purement texte n'a jamais besoin d'y
+    // consacrer de place tant qu'aucune image n'est ajoutée.
+    const addImageBtn = card.querySelector('[data-action="free-add-image"]');
+    if (addImageBtn){
+      addImageBtn.addEventListener('click', () => {
+        bloc._imageOpen = true;
+        renderCerveau();
+      });
+    }
     card.querySelectorAll('.cec-textblock').forEach(tbEl => {
       const tbId = tbEl.dataset.tb;
       const tb = bloc.textBlocks.find(t => t.id === tbId);
@@ -3904,6 +3945,16 @@ function renderCerveauPhases(box){
           renderCerveau();
         });
       });
+      const sizeMinus = tbEl.querySelector('[data-action="free-size-minus"]');
+      const sizePlus = tbEl.querySelector('[data-action="free-size-plus"]');
+      const applySize = delta => {
+        const current = tb.fontSize || CERVEAU_FONT_SIZE_DEFAULTS[tb.style || 'corps'];
+        tb.fontSize = Math.max(CERVEAU_FONT_SIZE_MIN, Math.min(CERVEAU_FONT_SIZE_MAX, current + delta));
+        persistCerveauData();
+        renderCerveau();
+      };
+      if (sizeMinus) sizeMinus.addEventListener('click', () => applySize(-1));
+      if (sizePlus) sizePlus.addEventListener('click', () => applySize(1));
       const text = tbEl.querySelector('[data-action="free-text"]');
       autoGrowTextarea(text);
       text.addEventListener('input', () => autoGrowTextarea(text));
@@ -3957,6 +4008,38 @@ function wireCerveauResize(box, chain){
         imageZone.style.height = h + 'px';
         obj.width = w;
         obj.imgHeight = h;
+      }
+      function onUp(){
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        persistCerveauData();
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  });
+
+  // Bloc libre sans zone image affichée (texte seul) : pas de .cec-image donc pas de
+  // poignée portée par elle — poignée dédiée sur le coin du bloc entier, largeur
+  // uniquement (pas de hauteur d'image à ajuster puisqu'il n'y en a pas).
+  box.querySelectorAll('[data-action="free-resize-width"]').forEach(handle => {
+    const card = handle.closest('.cerveau-freeblock');
+    const phaseIdx = parseInt(card.dataset.phase, 10);
+    const bloc = chain.phases[phaseIdx].blocsLibres[parseInt(card.dataset.bloc, 10)];
+
+    handle.addEventListener('mousedown', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const phaseBox = card.closest('.cerveau-phase');
+      const maxWidth = phaseBox ? phaseBox.clientWidth - 44 : 640;
+      const startX = e.clientX;
+      const startWidth = card.getBoundingClientRect().width;
+
+      function onMove(ev){
+        let w = Math.round((startWidth + (ev.clientX - startX)) / CERVEAU_RESIZE_STEP) * CERVEAU_RESIZE_STEP;
+        w = Math.max(CERVEAU_MIN_WIDTH, Math.min(w, maxWidth));
+        card.style.width = w + 'px';
+        bloc.width = w;
       }
       function onUp(){
         document.removeEventListener('mousemove', onMove);
@@ -4069,6 +4152,10 @@ function wireCerveauBlockDrag(box, chain){
 let cerveauImagePickerTarget = null;
 function wireCerveauImageZones(box, chain){
   box.querySelectorAll('.cerveau-entity-card, .cerveau-freeblock').forEach(card => {
+    // Un bloc libre purement texte (zone image masquée tant que "+ Image" n'a pas été
+    // cliqué) n'a aucun de ces éléments dans son DOM — rien à câbler pour cette carte.
+    const pickEl = card.querySelector('[data-action$="-pick"]');
+    if (!pickEl) return;
     const phaseIdx = parseInt(card.dataset.phase, 10);
     const isFree = card.classList.contains('cerveau-freeblock');
     const target = isFree
@@ -4076,7 +4163,7 @@ function wireCerveauImageZones(box, chain){
       : chain.phases[phaseIdx].entreprises[parseInt(card.dataset.ent, 10)];
     const urlRow = card.querySelector('[data-role="url-row"]');
 
-    card.querySelector('[data-action$="-pick"]').addEventListener('click', e => {
+    pickEl.addEventListener('click', e => {
       if (e.target.closest('[data-action$="-url"], [data-action$="-clear"]')) return;
       cerveauImagePickerTarget = target;
       document.getElementById('cerveauImageFileInput').click();
