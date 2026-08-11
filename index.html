@@ -66,6 +66,7 @@
       <button class="page-subnav-btn active" data-page="pageSecteur">Secteur</button>
       <button class="page-subnav-btn" data-page="pageClassement">Classement</button>
       <button class="page-subnav-btn" data-page="pageWatchlist">Watchlist</button>
+      <button class="page-subnav-btn" data-page="pageComparaison">Comparaison</button>
     </div>
 
     <div class="page-subnav" id="analyseSubnav" style="display:flex;">
@@ -505,6 +506,52 @@
         <div class="watchlist-column"><h3>Idée du moment</h3><div class="watchlist-dropzone" data-list="idee"></div></div>
         <div class="watchlist-column"><h3>À surveiller</h3><div class="watchlist-dropzone" data-list="surveiller"></div></div>
         <div class="watchlist-column"><h3>À analyser</h3><div class="watchlist-dropzone" data-list="analyser"></div></div>
+      </div>
+    </div>
+
+    <div id="pageComparaison" class="page">
+      <div class="section-label">Comparaison multi-entreprises</div>
+      <p class="valo-intro">Filtre par secteur GICS si besoin (facultatif, le mélange entre secteurs reste possible), coche les entreprises à comparer — sans limite de nombre.</p>
+
+      <div class="chart-card comparaison-picker-card">
+        <div class="comparaison-picker-row">
+          <select id="comparaisonSectorFilter"><option value="">Tous les secteurs</option></select>
+          <div class="search-wrap">
+            <span class="search-icon">⌕</span>
+            <input type="text" id="comparaisonSearch" class="search-input" placeholder="Chercher une entreprise…" autocomplete="off">
+          </div>
+        </div>
+        <div class="comparaison-selected-chips" id="comparaisonSelectedChips"></div>
+        <div class="comparaison-company-list" id="comparaisonCompanyList"></div>
+      </div>
+
+      <div class="chart-grid">
+        <div class="chart-card wide">
+          <div class="chart-card-head">
+            <div><h3>Cours de bourse — indexé base 100</h3><p>Performance relative depuis le début de la période affichée</p></div>
+          </div>
+          <div class="range-buttons" id="comparaisonRangeButtons">
+            <button data-range="1">1a</button>
+            <button data-range="2">2a</button>
+            <button data-range="3">3a</button>
+            <button data-range="5" class="active">5a</button>
+            <button data-range="10">10a</button>
+            <button data-range="20">20a</button>
+            <button data-range="max">Max</button>
+          </div>
+          <div class="stock-status" id="comparaisonStatus"></div>
+          <div class="chart-holder" style="height:340px;"><canvas id="chartComparaisonPrice"></canvas></div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-card-head"><div><h3>Dividende/action — indexé base 100</h3><p>Croissance comparée du dividende</p></div></div>
+          <div class="chart-holder"><canvas id="chartComparaisonDiv"></canvas></div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-card-head"><div><h3>FCF/action — indexé base 100</h3><p>Croissance comparée du cash généré</p></div></div>
+          <div class="chart-holder"><canvas id="chartComparaisonFcf"></canvas></div>
+        </div>
       </div>
     </div>
 

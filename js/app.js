@@ -298,6 +298,7 @@ function handleCsvRows(rows){
   renderWatchlist();
   renderAlertesTab();
   renderDividendPortfolio();
+  renderComparaisonPicker();
 
   document.getElementById('loadingScreen').style.display = 'none';
   document.getElementById('errorScreen').style.display = 'none';
@@ -2784,7 +2785,7 @@ const PORTFOLIO_GROUP_PAGES = ['pagePortfolio', 'pageDividende', 'pagePerso'];
 const ANALYSE_GROUP_PAGES = ['pageAnalyse', 'pageValorisation'];
 // Secteur/Classement/Watchlist regroupés sous "🔍 Screener" (même pattern que
 // Portefeuille) — demande explicite pour désencombrer la nav principale.
-const SCREENER_GROUP_PAGES = ['pageSecteur', 'pageClassement', 'pageWatchlist'];
+const SCREENER_GROUP_PAGES = ['pageSecteur', 'pageClassement', 'pageWatchlist', 'pageComparaison'];
 const NAV_GROUPS = [
   { key:'portfolio', subnavId:'portfolioSubnav', pages:PORTFOLIO_GROUP_PAGES },
   { key:'screener', subnavId:'screenerSubnav', pages:SCREENER_GROUP_PAGES }
@@ -3566,6 +3567,222 @@ document.getElementById('zoomStockScaleModeRow').addEventListener('click', e => 
   const btn = e.target.closest('button[data-scale-mode]');
   if (btn) setStockScaleMode(btn.dataset.scaleMode);
 });
+
+/* ---------- Onglet Comparaison : sélection libre d'entreprises (filtre secteur
+   optionnel, mélange possible entre secteurs — cadré par question explicite), cours
+   de bourse + dividende/action + FCF/action superposés, tous indexés base 100 (seul
+   mode qui reste lisible pour comparer des entreprises à échelles très différentes,
+   cadré par question explicite). Sans limite de nombre d'entreprises. */
+let comparaisonSelected = [];
+let comparaisonRange = '5';
+const comparaisonPriceCache = {}; // nom -> {dates, closes}, mis en cache pour éviter de refetcher à chaque changement de plage
+let comparaisonPriceRequestId = 0;
+// Objet DÉDIÉ, volontairement séparé de chartInstances : ce dernier est vidé en bloc par
+// destroyCharts() à CHAQUE changement d'entreprise sur l'onglet Analyse (piège déjà
+// documenté), ce qui effacerait silencieusement les graphiques Comparaison — indépendants
+// de l'entreprise active — sans jamais les redessiner (aucun code de changement
+// d'entreprise ne sait qu'il doit re-render Comparaison).
+let comparaisonChartInstances = {};
+const COMPARAISON_PALETTE = [THEME.gold, THEME.blue, THEME.green, THEME.red, THEME.violet, THEME.yellow, THEME.white];
+function comparaisonColor(idx){
+  const round = Math.floor(idx / COMPARAISON_PALETTE.length);
+  return { color: COMPARAISON_PALETTE[idx % COMPARAISON_PALETTE.length], dash: round % 2 === 1 ? [6,3] : [] };
+}
+
+function populateComparaisonSectorFilter(){
+  const select = document.getElementById('comparaisonSectorFilter');
+  if (!select || select.dataset.filled) return;
+  select.dataset.filled = '1';
+  GICS_SECTORS.concat([{ key:'autre', label:'Autre / non classé' }]).forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.key;
+    opt.textContent = s.label;
+    select.appendChild(opt);
+  });
+}
+
+function renderComparaisonPicker(){
+  populateComparaisonSectorFilter();
+  const sectorVal = document.getElementById('comparaisonSectorFilter').value;
+  const searchVal = stripAccents((document.getElementById('comparaisonSearch').value || '').trim().toLowerCase());
+  const list = document.getElementById('comparaisonCompanyList');
+  const names = Object.keys(companies).sort((a,b) => a.localeCompare(b, 'fr')).filter(nom => {
+    if (sectorVal){
+      const latest = companies[nom][companies[nom].length - 1];
+      const sec = normalizeSector(latest.secteur);
+      if (sectorVal === 'autre' ? sec !== null : sec !== sectorVal) return false;
+    }
+    if (searchVal && !stripAccents(nom.toLowerCase()).includes(searchVal)) return false;
+    return true;
+  });
+  list.innerHTML = names.map(nom => {
+    const checked = comparaisonSelected.includes(nom);
+    const logo = companyLogoUrl(nom);
+    return `<label class="comparaison-company-row${checked ? ' active' : ''}">
+      <input type="checkbox" data-comparaison-toggle="${escapeHtml(nom)}" ${checked ? 'checked' : ''}>
+      ${logo ? `<img src="${escapeHtml(logo)}" alt="">` : '<span class="comparaison-company-noimg"></span>'}
+      <span>${escapeHtml(nom)}</span>
+    </label>`;
+  }).join('') || '<p class="valo-intro">Aucune entreprise ne correspond à ce filtre.</p>';
+
+  const chips = document.getElementById('comparaisonSelectedChips');
+  chips.innerHTML = comparaisonSelected.map((nom, i) => `<span class="comparaison-chip" style="border-color:${comparaisonColor(i).color}">${escapeHtml(nom)}<button data-comparaison-remove="${escapeHtml(nom)}">✕</button></span>`).join('');
+}
+
+function comparaisonToggleCompany(nom){
+  const idx = comparaisonSelected.indexOf(nom);
+  if (idx === -1) comparaisonSelected.push(nom); else comparaisonSelected.splice(idx, 1);
+  renderComparaisonPicker();
+  renderComparaisonCharts();
+}
+
+document.getElementById('comparaisonSectorFilter').addEventListener('change', renderComparaisonPicker);
+document.getElementById('comparaisonSearch').addEventListener('input', renderComparaisonPicker);
+document.getElementById('comparaisonCompanyList').addEventListener('change', e => {
+  const box = e.target.closest('input[data-comparaison-toggle]');
+  if (box) comparaisonToggleCompany(box.dataset.comparaisonToggle);
+});
+document.getElementById('comparaisonSelectedChips').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-comparaison-remove]');
+  if (btn) comparaisonToggleCompany(btn.dataset.comparaisonRemove);
+});
+document.getElementById('comparaisonRangeButtons').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-range]');
+  if (!btn) return;
+  comparaisonRange = btn.dataset.range;
+  document.querySelectorAll('#comparaisonRangeButtons button').forEach(b => b.classList.toggle('active', b === btn));
+  renderComparaisonPriceChart();
+});
+
+// Même chaîne de repli que loadStockChart() (Sheet dédié → Yahoo → Stooq), mais
+// paramétrable par entreprise et mise en cache pour ne pas refetcher à chaque
+// changement de plage ou d'entreprise déjà chargée.
+async function ensureComparaisonPriceData(nom){
+  if (comparaisonPriceCache[nom]) return comparaisonPriceCache[nom];
+  const sheetSeries = fetchPriceHistorySeries(nom);
+  if (sheetSeries){ comparaisonPriceCache[nom] = sheetSeries; return sheetSeries; }
+  const rows = companies[nom];
+  const ticker = rows && rows[rows.length - 1].ticker;
+  if (!ticker) return null;
+  try{
+    const r = await fetchYahooWeekly(mapTickerToYahoo(ticker));
+    comparaisonPriceCache[nom] = r;
+    return r;
+  }catch(e){}
+  try{
+    const r = await fetchStooqWeekly(mapTickerToStooq(ticker));
+    comparaisonPriceCache[nom] = r;
+    return r;
+  }catch(e){}
+  return null;
+}
+
+async function renderComparaisonPriceChart(){
+  const statusEl = document.getElementById('comparaisonStatus');
+  if (!comparaisonSelected.length){
+    if (comparaisonChartInstances.price){ comparaisonChartInstances.price.destroy(); delete comparaisonChartInstances.price; }
+    statusEl.textContent = 'Sélectionne au moins une entreprise pour afficher la comparaison.';
+    statusEl.style.display = 'block';
+    return;
+  }
+  statusEl.textContent = 'Chargement des historiques de cours…';
+  statusEl.style.display = 'block';
+  const myToken = ++comparaisonPriceRequestId;
+  const selection = comparaisonSelected.slice();
+  const results = await Promise.all(selection.map(ensureComparaisonPriceData));
+  if (myToken !== comparaisonPriceRequestId) return; // sélection changée entre-temps, résultat obsolète
+
+  let cutoffTime = null;
+  if (comparaisonRange !== 'max'){
+    const cutoff = new Date();
+    cutoff.setFullYear(cutoff.getFullYear() - parseInt(comparaisonRange, 10));
+    cutoffTime = cutoff.getTime();
+  }
+
+  // Axe des labels = union des dates réelles de chaque entreprise sélectionnée (dans la
+  // plage) — chaque entreprise retrouve donc exactement ses propres dates sans besoin
+  // de rapprochement, les dates des AUTRES entreprises restent à null (spanGaps relie).
+  const dateSet = new Set();
+  selection.forEach((nom, i) => {
+    const s = results[i];
+    if (!s) return;
+    s.dates.forEach(d => { if (cutoffTime == null || new Date(d).getTime() >= cutoffTime) dateSet.add(d); });
+  });
+  const labels = Array.from(dateSet).sort();
+
+  const datasets = [];
+  const missing = [];
+  selection.forEach((nom, i) => {
+    const s = results[i];
+    if (!s){ missing.push(nom); return; }
+    const byDate = {};
+    s.dates.forEach((d, j) => { byDate[d] = s.closes[j]; });
+    const data = labels.map(d => byDate[d] != null ? byDate[d] : null);
+    const base = data.find(v => v != null && v !== 0);
+    if (base == null){ missing.push(nom); return; }
+    const { color, dash } = comparaisonColor(i);
+    datasets.push({ label:nom, data:data.map(v => v == null ? null : (v / base) * 100), borderColor:color, backgroundColor:color, borderWidth:1.75, borderDash:dash, pointRadius:0, spanGaps:true, tension:0.12 });
+  });
+
+  if (comparaisonChartInstances.price) comparaisonChartInstances.price.destroy();
+  comparaisonChartInstances.price = makeChart('comparaisonPrice', 'chartComparaisonPrice', {
+    type:'line',
+    data:{ labels, datasets },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true, font:{size:9}}} },
+      scales:{
+        x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:8} },
+        y:{ grid:baseGrid, ticks:{color:THEME.dim}, title:{display:true, text:'Base 100', color:THEME.dim} }
+      }
+    }
+  });
+  statusEl.textContent = missing.length ? ('Cours indisponible pour : ' + missing.join(', ')) : '';
+  statusEl.style.display = missing.length ? 'block' : 'none';
+}
+
+// Dividende/action et FCF/action : données annuelles déjà en mémoire (companies[nom]),
+// aucun fetch nécessaire — union triée des années disponibles sur la sélection, chaque
+// série indexée sur sa propre première valeur non nulle.
+function renderComparaisonAnnualChart(instanceKey, canvasId, field){
+  if (!comparaisonSelected.length){
+    if (comparaisonChartInstances[instanceKey]){ comparaisonChartInstances[instanceKey].destroy(); delete comparaisonChartInstances[instanceKey]; }
+    return;
+  }
+  const yearSet = new Set();
+  comparaisonSelected.forEach(nom => (companies[nom] || []).forEach(r => { if (r[field] != null) yearSet.add(r.annee); }));
+  const years = Array.from(yearSet).sort((a,b) => a - b);
+
+  const datasets = [];
+  comparaisonSelected.forEach((nom, i) => {
+    const byYear = {};
+    (companies[nom] || []).forEach(r => { byYear[r.annee] = r[field]; });
+    const data = years.map(y => byYear[y] != null ? byYear[y] : null);
+    const base = data.find(v => v != null && v !== 0);
+    if (base == null) return;
+    const { color, dash } = comparaisonColor(i);
+    datasets.push({ label:nom, data:data.map(v => v == null ? null : (v / base) * 100), borderColor:color, backgroundColor:color, borderWidth:1.75, borderDash:dash, pointRadius:2, spanGaps:true, tension:0.15 });
+  });
+
+  if (comparaisonChartInstances[instanceKey]) comparaisonChartInstances[instanceKey].destroy();
+  comparaisonChartInstances[instanceKey] = makeChart(instanceKey, canvasId, {
+    type:'line',
+    data:{ labels:years, datasets },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true, font:{size:9}}} },
+      scales:{
+        x:{ grid:{display:false}, ticks:{color:THEME.dim} },
+        y:{ grid:baseGrid, ticks:{color:THEME.dim}, title:{display:true, text:'Base 100', color:THEME.dim} }
+      }
+    }
+  });
+}
+
+function renderComparaisonCharts(){
+  renderComparaisonPriceChart();
+  renderComparaisonAnnualChart('comparaisonDiv', 'chartComparaisonDiv', 'dividende');
+  renderComparaisonAnnualChart('comparaisonFcf', 'chartComparaisonFcf', 'fcfParAction');
+}
+
 document.getElementById('macroCycleRangeButtons').addEventListener('click', e => {
   const btn = e.target.closest('button[data-range]');
   if (!btn) return;
