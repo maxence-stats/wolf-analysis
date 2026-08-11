@@ -2058,28 +2058,65 @@ function renderPersoHoldingsList(prefix, block){
 // explicite de l'utilisateur ("il faut mettre les logos des entreprises... si tu préfères
 // avec des tirets si c'est plus visible"). Pas de logo central Wolf ici (contrairement au
 // Wolf Portfolio) — 3 donuts sur le site avec le même centre serait redondant, non demandé.
+// Légende à LOGOS, en dehors du graphique (pas les logos minuscules sur les segments,
+// ni le texte seul de la légende Chart.js par défaut) — retour explicite : "des fois on
+// n'arrive pas à les voir avec des petits traits comme des légendes". Simple liste HTML
+// sous le donut, réutilise le même pattern logo/repli initiale que la liste de positions.
 let persoDonutCharts = { pea:null, cto:null };
+function buildPersoDonutConfig(prefix, block){
+  const holdings = block.positions.filter(h => h.valorisation != null && h.valorisation > 0);
+  if (!holdings.length) return null;
+  const total = holdings.reduce((s, h) => s + h.valorisation, 0);
+  return {
+    type:'doughnut',
+    data:{ labels: holdings.map(h => h.nom), datasets:[{
+      data: holdings.map(h => h.valorisation),
+      backgroundColor: holdings.map((_, i) => PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length]),
+      borderColor:THEME.hair, borderWidth:2
+    }] },
+    options:{ responsive:true, maintainAspectRatio:false, cutout:'46%',
+      plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label: ctx => {
+        const pct = total ? (ctx.parsed / total * 100) : 0;
+        return ctx.label + ' : ' + pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%';
+      } } } }
+    }
+  };
+}
+function renderPersoDonutLegend(prefix, block){
+  const box = document.getElementById(prefix + 'DonutLegend');
+  if (!box) return;
+  const holdings = block.positions.filter(h => h.valorisation != null && h.valorisation > 0);
+  box.innerHTML = holdings.map((h, i) => {
+    const logo = companyLogoUrl(h.nom);
+    const swatch = PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length];
+    return `<div class="donut-legend-chip">
+      <span class="donut-legend-swatch" style="background:${swatch}"></span>
+      <div class="donut-legend-logo">${logo ? `<img src="${logo}" alt="">` : h.nom.toUpperCase() === 'CASH' ? '<span>💶</span>' : `<span>${h.nom.charAt(0).toUpperCase()}</span>`}</div>
+      <span class="donut-legend-name">${h.nom}</span>
+    </div>`;
+  }).join('');
+}
 function renderPersoDonut(prefix, block){
   const canvasId = 'chart' + prefix.charAt(0).toUpperCase() + prefix.slice(1) + 'Donut';
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
   if (persoDonutCharts[prefix]) persoDonutCharts[prefix].destroy();
-  const holdings = block.positions.filter(h => h.valorisation != null && h.valorisation > 0);
-  if (!holdings.length) return;
-  const logos = holdings.map(h => companyLogoUrl(h.nom));
-  const config = {
-    type:'doughnut',
-    data:{ labels: holdings.map(h => h.nom), datasets:[{
-      data: holdings.map(h => h.valorisation),
-      backgroundColor: holdings.map((_, i) => PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length]),
-      borderColor:THEME.hair, borderWidth:2, _logos: logos
-    }] },
-    options:{ responsive:true, maintainAspectRatio:false, cutout:'46%',
-      plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true, color:THEME.dim, font:{size:10.5} } } } },
-    plugins:[portfolioSegmentLogosPlugin()]
-  };
-  Promise.all(logos.map(loadImageCached)).then(() => { if (persoDonutCharts[prefix]) persoDonutCharts[prefix].update(); });
+  const config = buildPersoDonutConfig(prefix, block);
+  renderPersoDonutLegend(prefix, block);
+  if (!config) return;
   persoDonutCharts[prefix] = new Chart(canvas.getContext('2d'), config);
+}
+function openPersoDonutZoom(prefix, block, label){
+  const config = buildPersoDonutConfig(prefix, block);
+  if (!config) return;
+  document.getElementById('zoomTitle').textContent = 'Répartition — ' + label;
+  document.getElementById('zoomRangeRow').innerHTML = '';
+  document.getElementById('zoomCagrRow').innerHTML = '';
+  document.getElementById('zoomStockIndicatorRow').style.display = 'none';
+  zoomKey = null;
+  if (window.__zoomChart) window.__zoomChart.destroy();
+  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), config);
+  document.getElementById('zoomModal').style.display = 'flex';
 }
 
 let persoVsCacCharts = { pea:null, cto:null };
@@ -2583,13 +2620,28 @@ function goToAnalyse(nom){
 }
 
 const PORTFOLIO_GROUP_PAGES = ['pagePortfolio', 'pageDividende', 'pagePerso'];
+// Valorisation redevient une page à part entière (comme avant la tâche #74), mais
+// accessible via un SOUS-onglet sous "Analyse" plutôt qu'un bouton de nav séparé —
+// retour explicite : l'avoir append en bas de la même page #pageAnalyse forçait à
+// défiler bien plus bas que voulu ("il faut descendre trop bas, ce n'est pas ça que je
+// veux"). Même mécanique de groupe que PORTFOLIO_GROUP_PAGES, juste un second groupe.
+const ANALYSE_GROUP_PAGES = ['pageAnalyse', 'pageValorisation'];
 function switchPage(pageId){
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === pageId));
-  document.querySelectorAll('.page-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.page === pageId || (b.dataset.group === 'portfolio' && PORTFOLIO_GROUP_PAGES.includes(pageId))));
+  document.querySelectorAll('.page-nav-btn').forEach(b => b.classList.toggle('active',
+    b.dataset.page === pageId ||
+    (b.dataset.group === 'portfolio' && PORTFOLIO_GROUP_PAGES.includes(pageId)) ||
+    (b.dataset.page === 'pageAnalyse' && ANALYSE_GROUP_PAGES.includes(pageId))
+  ));
   const subnav = document.getElementById('portfolioSubnav');
   if (subnav){
     subnav.style.display = PORTFOLIO_GROUP_PAGES.includes(pageId) ? 'flex' : 'none';
     subnav.querySelectorAll('.page-subnav-btn').forEach(b => b.classList.toggle('active', b.dataset.page === pageId));
+  }
+  const analyseSubnav = document.getElementById('analyseSubnav');
+  if (analyseSubnav){
+    analyseSubnav.style.display = ANALYSE_GROUP_PAGES.includes(pageId) ? 'flex' : 'none';
+    analyseSubnav.querySelectorAll('.page-subnav-btn').forEach(b => b.classList.toggle('active', b.dataset.page === pageId));
   }
 }
 
@@ -3178,13 +3230,23 @@ document.getElementById('rangeButtons').addEventListener('click', e => {
   document.querySelectorAll('#rangeButtons button').forEach(b => b.classList.toggle('active', b === btn));
   renderStockChart();
 });
+// Un seul état partagé (stockIndicators) piloté par DEUX rangées de boutons — la carte
+// normale ET la modale de zoom (demande explicite : "tu ne les as pas mis dedans" quand
+// zoomé) — donc on resynchronise les DEUX rangées et on redessine les DEUX graphiques
+// (celui actuellement caché derrière la modale inclus) à chaque clic, où qu'il ait eu lieu.
+function toggleStockIndicator(key){
+  stockIndicators[key] = !stockIndicators[key];
+  document.querySelectorAll(`[data-indicator="${key}"]`).forEach(b => b.classList.toggle('active', stockIndicators[key]));
+  renderStockChart();
+  if (zoomKey === 'stock') renderZoomChart();
+}
 document.getElementById('stockIndicatorToggles').addEventListener('click', e => {
   const btn = e.target.closest('button[data-indicator]');
-  if (!btn) return;
-  const key = btn.dataset.indicator;
-  stockIndicators[key] = !stockIndicators[key];
-  btn.classList.toggle('active', stockIndicators[key]);
-  renderStockChart();
+  if (btn) toggleStockIndicator(btn.dataset.indicator);
+});
+document.getElementById('zoomStockIndicatorRow').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-indicator]');
+  if (btn) toggleStockIndicator(btn.dataset.indicator);
 });
 document.getElementById('macroCycleRangeButtons').addEventListener('click', e => {
   const btn = e.target.closest('button[data-range]');
@@ -3311,6 +3373,9 @@ function openZoom(key, title){
   renderZoomRangeRow();
   renderZoomCagrRow();
   renderZoomChart();
+  const indicatorRow = document.getElementById('zoomStockIndicatorRow');
+  indicatorRow.style.display = key === 'stock' ? 'flex' : 'none';
+  if (key === 'stock') indicatorRow.querySelectorAll('button[data-indicator]').forEach(b => b.classList.toggle('active', stockIndicators[b.dataset.indicator]));
   // Logo de l'entreprise affiché UNIQUEMENT en zoom (pas sur la petite carte, demande
   // explicite) — pour que l'export PDF d'un graphique zoomé reste identifiable. Ne
   // concerne que les graphiques liés à une entreprise (historiques + cours de bourse),
@@ -3813,7 +3878,7 @@ function renderAnalyseValoSummary(nom){
   }
   label.style.display = '';
   box.style.display = '';
-  box.innerHTML = blocks.join('') + `<button class="analyse-valo-link" onclick="document.getElementById('pageValorisation').scrollIntoView({behavior:'smooth'})">Voir la Valorisation ↓</button>`;
+  box.innerHTML = blocks.join('') + `<button class="analyse-valo-link" onclick="switchPage('pageValorisation')">Voir la Valorisation →</button>`;
 }
 
 function exportObjectifs(){
@@ -4435,11 +4500,18 @@ const CERVEAU_FONT_SIZE_MAX = 32;
 // migrateCerveauChains(). Bénéfice secondaire : un contenteditable sans hauteur fixée
 // épouse nativement la hauteur de son contenu, plus besoin d'autoGrowTextarea ici — un
 // titre d'une ligne reste donc aussi bas qu'une ligne.
+// Contrôles en rangée HORIZONTALE compacte, sous le texte (près de "+ Texte/+ Image/+
+// Lien/✕ Retirer ce bloc") — remplace l'ancienne colonne verticale à côté du texte
+// (retour explicite : la colonne prenait de la largeur au texte en permanence, la
+// hauteur/largeur du bloc ne pouvait donc jamais suivre un texte court). Le texte
+// occupe maintenant toute la largeur disponible, le bloc peut donc vraiment épouser sa
+// taille (court = étroit/bas, long = large/haut).
 function cerveauTextBlockHtml(tb){
   const size = tb.fontSize || CERVEAU_FONT_SIZE_DEFAULTS[tb.style || 'corps'];
   const html = tb.texteHtml != null ? tb.texteHtml : escapeHtml(tb.texte || '');
   return `<div class="cec-textblock" data-tb="${tb.id}">
-    <div class="cec-textblock-side">
+    <div class="cec-free-text cec-free-text-${tb.style || 'corps'}" style="font-size:${size}px" contenteditable="true" data-action="free-text" data-placeholder="Texte…">${html}</div>
+    <div class="cec-textblock-controls">
       ${cerveauTextStyleButtonsHtml('free-style', tb.style)}
       <button class="cec-style-mini cec-bold-btn" data-action="free-bold" title="Gras sur la sélection"><b>G</b></button>
       <div class="cec-size-row">
@@ -4447,9 +4519,8 @@ function cerveauTextBlockHtml(tb){
         <span class="cec-size-val">${size}</span>
         <button class="cec-size-btn" data-action="free-size-plus" title="Agrandir">+</button>
       </div>
-      <button class="cec-remove" data-action="free-text-delete" title="Retirer ce texte">✕</button>
+      <button class="cec-remove" data-action="free-text-delete" title="Retirer ce texte">✕ Retirer ce texte</button>
     </div>
-    <div class="cec-free-text cec-free-text-${tb.style || 'corps'}" style="font-size:${size}px" contenteditable="true" data-action="free-text" data-placeholder="Texte…">${html}</div>
   </div>`;
 }
 function cerveauFreeBlockHtml(bloc, phaseIdx, blocIdx){
@@ -5843,6 +5914,8 @@ loadRevueBaseline();
 initDividendPortfolio();
 loadDividendPortfolioBaseline();
 loadPersoData();
+document.getElementById('peaDonutZoomBtn').addEventListener('click', () => openPersoDonutZoom('pea', persoData.pea, 'PEA — Crédit Agricole'));
+document.getElementById('ctoDonutZoomBtn').addEventListener('click', () => openPersoDonutZoom('cto', persoData.cto, 'CTO — Saxo'));
 
 (async function init(){
   const ok = await ensureChartJs();

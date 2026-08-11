@@ -64,6 +64,11 @@
       <button class="page-subnav-btn" data-page="pagePerso">Perso (PEA/CTO)</button>
     </div>
 
+    <div class="page-subnav" id="analyseSubnav" style="display:flex;">
+      <button class="page-subnav-btn active" data-page="pageAnalyse">Vue d'ensemble</button>
+      <button class="page-subnav-btn" data-page="pageValorisation">Valorisation</button>
+    </div>
+
     <div id="pageAnalyse" class="page active">
     <div class="header">
       <div class="logo-box"><img id="logoImg" alt="Logo entreprise"></div>
@@ -74,7 +79,7 @@
           <span class="tag" id="secteurTag">Secteur —</span>
           <span class="tag" id="sousSecteurTag">Sous-secteur —</span>
           <span class="tag tag-link" id="openAnalyseTag">📊 Analyse développée</span>
-          <span class="tag tag-link" onclick="document.getElementById('pageValorisation').scrollIntoView({behavior:'smooth'})">💰 Valorisation</span>
+          <span class="tag tag-link" onclick="switchPage('pageValorisation')">💰 Valorisation</span>
           <span class="tag tag-link" onclick="exportAnalyseFullAsPdf()">🖨 Exporter PDF</span>
         </div>
       </div>
@@ -227,8 +232,9 @@
         <div class="chart-holder"><canvas id="chartCash"></canvas></div>
       </div>
     </div>
+    </div>
 
-    <div id="pageValorisation" class="valorisation-section">
+    <div id="pageValorisation" class="page">
       <div class="section-label" id="valorisationSectionLabel">Simulations scénarisées</div>
       <p class="valo-intro">Le Free Cash Flow (ou l'Operating Cash Flow, au choix) est fixé selon les derniers
         résultats. Ajuste la croissance et le multiple de chaque scénario — Prix Juste = Métrique × Médiane.</p>
@@ -259,7 +265,6 @@
         <p class="objectifs-note">Sauvegardé dans ce navigateur. Utilise « Exporter » pour transmettre le fichier
           et le rendre disponible sur tous tes appareils.</p>
       </div>
-    </div>
     </div>
 
     <div id="pagePortfolio" class="page">
@@ -365,8 +370,9 @@
           <div class="section-label">PEA — Crédit Agricole</div>
           <div class="portfolio-summary" id="peaSummary"></div>
           <div class="chart-card portfolio-donut-card">
-            <div class="chart-card-head"><div><h3>Répartition PEA</h3><p>Poids de chaque position</p></div></div>
-            <div class="chart-holder" style="height:340px;"><canvas id="chartPeaDonut"></canvas></div>
+            <div class="chart-card-head"><div><h3>Répartition PEA</h3><p>Poids de chaque position</p></div><div class="chart-card-actions"><button class="zoom-btn" id="peaDonutZoomBtn" aria-label="Agrandir">⤢</button></div></div>
+            <div class="chart-holder" style="height:280px;"><canvas id="chartPeaDonut"></canvas></div>
+            <div class="donut-logo-legend" id="peaDonutLegend"></div>
           </div>
           <div class="portfolio-holdings-list" id="peaHoldingsList"></div>
           <div class="chart-card">
@@ -378,8 +384,9 @@
           <div class="section-label">CTO — Saxo</div>
           <div class="portfolio-summary" id="ctoSummary"></div>
           <div class="chart-card portfolio-donut-card">
-            <div class="chart-card-head"><div><h3>Répartition CTO</h3><p>Poids de chaque position</p></div></div>
-            <div class="chart-holder" style="height:340px;"><canvas id="chartCtoDonut"></canvas></div>
+            <div class="chart-card-head"><div><h3>Répartition CTO</h3><p>Poids de chaque position</p></div><div class="chart-card-actions"><button class="zoom-btn" id="ctoDonutZoomBtn" aria-label="Agrandir">⤢</button></div></div>
+            <div class="chart-holder" style="height:280px;"><canvas id="chartCtoDonut"></canvas></div>
+            <div class="donut-logo-legend" id="ctoDonutLegend"></div>
           </div>
           <div class="portfolio-holdings-list" id="ctoHoldingsList"></div>
           <div class="chart-card">
@@ -580,6 +587,12 @@
     <div class="zoom-controls-row" id="zoomControlsRow">
       <div class="range-buttons" id="zoomRangeRow"></div>
       <div class="zoom-cagr-row" id="zoomCagrRow"></div>
+    </div>
+    <div class="range-buttons stock-indicator-toggles" id="zoomStockIndicatorRow" style="display:none;">
+      <button data-indicator="regression">Régression linéaire</button>
+      <button data-indicator="sma200">SMA 200</button>
+      <button data-indicator="sma30">SMA 30</button>
+      <button data-indicator="prixJusteCible">Prix juste / cible</button>
     </div>
     <div class="zoom-canvas-holder"><canvas id="zoomCanvas"></canvas></div>
     <div class="macro-export-row zoom-export-row" id="zoomExportRow">
