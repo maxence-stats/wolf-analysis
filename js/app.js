@@ -312,8 +312,13 @@ function handleCsvRows(rows){
   // connexions simultanées du navigateur — la source Force relative sectorielle en
   // particulier restait vide sans aucune erreur visible. Décalage simple, coût nul,
   // réduit le risque de collision réseau.
+  // Décalage élargi (150ms -> 400ms, retour utilisateur : toujours des échecs de
+  // chargement constatés malgré le décalage initial) — le vrai goulot semble être la
+  // limite de connexions simultanées du navigateur vers docs.google.com (jusqu'à ~14
+  // requêtes fetch+gviz en même temps toutes sources confondues sur cette page), pas
+  // juste un throttle gviz ponctuel.
   [loadPortfolioData, loadPriceHistoryData, loadMacroCycleData, loadMacroRotationData, loadMacroPowerData]
-    .forEach((fn, i) => setTimeout(fn, i * 150));
+    .forEach((fn, i) => setTimeout(fn, i * 400));
 }
 
 /* ============================================================
@@ -596,13 +601,16 @@ function parsePersoCashImmo(rows){
 // sous-jacent ait fini ou non. Sans ce garde-fou, ce refetch pouvait rester en attente
 // pour toujours sur un site ouvert en file://, laissant le cash/Livret A bloqués sur
 // "N/D" en permanence sans aucune erreur visible (bug remonté par l'utilisateur).
-async function refetchPersoSparseFieldsViaCsv(){
-  let timedOut = false;
+async function refetchPersoSparseFieldsViaCsv(attempt){
+  attempt = attempt || 1;
   try{
     const csvUrl = `https://docs.google.com/spreadsheets/d/e/${PERSO_PUBLISHED_ID}/pub?gid=${PERSO_GID}&single=true&output=csv&_=${Date.now()}`;
+    // 15s (pas 8) : ce refetch se déclenche pile pendant la salve de chargement des
+    // autres sources (macro, portfolio, historique de prix...) — retour utilisateur
+    // confirmé, échec systématique malgré un fetch() qui fonctionne bien isolément.
     const res = await Promise.race([
       fetch(csvUrl, { cache:'no-store' }),
-      new Promise((_, reject) => setTimeout(() => { timedOut = true; reject(new Error('timeout')); }, 8000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000))
     ]);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const text = await res.text();
@@ -614,10 +622,10 @@ async function refetchPersoSparseFieldsViaCsv(){
     if (peaTotal != null) persoData.pea.capitalInvestiTotal = peaTotal;
     if (ctoTotal != null) persoData.cto.capitalInvestiTotal = ctoTotal;
   }catch(e){
-    // Échec (ou timeout) : les champs restent ce qu'on a pu trouver au premier passage
-    // (probablement null) — persoSparseFieldsFailed déclenche un message explicite dans
-    // renderPersoOverview() au lieu d'un "N/D" muet qui laisse croire à une donnée
-    // simplement absente du Sheet plutôt qu'à un problème de chargement.
+    // Échec probablement dû à la contention réseau (beaucoup de sources en vol au même
+    // moment) plutôt qu'à une panne réelle — un 2e essai a de bonnes chances de passer
+    // une fois les autres requêtes retombées (même logique que loadMacroPowerData()).
+    if (attempt < 2){ renderPersoPortfolio(); return refetchPersoSparseFieldsViaCsv(attempt + 1); }
     persoSparseFieldsFailed = true;
   }
   renderPersoPortfolio();
@@ -1556,7 +1564,7 @@ function renderMacroFundamentalsError(){
   if (retryBtn) retryBtn.addEventListener('click', () => loadMacroFundamentalsData(true));
 }
 
-async function loadMacroFundamentalsData(forceRefresh){
+async function loadMacroFundamentalsData(forceRefresh, isRetry){
   if (!forceRefresh){
     try{
       const cached = JSON.parse(localStorage.getItem(MACRO_FUND_LS_KEY) || 'null');
@@ -1621,6 +1629,11 @@ async function loadMacroFundamentalsData(forceRefresh){
     try{ localStorage.setItem(MACRO_FUND_LS_KEY, JSON.stringify({ fetchedAt: Date.now(), rows })); }catch(e){ /* quota / navigateur privé */ }
     renderMacroFundamentalsTable();
   }catch(e){
+    // Échec probablement dû à la contention réseau au chargement (beaucoup de sources
+    // Sheet/API en vol en même temps) plutôt qu'une vraie panne BEA/FRED — un réessai
+    // automatique a de bonnes chances de passer, avant d'afficher l'erreur avec bouton
+    // manuel (même logique que loadMacroPowerData()/refetchPersoSparseFieldsViaCsv()).
+    if (!isRetry) return loadMacroFundamentalsData(forceRefresh, true);
     renderMacroFundamentalsError();
   }
 }
@@ -2956,10 +2969,15 @@ function renderPfcfPocfChart(){
 }
 function togglePfcfPocfSeries(key){
   pfcfPocfVisible[key] = !pfcfPocfVisible[key];
-  document.querySelectorAll(`#pfcfPocfToggles [data-series="${key}"]`).forEach(b => b.classList.toggle('active', pfcfPocfVisible[key]));
+  document.querySelectorAll(`[data-series="${key}"]`).forEach(b => b.classList.toggle('active', pfcfPocfVisible[key]));
   renderPfcfPocfChart();
+  if (zoomKey === 'pfcfpocf') renderZoomChart();
 }
 document.getElementById('pfcfPocfToggles').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-series]');
+  if (btn) togglePfcfPocfSeries(btn.dataset.series);
+});
+document.getElementById('zoomPfcfPocfToggles').addEventListener('click', e => {
   const btn = e.target.closest('button[data-series]');
   if (btn) togglePfcfPocfSeries(btn.dataset.series);
 });
@@ -3159,7 +3177,7 @@ let stockIndicators = { price:true, regression:true, sma200:true, sma30:true, pr
 // Overlay universel (retour utilisateur : combiner n'importe quelle métrique
 // historique sur le graphique boursier, sans limite de nombre) + mode d'échelle,
 // choisi par l'utilisateur à chaque fois plutôt qu'un mode par défaut imposé.
-let stockOverlays = { div:false, ca:false, margeOp:false, detteOcf:false, actions:false, fcfAction:false, pfcf:false, cash:false };
+let stockOverlays = { div:false, ca:false, margeOp:false, roic:false, detteOcf:false, actions:false, fcfAction:false, pfcf:false, cash:false };
 let stockScaleMode = 'normal'; // 'normal' | 'indexed' | 'log'
 // Couleurs limitées à gold/blue/green/red (répétées, distinguées par un trait plein vs
 // pointillé) pour ne pas entrer en collision avec yellow/white/violet déjà réservés au
@@ -3173,7 +3191,8 @@ const STOCK_OVERLAY_METRICS = {
   actions:   { label:'Actions en circulation',field:'actions',      color:THEME.gold,  dash:[6,3] },
   fcfAction: { label:'FCF/action',            field:'fcfParAction', color:THEME.blue,  dash:[6,3] },
   pfcf:      { label:'P/FCF',                 field:'pFcf',         color:THEME.green, dash:[6,3] },
-  cash:      { label:'Trésorerie',            field:'cash',         color:THEME.red,   dash:[6,3] }
+  cash:      { label:'Trésorerie',            field:'cash',         color:THEME.red,   dash:[6,3] },
+  roic:      { label:'ROIC',                  field:'roic',         color:THEME.gold,  dash:[2,2] }
 };
 // Reprojette une série ANNUELLE (hist, indexée par année) sur l'axe hebdomadaire réel
 // du cours de bourse : chaque valeur est placée au label le plus proche du 1er juillet
@@ -3549,8 +3568,13 @@ function buildStockChartConfig(range){
     }
   }
 
+  // type:'linear' toujours explicite (jamais laissé à l'inférence de Chart.js) : sans
+  // ça, un axe caché sans aucun dataset visible pointant dessus dans certains ordres de
+  // rendu peut faire planter Chart.js à la création de l'instance (constaté en test :
+  // clic sur certains overlays plantait toute l'app) — l'explicite ne coûte rien et
+  // supprime le risque quel que soit le comportement d'inférence de la version chargée.
   const scalesExtra = {};
-  overlayAxisIds.forEach(id => { scalesExtra[id] = { display:false }; });
+  overlayAxisIds.forEach(id => { scalesExtra[id] = { display:false, type:'linear' }; });
 
   const config = {
     type:'line',
@@ -3572,11 +3596,22 @@ function buildStockChartConfig(range){
 function renderStockChart(){
   if (!stockFull) return;
   if (chartInstances.stock) chartInstances.stock.destroy();
-  const config = buildStockChartConfig(stockRange);
-  chartInstances.stock = makeChart('stock', 'chartStock', config);
-  const noteEl = document.getElementById('stockScaleNote');
-  noteEl.textContent = config._scaleNote || '';
-  noteEl.style.display = config._scaleNote ? 'block' : 'none';
+  const statusEl = document.getElementById('stockStatus');
+  try{
+    const config = buildStockChartConfig(stockRange);
+    chartInstances.stock = makeChart('stock', 'chartStock', config);
+    const noteEl = document.getElementById('stockScaleNote');
+    noteEl.textContent = config._scaleNote || '';
+    noteEl.style.display = config._scaleNote ? 'block' : 'none';
+  }catch(e){
+    // Jamais d'échec silencieux, et surtout jamais d'exception qui remonte non
+    // attrapée depuis un clic sur un toggle (ça peut laisser l'app entière dans un état
+    // cassé) — message visible + détail en console pour diagnostiquer.
+    console.error('Erreur graphique boursier :', e);
+    delete chartInstances.stock;
+    statusEl.textContent = "Erreur d'affichage du graphique avec cette combinaison d'options — désactive le dernier réglage changé. (Détail en console.)";
+    statusEl.style.display = 'block';
+  }
 }
 
 document.getElementById('rangeButtons').addEventListener('click', e => {
@@ -3956,20 +3991,26 @@ function renderZoomRangeRow(){
 
 function renderZoomChart(){
   if (window.__zoomChart){ window.__zoomChart.destroy(); window.__zoomChart = null; }
-  if (ZOOM_SPECIAL_RANGES[zoomKey]){
-    const config = zoomSpecialChartConfig();
-    if (config) window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), config);
-    if (zoomKey === 'stock'){
-      const noteEl = document.getElementById('zoomStockScaleNote');
-      noteEl.textContent = (config && config._scaleNote) || '';
-      noteEl.style.display = (config && config._scaleNote) ? 'block' : 'none';
+  // Jamais d'exception non attrapée depuis ce point (voir renderStockChart()) — une
+  // combinaison d'overlays qui plante ne doit pas laisser toute la modale/l'app cassée.
+  try{
+    if (ZOOM_SPECIAL_RANGES[zoomKey]){
+      const config = zoomSpecialChartConfig();
+      if (config) window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), config);
+      if (zoomKey === 'stock'){
+        const noteEl = document.getElementById('zoomStockScaleNote');
+        noteEl.textContent = (config && config._scaleNote) || '';
+        noteEl.style.display = (config && config._scaleNote) ? 'block' : 'none';
+      }
+      return;
     }
-    return;
+    const baseConfig = chartConfigs[zoomKey];
+    if (!baseConfig) return;
+    const nYears = (!ZOOM_HISTORICAL_KEYS.includes(zoomKey) || zoomRange === 'max') ? null : parseInt(zoomRange, 10);
+    window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), sliceChartConfigByYears(baseConfig, nYears));
+  }catch(e){
+    console.error('Erreur graphique (zoom) :', e);
   }
-  const baseConfig = chartConfigs[zoomKey];
-  if (!baseConfig) return;
-  const nYears = (!ZOOM_HISTORICAL_KEYS.includes(zoomKey) || zoomRange === 'max') ? null : parseInt(zoomRange, 10);
-  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), sliceChartConfigByYears(baseConfig, nYears));
 }
 
 function openZoom(key, title){
@@ -3989,6 +4030,22 @@ function openZoom(key, title){
   const scaleModeRow = document.getElementById('zoomStockScaleModeRow');
   scaleModeRow.style.display = key === 'stock' ? 'flex' : 'none';
   if (key === 'stock') scaleModeRow.querySelectorAll('button[data-scale-mode]').forEach(b => b.classList.toggle('active', b.dataset.scaleMode === stockScaleMode));
+  // Médianes P/FCF (et P/OCF) + toggle P/FCF vs P/OCF : visibles seulement en petit sur
+  // la carte avant ce correctif (retour utilisateur : "quand je zoome je dois pouvoir le
+  // voir") — reproduits ici depuis les mêmes données déjà en mémoire (latest).
+  const medianeRow = document.getElementById('zoomMedianeBadgesRow');
+  const pfcfPocfRow = document.getElementById('zoomPfcfPocfToggles');
+  const latestZoom = activeCompany && companies[activeCompany] ? companies[activeCompany][companies[activeCompany].length - 1] : null;
+  if ((key === 'pfcf' || key === 'pfcfpocf') && latestZoom){
+    medianeRow.innerHTML = key === 'pfcf'
+      ? medianeBadgeHtml('Médiane 10a', latestZoom.medianePFCF) + medianeBadgeHtml('Médiane 20a', latestZoom.medianePFCF20)
+      : medianeBadgeHtml('Médiane P/FCF 10a', latestZoom.medianePFCF) + medianeBadgeHtml('Médiane P/FCF 20a', latestZoom.medianePFCF20) +
+        medianeBadgeHtml('Médiane P/OCF 10a', latestZoom.medianePOcf) + medianeBadgeHtml('Médiane P/OCF 20a', latestZoom.medianePOcf20);
+  } else {
+    medianeRow.innerHTML = '';
+  }
+  pfcfPocfRow.style.display = key === 'pfcfpocf' ? 'flex' : 'none';
+  if (key === 'pfcfpocf') pfcfPocfRow.querySelectorAll('button[data-series]').forEach(b => b.classList.toggle('active', pfcfPocfVisible[b.dataset.series]));
   // Logo de l'entreprise affiché UNIQUEMENT en zoom (pas sur la petite carte, demande
   // explicite) — pour que l'export PDF d'un graphique zoomé reste identifiable. Ne
   // concerne que les graphiques liés à une entreprise (historiques + cours de bourse),

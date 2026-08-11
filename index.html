@@ -158,6 +158,7 @@
           <button data-overlay="div">+ Dividende</button>
           <button data-overlay="ca">+ CA</button>
           <button data-overlay="margeOp">+ Marge op.</button>
+          <button data-overlay="roic">+ ROIC</button>
           <button data-overlay="detteOcf">+ Dette/OCF</button>
           <button data-overlay="actions">+ Actions en circ.</button>
           <button data-overlay="fcfAction">+ FCF/action</button>
@@ -414,7 +415,7 @@
 
       <div class="section-label">Vue d'ensemble (PEA + CTO + Cash + Immobilier)</div>
       <div class="portfolio-composition">
-        <div class="ratio-grid" id="persoOverviewSummary"></div>
+        <div class="portfolio-summary" id="persoOverviewSummary"></div>
         <div class="chart-card portfolio-donut-card">
           <div class="chart-holder" style="height:280px;"><canvas id="chartPersoOverview"></canvas></div>
         </div>
@@ -693,6 +694,11 @@
       <div class="range-buttons" id="zoomRangeRow"></div>
       <div class="zoom-cagr-row" id="zoomCagrRow"></div>
     </div>
+    <div class="mediane-badges-row" id="zoomMedianeBadgesRow"></div>
+    <div class="range-buttons" id="zoomPfcfPocfToggles" style="display:none;">
+      <button data-series="pfcf">P/FCF</button>
+      <button data-series="pocf">P/OCF</button>
+    </div>
     <div class="range-buttons stock-indicator-toggles" id="zoomStockIndicatorRow" style="display:none;">
       <button data-indicator="price">Prix</button>
       <button data-indicator="regression">Régression linéaire</button>
@@ -709,6 +715,7 @@
       <button data-overlay="div">+ Dividende</button>
       <button data-overlay="ca">+ CA</button>
       <button data-overlay="margeOp">+ Marge op.</button>
+          <button data-overlay="roic">+ ROIC</button>
       <button data-overlay="detteOcf">+ Dette/OCF</button>
       <button data-overlay="actions">+ Actions en circ.</button>
       <button data-overlay="fcfAction">+ FCF/action</button>
