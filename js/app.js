@@ -5832,12 +5832,12 @@ const GEMINI_API_KEY = 'AQ.Ab8RN6JotMiA1nAwJ8iQyLscEQ9R7Z45VjZYrC_Drk4JC96jtQ';
 // "no longer available to new users" en test) — évite de se retrouver bloqué à chaque
 // dépréciation de version par Google.
 const GEMINI_MODEL = 'gemini-flash-latest';
-// Le quota gratuit Gemini (surtout avec le grounding Google Search) est limité en
-// requêtes/minute, pas seulement en requêtes/mois — un 429 "quota exceeded" peut donc
-// être temporaire et disparaître après une pause, pas forcément un quota mensuel épuisé.
-// Réessaie automatiquement toutes les 60s (jusqu'à 15 fois, ~15 min) UNIQUEMENT sur 429 ;
-// les autres erreurs (clé invalide, requête malformée) échouent immédiatement, ça ne
-// sert à rien de les réessayer à l'identique.
+// Retour utilisateur après test réel : un enchaînement de 15 tentatives (~15 min)
+// contre un quota qui reste épuisé tout du long ne sert à rien — ça "tourne en rond"
+// sans jamais aboutir, juste plus long à échouer. Réduit à 3 tentatives / 20s (~1 min
+// max) : suffisant pour absorber un pic momentané (plusieurs requêtes rapprochées), pas
+// pour un quota vraiment à plat (qui se reconstitue sur une fenêtre bien plus longue,
+// des heures — pas la peine d'attendre en ligne pour ça, mieux vaut réessayer plus tard).
 async function callGeminiWithRetry(body, status, maxAttempts){
   for (let attempt = 1; attempt <= maxAttempts; attempt++){
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`, {
@@ -5848,11 +5848,12 @@ async function callGeminiWithRetry(body, status, maxAttempts){
     if (res.ok) return res.json();
     if (res.status !== 429 || attempt === maxAttempts){
       const errText = await res.text();
+      if (res.status === 429) throw new Error("Quota gratuit Gemini épuisé — il se reconstitue sur plusieurs heures, pas la peine de réessayer tout de suite. Réessaie plus tard dans la journée.");
       throw new Error('HTTP ' + res.status + ' — ' + errText.slice(0, 200));
     }
-    const waitS = 60;
+    const waitS = 20;
     for (let s = waitS; s > 0; s--){
-      status.textContent = `Quota Gemini momentanément dépassé — nouvelle tentative ${attempt}/${maxAttempts} dans ${s}s…`;
+      status.textContent = `Quota Gemini momentanément saturé — nouvelle tentative ${attempt}/${maxAttempts} dans ${s}s…`;
       await new Promise(r => setTimeout(r, 1000));
     }
   }
@@ -5865,13 +5866,17 @@ async function runGeminiRevueSearch(){
   status.style.display = 'block';
   status.textContent = 'Interrogation de Gemini (recherche Google intégrée)…';
   try{
-    const prompt = `Cherche sur le web des notes d'analystes et articles financiers publiés durant les 7 derniers jours (aujourd'hui : ${new Date().toLocaleDateString('fr-FR')}) qui identifient des opportunités d'actions sous-valorisées, dans un style "value investing" (marge de sécurité, fondamentaux solides, prix inférieur à la valeur intrinsèque). Réponds UNIQUEMENT avec un tableau JSON valide (pas de texte autour, pas de balises markdown), au format exact :
-[{"entreprise":"nom de l'entreprise","source":"nom de la source/analyste","lien":"URL de la source","objectifCours":"objectif de cours si mentionné, sinon chaîne vide","points":["point clé 1","point clé 2","point clé 3"]}]
-Maximum 5 entreprises (volontairement réduit pour rester dans le quota gratuit). Si tu ne trouves rien de pertinent, réponds avec un tableau vide [].`;
+    // Restreint aux 4 sites choisis par l'utilisateur (qualité de l'info avant tout,
+    // plutôt que le web ouvert) — Gemini avec grounding respecte assez bien une
+    // consigne de domaines explicite dans le prompt, même sans opérateur "site:" strict
+    // côté API (pas de paramètre dédié pour ça dans l'API Gemini).
+    const prompt = `Cherche UNIQUEMENT sur ces 4 sites : marketscreener.com, morningstar.com, seekingalpha.com, investing.com — des notes d'analystes et articles publiés durant les 7 derniers jours (aujourd'hui : ${new Date().toLocaleDateString('fr-FR')}) qui identifient des opportunités d'actions sous-valorisées, dans un style "value investing" (marge de sécurité, fondamentaux solides, prix inférieur à la valeur intrinsèque). N'utilise aucune autre source. Réponds UNIQUEMENT avec un tableau JSON valide (pas de texte autour, pas de balises markdown), au format exact :
+[{"entreprise":"nom de l'entreprise","source":"nom de la source/analyste","lien":"URL de la source (doit pointer vers l'un des 4 sites listés)","objectifCours":"objectif de cours si mentionné, sinon chaîne vide","points":["point clé 1","point clé 2","point clé 3"]}]
+Maximum 5 entreprises (volontairement réduit pour rester dans le quota gratuit). Si tu ne trouves rien de pertinent sur ces 4 sites, réponds avec un tableau vide [].`;
     const data = await callGeminiWithRetry({
       contents:[{ parts:[{ text: prompt }] }],
       tools:[{ google_search:{} }]
-    }, status, 15);
+    }, status, 3);
     const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
     const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (!jsonMatch) throw new Error('Réponse Gemini sans JSON exploitable : ' + text.slice(0, 200));
@@ -5893,8 +5898,14 @@ Maximum 5 entreprises (volontairement réduit pour rester dans le quota gratuit)
         });
       });
       persistRevueLocal();
+      // renderRevue() reconstruit tout #revueContent (donc aussi #revueGeminiStatus) —
+      // écrire le message AVANT ce renderRevue() le faisait disparaître aussitôt
+      // remplacé par une version fraîche masquée (bug confirmé : "il ne se passe rien"
+      // alors que les fiches étaient en fait bien ajoutées). On récupère la référence
+      // FRAÎCHE après coup pour que le message survive au réaffichage.
       renderRevue();
-      status.textContent = `${items.length} fiche(s) ajoutée(s) via Gemini.`;
+      const freshStatus = document.getElementById('revueGeminiStatus');
+      if (freshStatus){ freshStatus.style.display = 'block'; freshStatus.textContent = `${items.length} fiche(s) ajoutée(s) via Gemini.`; }
     }
   }catch(e){
     status.textContent = 'Échec de la recherche Gemini : ' + e.message;
