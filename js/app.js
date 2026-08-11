@@ -5826,35 +5826,48 @@ function renderRevue(){
 // Recherche automatisée via l'API Gemini (grounding Google Search) : scanne les 7
 // derniers jours de notes d'analystes/actualités publiques, synthétise des opportunités
 // value investing correspondant à la stratégie du site, avec la source gardée pour
-// chaque fiche. Clé fournie par l'utilisateur (générée depuis Google AI Studio).
-const GEMINI_API_KEY = 'AQ.Ab8RN6JotMiA1nAwJ8iQyLscEQ9R7Z45VjZYrC_Drk4JC96jtQ';
+// chaque fiche. 3 clés fournies par l'utilisateur (chacune son propre quota gratuit
+// indépendant) — sur 429, on bascule IMMÉDIATEMENT sur la clé suivante (pas d'attente,
+// une clé différente n'a aucune raison d'être limitée en même temps) ; seule la
+// DERNIÈRE clé, si elle échoue aussi, déclenche un court réessai avec pause.
+const GEMINI_API_KEYS = [
+  'AQ.Ab8RN6JotMiA1nAwJ8iQyLscEQ9R7Z45VjZYrC_Drk4JC96jtQ',
+  'AQ.Ab8RN6KJ80fs_k49jzv-vva9YxbsOexKuPSIWFT-Zd4jpt6fbA',
+  'AQ.Ab8RN6KfW6_-c8XcnmD0FOtQ7JV8HqoOdBWMSMjGJeBVTT5bNg'
+];
 // Alias "latest" plutôt qu'une version figée (gemini-2.5-flash renvoyait déjà une 404
 // "no longer available to new users" en test) — évite de se retrouver bloqué à chaque
 // dépréciation de version par Google.
 const GEMINI_MODEL = 'gemini-flash-latest';
-// Retour utilisateur après test réel : un enchaînement de 15 tentatives (~15 min)
-// contre un quota qui reste épuisé tout du long ne sert à rien — ça "tourne en rond"
-// sans jamais aboutir, juste plus long à échouer. Réduit à 3 tentatives / 20s (~1 min
-// max) : suffisant pour absorber un pic momentané (plusieurs requêtes rapprochées), pas
-// pour un quota vraiment à plat (qui se reconstitue sur une fenêtre bien plus longue,
-// des heures — pas la peine d'attendre en ligne pour ça, mieux vaut réessayer plus tard).
-async function callGeminiWithRetry(body, status, maxAttempts){
-  for (let attempt = 1; attempt <= maxAttempts; attempt++){
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`, {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json' },
-      body: JSON.stringify(body)
-    });
-    if (res.ok) return res.json();
-    if (res.status !== 429 || attempt === maxAttempts){
-      const errText = await res.text();
-      if (res.status === 429) throw new Error("Quota gratuit Gemini épuisé — il se reconstitue sur plusieurs heures, pas la peine de réessayer tout de suite. Réessaie plus tard dans la journée.");
-      throw new Error('HTTP ' + res.status + ' — ' + errText.slice(0, 200));
-    }
-    const waitS = 20;
-    for (let s = waitS; s > 0; s--){
-      status.textContent = `Quota Gemini momentanément saturé — nouvelle tentative ${attempt}/${maxAttempts} dans ${s}s…`;
-      await new Promise(r => setTimeout(r, 1000));
+async function geminiRequestOnce(key, body){
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (res.ok) return { ok:true, data: await res.json() };
+  if (res.status !== 429){
+    const errText = await res.text();
+    return { ok:false, fatal:true, error: 'HTTP ' + res.status + ' — ' + errText.slice(0, 200) };
+  }
+  return { ok:false, fatal:false };
+}
+async function callGeminiWithRetry(body, status){
+  for (let ki = 0; ki < GEMINI_API_KEYS.length; ki++){
+    const isLastKey = ki === GEMINI_API_KEYS.length - 1;
+    const maxAttempts = isLastKey ? 3 : 1; // retour utilisateur : retenter longtemps contre un quota à plat ne sert à rien
+    for (let attempt = 1; attempt <= maxAttempts; attempt++){
+      status.textContent = GEMINI_API_KEYS.length > 1 ? `Interrogation de Gemini (clé ${ki + 1}/${GEMINI_API_KEYS.length})…` : 'Interrogation de Gemini…';
+      const result = await geminiRequestOnce(GEMINI_API_KEYS[ki], body);
+      if (result.ok) return result.data;
+      if (result.fatal) throw new Error(result.error);
+      if (!isLastKey) break; // 429 sur cette clé : bascule tout de suite sur la suivante, pas d'attente
+      if (attempt === maxAttempts) throw new Error("Quota gratuit Gemini épuisé sur les 3 clés — il se reconstitue sur plusieurs heures, pas la peine de réessayer tout de suite. Réessaie plus tard dans la journée.");
+      const waitS = 20;
+      for (let s = waitS; s > 0; s--){
+        status.textContent = `Quota Gemini momentanément saturé sur toutes les clés — nouvelle tentative dans ${s}s…`;
+        await new Promise(r => setTimeout(r, 1000));
+      }
     }
   }
 }
@@ -5876,7 +5889,7 @@ Maximum 5 entreprises (volontairement réduit pour rester dans le quota gratuit)
     const data = await callGeminiWithRetry({
       contents:[{ parts:[{ text: prompt }] }],
       tools:[{ google_search:{} }]
-    }, status, 3);
+    }, status);
     const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
     const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (!jsonMatch) throw new Error('Réponse Gemini sans JSON exploitable : ' + text.slice(0, 200));
