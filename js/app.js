@@ -4902,8 +4902,13 @@ function wireCerveauBlockDrag(box, chain){
       card.addEventListener('mousedown', e => {
         // Ne pas capturer le clic si l'utilisateur interagit avec un champ, un bouton
         // ou la poignée de redimensionnement — seule la carte "vide" (corps, en-tête
-        // hors boutons) sert de prise pour déplacer le bloc.
-        if (e.target.closest('input, textarea, button, a, .cec-resize-handle, .cec-image')) return;
+        // hors boutons) sert de prise pour déplacer le bloc. `.cec-free-text` (zone de
+        // texte, passée de <textarea> à contenteditable) DOIT être exclue ici : sans ça,
+        // le preventDefault() ci-dessous bloquait le focus/curseur natif du navigateur
+        // sur CE `<div>` précis — bug réel trouvé en test (clic sur un bloc de texte
+        // existant n'importe où dans la carte ne le rendait plus éditable, le focus
+        // restait bloqué sur le dernier bloc programmatique-focus après ajout).
+        if (e.target.closest('input, textarea, button, a, .cec-resize-handle, .cec-image, .cec-free-text')) return;
         e.preventDefault();
 
         const sourceList = card.closest(listSelector);
@@ -5621,6 +5626,7 @@ function revueFicheHtml(f){
       <button class="revue-fiche-del" data-id="${f.id}" aria-label="Supprimer">✕</button>
     </div>
     ${pointsHtml ? `<ul class="revue-fiche-points">${pointsHtml}</ul>` : ''}
+    ${f.lien ? `<a class="cec-link-chip" href="${f.lien.replace(/"/g,'&quot;')}" target="_blank" rel="noopener">🔗 Source</a>` : ''}
   </div>`;
 }
 
@@ -5638,8 +5644,10 @@ function renderRevue(){
 
   box.innerHTML = `
     <div class="idees-actions">
+      <button class="zoom-btn objectifs-export" id="revueGeminiBtn">🔎 Rechercher via Gemini (7 derniers jours)</button>
       <button class="zoom-btn objectifs-export" id="revueExportBtn">⭳ Exporter</button>
     </div>
+    <div id="revueGeminiStatus" class="stock-status" style="display:none;"></div>
     <div class="revue-add-card">
       <div class="revue-add-row">
         <input type="text" id="revueEntrepriseInput" list="revueCompanyList" placeholder="Entreprise">
@@ -5658,6 +5666,7 @@ function renderRevue(){
   `;
 
   document.getElementById('revueExportBtn').addEventListener('click', exportRevue);
+  document.getElementById('revueGeminiBtn').addEventListener('click', runGeminiRevueSearch);
   document.getElementById('revueAddBtn').addEventListener('click', addRevueFiche);
   box.querySelectorAll('.revue-fiche-del').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -5666,6 +5675,70 @@ function renderRevue(){
       renderRevue();
     });
   });
+}
+
+// Recherche automatisée via l'API Gemini (grounding Google Search) : scanne les 7
+// derniers jours de notes d'analystes/actualités publiques, synthétise des opportunités
+// value investing correspondant à la stratégie du site, avec la source gardée pour
+// chaque fiche. Clé fournie par l'utilisateur (générée depuis Google AI Studio).
+const GEMINI_API_KEY = 'AQ.Ab8RN6JotMiA1nAwJ8iQyLscEQ9R7Z45VjZYrC_Drk4JC96jtQ';
+// Alias "latest" plutôt qu'une version figée (gemini-2.5-flash renvoyait déjà une 404
+// "no longer available to new users" en test) — évite de se retrouver bloqué à chaque
+// dépréciation de version par Google.
+const GEMINI_MODEL = 'gemini-flash-latest';
+async function runGeminiRevueSearch(){
+  const btn = document.getElementById('revueGeminiBtn');
+  const status = document.getElementById('revueGeminiStatus');
+  btn.disabled = true;
+  btn.textContent = '⏳ Recherche en cours…';
+  status.style.display = 'block';
+  status.textContent = 'Interrogation de Gemini (recherche Google intégrée)…';
+  try{
+    const prompt = `Cherche sur le web des notes d'analystes et articles financiers publiés durant les 7 derniers jours (aujourd'hui : ${new Date().toLocaleDateString('fr-FR')}) qui identifient des opportunités d'actions sous-valorisées, dans un style "value investing" (marge de sécurité, fondamentaux solides, prix inférieur à la valeur intrinsèque). Réponds UNIQUEMENT avec un tableau JSON valide (pas de texte autour, pas de balises markdown), au format exact :
+[{"entreprise":"nom de l'entreprise","source":"nom de la source/analyste","lien":"URL de la source","objectifCours":"objectif de cours si mentionné, sinon chaîne vide","points":["point clé 1","point clé 2","point clé 3"]}]
+Maximum 8 entreprises. Si tu ne trouves rien de pertinent, réponds avec un tableau vide [].`;
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        contents:[{ parts:[{ text: prompt }] }],
+        tools:[{ google_search:{} }]
+      })
+    });
+    if (!res.ok){
+      const errText = await res.text();
+      throw new Error('HTTP ' + res.status + ' — ' + errText.slice(0, 200));
+    }
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) throw new Error('Réponse Gemini sans JSON exploitable : ' + text.slice(0, 200));
+    const items = JSON.parse(jsonMatch[0]);
+    if (!Array.isArray(items) || !items.length){
+      status.textContent = 'Aucune opportunité trouvée sur les 7 derniers jours.';
+    } else {
+      const today = new Date().toISOString().slice(0, 10);
+      if (!revueStore.fiches) revueStore.fiches = [];
+      items.forEach((it, i) => {
+        revueStore.fiches.push({
+          id: 'r' + Date.now() + '_' + i,
+          entreprise: it.entreprise || '',
+          source: it.source || '',
+          lien: it.lien || '',
+          objectifCours: it.objectifCours || '',
+          points: Array.isArray(it.points) ? it.points.slice(0, 3) : [],
+          date: today
+        });
+      });
+      persistRevueLocal();
+      renderRevue();
+      status.textContent = `${items.length} fiche(s) ajoutée(s) via Gemini.`;
+    }
+  }catch(e){
+    status.textContent = 'Échec de la recherche Gemini : ' + e.message;
+  }
+  const freshBtn = document.getElementById('revueGeminiBtn');
+  if (freshBtn){ freshBtn.disabled = false; freshBtn.textContent = '🔎 Rechercher via Gemini (7 derniers jours)'; }
 }
 
 function addRevueFiche(){
