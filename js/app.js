@@ -80,6 +80,7 @@ const CTO_COL = {
   valeurAchatTotalCol:38 // "Valeur d'achat total" — capital investi réel (positions + cash), colonne AM
 };
 let persoData = { pea:{ monthly:[], positions:[], valorisationTotale:null }, cto:{ monthly:[], positions:[], valorisationTotale:null } };
+let persoSparseFieldsFailed = false;
 
 /* ============================================================
    CHARGEMENT DES DONNÉES — 2 méthodes, avec repli automatique
@@ -588,11 +589,22 @@ function parsePersoCashImmo(rows){
 // plusieurs cellules remplies. Plutôt que de deviner un décalage, on refait un fetch CSV
 // dédié (léger, un seul petit fichier) pour recalculer ces champs précis dès que la
 // source gviz a gagné la course — le CSV donne toujours la bonne structure ici.
+// fetch() peut rester bloqué INDÉFINIMENT sur file:// sans jamais résoudre/rejeter,
+// y compris avec AbortController.abort() (piège documenté, voir CLAUDE.md "Pièges
+// techniques" point 2) — Promise.race avec un simple timer (jamais soumis à cette
+// restriction réseau) garantit qu'on continue de toute façon après 8s, que le fetch()
+// sous-jacent ait fini ou non. Sans ce garde-fou, ce refetch pouvait rester en attente
+// pour toujours sur un site ouvert en file://, laissant le cash/Livret A bloqués sur
+// "N/D" en permanence sans aucune erreur visible (bug remonté par l'utilisateur).
 async function refetchPersoSparseFieldsViaCsv(){
+  let timedOut = false;
   try{
     const csvUrl = `https://docs.google.com/spreadsheets/d/e/${PERSO_PUBLISHED_ID}/pub?gid=${PERSO_GID}&single=true&output=csv&_=${Date.now()}`;
-    const res = await fetch(csvUrl, { cache:'no-store' });
-    if (!res.ok) return;
+    const res = await Promise.race([
+      fetch(csvUrl, { cache:'no-store' }),
+      new Promise((_, reject) => setTimeout(() => { timedOut = true; reject(new Error('timeout')); }, 8000))
+    ]);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     const text = await res.text();
     const parsed = Papa.parse(text.trim(), { skipEmptyLines:false });
     const cashImmo = parsePersoCashImmo(parsed.data);
@@ -601,8 +613,14 @@ async function refetchPersoSparseFieldsViaCsv(){
     const ctoTotal = parsePersoBlock(parsed.data, CTO_COL).capitalInvestiTotal;
     if (peaTotal != null) persoData.pea.capitalInvestiTotal = peaTotal;
     if (ctoTotal != null) persoData.cto.capitalInvestiTotal = ctoTotal;
-    renderPersoPortfolio();
-  }catch(e){ /* les valeurs restent ce qu'on a pu trouver au premier passage, non bloquant */ }
+  }catch(e){
+    // Échec (ou timeout) : les champs restent ce qu'on a pu trouver au premier passage
+    // (probablement null) — persoSparseFieldsFailed déclenche un message explicite dans
+    // renderPersoOverview() au lieu d'un "N/D" muet qui laisse croire à une donnée
+    // simplement absente du Sheet plutôt qu'à un problème de chargement.
+    persoSparseFieldsFailed = true;
+  }
+  renderPersoPortfolio();
 }
 function handlePersoRows(rows){
   persoData = { pea: parsePersoBlock(rows, PEA_COL), cto: parsePersoBlock(rows, CTO_COL), cashImmo: parsePersoCashImmo(rows) };
@@ -1099,7 +1117,11 @@ function handleMacroPowerRows(rows){
   }
   if (headerRowIdx < 0) return;
   const headerRow = rows[headerRowIdx];
-  const catRow = rows[headerRowIdx - 1] || [];
+  // Re-vérifié sur le CSV réel (gid 30985186) : la ligne juste au-dessus des noms de
+  // secteur contient les TICKERS (XLK/XLV/...), pas la catégorie Sensible/Défensif/
+  // Cyclique — celle-ci est encore une ligne plus haut. Avant ce correctif, les tickers
+  // s'affichaient à tort comme catégorie sous chaque secteur.
+  const catRow = rows[headerRowIdx - 2] || [];
   const categories = [], headers = [];
   for (let c = colStart; c <= colEnd; c++){
     categories.push(parseStr(catRow[c]));
@@ -1465,9 +1487,17 @@ let macroFundamentalsData = null;
 
 // BEA envoie Access-Control-Allow-Origin:* (vérifié directement), appelable en
 // direct depuis le navigateur — contrairement à FRED (voir plus bas).
+// Promise.race avec un timer (jamais soumis aux restrictions réseau) plutôt qu'un
+// AbortController seul, qui peut ne pas suffire à débloquer un fetch() resté en
+// attente indéfiniment sur file:// (piège documenté, CLAUDE.md "Pièges techniques" #2)
+// — sans ça, Promise.all() dans loadMacroFundamentalsData() peut ne jamais se résoudre
+// ni rejeter, laissant le bloc fondamentaux bloqué en silence pour toujours.
 async function fetchBeaTable(tableName){
   const url = `https://apps.bea.gov/api/data?UserID=${BEA_API_KEY}&method=GetData&datasetname=NIPA&TableName=${tableName}&Frequency=Q&Year=X&ResultFormat=JSON`;
-  const res = await fetch(url, { cache:'no-store' });
+  const res = await Promise.race([
+    fetch(url, { cache:'no-store' }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout BEA')), 12000))
+  ]);
   const json = await res.json();
   return (json.BEAAPI && json.BEAAPI.Results && json.BEAAPI.Results.Data) || [];
 }
@@ -2280,10 +2310,17 @@ function renderPersoOverview(){
   ].filter(s => s.value > 0);
   const total = slices.reduce((s, x) => s + x.value, 0);
 
+  // "N/D" nu ne dit pas si la donnée est simplement absente du Sheet ou si le
+  // chargement a échoué (timeout fetch() sur file://, voir refetchPersoSparseFieldsViaCsv)
+  // — sans distinction, ça ressemble à un bug permanent plutôt qu'à un souci réseau
+  // ponctuel. Message explicite + actionnable dans ce 2e cas (jamais d'échec silencieux).
+  const sparseFail = '<span class="perso-load-fail" title="Échec du chargement (réseau) — recharge la page pour réessayer">Échec de chargement ⟳</span>';
+  const cashDisplay = ci.cashTotal != null ? fmtEUR(ci.cashTotal, 0) : (persoSparseFieldsFailed ? sparseFail : 'N/D');
+  const immoDisplay = ci.immobilier != null ? fmtEUR(ci.immobilier, 0) : (persoSparseFieldsFailed ? sparseFail : 'N/D');
   summaryBox.innerHTML = `
     <div class="ratio-card"><div class="k">Patrimoine total</div><div class="v">${fmtEUR(total, 0)}</div></div>
-    <div class="ratio-card"><div class="k">Cash (LDDS + Livret A)</div><div class="v">${ci.cashTotal != null ? fmtEUR(ci.cashTotal, 0) : 'N/D'}</div></div>
-    <div class="ratio-card"><div class="k">Immobilier</div><div class="v">${ci.immobilier != null ? fmtEUR(ci.immobilier, 0) : 'N/D'}</div></div>
+    <div class="ratio-card"><div class="k">Cash (LDDS + Livret A)</div><div class="v">${cashDisplay}</div></div>
+    <div class="ratio-card"><div class="k">Immobilier</div><div class="v">${immoDisplay}</div></div>
     <div class="ratio-card"><div class="k">PEA + CTO</div><div class="v">${fmtEUR(persoAccountValo(persoData.pea) + persoAccountValo(persoData.cto), 0)}</div></div>`;
 
   if (persoOverviewChart) persoOverviewChart.destroy();
