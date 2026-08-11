@@ -565,6 +565,16 @@ function lastNumInColumn(rows, startRow, col, span){
   }
   return last;
 }
+// Cherche la première valeur numérique dans une colonne, sur une petite plage de lignes
+// (tolère un léger décalage de ligne entre CSV/gviz sans risquer de tomber sur une
+// valeur sans rapport plus bas dans la même colonne).
+function findFirstNumInColumnRange(rows, col, maxRow){
+  for (let r = 0; r < Math.min(maxRow, rows.length); r++){
+    const v = parseNum(rows[r] && rows[r][col]);
+    if (v != null) return v;
+  }
+  return null;
+}
 function parsePersoCashImmo(rows){
   const apCol = colToIdx('AP'), bhCol = colToIdx('BH');
   // ±4 colonnes de tolérance : constaté en test que la colonne réelle de "LDDS"/
@@ -581,9 +591,16 @@ function parsePersoCashImmo(rows){
   const livretA = livret0 ? lastNumInColumn(rows, livret0.row, livret0.col + 2, rows.length) : null;
   const total0 = findPersoCellByLabel(rows, bhCol, 4, 'Total');
   const immobilier = total0 ? parseNum(rows[total0.row][total0.col + 9]) : null;
+  // Cellule relais dédiée (BE ligne 4, BF en secours identique) ajoutée par l'utilisateur
+  // spécifiquement pour fiabiliser cette valeur — LDDS/LIVRET A restent des lignes quasi
+  // vides que gviz compresse silencieusement (voir plus haut) ET nécessitaient un refetch
+  // CSV dédié peu fiable en file:// ; cette cellule directe, dans une zone dense du
+  // Sheet, survit aux deux méthodes de chargement sans repli supplémentaire. Préférée à
+  // la somme LDDS+Livret A quand disponible.
+  const cashTotalDirect = findFirstNumInColumnRange(rows, colToIdx('BE'), 8) || findFirstNumInColumnRange(rows, colToIdx('BF'), 8);
   return {
     ldds, livretA,
-    cashTotal: (ldds != null || livretA != null) ? (ldds || 0) + (livretA || 0) : null,
+    cashTotal: cashTotalDirect != null ? cashTotalDirect : ((ldds != null || livretA != null) ? (ldds || 0) + (livretA || 0) : null),
     immobilier
   };
 }
@@ -632,7 +649,11 @@ async function refetchPersoSparseFieldsViaCsv(attempt){
 }
 function handlePersoRows(rows){
   persoData = { pea: parsePersoBlock(rows, PEA_COL), cto: parsePersoBlock(rows, CTO_COL), cashImmo: parsePersoCashImmo(rows) };
-  const needsRefetch = (persoData.cashImmo.ldds == null && persoData.cashImmo.livretA == null)
+  // cashTotal peut désormais venir directement de la cellule relais (BE/BF ligne 4,
+  // zone dense qui survit à gviz) même si ldds/livretA restent introuvables — pas la
+  // peine de déclencher un refetch fetch()-only (peu fiable en file://, voir plus haut)
+  // rien que pour un détail LDDS/Livret A déjà satisfait au niveau du total affiché.
+  const needsRefetch = (persoData.cashImmo.cashTotal == null)
     || persoData.pea.capitalInvestiTotal == null || persoData.cto.capitalInvestiTotal == null;
   if (needsRefetch) refetchPersoSparseFieldsViaCsv();
   renderPersoPortfolio();
@@ -5152,13 +5173,21 @@ function cerveauImageZoneHtml(image, actionPrefix, imgHeight){
 // (comme avant, comportement fiable confirmé en test réel) ; style/taille sur tout le
 // bloc actif (un point de police par caractère isolé n'existe pas dans le modèle de
 // données actuel, ni dans la demande — "je sélectionne mon texte, en bold ou pas").
+// Simplifié suite à un vrai bug remonté (sélectionner un mot et cliquer "Titre"
+// mettait tout le BLOC en titre et "effaçait" visuellement du contenu) : la version
+// précédente appliquait style/taille à tout le tb (propriété de bloc), pas à la
+// sélection — contraire à la demande initiale ("gras, texte normal, italique", jamais
+// mention de tailles/titres). Gras/Italique/Normal uniquement, tous via execCommand sur
+// la SÉLECTION en cours — même mécanisme fiable déjà validé pour le gras, jamais de
+// Range API manuelle (piège connu, voir plus haut : produit des résultats imprévisibles
+// dès que la sélection touche une mise en forme existante). Aucun renderCerveau() après
+// coup : execCommand modifie déjà le DOM visible directement, un re-render perdrait le
+// focus/la sélection pour rien.
 let cerveauActiveTB = null;
 function syncCerveauToolbarState(){
   const toolbar = document.getElementById('cerveauTextToolbar');
   if (!toolbar) return;
-  const active = cerveauActiveTB && document.body.contains(cerveauActiveTB.el);
-  toolbar.classList.toggle('cerveau-toolbar-disabled', !active);
-  toolbar.querySelectorAll('[data-style]').forEach(b => b.classList.toggle('active', active && (cerveauActiveTB.tb.style || 'corps') === b.dataset.style));
+  toolbar.classList.toggle('cerveau-toolbar-disabled', !(cerveauActiveTB && document.body.contains(cerveauActiveTB.el)));
 }
 (function initCerveauTextToolbar(){
   const toolbar = document.getElementById('cerveauTextToolbar');
@@ -5168,18 +5197,13 @@ function syncCerveauToolbarState(){
     const btn = e.target.closest('button[data-action]');
     if (!btn || !cerveauActiveTB || !document.body.contains(cerveauActiveTB.el)) return;
     const { tb, el } = cerveauActiveTB;
-    if (btn.dataset.action === 'tb-bold'){
-      el.focus(); document.execCommand('bold'); tb.texteHtml = el.innerHTML; persistCerveauData();
-    } else if (btn.dataset.action === 'tb-italic'){
-      el.focus(); document.execCommand('italic'); tb.texteHtml = el.innerHTML; persistCerveauData();
-    } else if (btn.dataset.action === 'tb-style'){
-      tb.style = btn.dataset.style; persistCerveauData(); cerveauActiveTB = null; renderCerveau();
-    } else if (btn.dataset.action === 'tb-size-minus' || btn.dataset.action === 'tb-size-plus'){
-      const delta = btn.dataset.action === 'tb-size-plus' ? 1 : -1;
-      const current = tb.fontSize || CERVEAU_FONT_SIZE_DEFAULTS[tb.style || 'corps'];
-      tb.fontSize = Math.max(CERVEAU_FONT_SIZE_MIN, Math.min(CERVEAU_FONT_SIZE_MAX, current + delta));
-      persistCerveauData(); cerveauActiveTB = null; renderCerveau();
-    }
+    el.focus();
+    if (btn.dataset.action === 'tb-bold') document.execCommand('bold');
+    else if (btn.dataset.action === 'tb-italic') document.execCommand('italic');
+    else if (btn.dataset.action === 'tb-normal') document.execCommand('removeFormat');
+    else return;
+    tb.texteHtml = el.innerHTML;
+    persistCerveauData();
   });
 })();
 
@@ -6724,8 +6748,6 @@ loadCerveauData();
 loadIdeesBaseline();
 loadRevueBaseline();
 initDividendPortfolio();
-loadDividendPortfolioBaseline();
-loadPersoData();
 document.getElementById('peaDonutZoomBtn').addEventListener('click', () => openPersoDonutZoom('pea', persoData.pea, 'PEA — Crédit Agricole'));
 document.getElementById('ctoDonutZoomBtn').addEventListener('click', () => openPersoDonutZoom('cto', persoData.cto, 'CTO — Saxo'));
 
@@ -6756,6 +6778,14 @@ document.getElementById('persoBlurToggleBtn').addEventListener('click', function
     return;
   }
   configureChartDefaults();
+  // Déplacés ici (n'étaient PAS gardés par ensureChartJs() avant) : ces deux chargeurs
+  // rendent un graphique Chart.js dès que leur réponse arrive (gviz, un <script>, peut
+  // répondre très vite) — s'ils démarrent avant que Chart.js soit confirmé chargé, une
+  // réponse rapide fait planter le rendu avec "Chart is not defined" (bug confirmé par
+  // capture de la console utilisateur). loadData() gère déjà ça correctement puisqu'il
+  // était le seul appelé ici ; ces deux-là traînaient par erreur en dehors de ce garde-fou.
+  loadDividendPortfolioBaseline();
+  loadPersoData();
   loadData();
 })();
 

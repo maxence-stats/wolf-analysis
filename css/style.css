@@ -382,7 +382,6 @@
   .cerveau-text-toolbar button{font-family:var(--font-mono);font-size:12px;font-weight:700;padding:6px 12px;border-radius:8px;border:1px solid var(--hair);background:var(--panel);color:var(--text-dim);cursor:pointer;}
   .cerveau-text-toolbar button:hover{border-color:var(--gold);color:var(--text);}
   .cerveau-text-toolbar button.active{background:linear-gradient(135deg, var(--gold-2) 0%, var(--gold) 100%);color:#1a1305;border-color:var(--gold);}
-  .cerveau-toolbar-sep{width:1px;height:20px;background:var(--hair);flex-shrink:0;}
   .cerveau-toolbar-hint{font-size:11px;color:var(--text-faint);margin-left:auto;}
   .cec-textblock{display:flex;flex-direction:column;gap:5px;margin:6px 10px 0;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.05);}
   .cec-textblock:last-of-type{border-bottom:none;}
