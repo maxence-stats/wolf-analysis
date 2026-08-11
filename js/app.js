@@ -516,8 +516,84 @@ function parsePersoBlock(rows, col){
   return { monthly, positions, valorisationTotale };
 }
 
+// Cash (LDDS + Livret A) et Immobilier : blocs distincts, vérifiés colonne par colonne
+// sur le CSV réel avant d'écrire ce parsing (comme pour PEA_COL/CTO_COL — voir "Pièges
+// techniques" points 11/14). Chaque compte cash a son propre journal mensuel (Versement/
+// Valorisation) suivi d'une ligne "snapshot" avec la valorisation actuelle — on prend la
+// DERNIÈRE valeur numérique connue dans la colonne Valorisation du bloc (couvre aussi
+// bien un mois réellement rempli que la ligne snapshot dédiée, sans dépendre d'un numéro
+// de ligne fixe). Immobilier : bloc "Actif/quantité/.../somme live €/gains", la ligne
+// "Total" donne la valorisation actuelle agrégée (colonne "somme live €").
+// Recherche sur une PLAGE de colonnes (pas une colonne unique) : gviz et CSV ne
+// compressent pas les colonnes creuses de la même façon sur ce fichier (même piège que
+// les lignes vides du tableau Force relative sectorielle) — une colonne fixe pouvait
+// être décalée de quelques positions selon la méthode de chargement gagnante. Renvoie
+// {row, col} pour que l'appelant lise les valeurs à la colonne RÉELLEMENT trouvée.
+function findPersoCellByLabel(rows, colCenter, colSpan, label){
+  const target = label.toUpperCase();
+  for (let r = 0; r < rows.length; r++){
+    for (let c = Math.max(0, colCenter - colSpan); c <= colCenter + colSpan; c++){
+      if ((parseStr(rows[r] && rows[r][c]) || '').toUpperCase() === target) return { row:r, col:c };
+    }
+  }
+  return null;
+}
+function lastNumInColumn(rows, startRow, col, span){
+  let last = null;
+  for (let r = startRow; r < startRow + span && r < rows.length; r++){
+    const v = parseNum(rows[r] && rows[r][col]);
+    if (v != null) last = v;
+  }
+  return last;
+}
+function parsePersoCashImmo(rows){
+  const apCol = colToIdx('AP'), bhCol = colToIdx('BH');
+  // ±4 colonnes de tolérance : constaté en test que la colonne réelle de "LDDS"/
+  // "LIVRET A" se décale de quelques positions selon CSV vs gviz sur ce fichier (le
+  // fixed apCol seul renvoyait null selon la méthode de chargement gagnante).
+  const ldds0 = findPersoCellByLabel(rows, apCol, 4, 'LDDS');
+  const livret0 = findPersoCellByLabel(rows, apCol, 4, 'LIVRET A');
+  // LDDS et Livret A partagent la MÊME colonne (juste deux blocs empilés) : borner le
+  // balayage de LDDS à la ligne où "LIVRET A" démarre est nécessaire, sinon on lit par
+  // erreur une valeur du bloc Livret A comme si c'était celle de LDDS (constaté en test :
+  // les deux remontaient la même valeur, celle de Livret A, sans cette borne).
+  const lddsSpan = (livret0 && ldds0 && livret0.row > ldds0.row) ? (livret0.row - ldds0.row) : rows.length;
+  const ldds = ldds0 ? lastNumInColumn(rows, ldds0.row, ldds0.col + 2, lddsSpan) : null;
+  const livretA = livret0 ? lastNumInColumn(rows, livret0.row, livret0.col + 2, rows.length) : null;
+  const total0 = findPersoCellByLabel(rows, bhCol, 4, 'Total');
+  const immobilier = total0 ? parseNum(rows[total0.row][total0.col + 9]) : null;
+  return {
+    ldds, livretA,
+    cashTotal: (ldds != null || livretA != null) ? (ldds || 0) + (livretA || 0) : null,
+    immobilier
+  };
+}
+// Bug trouvé en test : "LDDS"/"LIVRET A" sont des lignes à UNE seule cellule remplie
+// (~69 colonnes vides sur 70) — le point d'entrée gviz les compresse silencieusement
+// (heuristique "ligne quasi vide" → supprimée), contrairement au CSV qui les garde tel
+// quel. "Total" (bloc Immobilier) survit car sa ligne a plusieurs cellules remplies.
+// Plutôt que de deviner un décalage, on refait un fetch CSV dédié (léger, un seul petit
+// fichier) rien que pour cashImmo dès que la source gviz a gagné la course — le CSV
+// donne toujours la bonne structure pour ces deux libellés.
+async function refetchPersoCashImmoViaCsv(){
+  try{
+    const csvUrl = `https://docs.google.com/spreadsheets/d/e/${PERSO_PUBLISHED_ID}/pub?gid=${PERSO_GID}&single=true&output=csv&_=${Date.now()}`;
+    const res = await fetch(csvUrl, { cache:'no-store' });
+    if (!res.ok) return;
+    const text = await res.text();
+    const parsed = Papa.parse(text.trim(), { skipEmptyLines:false });
+    const cashImmo = parsePersoCashImmo(parsed.data);
+    if (cashImmo.ldds != null || cashImmo.livretA != null){
+      persoData.cashImmo = cashImmo;
+      renderPersoOverview();
+    }
+  }catch(e){ /* le repli reste ce que parsePersoCashImmo a trouvé (ou N/D), non bloquant */ }
+}
 function handlePersoRows(rows){
-  persoData = { pea: parsePersoBlock(rows, PEA_COL), cto: parsePersoBlock(rows, CTO_COL) };
+  persoData = { pea: parsePersoBlock(rows, PEA_COL), cto: parsePersoBlock(rows, CTO_COL), cashImmo: parsePersoCashImmo(rows) };
+  if (persoData.cashImmo.ldds == null && persoData.cashImmo.livretA == null){
+    refetchPersoCashImmoViaCsv();
+  }
   renderPersoPortfolio();
 }
 
@@ -2162,7 +2238,52 @@ function renderPersoVsCacChart(prefix, block, label){
   });
 }
 
+// Vue d'ensemble globale (PEA + CTO + Cash + Immobilier) : demande explicite — voir où
+// passe l'argent au global, pas seulement compte par compte. Cash = LDDS + Livret A,
+// Immobilier = valorisation live agrégée (Corum, Pierreval santé...), tous deux lus
+// directement depuis le Sheet dédié (voir parsePersoCashImmo), aucun recalcul de notre
+// côté au-delà de la simple somme cash = LDDS + Livret A.
+let persoOverviewChart = null;
+function persoAccountValo(block){
+  const stats = persoAccountStats(block);
+  return stats.valorisationActuelle || 0;
+}
+function renderPersoOverview(){
+  const summaryBox = document.getElementById('persoOverviewSummary');
+  const canvas = document.getElementById('chartPersoOverview');
+  if (!summaryBox || !canvas) return;
+  const ci = persoData.cashImmo || {};
+  const slices = [
+    { label:'PEA', value: persoAccountValo(persoData.pea) },
+    { label:'CTO', value: persoAccountValo(persoData.cto) },
+    { label:'Cash (LDDS + Livret A)', value: ci.cashTotal || 0 },
+    { label:'Immobilier', value: ci.immobilier || 0 }
+  ].filter(s => s.value > 0);
+  const total = slices.reduce((s, x) => s + x.value, 0);
+
+  summaryBox.innerHTML = `
+    <div class="ratio-card"><div class="k">Patrimoine total</div><div class="v">${fmtEUR(total, 0)}</div></div>
+    <div class="ratio-card"><div class="k">Cash (LDDS + Livret A)</div><div class="v">${ci.cashTotal != null ? fmtEUR(ci.cashTotal, 0) : 'N/D'}</div></div>
+    <div class="ratio-card"><div class="k">Immobilier</div><div class="v">${ci.immobilier != null ? fmtEUR(ci.immobilier, 0) : 'N/D'}</div></div>
+    <div class="ratio-card"><div class="k">PEA + CTO</div><div class="v">${fmtEUR(persoAccountValo(persoData.pea) + persoAccountValo(persoData.cto), 0)}</div></div>`;
+
+  if (persoOverviewChart) persoOverviewChart.destroy();
+  if (!slices.length) return;
+  persoOverviewChart = new Chart(canvas.getContext('2d'), {
+    type:'doughnut',
+    data:{ labels: slices.map(s => s.label), datasets:[{ data: slices.map(s => s.value), backgroundColor: slices.map((_, i) => PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length]), borderColor:THEME.hair, borderWidth:2 }] },
+    options:{ responsive:true, maintainAspectRatio:false, cutout:'46%',
+      plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true, color:THEME.dim, font:{size:10.5} } },
+        tooltip:{ callbacks:{ label: ctx => {
+          const pct = total ? (ctx.parsed / total * 100) : 0;
+          return ctx.label + ' : ' + ctx.parsed.toLocaleString('fr-FR',{maximumFractionDigits:0}) + ' € (' + pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%)';
+        } } } }
+    }
+  });
+}
+
 function renderPersoPortfolio(){
+  renderPersoOverview();
   renderPersoCompare();
   renderPersoAccountSummary('pea', persoData.pea);
   renderPersoAccountSummary('cto', persoData.cto);
