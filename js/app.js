@@ -4265,10 +4265,16 @@ const ANALYSE_CHART_LABELS = { revenusPays:'Revenus par pays', revenusSecteurs:"
 const CERVEAU_ANALYSE_SECTIONS_TOP = [
   { key:'presentation', label:"Présentation de l'entreprise", hint:'Stratégie, profil opérationnel et concurrentiel' }
 ];
-const CERVEAU_ANALYSE_SECTIONS_MID = [
-  { key:'marche', label:'Analyse du marché' },
-  { key:'moat', label:'Avantage concurrentiel (moat)' },
+// Ordre demandé explicitement : Secteur d'activité → Analyse du marché → Moat, puis
+// Concurrents juste après (MID_A avant le bloc concurrents, MID_B après — perspectives/
+// risques non repositionnés par la demande, gardés après concurrents dans leur ordre
+// existant).
+const CERVEAU_ANALYSE_SECTIONS_MID_A = [
   { key:'secteursActivite', label:"Secteurs d'activité", hint:'Produits, perspectives de développement' },
+  { key:'marche', label:'Analyse du marché' },
+  { key:'moat', label:'Avantage concurrentiel (moat)' }
+];
+const CERVEAU_ANALYSE_SECTIONS_MID_B = [
   { key:'perspectives', label:'Perspectives de croissance' },
   { key:'risques', label:'Analyse du risque' }
 ];
@@ -4276,7 +4282,7 @@ const CERVEAU_ANALYSE_SECTIONS_BOTTOM = [
   { key:'ratios', label:'Ratios financiers', hint:"Captures d'écran de l'application" },
   { key:'conclusion', label:'Conclusion', hint:'Business model, synthèse, datée automatiquement' }
 ];
-const CERVEAU_ANALYSE_SECTIONS_ALL = CERVEAU_ANALYSE_SECTIONS_TOP.concat(CERVEAU_ANALYSE_SECTIONS_MID, CERVEAU_ANALYSE_SECTIONS_BOTTOM);
+const CERVEAU_ANALYSE_SECTIONS_ALL = CERVEAU_ANALYSE_SECTIONS_TOP.concat(CERVEAU_ANALYSE_SECTIONS_MID_A, CERVEAU_ANALYSE_SECTIONS_MID_B, CERVEAU_ANALYSE_SECTIONS_BOTTOM);
 
 let analyseEntite = null;
 let analyseVersionId = null;
@@ -4437,8 +4443,9 @@ function exportAnalyseAsPdf(){
   const body = CERVEAU_ANALYSE_SECTIONS_TOP.map(s => printAnalyseSectionHtml(s, v.sections[s.key])).join('')
     + printAnalyseChartHtml('revenusPays', v.revenusPays)
     + printAnalyseChartHtml('revenusSecteurs', v.revenusSecteurs)
+    + CERVEAU_ANALYSE_SECTIONS_MID_A.map(s => printAnalyseSectionHtml(s, v.sections[s.key])).join('')
     + printAnalyseConcurrentsHtml(v.concurrents)
-    + CERVEAU_ANALYSE_SECTIONS_MID.map(s => printAnalyseSectionHtml(s, v.sections[s.key])).join('')
+    + CERVEAU_ANALYSE_SECTIONS_MID_B.map(s => printAnalyseSectionHtml(s, v.sections[s.key])).join('')
     + printAnalyseChartHtml('actionnariat', v.actionnariat)
     + CERVEAU_ANALYSE_SECTIONS_BOTTOM.map(s => printAnalyseSectionHtml(s, v.sections[s.key])).join('');
   exportSectionAsPdf('Analyse développée — ' + analyseEntite, v.label, body, companyLogoUrl(analyseEntite));
@@ -4546,8 +4553,9 @@ function renderAnalyse(){
   const box = document.getElementById('analyseBody');
   box.innerHTML = CERVEAU_ANALYSE_SECTIONS_TOP.map(s => analyseSectionHtml(s, v.sections[s.key])).join('')
     + `<div class="analyse-charts-row">${analyseChartSectionHtml('revenusPays', v.revenusPays)}${analyseChartSectionHtml('revenusSecteurs', v.revenusSecteurs)}</div>`
+    + CERVEAU_ANALYSE_SECTIONS_MID_A.map(s => analyseSectionHtml(s, v.sections[s.key])).join('')
     + analyseConcurrentsHtml(v.concurrents)
-    + CERVEAU_ANALYSE_SECTIONS_MID.map(s => analyseSectionHtml(s, v.sections[s.key])).join('')
+    + CERVEAU_ANALYSE_SECTIONS_MID_B.map(s => analyseSectionHtml(s, v.sections[s.key])).join('')
     + analyseChartSectionHtml('actionnariat', v.actionnariat)
     + CERVEAU_ANALYSE_SECTIONS_BOTTOM.map(s => analyseSectionHtml(s, v.sections[s.key])).join('');
   wireAnalyseSectionEvents();
