@@ -527,11 +527,15 @@ function parsePersoBlock(rows, col){
   }
   // "Valeur d'achat total" (capital réellement investi : positions + cash apporté au
   // compte, pas juste la somme des coûts d'acquisition des positions) — colonne dédiée
-  // du Sheet, vérifiée valeur par valeur (PEA : 5 287,83€, cohérent avec la somme des
-  // positions ; CTO : 6 180,20€, supérieur à la somme des positions car inclut le cash
-  // du compte). Le libellé est sur une ligne, la valeur juste en dessous, même colonne.
-  const labelCell = findPersoCellByLabel(rows, col.valeurAchatTotalCol, 2, "Valeur d'achat total");
-  const capitalInvestiTotal = labelCell ? parseNum(rows[labelCell.row + 1] && rows[labelCell.row + 1][labelCell.col]) : null;
+  // du Sheet, vérifiée valeur par valeur (PEA : colonne S ligne 6, 5 287,83€ ; CTO :
+  // colonne AM ligne 7, 6 180,20€, confirmé par l'utilisateur directement sur le Sheet).
+  // Recherche DIRECTE de la première valeur numérique de la colonne (comme pour le cash
+  // Perso, voir parsePersoCashImmo) plutôt qu'une recherche par libellé texte : "Valeur
+  // d'achat total" est une ligne à une seule cellule remplie que gviz compresse
+  // silencieusement, et le refetch CSV de secours est de toute façon voué à l'échec en
+  // file:// (CORS, voir refetchPersoSparseFieldsViaCsv) — la recherche par libellé
+  // dépendait donc d'une ligne fragile ET d'un repli qui ne peut pas aboutir.
+  const capitalInvestiTotal = findFirstNumInColumnRange(rows, col.valeurAchatTotalCol, 12);
   return { monthly, positions, valorisationTotale, capitalInvestiTotal };
 }
 
