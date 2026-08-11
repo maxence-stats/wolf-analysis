@@ -307,7 +307,8 @@
   .cerveau-new-chain-actions{display:flex;gap:10px;margin-top:16px;}
   .cerveau-btn-cancel{background:transparent;border:1px solid var(--hair);color:var(--text-dim);border-radius:20px;padding:8px 18px;font-family:var(--font-body);font-size:13px;cursor:pointer;}
   .cerveau-btn-cancel:hover{border-color:var(--text-faint);color:var(--text);}
-  .cerveau-sector-box, .cerveau-chain-box{cursor:pointer;transition:transform .12s ease,border-color .12s ease;}
+  .cerveau-sector-box, .cerveau-chain-box{cursor:pointer;transition:transform .12s ease,border-color .12s ease;position:relative;}
+  .cerveau-chain-box .cerveau-chain-delete{position:absolute;top:10px;right:10px;font-size:13px;}
   .cerveau-sector-box:hover, .cerveau-chain-box:hover{transform:translateY(-2px);border-color:rgba(217,164,65,0.3);}
   .cerveau-chain-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(240px, 1fr));gap:14px;}
   .cerveau-phase-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;}
@@ -687,6 +688,9 @@
   .range-buttons button{font-family:var(--font-mono);font-size:11px;font-weight:600;padding:5px 11px;border-radius:14px;border:1px solid var(--hair);background:var(--panel-2);color:var(--text-dim);cursor:pointer;}
   .range-buttons button:hover{border-color:var(--gold);color:var(--text);}
   .range-buttons button.active{background:linear-gradient(135deg, var(--gold-2) 0%, var(--gold) 100%);color:#1a1305;border-color:var(--gold);box-shadow:0 4px 14px -6px rgba(217,164,65,0.55);}
+  .chart-hint{font-size:11px;color:var(--text-faint);margin:6px 0 0;}
+  .mediane-badges-row{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px;}
+  .mediane-badge b{color:var(--text);font-weight:700;}
   .stock-status{font-size:12px;color:var(--text-faint);padding:6px 0;display:none;}
   .stock-source{font-size:10.5px;color:var(--text-faint);font-family:var(--font-mono);margin-top:8px;}
   .chart-card-actions{display:flex;align-items:center;gap:8px;flex-shrink:0;}

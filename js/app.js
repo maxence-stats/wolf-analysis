@@ -2927,6 +2927,42 @@ function setBadge(id, label, value){
   el.textContent = label + ' ' + (value >= 0 ? '+' : '') + value.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%';
   el.classList.add(value >= 0 ? 'pos' : 'neg');
 }
+// Une médiane P/FCF ou P/OCF est un chiffre unique (pas une série qui varie dans le
+// temps) — affichée en badge au-dessus du graphique, pas en ligne plate dessus (retour
+// utilisateur explicite, voir renderPfcfPocfChart()). Pas de sémantique pos/neg ici
+// (un multiple n'est ni "positif" ni "négatif" en soi), contrairement à setBadge().
+function medianeBadgeHtml(label, value){
+  return `<span class="chart-badge mediane-badge">${label} <b>${value != null ? value.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + 'x' : '—'}</b></span>`;
+}
+// P/FCF et P/OCF superposés, chacun activable/désactivable indépendamment (retour
+// utilisateur : "possibilité de désactiver les P/FCF ou les P/OCF") — fonction
+// autonome (pas de paramètres hist/years) pour être rappelable telle quelle depuis le
+// handler de toggle, qui n'a pas accès aux variables locales de renderCompany().
+let pfcfPocfVisible = { pfcf:true, pocf:true };
+function renderPfcfPocfChart(){
+  const hist = activeCompany && companies[activeCompany];
+  if (!hist) return;
+  const years = hist.map(r => r.annee);
+  const series = k => hist.map(r => r[k]);
+  const datasets = [];
+  if (pfcfPocfVisible.pfcf) datasets.push({ label:'P/FCF (x)', data:series('pFcf'), backgroundColor:THEME.gold, borderRadius:4, barPercentage:0.5 });
+  if (pfcfPocfVisible.pocf) datasets.push({ label:'P/OCF (x)', data:series('pOcf'), backgroundColor:THEME.blue, borderRadius:4, barPercentage:0.5 });
+  if (chartInstances.pfcfpocf) chartInstances.pfcfpocf.destroy();
+  chartInstances.pfcfpocf = makeChart('pfcfpocf', 'chartPFCFPOCF', {
+    type:'bar',
+    data:{ labels:years, datasets },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true}}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'x'} } } }
+  });
+}
+function togglePfcfPocfSeries(key){
+  pfcfPocfVisible[key] = !pfcfPocfVisible[key];
+  document.querySelectorAll(`#pfcfPocfToggles [data-series="${key}"]`).forEach(b => b.classList.toggle('active', pfcfPocfVisible[key]));
+  renderPfcfPocfChart();
+}
+document.getElementById('pfcfPocfToggles').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-series]');
+  if (btn) togglePfcfPocfSeries(btn.dataset.series);
+});
 
 function renderCompany(nom){
   const hist = companies[nom];
@@ -3027,15 +3063,19 @@ function renderCompany(nom){
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+' €'} } } }
   });
 
+  // Retour utilisateur explicite : une médiane est un chiffre unique, pas une série qui
+  // varie dans le temps — une ligne plate sur tout le graphique n'apporte rien ("ça n'a
+  // aucun intérêt"). Remplacé par des badges texte au-dessus du graphique (même logique
+  // que les badges CAGR existants), voir medianeBadgeHtml()/#medianeBadgesPfcf plus bas.
   chartInstances.pfcf = makeChart('pfcf', 'chartPFCF', {
     type:'bar',
     data:{ labels:years, datasets:[
-      { label:'P/FCF (x)', data:series('pFcf'), backgroundColor:THEME.gold, borderRadius:4, barPercentage:0.6, order:2 },
-      { label:'Médiane P/FCF 10 ans (x)', data:series('medianePFCF'), type:'line', borderColor:THEME.blue, backgroundColor:THEME.blue, tension:0, spanGaps:true, pointRadius:0, borderWidth:2, order:1 },
-      { label:'Médiane P/FCF 20 ans (x)', data:series('medianePFCF20'), type:'line', borderColor:THEME.blue, backgroundColor:THEME.blue, tension:0, spanGaps:true, pointRadius:0, borderWidth:2, borderDash:[6,4], order:1 }
+      { label:'P/FCF (x)', data:series('pFcf'), backgroundColor:THEME.gold, borderRadius:4, barPercentage:0.6 }
     ]},
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true}}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'x'} } } }
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'x'} } } }
   });
+  document.getElementById('medianeBadgesPfcf').innerHTML =
+    medianeBadgeHtml('Médiane 10a', latest.medianePFCF) + medianeBadgeHtml('Médiane 20a', latest.medianePFCF20);
 
   chartInstances.ocf = makeChart('ocf', 'chartOCF', {
     type:'bar',
@@ -3043,23 +3083,13 @@ function renderCompany(nom){
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+' €'} } } }
   });
 
-  // Superpose P/FCF et P/OCF avec leurs médianes 10/20 ans respectives — familles de
-  // couleur gardées (or=FCF, bleu=OCF) pour rester dans la palette des graphiques
-  // historiques, les médianes se distinguent par pointillés (10a) / tirets (20a) plutôt
-  // que par une 3e/4e couleur. Légende Chart.js cliquable pour masquer une série si le
-  // graphique est trop chargé (6 séries au total).
-  chartInstances.pfcfpocf = makeChart('pfcfpocf', 'chartPFCFPOCF', {
-    type:'bar',
-    data:{ labels:years, datasets:[
-      { label:'P/FCF (x)', data:series('pFcf'), backgroundColor:THEME.gold, borderRadius:4, barPercentage:0.5, order:2 },
-      { label:'P/OCF (x)', data:series('pOcf'), backgroundColor:THEME.blue, borderRadius:4, barPercentage:0.5, order:2 },
-      { label:'Médiane P/FCF 10a (x)', data:series('medianePFCF'), type:'line', borderColor:THEME.gold, backgroundColor:THEME.gold, tension:0, spanGaps:true, pointRadius:0, borderWidth:2, borderDash:[6,3], order:1 },
-      { label:'Médiane P/FCF 20a (x)', data:series('medianePFCF20'), type:'line', borderColor:THEME.gold, backgroundColor:THEME.gold, tension:0, spanGaps:true, pointRadius:0, borderWidth:1.5, borderDash:[2,2], order:1 },
-      { label:'Médiane P/OCF 10a (x)', data:series('medianePOcf'), type:'line', borderColor:THEME.blue, backgroundColor:THEME.blue, tension:0, spanGaps:true, pointRadius:0, borderWidth:2, borderDash:[6,3], order:1 },
-      { label:'Médiane P/OCF 20a (x)', data:series('medianePOcf20'), type:'line', borderColor:THEME.blue, backgroundColor:THEME.blue, tension:0, spanGaps:true, pointRadius:0, borderWidth:1.5, borderDash:[2,2], order:1 }
-    ]},
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true, font:{size:9}}}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'x'} } } }
-  });
+  // P/FCF et P/OCF superposés (retour utilisateur : juste les deux séries, activables/
+  // désactivables séparément — voir #pfcfPocfToggles/togglePfcfPocfSeries()) — familles
+  // de couleur or=FCF / bleu=OCF, cohérent avec le reste du site.
+  renderPfcfPocfChart();
+  document.getElementById('medianeBadgesPfcfPocf').innerHTML =
+    medianeBadgeHtml('Médiane P/FCF 10a', latest.medianePFCF) + medianeBadgeHtml('Médiane P/FCF 20a', latest.medianePFCF20) +
+    medianeBadgeHtml('Médiane P/OCF 10a', latest.medianePOcf) + medianeBadgeHtml('Médiane P/OCF 20a', latest.medianePOcf20);
 
   chartInstances.actions = makeChart('actions', 'chartActions', {
     type:'line',
@@ -4907,6 +4937,11 @@ function renderCerveauSecteurs(box){
   });
 }
 
+// Confirmation en 2 clics inline (jamais confirm() natif, voir "Pièges techniques"
+// point 7) — remis à null à chaque re-render de ce niveau pour ne jamais rester coincé
+// en état "confirmation en attente" après avoir navigué ailleurs (même logique que
+// analyseDeleteConfirming pour la suppression d'une fiche Analyse développée).
+let cerveauDeleteConfirmingChainId = null;
 function renderCerveauChaines(box){
   const secteur = cerveauView.secteur;
   const chains = cerveauData.chains[secteur] || [];
@@ -4926,12 +4961,26 @@ function renderCerveauChaines(box){
       </div>
     </div>` : ''}
     <div class="cerveau-chain-grid">${chains.length
-      ? chains.map(c => `<div class="sector-box cerveau-chain-box" data-chain="${c.id}"><h3>${c.nom}</h3><div class="count">${c.phases.length} phases</div></div>`).join('')
+      ? chains.map(c => `<div class="sector-box cerveau-chain-box" data-chain="${c.id}">
+          <button class="cec-remove cerveau-chain-delete" data-delete-chain="${c.id}" title="Supprimer la chaîne">${cerveauDeleteConfirmingChainId === c.id ? '⚠️' : '✕'}</button>
+          <h3>${c.nom}</h3><div class="count">${c.phases.length} phases</div>
+        </div>`).join('')
       : '<div class="objectifs-empty">Aucune chaîne de valeur pour ce secteur pour l\'instant.</div>'}</div>`;
 
   box.querySelector('[data-back="secteurs"]').addEventListener('click', () => { cerveauView = { level:'secteurs' }; renderCerveau(); });
   box.querySelectorAll('.cerveau-chain-box').forEach(el => {
     el.addEventListener('click', () => { cerveauView = { level:'phases', secteur, chainId: el.dataset.chain }; renderCerveau(); });
+  });
+  box.querySelectorAll('[data-delete-chain]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const chainId = btn.dataset.deleteChain;
+      if (cerveauDeleteConfirmingChainId !== chainId){ cerveauDeleteConfirmingChainId = chainId; renderCerveauChaines(box); return; }
+      cerveauData.chains[secteur] = cerveauData.chains[secteur].filter(c => c.id !== chainId);
+      cerveauDeleteConfirmingChainId = null;
+      persistCerveauData();
+      renderCerveauChaines(box);
+    });
   });
 
   if (!creating){
