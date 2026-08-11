@@ -207,6 +207,26 @@
 
       <div class="chart-card">
         <div class="chart-card-head">
+          <div><h3>Operating Cash Flow par action</h3><p>Cash généré par l'activité, avant investissements</p></div>
+          <div class="chart-card-actions">
+            <button class="zoom-btn" onclick="openZoom('ocf',&quot;Operating Cash Flow par action&quot;)" aria-label="Agrandir">⤢</button>
+          </div>
+        </div>
+        <div class="chart-holder"><canvas id="chartOCF"></canvas></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-card-head">
+          <div><h3>Multiples P/FCF vs P/OCF</h3><p>Prix payé par le marché rapporté aux deux cash flows, avec médianes 10/20 ans</p></div>
+          <div class="chart-card-actions">
+            <button class="zoom-btn" onclick="openZoom('pfcfpocf',&quot;Multiples P/FCF vs P/OCF&quot;)" aria-label="Agrandir">⤢</button>
+          </div>
+        </div>
+        <div class="chart-holder"><canvas id="chartPFCFPOCF"></canvas></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-card-head">
           <div><h3>Actions en circulation</h3><p>Dilution ou rachats d'actions au fil du temps</p></div>
           <div class="chart-card-actions">
             <span class="chart-badge" id="badgeActions">CAGR 20a —</span>

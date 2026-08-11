@@ -263,6 +263,9 @@ function handleCsvRows(rows){
       cagrOcf10: parseNum(c[COL.cagrOcf10]),
       medianePOcf: parseNum(c[COL.medianePOcf]),
       medianePOcf20: parseNum(c[COL.medianePOcf20]),
+      // OCF/action non présent en colonne brute dans le Sheet : dérivé de prixActuel/pOcf,
+      // même principe déjà utilisé pour le toggle FCF/OCF de l'onglet Valorisation.
+      ocfParAction: (prixActuel != null && parseNum(c[COL.pOcf])) ? prixActuel / parseNum(c[COL.pOcf]) : null,
       ca: parseNum(c[COL.ca]),
       cagrCA5: parseNum(c[COL.cagrCA5]),
       cagrCA10: parseNum(c[COL.cagrCA10]),
@@ -2990,9 +2993,34 @@ function renderCompany(nom){
     type:'bar',
     data:{ labels:years, datasets:[
       { label:'P/FCF (x)', data:series('pFcf'), backgroundColor:THEME.gold, borderRadius:4, barPercentage:0.6, order:2 },
-      { label:'Médiane P/FCF (x)', data:series('medianePFCF'), type:'line', borderColor:THEME.blue, backgroundColor:THEME.blue, tension:0, spanGaps:true, pointRadius:0, borderWidth:2, order:1 }
+      { label:'Médiane P/FCF 10 ans (x)', data:series('medianePFCF'), type:'line', borderColor:THEME.blue, backgroundColor:THEME.blue, tension:0, spanGaps:true, pointRadius:0, borderWidth:2, order:1 },
+      { label:'Médiane P/FCF 20 ans (x)', data:series('medianePFCF20'), type:'line', borderColor:THEME.blue, backgroundColor:THEME.blue, tension:0, spanGaps:true, pointRadius:0, borderWidth:2, borderDash:[6,4], order:1 }
     ]},
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true}}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'x'} } } }
+  });
+
+  chartInstances.ocf = makeChart('ocf', 'chartOCF', {
+    type:'bar',
+    data:{ labels:years, datasets:[{ label:'OCF / action (€)', data:series('ocfParAction'), backgroundColor:THEME.gold, borderRadius:4, barPercentage:0.6 }]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+' €'} } } }
+  });
+
+  // Superpose P/FCF et P/OCF avec leurs médianes 10/20 ans respectives — familles de
+  // couleur gardées (or=FCF, bleu=OCF) pour rester dans la palette des graphiques
+  // historiques, les médianes se distinguent par pointillés (10a) / tirets (20a) plutôt
+  // que par une 3e/4e couleur. Légende Chart.js cliquable pour masquer une série si le
+  // graphique est trop chargé (6 séries au total).
+  chartInstances.pfcfpocf = makeChart('pfcfpocf', 'chartPFCFPOCF', {
+    type:'bar',
+    data:{ labels:years, datasets:[
+      { label:'P/FCF (x)', data:series('pFcf'), backgroundColor:THEME.gold, borderRadius:4, barPercentage:0.5, order:2 },
+      { label:'P/OCF (x)', data:series('pOcf'), backgroundColor:THEME.blue, borderRadius:4, barPercentage:0.5, order:2 },
+      { label:'Médiane P/FCF 10a (x)', data:series('medianePFCF'), type:'line', borderColor:THEME.gold, backgroundColor:THEME.gold, tension:0, spanGaps:true, pointRadius:0, borderWidth:2, borderDash:[6,3], order:1 },
+      { label:'Médiane P/FCF 20a (x)', data:series('medianePFCF20'), type:'line', borderColor:THEME.gold, backgroundColor:THEME.gold, tension:0, spanGaps:true, pointRadius:0, borderWidth:1.5, borderDash:[2,2], order:1 },
+      { label:'Médiane P/OCF 10a (x)', data:series('medianePOcf'), type:'line', borderColor:THEME.blue, backgroundColor:THEME.blue, tension:0, spanGaps:true, pointRadius:0, borderWidth:2, borderDash:[6,3], order:1 },
+      { label:'Médiane P/OCF 20a (x)', data:series('medianePOcf20'), type:'line', borderColor:THEME.blue, backgroundColor:THEME.blue, tension:0, spanGaps:true, pointRadius:0, borderWidth:1.5, borderDash:[2,2], order:1 }
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true, font:{size:9}}}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'x'} } } }
   });
 
   chartInstances.actions = makeChart('actions', 'chartActions', {
@@ -3435,7 +3463,7 @@ document.getElementById('macroRankingRowButtons').addEventListener('click', e =>
    historiques (pas le cours de bourse, qui a déjà son propre sélecteur sur la carte
    principale). CAGR affiché uniquement quand la période sélectionnée correspond à une
    donnée réellement présente dans le Sheet — sinon case vide (« — »), jamais inventée. */
-const ZOOM_HISTORICAL_KEYS = ['div','ca','marges','fcf','pfcf','actions','dette','cash'];
+const ZOOM_HISTORICAL_KEYS = ['div','ca','marges','fcf','pfcf','actions','dette','cash','ocf','pfcfpocf'];
 // Les 3 périodes sont toujours affichées ensemble (pas liées au sélecteur de plage
 // 5/10/20/Max, qui ne change que la fenêtre du graphique) : chaque champ manquant
 // (pas encore mappé depuis le Sheet) affiche « — » plutôt qu'une valeur inventée.
