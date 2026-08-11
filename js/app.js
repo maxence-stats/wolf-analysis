@@ -899,7 +899,11 @@ function macroPowerColorHex(v){
 // Sheet (dont un typo "moi" sans s, volontairement pas corrigé pour matcher la vraie
 // ligne).
 let macroRankingRow = 'Classement';
-const MACRO_RANKING_OPTIONS = [['Classement','Classement'],['1 moi','1 mois'],['2 mois','2 mois'],['3 mois','3 mois']];
+// Étendu à toutes les lignes de performance brute du tableau Force Relative (au-delà du
+// seul Classement pondéré + 1/2/3 mois) — demande explicite pour comparer aussi sur
+// 6 mois et 1/2/3 ans, mêmes libellés exacts que les lignes du Sheet (dont le typo
+// "1 moi" volontairement conservé, voir CLAUDE.md).
+const MACRO_RANKING_OPTIONS = [['Classement','Classement'],['1 moi','1 mois'],['2 mois','2 mois'],['3 mois','3 mois'],['6 mois','6 mois'],['1 ans','1 an'],['2 ans','2 ans'],['3 ans','3 ans']];
 function buildMacroRankingChartConfig(rowLabel){
   const row = macroPowerData.rows.find(r => r.label === (rowLabel || macroRankingRow));
   if (!row) return null;
@@ -1360,7 +1364,15 @@ function renderMacroFundamentalsTable(){
     automatiquement toutes les 24h.</p>`;
 }
 
-const PORTFOLIO_COLORS = ['#D9A441','#4A9FE0','#F0C877','#7DBEEA','#B8842E','#2E6FA3','#F5DDA3','#A8D4F0','#8A6420','#1F4E73'];
+// Palette or/bleu (contrainte design system : jamais de violet, réservé au décoratif —
+// voir CLAUDE.md). Revue suite à un retour explicite ("plusieurs teintes se
+// ressemblent") : les 10 tons alternaient déjà or/bleu, mais les luminosités
+// progressaient de façon quasi continue au sein de chaque famille, donc deux tons de
+// même famille proches dans le tableau restaient difficiles à distinguer sur un petit
+// segment de camembert. Luminosités volontairement non-monotones par famille (clair,
+// très sombre, moyen, très clair, moyen-sombre) pour maximiser l'écart perçu entre
+// segments voisins, quel que soit le nombre de positions du portefeuille.
+const PORTFOLIO_COLORS = ['#E8B54D','#2D6FA8','#7A4F0E','#6FB8EA','#F5D896','#0F2A42','#C68A1F','#AEDBFA','#9C6A16','#164A73'];
 const WOLF_LOGO_URL = 'https://i.postimg.cc/43WmYDB1/20260714-LOGO-WINTER-PNG.png';
 
 /* ============================================================
@@ -1685,8 +1697,15 @@ async function exportPortfolioAsPdf(){
   const total = holdings.reduce((s, h) => s + h.valorisation, 0);
   const rows = holdings.map(h => {
     const pct = total ? (h.valorisation / total * 100) : 0;
+    // Repli initiale/emoji si l'entreprise n'est pas dans la base suivie (même pattern
+    // qu'à l'écran, portfolioHoldingsList) — sans repli, une position type "S&P Global"
+    // ou "Mastercard" (pas dans DATA BASE 20 ans) n'affichait RIEN, ce qui donnait
+    // l'impression que le logo manquait partout alors que seules les entreprises
+    // suivies en ont un.
     const logo = companyLogoUrl(h.nom);
-    const logoImg = logo ? `<img class="print-inline-logo" src="${logo}" alt="">` : '';
+    const logoImg = logo
+      ? `<img class="print-inline-logo" src="${logo}" alt="">`
+      : `<span class="print-inline-logo-fallback">${h.nom.toUpperCase() === 'CASH' ? '💶' : h.nom.charAt(0).toUpperCase()}</span>`;
     return `<tr><td>${logoImg}${h.nom}</td><td>${pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</td><td>${h.perf != null ? (h.perf >= 0 ? '+' : '') + fmtPct(h.perf) : '—'}</td></tr>`;
   }).join('');
   const table = `<div class="print-section"><h3>Positions</h3><table class="print-table"><thead><tr><th>Entreprise</th><th>Poids</th><th>Performance</th></tr></thead><tbody>${rows}</tbody></table></div>`;
@@ -3228,7 +3247,11 @@ function exportWatchlistAsPdf(){
   const body = WATCHLIST_LISTS.map(key => {
     const noms = watchlistStore[key] || [];
     const rows = noms.length
-      ? `<table class="print-table"><thead><tr><th>Entreprise</th></tr></thead><tbody>${noms.map(n => `<tr><td>${n.replace(/</g,'&lt;')}</td></tr>`).join('')}</tbody></table>`
+      ? `<table class="print-table"><thead><tr><th>Entreprise</th></tr></thead><tbody>${noms.map(n => {
+          const logo = companyLogoUrl(n);
+          const logoImg = logo ? `<img class="print-inline-logo" src="${logo}" alt="">` : '';
+          return `<tr><td>${logoImg}${n.replace(/</g,'&lt;')}</td></tr>`;
+        }).join('')}</tbody></table>`
       : '<p style="color:#999">Aucune entreprise dans cette liste.</p>';
     return `<div class="print-section"><h3>${WATCHLIST_LABELS[key]} (${noms.length})</h3>${rows}</div>`;
   }).join('');

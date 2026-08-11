@@ -672,6 +672,7 @@
     .print-header img{height:46px;width:auto;border-radius:8px;}
     .print-entity-logo{background:#fff;padding:3px;object-fit:contain;}
     .print-inline-logo{height:20px;width:20px;object-fit:contain;background:#fff;border-radius:4px;padding:2px;vertical-align:middle;margin-right:6px;}
+    .print-inline-logo-fallback{display:inline-flex;align-items:center;justify-content:center;height:20px;width:20px;background:var(--hair);border-radius:4px;vertical-align:middle;margin-right:6px;font-size:11px;font-weight:700;color:var(--text-dim);}
     .print-title{font-family:var(--font-display);font-size:21px;font-weight:700;color:var(--text);}
     .print-subtitle{font-size:11px;color:var(--text-dim);margin-top:3px;font-family:var(--font-mono);}
     .print-section{margin-bottom:18px;padding:16px 18px;background:var(--panel-2);border:1px solid rgba(255,255,255,0.06);border-radius:12px;page-break-inside:avoid;}
