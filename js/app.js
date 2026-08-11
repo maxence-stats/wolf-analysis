@@ -3087,7 +3087,49 @@ let stockRange = 'max';
 let stockRequestId = 0;
 // Indicateurs affichables/masquables sur le graphique boursier (bouton par indicateur,
 // demande explicite : "beaucoup d'informations", pouvoir en isoler certains à la fois).
-let stockIndicators = { regression:true, sma200:true, sma30:true, prixJusteCible:false };
+let stockIndicators = { price:true, regression:true, sma200:true, sma30:true, prixJusteCible:false };
+// Overlay universel (retour utilisateur : combiner n'importe quelle métrique
+// historique sur le graphique boursier, sans limite de nombre) + mode d'échelle,
+// choisi par l'utilisateur à chaque fois plutôt qu'un mode par défaut imposé.
+let stockOverlays = { div:false, ca:false, margeOp:false, detteOcf:false, actions:false, fcfAction:false, pfcf:false, cash:false };
+let stockScaleMode = 'normal'; // 'normal' | 'indexed' | 'log'
+// Couleurs limitées à gold/blue/green/red (répétées, distinguées par un trait plein vs
+// pointillé) pour ne pas entrer en collision avec yellow/white/violet déjà réservés au
+// prix/SMA200/SMA30 en mode normal (seul mode où les deux familles coexistent sur le
+// même graphique).
+const STOCK_OVERLAY_METRICS = {
+  div:       { label:'Dividende/action',      field:'dividende',    color:THEME.gold,  dash:[] },
+  ca:        { label:'Chiffre d\'affaires',    field:'ca',           color:THEME.blue,  dash:[] },
+  margeOp:   { label:'Marge opérationnelle',  field:'margeOp',      color:THEME.green, dash:[] },
+  detteOcf:  { label:'Dette / OCF',           field:'detteOCF',     color:THEME.red,   dash:[] },
+  actions:   { label:'Actions en circulation',field:'actions',      color:THEME.gold,  dash:[6,3] },
+  fcfAction: { label:'FCF/action',            field:'fcfParAction', color:THEME.blue,  dash:[6,3] },
+  pfcf:      { label:'P/FCF',                 field:'pFcf',         color:THEME.green, dash:[6,3] },
+  cash:      { label:'Trésorerie',            field:'cash',         color:THEME.red,   dash:[6,3] }
+};
+// Reprojette une série ANNUELLE (hist, indexée par année) sur l'axe hebdomadaire réel
+// du cours de bourse : chaque valeur est placée au label le plus proche du 1er juillet
+// de son année ("milieu d'année"), le reste à null (spanGaps relie visuellement les
+// points connus). Écarté (> ~200 jours) si aucun label de la plage affichée ne
+// correspond réellement à cette année (ex. plage "1a" avec un historique de 20 ans) —
+// sans ce garde-fou, une valeur ancienne se retrouverait plaquée au bord du graphique.
+function mapAnnualSeriesToWeeklyLabels(labels, field){
+  const hist = (activeCompany && companies[activeCompany]) || [];
+  const arr = labels.map(() => null);
+  const MAX_DIFF_MS = 200 * 24 * 3600 * 1000;
+  hist.forEach(row => {
+    const val = row[field];
+    if (val == null) return;
+    const target = new Date(row.annee, 6, 1).getTime();
+    let bestIdx = -1, bestDiff = Infinity;
+    for (let i = 0; i < labels.length; i++){
+      const diff = Math.abs(new Date(labels[i]).getTime() - target);
+      if (diff < bestDiff){ bestDiff = diff; bestIdx = i; }
+    }
+    if (bestIdx !== -1 && bestDiff <= MAX_DIFF_MS) arr[bestIdx] = val;
+  });
+  return arr;
+}
 
 function mapTickerToYahoo(ticker){
   if (!ticker) return null;
@@ -3375,41 +3417,98 @@ function buildStockChartConfig(range){
   const latestStock = activeCompany && companies[activeCompany] ? companies[activeCompany][companies[activeCompany].length - 1] : null;
   const flatLine = (value) => labels.map(() => value);
 
-  const datasets = [
-    { label:'Clôture hebdo', data:dataClose, borderColor:THEME.yellow, backgroundColor:'rgba(240,214,61,0.06)', fill:true, tension:0.12, pointRadius:0, borderWidth:1.5, _legend:true }
-  ];
-  if (stockIndicators.sma200) datasets.push({ label:'Moyenne mobile 200 sem.', data:dataSma, borderColor:THEME.white, borderWidth:2.5, pointRadius:0, spanGaps:true, tension:0.12, _legend:true });
-  if (stockIndicators.sma30) datasets.push({ label:'Moyenne mobile 30 sem.', data:dataSma30, borderColor:THEME.violet, borderWidth:1, pointRadius:0, spanGaps:true, tension:0.12, _legend:true });
-  if (stockIndicators.regression){
-    datasets.push(
-      regStyle(0, 'Régression linéaire (20 ans max)', true),
-      regStyle(1, '+1σ', false), regStyle(-1, '−1σ', false),
-      regStyle(2, '+2σ', false), regStyle(-2, '−2σ', false)
-    );
+  const datasets = [];
+  if (stockIndicators.price) datasets.push({ label:'Clôture hebdo', data:dataClose, borderColor:THEME.yellow, backgroundColor:'rgba(240,214,61,0.06)', fill:true, tension:0.12, pointRadius:0, borderWidth:1.5, _legend:true, _indexable:true });
+
+  // Régression/SMA/prix juste-cible : outils d'analyse technique sur le PRIX BRUT —
+  // rebasés en indexé, une SMA ou une ligne "prix juste" (valeur constante) s'effondre
+  // en ligne plate à 100 par rapport à elle-même : du bruit, pas de l'information.
+  // Réservés au mode normal, où prix et overlays partagent encore la même logique
+  // d'échelle qu'avant l'ajout de cette fonctionnalité (comportement inchangé).
+  if (stockScaleMode === 'normal'){
+    if (stockIndicators.sma200) datasets.push({ label:'Moyenne mobile 200 sem.', data:dataSma, borderColor:THEME.white, borderWidth:2.5, pointRadius:0, spanGaps:true, tension:0.12, _legend:true });
+    if (stockIndicators.sma30) datasets.push({ label:'Moyenne mobile 30 sem.', data:dataSma30, borderColor:THEME.violet, borderWidth:1, pointRadius:0, spanGaps:true, tension:0.12, _legend:true });
+    if (stockIndicators.regression){
+      datasets.push(
+        regStyle(0, 'Régression linéaire (20 ans max)', true),
+        regStyle(1, '+1σ', false), regStyle(-1, '−1σ', false),
+        regStyle(2, '+2σ', false), regStyle(-2, '−2σ', false)
+      );
+    }
+    if (stockIndicators.prixJusteCible && latestStock){
+      if (latestStock.prixJuste != null) datasets.push({ label:'Prix juste', data:flatLine(latestStock.prixJuste), borderColor:THEME.gold, borderWidth:1.5, borderDash:[6,3], pointRadius:0, spanGaps:false, tension:0, _legend:true });
+      if (latestStock.prixCible != null) datasets.push({ label:'Prix cible', data:flatLine(latestStock.prixCible), borderColor:THEME.green, borderWidth:1.5, borderDash:[6,3], pointRadius:0, spanGaps:false, tension:0, _legend:true });
+    }
   }
-  if (stockIndicators.prixJusteCible && latestStock){
-    if (latestStock.prixJuste != null) datasets.push({ label:'Prix juste', data:flatLine(latestStock.prixJuste), borderColor:THEME.gold, borderWidth:1.5, borderDash:[6,3], pointRadius:0, spanGaps:false, tension:0, _legend:true });
-    if (latestStock.prixCible != null) datasets.push({ label:'Prix cible', data:flatLine(latestStock.prixCible), borderColor:THEME.green, borderWidth:1.5, borderDash:[6,3], pointRadius:0, spanGaps:false, tension:0, _legend:true });
+
+  // Overlays : les 8 métriques historiques, combinables librement (aucune limite,
+  // retour utilisateur explicite). Annuelles à l'origine, reprojetées sur l'axe hebdo
+  // du cours. En mode normal, chacune reçoit son PROPRE axe Y masqué (valeurs réelles,
+  // juste pour ne pas écraser visuellement le prix par une échelle commune) ; en
+  // indexé/log, elles partagent le même axe que le prix (voir transform plus bas).
+  const overlayAxisIds = [];
+  Object.keys(stockOverlays).forEach(key => {
+    if (!stockOverlays[key]) return;
+    const meta = STOCK_OVERLAY_METRICS[key];
+    const axisId = 'yOv_' + key;
+    const ds = { label:meta.label, data:mapAnnualSeriesToWeeklyLabels(labels, meta.field), borderColor:meta.color, backgroundColor:meta.color, borderWidth:1.75, borderDash:meta.dash, pointRadius:0, spanGaps:true, tension:0.15, _legend:true, _indexable:true };
+    if (stockScaleMode === 'normal'){ ds.yAxisID = axisId; overlayAxisIds.push(axisId); }
+    datasets.push(ds);
+  });
+
+  // Transform d'échelle : appliqué uniquement aux séries "comparables" (prix +
+  // overlays, marquées _indexable) — jamais aux outils techniques, déjà exclus du
+  // mode non-normal ci-dessus.
+  let scaleNote = '';
+  if (stockScaleMode === 'indexed'){
+    datasets.forEach(ds => {
+      if (!ds._indexable) return;
+      const base = ds.data.find(v => v != null && v !== 0);
+      if (base == null) return;
+      ds.data = ds.data.map(v => v == null ? null : (v / base) * 100);
+    });
+  } else if (stockScaleMode === 'log'){
+    let filteredSomething = false;
+    datasets.forEach(ds => {
+      if (!ds._indexable) return;
+      ds.data = ds.data.map(v => {
+        if (v != null && v <= 0){ filteredSomething = true; return null; }
+        return v;
+      });
+    });
+    if (filteredSomething){
+      scaleNote = "Échelle logarithmique : les valeurs nulles ou négatives (ex. marge opérationnelle négative) ne peuvent pas s'y afficher et sont masquées.";
+    }
   }
+
+  const scalesExtra = {};
+  overlayAxisIds.forEach(id => { scalesExtra[id] = { display:false }; });
 
   const config = {
     type:'line',
     data:{ labels, datasets },
     options:{ responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true, filter: item => item.text && config.data.datasets[item.datasetIndex]._legend}} },
+      plugins:{ legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true, font:{size:9}, filter: item => item.text && config.data.datasets[item.datasetIndex]._legend}} },
       scales:{
         x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:8}, border:{color:THEME.hair} },
-        y:{ grid:baseGrid, ticks:{color:THEME.dim} }
+        y:{ grid:baseGrid, ticks:{color:THEME.dim}, type: stockScaleMode === 'log' ? 'logarithmic' : 'linear',
+            title: stockScaleMode === 'indexed' ? { display:true, text:'Base 100', color:THEME.dim } : undefined },
+        ...scalesExtra
       }
     }
   };
+  config._scaleNote = scaleNote;
   return config;
 }
 
 function renderStockChart(){
   if (!stockFull) return;
   if (chartInstances.stock) chartInstances.stock.destroy();
-  chartInstances.stock = makeChart('stock', 'chartStock', buildStockChartConfig(stockRange));
+  const config = buildStockChartConfig(stockRange);
+  chartInstances.stock = makeChart('stock', 'chartStock', config);
+  const noteEl = document.getElementById('stockScaleNote');
+  noteEl.textContent = config._scaleNote || '';
+  noteEl.style.display = config._scaleNote ? 'block' : 'none';
 }
 
 document.getElementById('rangeButtons').addEventListener('click', e => {
@@ -3436,6 +3535,36 @@ document.getElementById('stockIndicatorToggles').addEventListener('click', e => 
 document.getElementById('zoomStockIndicatorRow').addEventListener('click', e => {
   const btn = e.target.closest('button[data-indicator]');
   if (btn) toggleStockIndicator(btn.dataset.indicator);
+});
+// Même principe (état partagé, deux rangées de boutons à resynchroniser) pour les
+// overlays de métriques et le mode d'échelle du graphique boursier.
+function toggleStockOverlay(key){
+  stockOverlays[key] = !stockOverlays[key];
+  document.querySelectorAll(`[data-overlay="${key}"]`).forEach(b => b.classList.toggle('active', stockOverlays[key]));
+  renderStockChart();
+  if (zoomKey === 'stock') renderZoomChart();
+}
+function setStockScaleMode(mode){
+  stockScaleMode = mode;
+  document.querySelectorAll('[data-scale-mode]').forEach(b => b.classList.toggle('active', b.dataset.scaleMode === mode));
+  renderStockChart();
+  if (zoomKey === 'stock') renderZoomChart();
+}
+document.getElementById('stockOverlayToggles').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-overlay]');
+  if (btn) toggleStockOverlay(btn.dataset.overlay);
+});
+document.getElementById('zoomStockOverlayRow').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-overlay]');
+  if (btn) toggleStockOverlay(btn.dataset.overlay);
+});
+document.getElementById('stockScaleModeRow').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-scale-mode]');
+  if (btn) setStockScaleMode(btn.dataset.scaleMode);
+});
+document.getElementById('zoomStockScaleModeRow').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-scale-mode]');
+  if (btn) setStockScaleMode(btn.dataset.scaleMode);
 });
 document.getElementById('macroCycleRangeButtons').addEventListener('click', e => {
   const btn = e.target.closest('button[data-range]');
@@ -3546,6 +3675,11 @@ function renderZoomChart(){
   if (ZOOM_SPECIAL_RANGES[zoomKey]){
     const config = zoomSpecialChartConfig();
     if (config) window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), config);
+    if (zoomKey === 'stock'){
+      const noteEl = document.getElementById('zoomStockScaleNote');
+      noteEl.textContent = (config && config._scaleNote) || '';
+      noteEl.style.display = (config && config._scaleNote) ? 'block' : 'none';
+    }
     return;
   }
   const baseConfig = chartConfigs[zoomKey];
@@ -3565,6 +3699,12 @@ function openZoom(key, title){
   const indicatorRow = document.getElementById('zoomStockIndicatorRow');
   indicatorRow.style.display = key === 'stock' ? 'flex' : 'none';
   if (key === 'stock') indicatorRow.querySelectorAll('button[data-indicator]').forEach(b => b.classList.toggle('active', stockIndicators[b.dataset.indicator]));
+  const overlayRow = document.getElementById('zoomStockOverlayRow');
+  overlayRow.style.display = key === 'stock' ? 'flex' : 'none';
+  if (key === 'stock') overlayRow.querySelectorAll('button[data-overlay]').forEach(b => b.classList.toggle('active', stockOverlays[b.dataset.overlay]));
+  const scaleModeRow = document.getElementById('zoomStockScaleModeRow');
+  scaleModeRow.style.display = key === 'stock' ? 'flex' : 'none';
+  if (key === 'stock') scaleModeRow.querySelectorAll('button[data-scale-mode]').forEach(b => b.classList.toggle('active', b.dataset.scaleMode === stockScaleMode));
   // Logo de l'entreprise affiché UNIQUEMENT en zoom (pas sur la petite carte, demande
   // explicite) — pour que l'export PDF d'un graphique zoomé reste identifiable. Ne
   // concerne que les graphiques liés à une entreprise (historiques + cours de bourse),

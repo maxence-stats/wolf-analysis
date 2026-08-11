@@ -142,13 +142,30 @@
           <button data-range="max" class="active">Max</button>
         </div>
         <div class="range-buttons stock-indicator-toggles" id="stockIndicatorToggles">
+          <button data-indicator="price" class="active">Prix</button>
           <button data-indicator="regression" class="active">Régression linéaire</button>
           <button data-indicator="sma200" class="active">SMA 200</button>
           <button data-indicator="sma30" class="active">SMA 30</button>
           <button data-indicator="prixJusteCible">Prix juste / cible</button>
         </div>
+        <div class="range-buttons" id="stockScaleModeRow">
+          <button data-scale-mode="normal" class="active">Échelle normale</button>
+          <button data-scale-mode="indexed">Indexé base 100</button>
+          <button data-scale-mode="log">Logarithmique</button>
+        </div>
+        <div class="range-buttons" id="stockOverlayToggles">
+          <button data-overlay="div">+ Dividende</button>
+          <button data-overlay="ca">+ CA</button>
+          <button data-overlay="margeOp">+ Marge op.</button>
+          <button data-overlay="detteOcf">+ Dette/OCF</button>
+          <button data-overlay="actions">+ Actions en circ.</button>
+          <button data-overlay="fcfAction">+ FCF/action</button>
+          <button data-overlay="pfcf">+ P/FCF</button>
+          <button data-overlay="cash">+ Trésorerie</button>
+        </div>
         <div class="chart-holder" style="height:320px;"><canvas id="chartStock"></canvas></div>
         <div class="stock-status" id="stockStatus"></div>
+        <div class="stock-source" id="stockScaleNote" style="display:none;"></div>
         <div class="stock-source" id="stockSourceNote">Source : Yahoo Finance (repli automatique sur Stooq si indisponible)</div>
       </div>
 
@@ -623,11 +640,28 @@
       <div class="zoom-cagr-row" id="zoomCagrRow"></div>
     </div>
     <div class="range-buttons stock-indicator-toggles" id="zoomStockIndicatorRow" style="display:none;">
+      <button data-indicator="price">Prix</button>
       <button data-indicator="regression">Régression linéaire</button>
       <button data-indicator="sma200">SMA 200</button>
       <button data-indicator="sma30">SMA 30</button>
       <button data-indicator="prixJusteCible">Prix juste / cible</button>
     </div>
+    <div class="range-buttons" id="zoomStockScaleModeRow" style="display:none;">
+      <button data-scale-mode="normal">Échelle normale</button>
+      <button data-scale-mode="indexed">Indexé base 100</button>
+      <button data-scale-mode="log">Logarithmique</button>
+    </div>
+    <div class="range-buttons" id="zoomStockOverlayRow" style="display:none;">
+      <button data-overlay="div">+ Dividende</button>
+      <button data-overlay="ca">+ CA</button>
+      <button data-overlay="margeOp">+ Marge op.</button>
+      <button data-overlay="detteOcf">+ Dette/OCF</button>
+      <button data-overlay="actions">+ Actions en circ.</button>
+      <button data-overlay="fcfAction">+ FCF/action</button>
+      <button data-overlay="pfcf">+ P/FCF</button>
+      <button data-overlay="cash">+ Trésorerie</button>
+    </div>
+    <div class="stock-source" id="zoomStockScaleNote" style="display:none;"></div>
     <div class="zoom-canvas-holder"><canvas id="zoomCanvas"></canvas></div>
     <div class="macro-export-row zoom-export-row" id="zoomExportRow">
       <button onclick="exportZoomChartAsPdf()">PDF</button>
