@@ -299,11 +299,14 @@ function handleCsvRows(rows){
   document.getElementById('dashboard').style.display = 'block';
   setSync('ok');
 
-  loadPortfolioData();
-  loadPriceHistoryData();
-  loadMacroCycleData();
-  loadMacroRotationData();
-  loadMacroPowerData();
+  // Étalées dans le temps (150ms d'écart) plutôt que déclenchées toutes dans le même
+  // tick : 5 sources gviz simultanées (+ Perso, chargée séparément) semblent parfois se
+  // faire throttle silencieusement par le point d'entrée gviz de Google ou la limite de
+  // connexions simultanées du navigateur — la source Force relative sectorielle en
+  // particulier restait vide sans aucune erreur visible. Décalage simple, coût nul,
+  // réduit le risque de collision réseau.
+  [loadPortfolioData, loadPriceHistoryData, loadMacroCycleData, loadMacroRotationData, loadMacroPowerData]
+    .forEach((fn, i) => setTimeout(fn, i * 150));
 }
 
 /* ============================================================
@@ -964,8 +967,21 @@ function openMacroWeightZoom(){
 const MACRO_POWER_GID = '30985186';
 let macroPowerData = null; // { categories:[], headers:[], rows:[{label, values:[]}] }
 
-function loadMacroPowerData(){
+function loadMacroPowerData(retried){
   loadSheetDual(MACRO_POWER_GID, '__handleMacroPowerGviz', handleMacroPowerRows);
+  // Ni le CSV ni le gviz n'ont d'état d'erreur visible en cas d'échec silencieux des deux
+  // méthodes (throttle réseau, timeout — constaté en test, intermittent) — jamais
+  // d'échec silencieux (convention du projet). Après le délai de secours de
+  // loadSheetDual (9s), si toujours rien : UN réessai automatique (échec intermittent,
+  // un second essai a de bonnes chances de passer), puis seulement si celui-ci échoue
+  // aussi, message explicite plutôt qu'un tableau/graphique qui reste vide sans
+  // explication.
+  setTimeout(() => {
+    if (macroPowerData) return;
+    if (!retried){ loadMacroPowerData(true); return; }
+    const box = document.getElementById('macroPowerTable');
+    if (box) box.innerHTML = '<div class="objectifs-empty">Données indisponibles pour l\'instant (échec réseau) — clique sur ↻ Mettre à jour pour réessayer.</div>';
+  }, 10000);
 }
 
 // Parsing par RECONNAISSANCE DE CONTENU (plus par position de ligne fixe — l'exception
@@ -2626,18 +2642,26 @@ const PORTFOLIO_GROUP_PAGES = ['pagePortfolio', 'pageDividende', 'pagePerso'];
 // défiler bien plus bas que voulu ("il faut descendre trop bas, ce n'est pas ça que je
 // veux"). Même mécanique de groupe que PORTFOLIO_GROUP_PAGES, juste un second groupe.
 const ANALYSE_GROUP_PAGES = ['pageAnalyse', 'pageValorisation'];
+// Secteur/Classement/Watchlist regroupés sous "🔍 Screener" (même pattern que
+// Portefeuille) — demande explicite pour désencombrer la nav principale.
+const SCREENER_GROUP_PAGES = ['pageSecteur', 'pageClassement', 'pageWatchlist'];
+const NAV_GROUPS = [
+  { key:'portfolio', subnavId:'portfolioSubnav', pages:PORTFOLIO_GROUP_PAGES },
+  { key:'screener', subnavId:'screenerSubnav', pages:SCREENER_GROUP_PAGES }
+];
 function switchPage(pageId){
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === pageId));
   document.querySelectorAll('.page-nav-btn').forEach(b => b.classList.toggle('active',
     b.dataset.page === pageId ||
-    (b.dataset.group === 'portfolio' && PORTFOLIO_GROUP_PAGES.includes(pageId)) ||
+    NAV_GROUPS.some(g => b.dataset.group === g.key && g.pages.includes(pageId)) ||
     (b.dataset.page === 'pageAnalyse' && ANALYSE_GROUP_PAGES.includes(pageId))
   ));
-  const subnav = document.getElementById('portfolioSubnav');
-  if (subnav){
-    subnav.style.display = PORTFOLIO_GROUP_PAGES.includes(pageId) ? 'flex' : 'none';
+  NAV_GROUPS.forEach(g => {
+    const subnav = document.getElementById(g.subnavId);
+    if (!subnav) return;
+    subnav.style.display = g.pages.includes(pageId) ? 'flex' : 'none';
     subnav.querySelectorAll('.page-subnav-btn').forEach(b => b.classList.toggle('active', b.dataset.page === pageId));
-  }
+  });
   const analyseSubnav = document.getElementById('analyseSubnav');
   if (analyseSubnav){
     analyseSubnav.style.display = ANALYSE_GROUP_PAGES.includes(pageId) ? 'flex' : 'none';

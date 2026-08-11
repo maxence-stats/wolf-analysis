@@ -1,0 +1,33 @@
+# Wolf Analysis est un site statique vanilla (HTML/CSS/JS, pas de build, pas de
+# npm) — la plupart des dossiers lourds classiques (node_modules, dist, build) n'existent
+# pas ici, mais on les exclut quand même par précaution si jamais ajoutés plus tard.
+
+# Dépendances / build (au cas où)
+node_modules/
+dist/
+build/
+.next/
+.cache/
+
+# Contrôle de version
+.git/
+
+# Éditeurs / OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Verrous de dépendances (aucun présent actuellement, exclu par précaution)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Doc de travail obsolète : export figé du code, dupliqué avec js/app.js, css/style.css,
+# index.html (source de vérité réelle) — pas d'intérêt à charger les deux.
+CODE_ACTUEL.md
