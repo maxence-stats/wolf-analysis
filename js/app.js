@@ -227,7 +227,17 @@ async function loadAllDataFromAppsScript(retried){
     setDebug('Connecté via la méthode alternative (script).');
     handleCsvRows(data['DATA BASE 20 ans'] || []);
     if (data['WOLF Portefeuille']) handlePortfolioRows(data['WOLF Portefeuille']);
-    if (data['PRIX ACTION 20 ANS']) handlePriceHistoryRows(data['PRIX ACTION 20 ANS']);
+    if (data['PRIX ACTION 20 ANS']){
+      handlePriceHistoryRows(data['PRIX ACTION 20 ANS']);
+      // handleCsvRows() ci-dessus a déjà rendu le Portefeuille Dividende une 1re fois
+      // (via renderDividendPortfolio() en fin de fonction) — à ce moment-là,
+      // priceHistoryData était encore vide, donc medianAnnualReturn() renvoyait null
+      // pour tout le monde : les positions déjà enregistrées (baseline/localStorage)
+      // affichaient "N/D" partout jusqu'à la prochaine interaction utilisateur (retour
+      // explicite : "je vois... mais il y a marqué ND"). Un second rendu ici, une fois
+      // priceHistoryData réellement peuplé, corrige l'affichage dès le chargement.
+      renderDividendPortfolio();
+    }
     if (data['DATA SECTORIELS US']){
       handleMacroRotationRows(data['DATA SECTORIELS US']);
       handleMacroCycleRowsFromSectoriels(data['DATA SECTORIELS US']);
@@ -2890,12 +2900,18 @@ function renderDividendPortfolio(){
     <div class="ratio-card"><div class="k">Dividendes annuels estimés</div><div class="v">${fmtEUR(dividendeAnnuelTotal, 0)}</div><div class="sub">au rendement actuel</div></div>
     <div class="ratio-card"><div class="k">Rendement moyen pondéré</div><div class="v">${rendementMoyen != null ? fmtPct(rendementMoyen) : 'N/D'}</div><div class="sub">sur capital investi</div></div>`;
 
-  const growthWindowSelectHtml = (nom, current, medians) => `<select class="dividende-growth-select" data-nom="${nom}">
-      <option value="off" ${current === 'off' ? 'selected' : ''}>Off</option>
-      <option value="5" ${current === '5' ? 'selected' : ''} ${medians['5'] == null ? 'disabled' : ''}>5a${medians['5'] != null ? ' (' + fmtPct(medians['5']) + ')' : ' (N/D)'}</option>
-      <option value="10" ${current === '10' ? 'selected' : ''} ${medians['10'] == null ? 'disabled' : ''}>10a${medians['10'] != null ? ' (' + fmtPct(medians['10']) + ')' : ' (N/D)'}</option>
-      <option value="20" ${current === '20' ? 'selected' : ''} ${medians['20'] == null ? 'disabled' : ''}>20a${medians['20'] != null ? ' (' + fmtPct(medians['20']) + ')' : ' (N/D)'}</option>
-    </select>`;
+  // 3 badges cliquables affichant TOUJOURS les 3 fenêtres (5a/10a/20a), au lieu d'un
+  // <select> qui cachait les valeurs derrière un menu déroulant — retour explicite de
+  // l'utilisateur : "tu vas directement d'office les mettre les trois... sous chaque
+  // entreprise". Cliquer sur la fenêtre déjà active la désactive (repasse à 'off') ;
+  // "N/D" reste affiché tel quel (bouton désactivé) quand l'entreprise n'est pas dans
+  // les ~20 de l'historique de prix dédié — pas un bug, une vraie limite de couverture.
+  const growthWindowBadgesHtml = (nom, current, medians) => ['5','10','20'].map(w => {
+    const val = medians[w];
+    const disabled = val == null;
+    const active = current === w;
+    return `<button class="dividende-growth-badge${active ? ' active' : ''}" data-nom="${nom}" data-window="${w}" ${disabled ? 'disabled' : ''}>${w}a ${val != null ? (val >= 0 ? '+' : '') + fmtPct(val) : 'N/D'}</button>`;
+  }).join('');
 
   listBox.innerHTML = rows.length ? rows.map(r => {
     const safe = r.nom.replace(/"/g,'&quot;');
@@ -2907,7 +2923,7 @@ function renderDividendPortfolio(){
       <div class="dividende-row-field"><label>Rendement</label><span>${r.rendement != null ? fmtPct(r.rendement) : 'N/D'}</span></div>
       <div class="dividende-row-field"><label>Div. annuel</label><span>${r.dividendeAnnuel != null ? fmtEUR(r.dividendeAnnuel, 0) : 'N/D'}</span></div>
       <div class="dividende-row-field"><label>CAGR 5/10/20a</label><span>${fmtPct(r.cagr5)} / ${fmtPct(r.cagr10)} / ${fmtPct(r.cagr20)}</span></div>
-      <div class="dividende-row-field"><label>Médiane perf./an</label>${growthWindowSelectHtml(safe, r.growthWindow, r.medianReturns)}</div>
+      <div class="dividende-row-field dividende-row-field-wide"><label>Médiane perf./an (clic = activer pour le simulateur)</label><div class="dividende-growth-badges">${growthWindowBadgesHtml(safe, r.growthWindow, r.medianReturns)}</div></div>
       <button class="cec-remove" data-action="dividende-remove" data-nom="${safe}" title="Retirer">✕</button>
     </div>`;
   }).join('') : '<div class="objectifs-empty">Aucune position — ajoute des entreprises depuis l\'onglet Classement (liste "Meilleur rendement du dividende").</div>';
@@ -2944,9 +2960,10 @@ function wireDividendRows(){
       renderDividendPortfolio();
     });
   });
-  document.querySelectorAll('.dividende-growth-select').forEach(sel => {
-    sel.addEventListener('change', () => {
-      dividendPortfolioStore.growthWindows[sel.dataset.nom] = sel.value;
+  document.querySelectorAll('.dividende-growth-badge').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const current = dividendPortfolioStore.growthWindows[btn.dataset.nom] || 'off';
+      dividendPortfolioStore.growthWindows[btn.dataset.nom] = current === btn.dataset.window ? 'off' : btn.dataset.window;
       persistDividendPortfolioLocal();
       renderDividendPortfolio();
     });
