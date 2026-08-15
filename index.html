@@ -60,6 +60,7 @@
       <button class="page-subnav-btn active" data-page="pagePortfolio">Wolf Portfolio</button>
       <button class="page-subnav-btn" data-page="pageDividende">Dividende</button>
       <button class="page-subnav-btn" data-page="pagePerso">Perso (PEA/CTO)</button>
+      <button class="page-subnav-btn" data-page="pageConstruction">Construction de portefeuille</button>
     </div>
 
     <div class="page-subnav" id="screenerSubnav" style="display:none;">
@@ -462,6 +463,55 @@
           <div class="chart-card">
             <h3>CTO vs CAC 40</h3><p class="chart-subtitle">Valeur de part, base 100</p>
             <div class="chart-holder" style="height:260px;"><canvas id="chartCtoVsCac"></canvas></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="pageConstruction" class="page">
+      <div class="section-label">Construction de portefeuille</div>
+      <p class="valo-intro">Choisis librement des entreprises suivies et un montant investi pour composer ton propre
+        portefeuille, puis simule sa performance future (dividendes + plus-value selon le scénario Pessimiste de
+        chacune, défini dans son onglet Valorisation).</p>
+
+      <div class="ratio-grid" id="constructionSummary"></div>
+
+      <div class="dividende-main-row">
+        <div class="dividende-positions-col">
+          <div class="section-label">Positions</div>
+          <div class="dividende-actions">
+            <label class="dividende-total-capital">Entreprise
+              <input list="constructionCompanyList" id="constructionCompanyInput" placeholder="Nom de l'entreprise">
+              <datalist id="constructionCompanyList"></datalist>
+            </label>
+            <label class="dividende-total-capital">Montant (€)
+              <input type="number" id="constructionAmountInput" step="100" min="0" value="1000">
+            </label>
+            <button class="zoom-btn objectifs-export" id="constructionAddBtn">+ Ajouter</button>
+            <button class="zoom-btn objectifs-export" id="constructionExportBtn">⭳ Exporter</button>
+          </div>
+          <div class="dividende-list" id="constructionList"></div>
+        </div>
+        <div class="dividende-sim-col">
+          <div class="chart-card" id="constructionSimCard">
+            <div class="chart-card-head">
+              <div><h3>Simulation de performance</h3><p>Dividendes réinvestis ou non + plus-value (scénario Pessimiste pondéré)</p></div>
+            </div>
+            <div class="dividende-sim-inputs">
+              <label>Versement mensuel (€)<input type="number" id="constructionSimMonthly" step="10" min="0" value="0"></label>
+            </div>
+            <div class="range-buttons" id="constructionSimHorizonButtons">
+              <button data-horizon="5">5 ans</button>
+              <button data-horizon="10" class="active">10 ans</button>
+              <button data-horizon="15">15 ans</button>
+              <button data-horizon="20">20 ans</button>
+            </div>
+            <div class="dividende-sim-reinvest-row">
+              <label class="dividende-checkbox"><input type="checkbox" id="constructionSimReinvest" checked> Réinvestir les dividendes (intérêts composés)</label>
+              <label class="dividende-checkbox"><input type="checkbox" id="constructionSimGrowth" checked> Inclure la plus-value (scénario Pessimiste pondéré)</label>
+            </div>
+            <div class="chart-holder" style="height:260px;"><canvas id="chartConstructionProjection"></canvas></div>
+            <div class="dividende-sim-results" id="constructionSimResults"></div>
           </div>
         </div>
       </div>

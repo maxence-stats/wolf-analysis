@@ -454,6 +454,7 @@ function handleCsvRows(rows){
   renderWatchlist();
   renderAlertesTab();
   renderDividendPortfolio();
+  renderConstructionPortfolio();
   renderComparaisonPicker();
 
   document.getElementById('loadingScreen').style.display = 'none';
@@ -3075,6 +3076,261 @@ function initDividendPortfolio(){
   if (zoomBtn) zoomBtn.addEventListener('click', openDividendeSimZoom);
 }
 
+// ============================================================
+// CONSTRUCTION DE PORTEFEUILLE — sélection libre d'entreprises suivies (pas limité à la
+// liste Classement, contrairement au Portefeuille Dividende) + simulation composée sur
+// un horizon 5/10/15/20 ans, demandée explicitement par l'utilisateur : "pouvoir choisir
+// des actions directement... composer son propre portefeuille et extrapoler la
+// performance... en y mettant les dividendes, la possibilité de réinvestir ou non...
+// voir le scénario pessimiste qui se trouve dans l'onglet Valorisation de chacune".
+// Positions en MONTANT (€) directement, pas en % (contrairement au Dividende) — colle
+// mieux à "choisir des actions et un montant" plutôt que répartir un capital déjà fixé.
+const CONSTRUCTION_LS_KEY = 'wolfAnalysisConstruction';
+const CONSTRUCTION_BASELINE_URL = 'data/construction.json';
+let constructionStore = { positions: {} }; // positions[nom] = montant investi en €
+let constructionSimHorizon = 10;
+
+// Rendement annualisé du scénario Pessimiste (5 ans) d'une entreprise, réutilisant
+// EXACTEMENT la même formule que l'onglet Valorisation (computeScenario()) — priorité au
+// dernier objectif enregistré par l'utilisateur pour cette entreprise (objectifsStore,
+// même source que l'historique des objectifs de Valorisation) s'il existe, sinon mêmes
+// deltas par défaut que renderValorisation() (CAGR hist. -5pts, médiane hist. -3x).
+// Jamais recalculé "à la main" ici : une seule source de vérité pour ce que "Pessimiste"
+// veut dire sur tout le site.
+function pessimisticScenarioForCompany(nom){
+  const hist = companies[nom];
+  if (!hist || !hist.length) return null;
+  const latest = hist[hist.length - 1];
+  const { fcfActuel, cagrHist, medianeHist } = valorisationInputs(latest);
+  const prixActuel = latest.prixActuel;
+  if (fcfActuel == null || prixActuel == null) return null;
+  const savedList = objectifsStore[nom];
+  const saved = savedList && savedList.length ? savedList[savedList.length - 1] : null;
+  const savedPess = saved && saved.scenarios && saved.scenarios.pessimiste;
+  const pess = savedPess || {
+    cagr: cagrHist != null ? +(cagrHist - 5).toFixed(1) : 0,
+    multiple: medianeHist != null ? +(medianeHist - 3).toFixed(1) : 0
+  };
+  const { rendement5A } = computeScenario(fcfActuel, prixActuel, pess.cagr, pess.multiple);
+  return { rendement5A, fromSaved: !!savedPess };
+}
+
+function addConstructionPosition(nom, montant){
+  if (!companies[nom] || !montant) return;
+  constructionStore.positions[nom] = (constructionStore.positions[nom] || 0) + montant;
+  persistConstructionLocal();
+  renderConstructionPortfolio();
+}
+
+function mergeConstruction(extra){
+  if (!extra || !extra.positions) return;
+  Object.keys(extra.positions).forEach(k => {
+    if (constructionStore.positions[k] == null) constructionStore.positions[k] = extra.positions[k];
+  });
+}
+
+async function loadConstructionBaseline(){
+  try{
+    const res = await fetch(CONSTRUCTION_BASELINE_URL, { cache:'no-store' });
+    if (res.ok){
+      const json = await res.json();
+      if (json && typeof json === 'object') mergeConstruction(json);
+    }
+  }catch(e){ /* fichier absent ou fetch bloqué (ex. file://) — non bloquant */ }
+  try{
+    const raw = localStorage.getItem(CONSTRUCTION_LS_KEY);
+    if (raw) mergeConstruction(JSON.parse(raw));
+  }catch(e){ /* localStorage indisponible ou JSON corrompu */ }
+  renderConstructionPortfolio();
+}
+
+function persistConstructionLocal(){
+  try{ localStorage.setItem(CONSTRUCTION_LS_KEY, JSON.stringify(constructionStore)); }catch(e){ /* quota / navigateur privé */ }
+}
+
+function exportConstructionPortfolio(){
+  const blob = new Blob([JSON.stringify(constructionStore, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'wolf-analysis-construction-portefeuille.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function constructionPositionMetrics(nom, montant){
+  const hist = companies[nom];
+  if (!hist) return null;
+  const latest = hist[hist.length - 1];
+  const pess = pessimisticScenarioForCompany(nom);
+  return {
+    nom, montant, logo: latest.lienImage,
+    rendementDiv: latest.rendementDiv, cagrDiv10: latest.cagrDiv10,
+    pessRendement: pess ? pess.rendement5A : null
+  };
+}
+
+let constructionProjectionChart = null;
+
+function renderConstructionPortfolio(){
+  const summaryBox = document.getElementById('constructionSummary');
+  const listBox = document.getElementById('constructionList');
+  const companyList = document.getElementById('constructionCompanyList');
+  if (!summaryBox || !listBox) return;
+
+  if (companyList && !companyList.childElementCount){
+    companyList.innerHTML = Object.keys(companies).map(n => `<option value="${n.replace(/"/g,'&quot;')}">`).join('');
+  }
+
+  const noms = Object.keys(constructionStore.positions);
+  const rows = noms.map(nom => constructionPositionMetrics(nom, constructionStore.positions[nom])).filter(Boolean);
+
+  const totalCapital = rows.reduce((s, r) => s + r.montant, 0);
+  const dividendeAnnuelTotal = rows.reduce((s, r) => s + (r.rendementDiv != null ? r.montant * r.rendementDiv / 100 : 0), 0);
+  const weightedAvg = (field) => {
+    const w = rows.reduce((s, r) => s + (r[field] != null ? r.montant : 0), 0);
+    if (!w) return null;
+    return rows.reduce((s, r) => s + (r[field] != null ? r[field] * r.montant : 0), 0) / w;
+  };
+  const rendementDivMoyen = weightedAvg('rendementDiv');
+  const cagrDivMoyen = weightedAvg('cagrDiv10');
+  const pessMoyen = weightedAvg('pessRendement');
+
+  summaryBox.innerHTML = `
+    <div class="ratio-card"><div class="k">Capital investi</div><div class="v">${fmtEUR(totalCapital, 0)}</div><div class="sub">${rows.length} position${rows.length > 1 ? 's' : ''}</div></div>
+    <div class="ratio-card"><div class="k">Dividendes annuels estimés</div><div class="v">${fmtEUR(dividendeAnnuelTotal, 0)}</div><div class="sub">au rendement actuel</div></div>
+    <div class="ratio-card"><div class="k">Rendement dividende moyen</div><div class="v">${rendementDivMoyen != null ? fmtPct(rendementDivMoyen) : 'N/D'}</div><div class="sub">pondéré par montant</div></div>
+    <div class="ratio-card"><div class="k">Scénario Pessimiste pondéré</div><div class="v${pessMoyen != null && pessMoyen < 0 ? ' neg' : ''}">${pessMoyen != null ? (pessMoyen >= 0 ? '+' : '') + fmtPct(pessMoyen) : 'N/D'}</div><div class="sub">rendement annualisé (5a)</div></div>`;
+
+  listBox.innerHTML = rows.length ? rows.map(r => {
+    const safe = r.nom.replace(/"/g,'&quot;');
+    const pct = totalCapital ? (r.montant / totalCapital * 100) : 0;
+    return `<div class="dividende-row" data-nom="${safe}">
+      <div class="dividende-row-logo"><img src="${r.logo || ''}" alt=""></div>
+      <div class="dividende-row-name">${r.nom}</div>
+      <div class="dividende-row-field"><label>Montant (€)</label><input type="number" class="dividende-amount-input" data-nom="${safe}" value="${r.montant}" min="0" step="100"></div>
+      <div class="dividende-row-field"><label>Poids</label><span>${pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</span></div>
+      <div class="dividende-row-field"><label>Rendement div.</label><span>${r.rendementDiv != null ? fmtPct(r.rendementDiv) : 'N/D'}</span></div>
+      <div class="dividende-row-field"><label>Scénario Pessimiste (5a)</label><span${r.pessRendement != null && r.pessRendement < 0 ? ' class="neg"' : ''}>${r.pessRendement != null ? (r.pessRendement >= 0 ? '+' : '') + fmtPct(r.pessRendement) : 'N/D'}</span></div>
+      <button class="cec-remove" data-action="construction-remove" data-nom="${safe}" title="Retirer">✕</button>
+    </div>`;
+  }).join('') : '<div class="objectifs-empty">Aucune position — ajoute une entreprise suivie ci-dessus avec un montant.</div>';
+
+  listBox.querySelectorAll('.dividende-amount-input').forEach(input => {
+    input.addEventListener('change', () => {
+      const val = parseFloat(input.value);
+      constructionStore.positions[input.dataset.nom] = isNaN(val) ? 0 : val;
+      persistConstructionLocal();
+      renderConstructionPortfolio();
+    });
+  });
+  listBox.querySelectorAll('[data-action="construction-remove"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      delete constructionStore.positions[btn.dataset.nom];
+      persistConstructionLocal();
+      renderConstructionPortfolio();
+    });
+  });
+
+  computeConstructionSimChart(totalCapital, rendementDivMoyen, cagrDivMoyen, pessMoyen);
+}
+
+// Même moteur que le simulateur Dividende (capital(t) = capital(t-1)×(1+croissance%) +
+// versements [+ dividende réinvesti]), mais la croissance vient ici du scénario
+// Pessimiste pondéré (toggle possible) plutôt que d'une médiane de prix par action —
+// et le capital de départ est directement le total des montants investis (pas de champ
+// séparé, "composer son portefeuille" fixe déjà le capital de départ).
+function computeConstructionSimSeries(totalCapital, rendementDivMoyen, cagrDivMoyen, pessMoyen){
+  const monthly = parseFloat(document.getElementById('constructionSimMonthly')?.value) || 0;
+  const reinvest = !!document.getElementById('constructionSimReinvest')?.checked;
+  const includeGrowth = !!document.getElementById('constructionSimGrowth')?.checked;
+  const horizon = constructionSimHorizon;
+  const growthPct = includeGrowth && pessMoyen != null ? pessMoyen : 0;
+  const yieldPct = rendementDivMoyen || 0;
+  const cagrDiv = cagrDivMoyen || 0;
+
+  const years = [0];
+  const capital = [totalCapital];
+  const dividende = [totalCapital * (yieldPct / 100)];
+  let yieldOnCost = yieldPct;
+  for (let t = 1; t <= horizon; t++){
+    let cap = capital[t - 1] * (1 + growthPct / 100) + monthly * 12;
+    if (reinvest) cap += dividende[t - 1];
+    yieldOnCost *= (1 + cagrDiv / 100);
+    years.push(t);
+    capital.push(cap);
+    dividende.push(cap * (yieldOnCost / 100));
+  }
+  return { years, capital, dividende };
+}
+
+function computeConstructionSimChart(totalCapital, rendementDivMoyen, cagrDivMoyen, pessMoyen){
+  const canvas = document.getElementById('chartConstructionProjection');
+  const resultsBox = document.getElementById('constructionSimResults');
+  if (!canvas) return;
+  const { years, capital, dividende } = computeConstructionSimSeries(totalCapital, rendementDivMoyen, cagrDivMoyen, pessMoyen);
+  if (constructionProjectionChart) constructionProjectionChart.destroy();
+  constructionProjectionChart = new Chart(canvas.getContext('2d'), {
+    type:'line',
+    data:{ labels: years.map(t => 'Année ' + t), datasets:[
+      { label:'Valorisation (€)', data: capital.map(v => Math.round(v)), borderColor:THEME.blue, backgroundColor:'rgba(74,159,224,0.10)', fill:true, tension:0.3, pointRadius:3, yAxisID:'y' },
+      { label:'Dividendes annuels (€)', data: dividende.map(v => Math.round(v)), borderColor:THEME.gold, backgroundColor:'rgba(217,164,65,0.12)', fill:true, tension:0.3, pointRadius:3, yAxisID:'y1' }
+    ] },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true } } },
+      scales:{
+        x:{ grid:{ display:false }, ticks:{ color:THEME.dim } },
+        y:{ position:'left', grid:baseGrid, ticks:{ color:THEME.dim, callback:v=>v.toLocaleString('fr-FR')+' €' } },
+        y1:{ position:'right', grid:{ display:false }, ticks:{ color:THEME.dim, callback:v=>v.toLocaleString('fr-FR')+' €' } }
+      }
+    }
+  });
+  if (resultsBox){
+    const n = years.length - 1;
+    resultsBox.innerHTML = `
+      <div><div class="k">Montant investi (année 0)</div><div class="v">${fmtEUR(totalCapital, 0)}</div></div>
+      <div><div class="k">Valorisation projetée (année ${n})</div><div class="v">${fmtEUR(capital[n], 0)}</div></div>
+      <div><div class="k">Dividendes annuels (année ${n})</div><div class="v">${fmtEUR(dividende[n], 0)}</div></div>
+      <div><div class="k">Croissance capital utilisée</div><div class="v">${document.getElementById('constructionSimGrowth')?.checked && pessMoyen != null ? (pessMoyen >= 0 ? '+' : '') + fmtPct(pessMoyen) + '/an' : 'Off'}</div></div>`;
+  }
+}
+
+function initConstruction(){
+  const addBtn = document.getElementById('constructionAddBtn');
+  if (addBtn) addBtn.addEventListener('click', () => {
+    const nomInput = document.getElementById('constructionCompanyInput');
+    const amountInput = document.getElementById('constructionAmountInput');
+    const nom = nomInput.value.trim();
+    const montant = parseFloat(amountInput.value);
+    if (!companies[nom]){ alert("Entreprise inconnue — choisis un nom dans la liste suggérée."); return; }
+    if (!montant || montant <= 0){ alert('Indique un montant positif.'); return; }
+    addConstructionPosition(nom, montant);
+    nomInput.value = '';
+  });
+  const exportBtn = document.getElementById('constructionExportBtn');
+  if (exportBtn) exportBtn.addEventListener('click', exportConstructionPortfolio);
+  ['constructionSimMonthly'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', renderConstructionPortfolio);
+  });
+  ['constructionSimReinvest', 'constructionSimGrowth'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', renderConstructionPortfolio);
+  });
+  const horizonRow = document.getElementById('constructionSimHorizonButtons');
+  if (horizonRow){
+    horizonRow.addEventListener('click', e => {
+      const btn = e.target.closest('button[data-horizon]');
+      if (!btn) return;
+      constructionSimHorizon = parseInt(btn.dataset.horizon, 10);
+      horizonRow.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
+      renderConstructionPortfolio();
+    });
+  }
+}
+
 function initSectorGrid(){
   const grid = document.getElementById('sectorGrid');
   if (!grid) return;
@@ -3089,7 +3345,7 @@ function goToAnalyse(nom){
   selectCompany(nom);
 }
 
-const PORTFOLIO_GROUP_PAGES = ['pagePortfolio', 'pageDividende', 'pagePerso'];
+const PORTFOLIO_GROUP_PAGES = ['pagePortfolio', 'pageDividende', 'pagePerso', 'pageConstruction'];
 // Valorisation redevient une page à part entière (comme avant la tâche #74), mais
 // accessible via un SOUS-onglet sous "Analyse" plutôt qu'un bouton de nav séparé —
 // retour explicite : l'avoir append en bas de la même page #pageAnalyse forçait à
@@ -7113,6 +7369,7 @@ loadCerveauData();
 loadIdeesBaseline();
 loadRevueBaseline();
 initDividendPortfolio();
+initConstruction();
 document.getElementById('peaDonutZoomBtn').addEventListener('click', () => openPersoDonutZoom('pea', persoData.pea, 'PEA — Crédit Agricole'));
 document.getElementById('ctoDonutZoomBtn').addEventListener('click', () => openPersoDonutZoom('cto', persoData.cto, 'CTO — Saxo'));
 
@@ -7149,6 +7406,7 @@ document.getElementById('persoBlurToggleBtn').addEventListener('click', function
   // Google Sheets ; loadAllDataFromAppsScript() apporte tout le reste (données
   // principales, Portfolio, historique de prix, macro, Perso) en un seul appel.
   loadDividendPortfolioBaseline();
+  loadConstructionBaseline();
   loadAllDataFromAppsScript();
 })();
 
