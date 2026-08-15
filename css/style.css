@@ -274,6 +274,8 @@
   .dividende-row-field span{font-family:var(--font-mono);font-size:13px;color:var(--text);}
   .dividende-amount-input{background:var(--panel);border:1px solid var(--hair);border-radius:7px;padding:5px 9px;color:var(--text);font-family:var(--font-mono);font-size:13px;width:100px;outline:none;}
   .dividende-amount-input:focus{border-color:var(--gold);}
+  .dividende-growth-select{background:var(--panel);border:1px solid var(--hair);border-radius:7px;padding:5px 8px;color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none;cursor:pointer;}
+  .dividende-growth-select:focus{border-color:var(--gold);}
   .dividende-row .cec-remove{position:absolute;top:10px;right:10px;}
   @media (max-width:900px){
     .dividende-row{gap:10px 16px;}

@@ -838,6 +838,51 @@ function fetchPriceHistorySeries(nom){
   return resampleWeekly(series.map(p => p.date), series.map(p => p.close));
 }
 
+// Performance glissante sur 1 an, calculée à CHAQUE point de l'historique (pas une
+// seule fois par an) : pour chaque date, on cherche le point ~365 jours plus tôt (le
+// plus proche disponible, tolérance 20 jours — l'historique dédié est hebdomadaire donc
+// jamais pile à la date). Sert de base à la médiane demandée par l'utilisateur ("la
+// performance sur un an, systématiquement") plutôt qu'un simple CAGR de bout en bout,
+// qui masquerait la dispersion réelle d'une action à l'autre. Uniquement disponible
+// pour les ~20 entreprises de l'onglet Sheet dédié "PRIX ACTION 20 ANS" (priceHistoryData)
+// — pas de repli Yahoo/Stooq ici (fetch par entreprise, pas adapté à un calcul en lot).
+function stockRollingAnnualReturns(nom){
+  const series = findPriceHistoryForCompany(nom);
+  if (!series || series.length < 60) return null;
+  const MS_YEAR = 365 * 24 * 3600 * 1000;
+  const TOLERANCE_MS = 20 * 24 * 3600 * 1000;
+  const returns = [];
+  let j = 0;
+  for (let i = 0; i < series.length; i++){
+    const targetTime = new Date(series[i].date).getTime() - MS_YEAR;
+    while (j < series.length - 1 && new Date(series[j + 1].date).getTime() <= targetTime) j++;
+    const baseTime = new Date(series[j].date).getTime();
+    if (Math.abs(baseTime - targetTime) > TOLERANCE_MS) continue;
+    if (baseTime >= new Date(series[i].date).getTime()) continue;
+    const base = series[j].close;
+    if (!base) continue;
+    returns.push({ date: series[i].date, ret: series[i].close / base - 1 });
+  }
+  return returns;
+}
+
+// Médiane des performances glissantes sur 1 an, restreinte aux `years` dernières années
+// — pas la médiane de TOUT l'historique dispo, sinon la fenêtre "5 ans" et "20 ans"
+// donneraient le même résultat dès que l'action a plus de 5 ans de données. Retourne un
+// pourcentage (ex. 8.4 pour +8,4%/an), ou null si pas assez de données sur la fenêtre.
+function medianAnnualReturn(nom, years){
+  const all = stockRollingAnnualReturns(nom);
+  if (!all || !all.length) return null;
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() - years);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const filtered = all.filter(r => r.date >= cutoffStr).map(r => r.ret).sort((a, b) => a - b);
+  if (!filtered.length) return null;
+  const mid = Math.floor(filtered.length / 2);
+  const median = filtered.length % 2 ? filtered[mid] : (filtered[mid - 1] + filtered[mid]) / 2;
+  return median * 100;
+}
+
 /* ============================================================
    MACROÉCONOMIE — 3 onglets Sheet dédiés (même fichier publié, gids différents).
    Chargement générique factorisé (CSV + gviz, responseHandler dédié par source —
@@ -2564,7 +2609,13 @@ const DIVIDEND_BASELINE_URL = 'data/dividende.json';
 // "je ne dois pas rentrer un prix, je dois rentrer un pourcentage de taille de position,
 // c'est à toi de calculer le prix"). totalCapital = capital total à répartir, saisi une
 // fois pour tout le portefeuille.
-let dividendPortfolioStore = { positions: {}, totalCapital: 0 };
+// growthWindows[nom] : '5'|'10'|'20'|'off' — quelle fenêtre de médiane de performance
+// annuelle (voir medianAnnualReturn()) utiliser comme hypothèse de plus-value pour cette
+// position dans le simulateur, ou 'off' pour l'exclure (défaut — retour utilisateur
+// explicite : pouvoir "mettre zéro si on veut l'inclure ou pas", donc opt-in par action,
+// pas une hypothèse imposée). Objet séparé de `positions` (qui reste les poids en %) et
+// de `totalCapital`, pour ne pas perturber migrateDividendPortfolioToPercent().
+let dividendPortfolioStore = { positions: {}, totalCapital: 0, growthWindows: {} };
 
 // Migration : les stores existants (créés avant ce changement) ont positions[nom] en €
 // bruts — reconvertit en % du total (déduit de la somme existante) une seule fois, sans
@@ -2591,6 +2642,11 @@ function mergeDividendPortfolio(extra){
     if (dividendPortfolioStore.positions[k] == null) dividendPortfolioStore.positions[k] = extra.positions[k];
   });
   if (!dividendPortfolioStore.totalCapital && extra.totalCapital) dividendPortfolioStore.totalCapital = extra.totalCapital;
+  if (extra.growthWindows){
+    Object.keys(extra.growthWindows).forEach(k => {
+      if (dividendPortfolioStore.growthWindows[k] == null) dividendPortfolioStore.growthWindows[k] = extra.growthWindows[k];
+    });
+  }
 }
 
 async function loadDividendPortfolioBaseline(){
@@ -2634,10 +2690,14 @@ function dividendPositionMetrics(nom, pct, totalCapital){
   const rendement = latest.rendementDiv;
   const montant = totalCapital * pct / 100;
   const dividendeAnnuel = (rendement != null) ? montant * rendement / 100 : null;
+  const growthWindow = dividendPortfolioStore.growthWindows[nom] || 'off';
+  const medianReturns = { '5': medianAnnualReturn(nom, 5), '10': medianAnnualReturn(nom, 10), '20': medianAnnualReturn(nom, 20) };
+  const selectedMedian = growthWindow !== 'off' ? medianReturns[growthWindow] : null;
   return {
     nom, pct, montant, logo: latest.lienImage,
     rendement, dividendeAnnuel,
-    cagr5: latest.cagrDiv5, cagr10: latest.cagrDiv10, cagr20: latest.cagrDiv20
+    cagr5: latest.cagrDiv5, cagr10: latest.cagrDiv10, cagr20: latest.cagrDiv20,
+    growthWindow, medianReturns, selectedMedian
   };
 }
 
@@ -2663,11 +2723,26 @@ function renderDividendPortfolio(){
   const cagrPondereWeight = rows.reduce((s, r) => s + (r.cagr10 != null ? r.pct : 0), 0);
   const cagrMoyen = cagrPondereWeight ? (cagrPondereSum / cagrPondereWeight) : null;
 
+  // Croissance du capital (plus-value) : moyenne pondérée par le poids (%) des seules
+  // positions où l'utilisateur a choisi une fenêtre de médiane (voir growthWindow, défaut
+  // 'off' = exclue) — 0% si aucune position n'en a une, comportement du simulateur
+  // inchangé par rapport à avant cette fonctionnalité (voir computeDividendSimSeries()).
+  const growthRows = rows.filter(r => r.growthWindow !== 'off' && r.selectedMedian != null);
+  const growthWeight = growthRows.reduce((s, r) => s + r.pct, 0);
+  dividendCapitalGrowthPct = growthWeight ? growthRows.reduce((s, r) => s + r.selectedMedian * r.pct, 0) / growthWeight : 0;
+
   summaryBox.innerHTML = `
     <div class="ratio-card"><div class="k">Capital investi</div><div class="v">${fmtEUR(capitalInvesti, 0)}</div><div class="sub">${rows.length} position${rows.length > 1 ? 's' : ''}</div></div>
     <div class="ratio-card"><div class="k">Alloué</div><div class="v${Math.round(pctAlloue) === 100 ? '' : ' warn'}">${pctAlloue.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</div><div class="sub">${Math.round(pctAlloue) === 100 ? 'du capital total' : 'sur 100% du capital total'}</div></div>
     <div class="ratio-card"><div class="k">Dividendes annuels estimés</div><div class="v">${fmtEUR(dividendeAnnuelTotal, 0)}</div><div class="sub">au rendement actuel</div></div>
     <div class="ratio-card"><div class="k">Rendement moyen pondéré</div><div class="v">${rendementMoyen != null ? fmtPct(rendementMoyen) : 'N/D'}</div><div class="sub">sur capital investi</div></div>`;
+
+  const growthWindowSelectHtml = (nom, current, medians) => `<select class="dividende-growth-select" data-nom="${nom}">
+      <option value="off" ${current === 'off' ? 'selected' : ''}>Off</option>
+      <option value="5" ${current === '5' ? 'selected' : ''} ${medians['5'] == null ? 'disabled' : ''}>5a${medians['5'] != null ? ' (' + fmtPct(medians['5']) + ')' : ' (N/D)'}</option>
+      <option value="10" ${current === '10' ? 'selected' : ''} ${medians['10'] == null ? 'disabled' : ''}>10a${medians['10'] != null ? ' (' + fmtPct(medians['10']) + ')' : ' (N/D)'}</option>
+      <option value="20" ${current === '20' ? 'selected' : ''} ${medians['20'] == null ? 'disabled' : ''}>20a${medians['20'] != null ? ' (' + fmtPct(medians['20']) + ')' : ' (N/D)'}</option>
+    </select>`;
 
   listBox.innerHTML = rows.length ? rows.map(r => {
     const safe = r.nom.replace(/"/g,'&quot;');
@@ -2679,6 +2754,7 @@ function renderDividendPortfolio(){
       <div class="dividende-row-field"><label>Rendement</label><span>${r.rendement != null ? fmtPct(r.rendement) : 'N/D'}</span></div>
       <div class="dividende-row-field"><label>Div. annuel</label><span>${r.dividendeAnnuel != null ? fmtEUR(r.dividendeAnnuel, 0) : 'N/D'}</span></div>
       <div class="dividende-row-field"><label>CAGR 5/10/20a</label><span>${fmtPct(r.cagr5)} / ${fmtPct(r.cagr10)} / ${fmtPct(r.cagr20)}</span></div>
+      <div class="dividende-row-field"><label>Médiane perf./an</label>${growthWindowSelectHtml(safe, r.growthWindow, r.medianReturns)}</div>
       <button class="cec-remove" data-action="dividende-remove" data-nom="${safe}" title="Retirer">✕</button>
     </div>`;
   }).join('') : '<div class="objectifs-empty">Aucune position — ajoute des entreprises depuis l\'onglet Classement (liste "Meilleur rendement du dividende").</div>';
@@ -2710,6 +2786,14 @@ function wireDividendRows(){
   document.querySelectorAll('[data-action="dividende-remove"]').forEach(btn => {
     btn.addEventListener('click', () => {
       delete dividendPortfolioStore.positions[btn.dataset.nom];
+      delete dividendPortfolioStore.growthWindows[btn.dataset.nom];
+      persistDividendPortfolioLocal();
+      renderDividendPortfolio();
+    });
+  });
+  document.querySelectorAll('.dividende-growth-select').forEach(sel => {
+    sel.addEventListener('change', () => {
+      dividendPortfolioStore.growthWindows[sel.dataset.nom] = sel.value;
       persistDividendPortfolioLocal();
       renderDividendPortfolio();
     });
@@ -2735,6 +2819,11 @@ function wireDividendRows(){
 // année donnée (dividendeSimStopYear) tout en gardant les années précédentes composées.
 let dividendSimTouched = false;
 let dividendSimHorizon = 10;
+// Croissance annuelle du CAPITAL (plus-value, pas le dividende) — moyenne pondérée des
+// médianes de performance sur 1 an choisies par position (voir renderDividendPortfolio()
+// et medianAnnualReturn()). 0 tant qu'aucune position n'a de fenêtre activée, pour ne
+// jamais changer le comportement du simulateur sans action explicite de l'utilisateur.
+let dividendCapitalGrowthPct = 0;
 function updateDividendSimDefaults(capitalTotal, rendementMoyen, cagrMoyen){
   if (dividendSimTouched) return;
   const capitalEl = document.getElementById('dividendeSimCapital');
@@ -2770,7 +2859,7 @@ function computeDividendSimSeries(overrides){
   let yieldOnCost = yieldPct;
   for (let t = 1; t <= horizon; t++){
     const reinvestThisYear = reinvest && (stopYear == null || t <= stopYear);
-    let cap = capital[t - 1] + monthly * 12;
+    let cap = capital[t - 1] * (1 + dividendCapitalGrowthPct / 100) + monthly * 12;
     if (reinvestThisYear) cap += dividende[t - 1];
     yieldOnCost *= (1 + cagr / 100);
     years.push(t);
@@ -2800,7 +2889,8 @@ function computeDividendSimChart(){
     resultsBox.innerHTML = `
       <div><div class="k">Montant investi (année ${n})</div><div class="v">${fmtEUR(capital[n], 0)}</div></div>
       <div><div class="k">Dividendes annuels (année ${n})</div><div class="v">${fmtEUR(dividende[n], 0)}</div></div>
-      <div><div class="k">Croissance div. moyenne</div><div class="v">${dividendSimInputs().cagr.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%/an</div></div>`;
+      <div><div class="k">Croissance div. moyenne</div><div class="v">${dividendSimInputs().cagr.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%/an</div></div>
+      <div><div class="k">Croissance capital (médiane)</div><div class="v">${dividendCapitalGrowthPct ? dividendCapitalGrowthPct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%/an' : 'Off'}</div></div>`;
   }
   solveDividendGoal();
 }
