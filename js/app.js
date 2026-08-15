@@ -1601,6 +1601,71 @@ async function exportZoomChartAsImage(format){
   a.click();
   document.body.removeChild(a);
 }
+// Panier d'export groupé (#exportCartWidget) : ajouter des graphiques depuis N'IMPORTE
+// QUELLE page via le bouton "🧺 Ajouter au PDF groupé" de la modale de zoom générique,
+// puis les exporter tous dans un seul PDF, dans l'ordre de sélection — demande explicite
+// de l'utilisateur ("un qui est de la macroéconomie, un qui est le chiffre d'affaires...
+// bien les mettre dans le même ordre qu'on les sélectionne"). Capture l'image AU MOMENT
+// de l'ajout (pas une référence live au chart Chart.js) : le graphique source peut être
+// détruit/recréé (changement d'entreprise, de page, fermeture de la modale...) bien avant
+// l'export final — seul l'array `exportCart` doit survivre à la navigation.
+let exportCart = [];
+let exportCartClearConfirming = false;
+
+function addCurrentZoomChartToCart(){
+  if (!window.__zoomChart) return;
+  const title = document.getElementById('zoomTitle').textContent || 'Graphique';
+  let dataUrl;
+  // Même précaution que exportZoomChartAsPdf/Image : canvas potentiellement "tainté"
+  // (donut Portfolio, logos dessinés sans crossOrigin — voir CLAUDE.md piège #13).
+  try{ dataUrl = chartToHiResDataUrl(window.__zoomChart, 'image/png', 2); }
+  catch(e){ alert("Ce graphique ne peut pas être ajouté au panier (image externe non compatible) — utilise le bouton d'export dédié de son onglet."); return; }
+  if (!dataUrl) return;
+  exportCart.push({ title, dataUrl });
+  renderExportCartWidget();
+  const btn = document.getElementById('zoomAddToCartBtn');
+  if (btn){
+    const original = btn.textContent;
+    btn.textContent = '✓ Ajouté au panier';
+    btn.disabled = true;
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1100);
+  }
+}
+
+function removeFromExportCart(idx){
+  exportCart.splice(idx, 1);
+  renderExportCartWidget();
+}
+
+function renderExportCartWidget(){
+  const widget = document.getElementById('exportCartWidget');
+  const countEl = document.getElementById('exportCartCount');
+  const listEl = document.getElementById('exportCartList');
+  const exportBtn = document.getElementById('exportCartExportBtn');
+  const clearBtn = document.getElementById('exportCartClearBtn');
+  if (!widget) return;
+  widget.style.display = exportCart.length > 0 ? 'block' : 'none';
+  countEl.textContent = exportCart.length;
+  exportBtn.disabled = exportCart.length === 0;
+  listEl.innerHTML = exportCart.length === 0
+    ? '<div class="export-cart-empty">Aucun graphique sélectionné</div>'
+    : exportCart.map((item, i) => `
+      <div class="export-cart-item">
+        <span class="export-cart-item-num">${i + 1}</span>
+        <span class="export-cart-item-title">${item.title}</span>
+        <button class="export-cart-item-remove" data-cart-remove="${i}" title="Retirer">✕</button>
+      </div>`).join('');
+  if (clearBtn) clearBtn.textContent = exportCartClearConfirming ? 'Confirmer ?' : 'Vider';
+}
+
+function exportCartAsPdf(){
+  if (exportCart.length === 0) return;
+  const body = exportCart.map(item =>
+    `<div class="print-section"><h3>${item.title}</h3><img class="print-chart-img" src="${item.dataUrl}" alt=""></div>`
+  ).join('');
+  exportSectionAsPdf('Export groupé', `${exportCart.length} graphique${exportCart.length > 1 ? 's' : ''}`, body);
+}
+
 function exportMacroChartAsPdf(key, title){
   const chart = MACRO_CHART_GETTERS[key] && MACRO_CHART_GETTERS[key]();
   if (!chart) return;
@@ -7596,6 +7661,31 @@ document.querySelectorAll('.page-subnav-btn').forEach(btn => {
 initSearch();
 initSectorGrid();
 initClassement();
+
+// Panier d'export groupé (voir renderExportCartWidget/addCurrentZoomChartToCart) — pas de
+// prompt()/confirm() natifs pour "Vider" (voir CLAUDE.md piège #7), confirmation en 2 clics
+// inline comme le pattern déjà retenu pour la suppression de fiche Analyse développée.
+document.getElementById('exportCartToggleBtn').addEventListener('click', () => {
+  const panel = document.getElementById('exportCartPanel');
+  panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
+});
+document.getElementById('exportCartExportBtn').addEventListener('click', exportCartAsPdf);
+document.getElementById('exportCartClearBtn').addEventListener('click', () => {
+  if (!exportCartClearConfirming){
+    exportCartClearConfirming = true;
+    renderExportCartWidget();
+    setTimeout(() => { exportCartClearConfirming = false; renderExportCartWidget(); }, 3000);
+    return;
+  }
+  exportCart = [];
+  exportCartClearConfirming = false;
+  renderExportCartWidget();
+});
+document.getElementById('exportCartList').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-cart-remove]');
+  if (btn) removeFromExportCart(parseInt(btn.dataset.cartRemove, 10));
+});
+renderExportCartWidget();
 
 document.getElementById('saveObjectifBtn').addEventListener('click', () => { if (activeCompany) saveObjectif(activeCompany); });
 document.getElementById('exportObjectifsBtn').addEventListener('click', exportObjectifs);

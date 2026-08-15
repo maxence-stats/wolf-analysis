@@ -757,6 +757,31 @@
   .zoom-footer{margin-top:16px;display:flex;align-items:center;justify-content:flex-end;gap:10px;font-size:11px;color:var(--text-faint);font-family:var(--font-mono);}
   .zoom-footer img{height:28px;width:auto;border-radius:5px;}
 
+  /* Panier d'export groupé : bouton "Ajouter" dans #zoomExportRow + widget flottant
+     persistant sur toutes les pages (#exportCartWidget). Sélectionner des graphiques
+     sur N'IMPORTE QUELLE page de l'app puis les exporter tous dans un seul PDF, dans
+     l'ordre de sélection — demande explicite de l'utilisateur. */
+  .export-cart-add-btn{margin-left:auto;background:linear-gradient(135deg,var(--gold),var(--gold-2));color:#1A1305;border:none;font-weight:700;}
+  .export-cart-add-btn:hover{color:#1A1305;filter:brightness(1.08);}
+  .export-cart-widget{position:fixed;right:22px;bottom:22px;z-index:1002;font-family:var(--font-body);}
+  .export-cart-toggle{display:flex;align-items:center;gap:7px;background:var(--card-bg);border:1px solid var(--card-border);color:var(--text);border-radius:999px;padding:10px 16px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,0.4);}
+  .export-cart-toggle:hover{border-color:var(--gold);}
+  .export-cart-toggle span{background:var(--gold);color:#1A1305;border-radius:999px;min-width:20px;height:20px;padding:0 5px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-family:var(--font-mono);}
+  .export-cart-panel{position:absolute;right:0;bottom:calc(100% + 10px);width:320px;max-height:70vh;display:flex;flex-direction:column;background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,0.5);overflow:hidden;}
+  .export-cart-panel-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--hair);font-weight:700;font-size:13px;}
+  .export-cart-panel-head button{background:none;border:none;color:var(--text-faint);font-size:11px;font-family:var(--font-mono);cursor:pointer;}
+  .export-cart-panel-head button:hover{color:var(--red);}
+  .export-cart-list{overflow-y:auto;flex:1;padding:6px 8px;display:flex;flex-direction:column;gap:6px;}
+  .export-cart-item{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.03);border-radius:8px;padding:6px 8px;}
+  .export-cart-item-num{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);min-width:14px;}
+  .export-cart-item-title{flex:1;font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .export-cart-item-remove{background:none;border:none;color:var(--text-faint);font-size:14px;cursor:pointer;line-height:1;padding:2px 4px;}
+  .export-cart-item-remove:hover{color:var(--red);}
+  .export-cart-empty{padding:20px 10px;text-align:center;color:var(--text-faint);font-size:12px;}
+  .export-cart-export-btn{margin:8px;padding:10px;border:none;border-radius:8px;background:linear-gradient(135deg,var(--gold),var(--gold-2));color:#1A1305;font-weight:700;font-size:13px;cursor:pointer;}
+  .export-cart-export-btn:hover{filter:brightness(1.08);}
+  .export-cart-export-btn:disabled{opacity:0.5;cursor:not-allowed;filter:none;}
+
   footer{margin-top:40px;text-align:center;font-size:11px;color:var(--text-faint);font-family:var(--font-mono);}
 
   @media (max-width:1300px){

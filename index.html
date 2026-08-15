@@ -816,11 +816,28 @@
       <button onclick="exportZoomChartAsPdf()">PDF</button>
       <button onclick="exportZoomChartAsImage('png')">PNG</button>
       <button onclick="exportZoomChartAsImage('jpg')">JPG</button>
+      <button id="zoomAddToCartBtn" class="export-cart-add-btn" onclick="addCurrentZoomChartToCart()">🧺 Ajouter au PDF groupé</button>
     </div>
     <div class="zoom-footer">
       Données fournies par Wolf Analysis
       <img src="https://i.postimg.cc/43WmYDB1/20260714-LOGO-WINTER-PNG.png" alt="Wolf Analysis">
     </div>
+  </div>
+</div>
+
+<!-- Panier d'export groupé : sélectionner des graphiques sur N'IMPORTE QUELLE page (via
+     le bouton "🧺 Ajouter" dans la modale de zoom générique) et les exporter tous dans un
+     seul PDF, dans l'ordre de sélection — demande explicite de l'utilisateur. Flottant,
+     visible sur toutes les pages, indépendant de la modale de zoom elle-même. -->
+<div id="exportCartWidget" class="export-cart-widget" style="display:none;">
+  <button id="exportCartToggleBtn" class="export-cart-toggle">🧺 <span id="exportCartCount">0</span></button>
+  <div id="exportCartPanel" class="export-cart-panel" style="display:none;">
+    <div class="export-cart-panel-head">
+      <span>Export groupé</span>
+      <button id="exportCartClearBtn" title="Vider">Vider</button>
+    </div>
+    <div id="exportCartList" class="export-cart-list"></div>
+    <button id="exportCartExportBtn" class="export-cart-export-btn">⭳ Exporter le PDF</button>
   </div>
 </div>
 
