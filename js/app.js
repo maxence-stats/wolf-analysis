@@ -32,13 +32,17 @@ let chartInstances = {};
 /* Onglet "Wolf portefeuille" — même fichier publié, gid différent */
 const PORTFOLIO_GID = "58524400";
 const PORTFOLIO_CSV_URL = `https://docs.google.com/spreadsheets/d/e/${PUBLISHED_ID}/pub?gid=${PORTFOLIO_GID}&single=true&output=csv`;
+// Décalage de +2 colonnes constaté (et vérifié champ par champ contre le JSON réel de
+// l'API Apps Script — voir loadAllDataFromAppsScript) par rapport à l'ancien mapping
+// CSV/gviz : deux colonnes ont dû être insérées dans le Sheet depuis la dernière
+// vérification. Décalage uniforme sur tout le bloc, cohérent d'un champ à l'autre.
 const PCOL = {
-  actif:21, valorisation:22, investi:23, perf:24,             // V, W, X, Y
-  capitalInvesti:26, valorisationTotale:29,                    // AA, AD
-  gainsEuros:32, gainsPct:35,                                  // AG, AJ
-  cashEuros:38,                                                 // AM
-  moisDate:41, moisValo:43, moisRendement:45, rendementTotal:46, // AP, AR, AT, AU
-  spxPerfMensuelle:47, spxPerfTotale:48, spxValorisation:49     // AV, AW, AX
+  actif:23, valorisation:24, investi:25, perf:26,             // X, Y, Z, AA
+  capitalInvesti:28, valorisationTotale:31,                    // AC, AF
+  gainsEuros:34, gainsPct:37,                                  // AI, AL
+  cashEuros:40,                                                 // AO
+  moisDate:43, moisValo:45, moisRendement:47, rendementTotal:48, // AR, AT, AV, AW
+  spxPerfMensuelle:49, spxPerfTotale:50, spxValorisation:51     // AX, AY, AZ
 };
 let portfolioData = { holdings:[], monthly:[], capitalInvesti:null, valorisationTotale:null, gainsEuros:null, gainsPct:null, cashEuros:null };
 
@@ -89,6 +93,55 @@ let persoSparseFieldsFailed = false;
       aux requêtes réseau depuis un fichier ouvert en local (file://)
    ============================================================ */
 const SHEET_ID = "1V4NaDx7PvnJkPMtddGgW23Hjn0jon1g0UjoC4o6FchM";
+
+// Endpoint Apps Script unique (Web App déployé par l'utilisateur, "Anyone" access) —
+// remplace le duo fetch()+gviz par source (jusqu'à ~14 requêtes simultanées vers
+// docs.google.com, cause probable de la plupart des échecs de chargement constatés
+// cette session) par UN seul appel qui renvoie toutes les données en JSON. Contrairement
+// à fetch() direct vers docs.google.com, un Web App Apps Script envoie bien les en-têtes
+// CORS nécessaires même depuis une origine null (file://) — vérifié en conditions
+// réelles avant de basculer dessus. Chaque onglet est renvoyé en TABLEAU BRUT
+// (sheet.getDataRange().getValues(), pas d'objets par en-tête — un premier essai avec
+// des objets échouait pour les onglets "tableau de bord" à plusieurs blocs ET perdait
+// des données pour Prix Action 20 ans, deux colonnes adjacentes partageant le même
+// en-tête vide s'écrasant l'une l'autre), donc directement compatible avec les
+// parseurs par reconnaissance de contenu déjà utilisés partout ailleurs sur le site —
+// mêmes fonctions handleXxxRows(), juste une source de rows différente.
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzyM-PCKaWjBpSh4y8ATEuyInO5JTRd9HO7cWDRqo_nMKjQSaSLxLIV1HkO6DcqwNj3/exec';
+
+async function loadAllDataFromAppsScript(){
+  document.getElementById('loadingScreen').style.display = 'block';
+  document.getElementById('errorScreen').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'none';
+  setSync('loading');
+  setDebug('Connexion via la méthode alternative (script)…');
+  try{
+    const res = await Promise.race([
+      fetch(APPS_SCRIPT_URL, { cache:'no-store' }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 20000))
+    ]);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (typeof data !== 'object' || data === null) throw new Error('réponse invalide');
+    setDebug('Connecté via la méthode alternative (script).');
+    handleCsvRows(data['DATA BASE 20 ans'] || []);
+    if (data['WOLF Portefeuille']) handlePortfolioRows(data['WOLF Portefeuille']);
+    if (data['PRIX ACTION 20 ANS']) handlePriceHistoryRows(data['PRIX ACTION 20 ANS']);
+    if (data['DATA SECTORIELS US']){
+      handleMacroRotationRows(data['DATA SECTORIELS US']);
+      handleMacroCycleRowsFromSectoriels(data['DATA SECTORIELS US']);
+    }
+    if (data['DASHBOARD CYCLE']){
+      handleMacroPowerRows(data['DASHBOARD CYCLE']);
+      macroFundamentalsData = parseMacroFundamentalsFromDashboard(data['DASHBOARD CYCLE']);
+      if (macroFundamentalsData) renderMacroFundamentalsTable(); else renderMacroFundamentalsError();
+    }
+    if (data['SYNTHESE PORTEFEUILLE']) handlePersoRows(data['SYNTHESE PORTEFEUILLE']);
+  }catch(e){
+    console.error('Erreur de chargement (Apps Script) :', e);
+    showError("Impossible de charger les données depuis l'endpoint Apps Script. Vérifie que le script est bien déployé (Déployer → Gérer les déploiements → Nouvelle version) et que le lien est correct. Détail technique en console (F12).");
+  }
+}
 
 let loadSettled = false; // partagé entre les deux méthodes, pour n'accepter que le premier succès
 
@@ -306,19 +359,10 @@ function handleCsvRows(rows){
   document.getElementById('dashboard').style.display = 'block';
   setSync('ok');
 
-  // Étalées dans le temps (150ms d'écart) plutôt que déclenchées toutes dans le même
-  // tick : 5 sources gviz simultanées (+ Perso, chargée séparément) semblent parfois se
-  // faire throttle silencieusement par le point d'entrée gviz de Google ou la limite de
-  // connexions simultanées du navigateur — la source Force relative sectorielle en
-  // particulier restait vide sans aucune erreur visible. Décalage simple, coût nul,
-  // réduit le risque de collision réseau.
-  // Décalage élargi (150ms -> 400ms, retour utilisateur : toujours des échecs de
-  // chargement constatés malgré le décalage initial) — le vrai goulot semble être la
-  // limite de connexions simultanées du navigateur vers docs.google.com (jusqu'à ~14
-  // requêtes fetch+gviz en même temps toutes sources confondues sur cette page), pas
-  // juste un throttle gviz ponctuel.
-  [loadPortfolioData, loadPriceHistoryData, loadMacroCycleData, loadMacroRotationData, loadMacroPowerData]
-    .forEach((fn, i) => setTimeout(fn, i * 400));
+  // Les sources secondaires (Portfolio, historique de prix, macro...) ne sont PLUS
+  // déclenchées ici — voir loadAllDataFromAppsScript() : un seul appel réseau les
+  // apporte toutes désormais, plus besoin de les étaler dans le temps pour éviter la
+  // contention réseau (l'ancien problème que ce délai contournait).
 }
 
 /* ============================================================
@@ -730,7 +774,14 @@ function tryGvizPriceHistoryScript(){
 // différentes), donc on n'apparie jamais une clôture à autre chose qu'à la date de SA
 // propre colonne.
 function parseFrenchSheetDate(str){
-  const m = String(str || '').match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  const s = String(str || '');
+  // Sheet publié en CSV/gviz : "18/08/2006". Sheet lu via l'API Apps Script
+  // (SpreadsheetApp.getValues()) : les cellules Date sérialisent en ISO 8601
+  // ("2006-08-18T15:40:00.000Z") — les deux sources doivent rester lisibles ici, cette
+  // fonction est partagée par tous les parseurs qui consomment l'une ou l'autre.
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return iso[1] + '-' + iso[2] + '-' + iso[3];
+  const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
   if (!m) return null;
   return m[3] + '-' + m[2] + '-' + m[1]; // YYYY-MM-DD, même convention que Yahoo/Stooq
 }
@@ -839,16 +890,24 @@ function colToIdx(letters){
    Colonne Technologie réelle = O (pas K, qui contient encore XLK/100 brut : correction
    trouvée en inspectant le CSV réel, vérifiée valeur par valeur avant d'écrire ce code —
    voir "Pièges techniques" point 11). */
-const MACRO_CYCLE_GID = '1014329874';
 let macroCycleData = null; // { dates, ratio, ema, plus1, minus1, plus2, minus2, euphorie, panique }
 let macroCycleRange = '20';
 
-function loadMacroCycleData(){
-  loadSheetDual(MACRO_CYCLE_GID, '__handleMacroCycleGviz', handleMacroCycleRows);
-}
-
-function handleMacroCycleRows(rows){
-  const col = { date:colToIdx('G'), ratio:colToIdx('AV'), ema:colToIdx('AW'), p2:colToIdx('AY'), m2:colToIdx('AZ'), p1:colToIdx('BA'), m1:colToIdx('BB'), euph:colToIdx('BD'), pan:colToIdx('BE') };
+// L'ancien onglet dédié "Cycle de Marché" (gid 1014329874) a été fusionné par
+// l'utilisateur dans "DATA SECTORIELS US" (même onglet que Rotation Sectorielle) —
+// colonnes vérifiées directement contre le JSON réel de l'API Apps Script avant
+// d'écrire ce mapping (voir loadAllDataFromAppsScript) : date=index 6 (partagée avec
+// le bloc XLK de Rotation Sectorielle), ratio=81, EMA20=82, écart type=83, +2σ=84,
+// -2σ=85, +1σ=86, -1σ=87 — un premier comptage à la main (77/78/80/81/82/83) était
+// décalé de +4, corrigé après vérification programmatique des positions réelles dans
+// row0 (super-en-têtes "RATIO"/"EMA 20"/"ECART TYPE"/"2 ECART TYPE"/...). Valeurs
+// re-vérifiées après correction : ema proche du ratio, écart type petit (~0,02-0,04),
+// p2/m2/p1/m1 cohérents avec ema±2×écart-type / ema±1×écart-type. Pas de colonnes
+// "euphorie"/"panique" précalculées dans ce nouvel onglet fusionné (elles existaient
+// dans l'ancien) — dérivées ici directement du ratio comparé aux bandes ±2σ, même
+// seuil sémantique que l'ancien calcul Sheet.
+function handleMacroCycleRowsFromSectoriels(rows){
+  const col = { date:6, ratio:81, ema:82, p2:84, m2:85, p1:86, m1:87 };
   const out = { dates:[], ratio:[], ema:[], plus1:[], minus1:[], plus2:[], minus2:[], euphorie:[], panique:[] };
   for (let r = 2; r < rows.length; r++){
     const row = rows[r];
@@ -856,15 +915,16 @@ function handleMacroCycleRows(rows){
     const date = parseFrenchSheetDate(row[col.date]);
     const ratio = parseNum(row[col.ratio]);
     if (!date || ratio == null) continue;
+    const plus2 = parseNum(row[col.p2]), minus2 = parseNum(row[col.m2]);
     out.dates.push(date);
     out.ratio.push(ratio);
     out.ema.push(parseNum(row[col.ema]));
     out.plus1.push(parseNum(row[col.p1]));
     out.minus1.push(parseNum(row[col.m1]));
-    out.plus2.push(parseNum(row[col.p2]));
-    out.minus2.push(parseNum(row[col.m2]));
-    out.euphorie.push(parseNum(row[col.euph]));
-    out.panique.push(parseNum(row[col.pan]));
+    out.plus2.push(plus2);
+    out.minus2.push(minus2);
+    out.euphorie.push(plus2 != null && ratio > plus2 ? 1 : 0);
+    out.panique.push(minus2 != null && ratio < minus2 ? 1 : 0);
   }
   macroCycleData = out;
   document.getElementById('macroCycleStatus').style.display = 'none';
@@ -1505,162 +1565,69 @@ function exportMacroFullPageAsPdf(){
   exportSectionAsPdf('Macroéconomie', "Vue d'ensemble — graphiques et tableaux", chartHtml + tableHtml);
 }
 
-// Indicateurs macro US (PIB, taux, inflation) : en attente des 2 clés API gratuites
-// (BEA + FRED, voir CLAUDE.md "Onglet Macroéconomie") pour un chargement automatique —
-// tant qu'elles ne sont pas fournies, affiche un message explicite plutôt qu'un bloc vide.
-// Clés fournies par l'utilisateur pour ce chargement 100% client (voir CLAUDE.md
-// "Onglet Macroéconomie" — clés gratuites, faible privilège, pas de risque financier
-// en cas d'exposition, contrairement à une clé payante).
-const BEA_API_KEY = '856D6733-5908-4AA9-B95C-8A06DC3DD0B9';
-const FRED_API_KEY = '20504787eb914aca27e3c1f273fd493a';
-const MACRO_FUND_LS_KEY = 'wolfAnalysisMacroFundamentals';
-const MACRO_FUND_MIN_YEAR = 2006; // même fenêtre que les autres historiques du site
-const MACRO_FUND_CACHE_MS = 24 * 3600 * 1000; // 1 jour — évite de re-fetch à chaque visite
+// Indicateurs macro US (PIB, taux, inflation) : lus depuis l'onglet Sheet "DASHBOARD
+// CYCLE" (table maintenue à la main par l'utilisateur) plutôt que les API BEA/FRED en
+// direct — décision explicite de l'utilisateur après les problèmes de fiabilité
+// réseau constatés cette session ("ne pas aller chercher les données macro sur le
+// site de la FRED, ça ne fonctionne pas"). Plus de fetch réseau séparé ici : la table
+// arrive déjà dans le même JSON que tout le reste (voir loadAllDataFromAppsScript).
 let macroFundamentalsData = null;
 
-// BEA envoie Access-Control-Allow-Origin:* (vérifié directement), appelable en
-// direct depuis le navigateur — contrairement à FRED (voir plus bas).
-// Promise.race avec un timer (jamais soumis aux restrictions réseau) plutôt qu'un
-// AbortController seul, qui peut ne pas suffire à débloquer un fetch() resté en
-// attente indéfiniment sur file:// (piège documenté, CLAUDE.md "Pièges techniques" #2)
-// — sans ça, Promise.all() dans loadMacroFundamentalsData() peut ne jamais se résoudre
-// ni rejeter, laissant le bloc fondamentaux bloqué en silence pour toujours.
-async function fetchBeaTable(tableName){
-  const url = `https://apps.bea.gov/api/data?UserID=${BEA_API_KEY}&method=GetData&datasetname=NIPA&TableName=${tableName}&Frequency=Q&Year=X&ResultFormat=JSON`;
-  const res = await Promise.race([
-    fetch(url, { cache:'no-store' }),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout BEA')), 12000))
-  ]);
-  const json = await res.json();
-  return (json.BEAAPI && json.BEAAPI.Results && json.BEAAPI.Results.Data) || [];
-}
-
-function beaLineSeries(data, lineNumber){
-  const out = {};
-  data.forEach(r => {
-    if (String(r.LineNumber) === String(lineNumber) && /^\d{4}Q[1-4]$/.test(r.TimePeriod)){
-      const year = parseInt(r.TimePeriod.slice(0, 4), 10);
-      if (year >= MACRO_FUND_MIN_YEAR) out[r.TimePeriod] = parseFloat(String(r.DataValue).replace(/,/g, ''));
-    }
-  });
-  return out;
-}
-
-// FRED n'envoie aucun en-tête CORS (vérifié, même comportement que Yahoo/Stooq) —
-// passe par le même relais déjà en place (fetchWithRetry/corsProxyUrls).
-async function fetchFredSeries(seriesId, units){
-  const params = `series_id=${seriesId}&api_key=${FRED_API_KEY}&file_type=json${units ? '&units=' + units : ''}&observation_start=${MACRO_FUND_MIN_YEAR}-01-01`;
-  const res = await fetchWithRetry(`https://api.stlouisfed.org/fred/series/observations?${params}`, { cache:'no-store' }, 15000);
-  const json = await res.json();
-  return json.observations || [];
-}
-
-// Dernière observation connue à la date donnée ou avant (fin de trimestre) — pas une
-// moyenne, juste "où en était-on à ce moment-là".
-function fredValueAtOrBefore(observations, dateStr){
-  let val = null;
-  for (const o of observations){
-    if (o.date > dateStr) break;
-    if (o.value !== '.') val = parseFloat(o.value);
+// Recherche de contenu (jamais de position fixe, voir "Pièges techniques" #10) :
+// repère la ligne d'en-tête via la cellule "C (%)", en déduit la position des autres
+// colonnes par leur propre libellé (robuste à un éventuel décalage de colonne/ligne).
+// Pas de PIB niveau/croissance dans cette table (contrairement aux données BEA
+// précédemment utilisées) — ces deux champs restent à null, la colonne s'affichera
+// "N/D" plutôt que d'inventer une valeur.
+function parseMacroFundamentalsFromDashboard(rows){
+  let headerRow = -1, cCol = -1;
+  for (let r = 0; r < rows.length; r++){
+    const row = rows[r];
+    if (!row) continue;
+    const idx = row.findIndex(cell => String(cell).trim() === 'C (%)');
+    if (idx !== -1){ headerRow = r; cCol = idx; break; }
   }
-  return val;
+  if (headerRow === -1) return null;
+  const header = rows[headerRow];
+  const findCol = label => header.findIndex(cell => String(cell).trim() === label);
+  const col = {
+    c: cCol,
+    i: findCol('I (%)'),
+    g: findCol('G (%)'),
+    trade: findCol('X-M Billions of Dollars'),
+    taux10: findCol('Taux à 10 ans (%)'),
+    taux2: findCol('Taux à 2 ans (%)'),
+    spread: findCol('Spreed 10-2Y (%)'),
+    inflation: findCol('Inflation (%)'),
+    realRate: findCol('Taux réel (%)')
+  };
+  const out = [];
+  for (let r = headerRow + 1; r < rows.length; r++){
+    const row = rows[r];
+    if (!row) continue;
+    // Le libellé trimestre ("Q1 2025") est quelques colonnes avant "C (%)" sur cette
+    // ligne — recherche de contenu (regex) plutôt qu'un décalage fixe.
+    const quarterCell = row.slice(0, col.c).reverse().find(v => /^Q[1-4]\s+\d{4}$/.test(String(v).trim()));
+    if (!quarterCell) continue;
+    out.push({
+      quarter: String(quarterCell).trim(),
+      gdp: null, gdpGrowth: null,
+      c: parseNum(row[col.c]), i: parseNum(row[col.i]), g: parseNum(row[col.g]),
+      trade: parseNum(row[col.trade]),
+      taux10: parseNum(row[col.taux10]), taux2: parseNum(row[col.taux2]),
+      spread: parseNum(row[col.spread]),
+      inflation: parseNum(row[col.inflation]),
+      realRate: parseNum(row[col.realRate])
+    });
+  }
+  return out.length ? out : null;
 }
-
-const MACRO_FUND_QUARTER_END = { Q1:'-03-31', Q2:'-06-30', Q3:'-09-30', Q4:'-12-31' };
 
 function renderMacroFundamentalsError(){
   const box = document.getElementById('macroFundamentalsTable');
-  let staleNote = '';
-  let stale = null;
-  try{ stale = JSON.parse(localStorage.getItem(MACRO_FUND_LS_KEY) || 'null'); }catch(e){ /* ignore */ }
-  if (stale && stale.rows && stale.rows.length){
-    macroFundamentalsData = stale.rows;
-    const ageDays = Math.floor((Date.now() - stale.fetchedAt) / 86400000);
-    staleNote = `<p class="macro-fund-note">⚠️ Rafraîchissement échoué (BEA/FRED indisponibles ou relais CORS en
-      panne temporaire) — dernières données connues affichées, mises à jour il y a ${ageDays} jour${ageDays > 1 ? 's' : ''}.</p>`;
-    renderMacroFundamentalsTable();
-    if (box) box.insertAdjacentHTML('afterbegin', staleNote);
-    return;
-  }
-  if (box) box.innerHTML = `<p class="macro-fund-note">Impossible de charger les indicateurs macro pour le moment
-    (BEA/FRED indisponibles, clé invalide, ou relais CORS temporairement en panne).
-    <button id="macroFundRetryBtn" class="macro-fund-retry">↻ Réessayer</button></p>`;
-  const retryBtn = document.getElementById('macroFundRetryBtn');
-  if (retryBtn) retryBtn.addEventListener('click', () => loadMacroFundamentalsData(true));
-}
-
-async function loadMacroFundamentalsData(forceRefresh, isRetry){
-  if (!forceRefresh){
-    try{
-      const cached = JSON.parse(localStorage.getItem(MACRO_FUND_LS_KEY) || 'null');
-      if (cached && cached.fetchedAt && (Date.now() - cached.fetchedAt) < MACRO_FUND_CACHE_MS){
-        macroFundamentalsData = cached.rows;
-        renderMacroFundamentalsTable();
-        return;
-      }
-    }catch(e){ /* cache corrompu — on refetch normalement */ }
-  }
-
-  try{
-    const [t10101, t10105, dgs10, dgs2, cpi] = await Promise.all([
-      fetchBeaTable('T10101'), fetchBeaTable('T10105'),
-      fetchFredSeries('DGS10'), fetchFredSeries('DGS2'), fetchFredSeries('CPIAUCSL', 'pc1')
-    ]);
-
-    // Lignes confirmées une par une contre les valeurs déjà saisies manuellement par
-    // l'utilisateur dans le Sheet avant d'écrire ce mapping (mêmes précautions que pour
-    // les colonnes de la feuille "Cycle de Marché", voir "Pièges techniques" point 14) :
-    // T10101 L2=Consommation, L7=Investissement, L22=Dépenses publiques (% variation
-    // annualisée) ; T10105 L1=PIB nominal, L15=Exportations nettes (niveau, $) — la
-    // colonne "X-M Md$" du Sheet s'est avérée être la VARIATION trimestre sur trimestre
-    // du niveau, pas le niveau lui-même (vérifié : la différence entre deux trimestres
-    // consécutifs de L15 correspond exactement aux valeurs déjà présentes dans le Sheet).
-    const cSeries = beaLineSeries(t10101, 2);
-    const iSeries = beaLineSeries(t10101, 7);
-    const gSeries = beaLineSeries(t10101, 22);
-    const gdpSeries = beaLineSeries(t10105, 1);
-    const netExSeries = beaLineSeries(t10105, 15);
-    // Croissance RÉELLE du PIB (T10101 ligne 1, % variation annualisée, chaîné —
-    // équivalent à la série FRED GDPC1/A191RL) en plus du niveau nominal — sans elle,
-    // le PIB n'était affiché qu'en niveau brut ($ courants), sans indication de
-    // croissance, ce qui pouvait donner une impression de donnée incomplète/incohérente.
-    const gdpGrowthSeries = beaLineSeries(t10101, 1);
-
-    const quarters = Object.keys(gdpSeries).sort();
-    const rows = [];
-    let prevNetEx = null;
-    quarters.forEach(q => {
-      const qn = q.slice(4);
-      const endDate = q.slice(0, 4) + MACRO_FUND_QUARTER_END[qn];
-      const taux10 = fredValueAtOrBefore(dgs10, endDate);
-      const taux2 = fredValueAtOrBefore(dgs2, endDate);
-      const inflation = fredValueAtOrBefore(cpi, endDate);
-      const netEx = netExSeries[q] != null ? netExSeries[q] / 1000 : null;
-      const trade = (netEx != null && prevNetEx != null) ? netEx - prevNetEx : null;
-      if (netEx != null) prevNetEx = netEx;
-      rows.push({
-        quarter: qn + ' ' + q.slice(0, 4),
-        gdp: gdpSeries[q] != null ? gdpSeries[q] / 1000 : null,
-        gdpGrowth: gdpGrowthSeries[q],
-        c: cSeries[q], i: iSeries[q], g: gSeries[q],
-        trade, taux10, taux2,
-        spread: (taux10 != null && taux2 != null) ? taux10 - taux2 : null,
-        inflation,
-        realRate: (taux10 != null && inflation != null) ? taux10 - inflation : null
-      });
-    });
-
-    macroFundamentalsData = rows;
-    try{ localStorage.setItem(MACRO_FUND_LS_KEY, JSON.stringify({ fetchedAt: Date.now(), rows })); }catch(e){ /* quota / navigateur privé */ }
-    renderMacroFundamentalsTable();
-  }catch(e){
-    // Échec probablement dû à la contention réseau au chargement (beaucoup de sources
-    // Sheet/API en vol en même temps) plutôt qu'une vraie panne BEA/FRED — un réessai
-    // automatique a de bonnes chances de passer, avant d'afficher l'erreur avec bouton
-    // manuel (même logique que loadMacroPowerData()/refetchPersoSparseFieldsViaCsv()).
-    if (!isRetry) return loadMacroFundamentalsData(forceRefresh, true);
-    renderMacroFundamentalsError();
-  }
+  if (box) box.innerHTML = `<p class="macro-fund-note">Impossible de trouver la table des indicateurs macro dans
+    l'onglet "DASHBOARD CYCLE" du Sheet (libellé "C (%)" introuvable) — vérifie que la table n'a pas été déplacée
+    ou renommée.</p>`;
 }
 
 // Seuils donnés explicitement par l'utilisateur pour ce tableau (distincts de ceux du
@@ -1691,11 +1658,8 @@ function renderMacroFundamentalsTable(){
       <td>${r.trade != null ? (r.trade >= 0 ? '+' : '') + r.trade.toLocaleString('fr-FR', {maximumFractionDigits:0}) + ' Md$' : '—'}</td>
       ${pctCell(r.taux10, 2)}${pctCell(r.taux2, 2)}${pctCell(r.spread, 2)}${pctCell(r.inflation, 1)}${pctCell(r.realRate, 2)}
     </tr>`).join('')}</tbody></table></div>
-    <p class="macro-fund-note" style="margin-top:10px;">Sources : BEA table T10101 (croissance réelle du PIB, de la
-    consommation, de l'investissement, des dépenses publiques — % annualisé, révisé, jamais une projection) et
-    T10105 (niveau du PIB, balance commerciale) ; FRED séries DGS10/DGS2 (taux quotidiens réels de marché) et
-    CPIAUCSL (inflation YoY réelle) — spread et taux réel calculés par simple soustraction. Rechargé
-    automatiquement toutes les 24h.</p>`;
+    <p class="macro-fund-note" style="margin-top:10px;">Source : table "DASHBOARD CYCLE" du Sheet, maintenue
+    manuellement — PIB (niveau/croissance) non disponible dans cette table.</p>`;
 }
 
 // Palette or/bleu (contrainte design system : jamais de violet, réservé au décoratif —
@@ -6908,7 +6872,7 @@ async function ensureChartJs(){
   return false;
 }
 
-document.getElementById('refreshBtn').addEventListener('click', loadData);
+document.getElementById('refreshBtn').addEventListener('click', loadAllDataFromAppsScript);
 document.querySelectorAll('.page-nav-btn').forEach(btn => {
   btn.addEventListener('click', () => switchPage(btn.dataset.page));
 });
@@ -6941,7 +6905,6 @@ loadAlertesBaseline();
 initFicheModal();
 initAnalyseModal();
 initCerveauImagePicker();
-loadMacroFundamentalsData();
 document.getElementById('openAnalyseTag').addEventListener('click', () => { if (activeCompany) openAnalyse(activeCompany); });
 loadCerveauData();
 loadIdeesBaseline();
@@ -6977,14 +6940,12 @@ document.getElementById('persoBlurToggleBtn').addEventListener('click', function
     return;
   }
   configureChartDefaults();
-  // Déplacés ici (n'étaient PAS gardés par ensureChartJs() avant) : ces deux chargeurs
-  // rendent un graphique Chart.js dès que leur réponse arrive (gviz, un <script>, peut
-  // répondre très vite) — s'ils démarrent avant que Chart.js soit confirmé chargé, une
-  // réponse rapide fait planter le rendu avec "Chart is not defined" (bug confirmé par
-  // capture de la console utilisateur). loadData() gère déjà ça correctement puisqu'il
-  // était le seul appelé ici ; ces deux-là traînaient par erreur en dehors de ce garde-fou.
+  // Après confirmation que Chart.js est chargé (sinon "Chart is not defined" si la
+  // réponse arrive trop vite, bug déjà rencontré cette session). loadDividendPortfolioBaseline()
+  // ne dépend que d'un fichier JSON local (data/dividende.json), sans rapport avec
+  // Google Sheets ; loadAllDataFromAppsScript() apporte tout le reste (données
+  // principales, Portfolio, historique de prix, macro, Perso) en un seul appel.
   loadDividendPortfolioBaseline();
-  loadPersoData();
-  loadData();
+  loadAllDataFromAppsScript();
 })();
 
