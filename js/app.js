@@ -109,16 +109,22 @@ const SHEET_ID = "1V4NaDx7PvnJkPMtddGgW23Hjn0jon1g0UjoC4o6FchM";
 // mêmes fonctions handleXxxRows(), juste une source de rows différente.
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzyM-PCKaWjBpSh4y8ATEuyInO5JTRd9HO7cWDRqo_nMKjQSaSLxLIV1HkO6DcqwNj3/exec';
 
-async function loadAllDataFromAppsScript(){
+// Le JSON combiné (~3 Mo, tous les onglets fusionnés en un seul appel) met parfois
+// plus de 20s à revenir (constaté en test : un fetch isolé a pris ~13s, et sous charge
+// réelle — polices, Chart.js, fallback Yahoo/Stooq en parallèle — ça dépasse souvent ce
+// délai), ce qui faisait échouer TOUT le chargement au hasard (écran d'erreur complet,
+// y compris quand seul le Wolf Portfolio ou le Perso avaient besoin d'un peu plus de
+// temps). Délai porté à 45s + une nouvelle tentative automatique avant d'abandonner.
+async function loadAllDataFromAppsScript(retried){
   document.getElementById('loadingScreen').style.display = 'block';
   document.getElementById('errorScreen').style.display = 'none';
   document.getElementById('dashboard').style.display = 'none';
   setSync('loading');
-  setDebug('Connexion via la méthode alternative (script)…');
+  setDebug(retried ? 'Nouvelle tentative de connexion…' : 'Connexion via la méthode alternative (script)…');
   try{
     const res = await Promise.race([
       fetch(APPS_SCRIPT_URL, { cache:'no-store' }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 20000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 45000))
     ]);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
@@ -138,8 +144,9 @@ async function loadAllDataFromAppsScript(){
     }
     if (data['SYNTHESE PORTEFEUILLE']) handlePersoRows(data['SYNTHESE PORTEFEUILLE']);
   }catch(e){
+    if (!retried){ loadAllDataFromAppsScript(true); return; }
     console.error('Erreur de chargement (Apps Script) :', e);
-    showError("Impossible de charger les données depuis l'endpoint Apps Script. Vérifie que le script est bien déployé (Déployer → Gérer les déploiements → Nouvelle version) et que le lien est correct. Détail technique en console (F12).");
+    showError("Impossible de charger les données depuis l'endpoint Apps Script après deux tentatives. Vérifie que le script est bien déployé (Déployer → Gérer les déploiements → Nouvelle version) et que le lien est correct. Détail technique en console (F12).");
   }
 }
 
@@ -1155,8 +1162,8 @@ function openMacroWeightZoom(){
   document.getElementById('zoomCagrRow').innerHTML = '';
   zoomKey = null;
   if (window.__zoomChart) window.__zoomChart.destroy();
-  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), buildMacroWeightChartConfig());
   document.getElementById('zoomModal').style.display = 'flex';
+  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), buildMacroWeightChartConfig());
 }
 
 /* ---- Force relative sectorielle : onglet "Dashboard cycle", positions fixes (pas de
@@ -1917,8 +1924,8 @@ function openPortfolioZoom(){
   document.getElementById('zoomCagrRow').innerHTML = '';
   zoomKey = null;
   if (window.__zoomChart) window.__zoomChart.destroy();
-  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), config);
   document.getElementById('zoomModal').style.display = 'flex';
+  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), config);
 }
 
 function renderPortfolioHoldingsList(){
@@ -2258,8 +2265,8 @@ function openPersoDonutZoom(prefix, block, label){
   document.getElementById('zoomStockIndicatorRow').style.display = 'none';
   zoomKey = null;
   if (window.__zoomChart) window.__zoomChart.destroy();
-  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), config);
   document.getElementById('zoomModal').style.display = 'flex';
+  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), config);
 }
 
 let persoVsCacCharts = { pea:null, cto:null };
@@ -4194,6 +4201,13 @@ function openZoom(key, title){
   zoomKey = key;
   zoomRange = 'max';
   document.getElementById('zoomTitle').textContent = title;
+  // La modale doit être rendue visible AVANT de construire le graphique : Chart.js lit
+  // les dimensions réelles du <canvas> à la création, et un canvas encore dans un
+  // ancêtre display:none mesure 0×0 — le graphique se crée bien (pas d'erreur) mais ne
+  // dessine rien, et ne se corrige jamais tout seul ensuite (rien ne déclenche de resize
+  // après coup). Constaté en test direct : 0×0 avant ce réordonnancement, dimensions
+  // réelles après.
+  document.getElementById('zoomModal').style.display = 'flex';
   renderZoomRangeRow();
   renderZoomCagrRow();
   renderZoomChart();
@@ -4239,7 +4253,6 @@ function openZoom(key, title){
   const logo = isCompanyChart && activeCompany ? companyLogoUrl(activeCompany) : null;
   logoEl.style.display = logo ? '' : 'none';
   if (logo) logoEl.src = logo;
-  document.getElementById('zoomModal').style.display = 'flex';
 }
 function closeZoom(){
   document.getElementById('zoomModal').style.display = 'none';
@@ -6197,12 +6210,15 @@ function openAnalyseChartZoom(key){
   document.getElementById('zoomCagrRow').innerHTML = '';
   zoomKey = null;
   if (window.__zoomChart) window.__zoomChart.destroy();
+  // Modale visible AVANT la création du graphique (même correctif que openZoom() : un
+  // canvas encore dans un ancêtre display:none mesure 0×0 pour Chart.js, qui dessine
+  // alors dans le vide sans jamais se corriger tout seul ensuite).
+  document.getElementById('zoomModal').style.display = 'flex';
   window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), {
     type:'pie',
     data:{ labels: rows.map(r => r.label), datasets:[{ data: rows.map(r => r.valeur), backgroundColor: rows.map((_, i) => PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length]), borderColor:THEME.hair, borderWidth:2 }] },
     options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true } } } }
   });
-  document.getElementById('zoomModal').style.display = 'flex';
 }
 
 function printAnalyseSectionHtml(s, data){
