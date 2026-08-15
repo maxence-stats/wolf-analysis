@@ -83,8 +83,103 @@ const CTO_COL = {
   actif:31, valorisation:32, poids:33, valorisationTotale:34, valeurAchat:35, perfPct:36, perfEur:37,
   valeurAchatTotalCol:38 // "Valeur d'achat total" — capital investi réel (positions + cash), colonne AM
 };
-let persoData = { pea:{ monthly:[], positions:[], valorisationTotale:null }, cto:{ monthly:[], positions:[], valorisationTotale:null } };
+// persoDataReal = les vraies données PEA/CTO (écrites par handlePersoRows). `persoData`
+// est la variable que TOUTES les fonctions de rendu de cet onglet lisent (renderPerso*) —
+// renderPersoPortfolio() la fait pointer vers persoDataReal si déverrouillé, ou vers
+// PERSO_FAKE_DATA sinon, juste avant d'appeler ces fonctions telles quelles (aucune
+// n'a besoin d'être modifiée pour gérer le verrou, voir "Perso PEA/CTO : verrou").
+let persoDataReal = { pea:{ monthly:[], positions:[], valorisationTotale:null }, cto:{ monthly:[], positions:[], valorisationTotale:null } };
+let persoData = persoDataReal;
 let persoSparseFieldsFailed = false;
+
+// ============================================================
+// PERSO PEA/CTO — verrou par code (demande explicite utilisateur : partager le site en
+// ligne sans exposer ce portefeuille précis à un visiteur quelconque). AUCUNE sécurité
+// réelle possible ici — site 100% statique sans backend, donc pas d'authentification
+// serveur : n'importe qui inspectant le code source ou mettant un point d'arrêt JS peut
+// retrouver le code. Accepté explicitement par l'utilisateur après explication — le but
+// est de décourager un visiteur casual tombant sur le lien, pas un vrai coffre-fort.
+// Le code n'est pas stocké en clair (léger obstacle de plus à un simple Ctrl+F "4242"
+// dans le fichier), comparé via un hash non cryptographique trivial.
+// Tant que verrouillé, les vraies données ne sont JAMAIS écrites dans le DOM (pas juste
+// floutées visuellement) : renderPersoPortfolio() bascule `persoData` sur un jeu de
+// données fictif avant tout rendu, donc rien de réel n'est même présent à inspecter.
+function persoSimpleHash(str){
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
+  return h;
+}
+const PERSO_LOCK_HASH = 1598844; // hash de persoSimpleHash('4242')
+let persoUnlocked = false;
+try{ persoUnlocked = localStorage.getItem('wolfAnalysisPersoUnlocked') === '1'; }catch(e){ /* localStorage indisponible */ }
+
+// Portefeuille fictif affiché tant que verrouillé — mêmes formes de données que
+// persoDataReal (voir parsePersoBlock/parsePersoCashImmo), valeurs rondes et
+// clairement génériques (pas de vraies entreprises suivies, pas de logo qui matcherait).
+const PERSO_FAKE_DATA = {
+  pea: {
+    capitalInvestiTotal: 5000, valorisationTotale: 5320,
+    positions: [
+      { nom:'Position A', valorisation:2100, investi:1900, perfEur:200, perfPct:10.5, valeurAchat:1900 },
+      { nom:'Position B', valorisation:1720, investi:1600, perfEur:120, perfPct:7.5, valeurAchat:1600 },
+      { nom:'CASH', valorisation:1500, investi:1500, perfEur:0, perfPct:0, valeurAchat:1500 }
+    ],
+    monthly: [
+      { mois:'Mois 1', valeurPart:100, valeurPartCac40:100 },
+      { mois:'Mois 2', valeurPart:104, valeurPartCac40:102 },
+      { mois:'Mois 3', valeurPart:108, valeurPartCac40:103 }
+    ]
+  },
+  cto: {
+    capitalInvestiTotal: 4000, valorisationTotale: 4180,
+    positions: [
+      { nom:'Position C', valorisation:2200, investi:2000, perfEur:200, perfPct:10, valeurAchat:2000 },
+      { nom:'Position D', valorisation:1980, investi:1900, perfEur:80, perfPct:4.2, valeurAchat:1900 }
+    ],
+    monthly: [
+      { mois:'Mois 1', valeurPart:100, valeurPartCac40:100 },
+      { mois:'Mois 2', valeurPart:101, valeurPartCac40:102 },
+      { mois:'Mois 3', valeurPart:105, valeurPartCac40:103 }
+    ]
+  },
+  cashImmo: { cashTotal: 3000, immobilier: 8000 }
+};
+
+function renderPersoLockUI(){
+  const box = document.getElementById('persoLockBox');
+  if (!box) return;
+  if (persoUnlocked){
+    box.innerHTML = `<button class="zoom-btn objectifs-export" id="persoLockBtn">🔒 Verrouiller</button>`;
+    document.getElementById('persoLockBtn').addEventListener('click', () => {
+      persoUnlocked = false;
+      try{ localStorage.removeItem('wolfAnalysisPersoUnlocked'); }catch(e){ /* localStorage indisponible */ }
+      renderPersoLockUI();
+      renderPersoPortfolio();
+    });
+    return;
+  }
+  box.innerHTML = `<div class="perso-lock-form">
+    <span class="perso-lock-note">🔒 Verrouillé — chiffres fictifs affichés</span>
+    <input type="password" inputmode="numeric" maxlength="8" id="persoLockInput" placeholder="Code">
+    <button class="zoom-btn objectifs-export" id="persoLockSubmit">Déverrouiller</button>
+    <span class="perso-lock-error" id="persoLockError" style="display:none;">Code incorrect.</span>
+  </div>`;
+  const input = document.getElementById('persoLockInput');
+  const submit = () => {
+    if (persoSimpleHash(input.value.trim()) === PERSO_LOCK_HASH){
+      persoUnlocked = true;
+      try{ localStorage.setItem('wolfAnalysisPersoUnlocked', '1'); }catch(e){ /* localStorage indisponible */ }
+      renderPersoLockUI();
+      renderPersoPortfolio();
+    } else {
+      document.getElementById('persoLockError').style.display = 'inline';
+      input.value = '';
+      input.focus();
+    }
+  };
+  document.getElementById('persoLockSubmit').addEventListener('click', submit);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+}
 
 /* ============================================================
    CHARGEMENT DES DONNÉES — 2 méthodes, avec repli automatique
@@ -688,11 +783,11 @@ async function refetchPersoSparseFieldsViaCsv(attempt){
     const text = await res.text();
     const parsed = Papa.parse(text.trim(), { skipEmptyLines:false });
     const cashImmo = parsePersoCashImmo(parsed.data);
-    if (cashImmo.ldds != null || cashImmo.livretA != null) persoData.cashImmo = cashImmo;
+    if (cashImmo.ldds != null || cashImmo.livretA != null) persoDataReal.cashImmo = cashImmo;
     const peaTotal = parsePersoBlock(parsed.data, PEA_COL).capitalInvestiTotal;
     const ctoTotal = parsePersoBlock(parsed.data, CTO_COL).capitalInvestiTotal;
-    if (peaTotal != null) persoData.pea.capitalInvestiTotal = peaTotal;
-    if (ctoTotal != null) persoData.cto.capitalInvestiTotal = ctoTotal;
+    if (peaTotal != null) persoDataReal.pea.capitalInvestiTotal = peaTotal;
+    if (ctoTotal != null) persoDataReal.cto.capitalInvestiTotal = ctoTotal;
   }catch(e){
     // Échec probablement dû à la contention réseau (beaucoup de sources en vol au même
     // moment) plutôt qu'à une panne réelle — un 2e essai a de bonnes chances de passer
@@ -703,13 +798,13 @@ async function refetchPersoSparseFieldsViaCsv(attempt){
   renderPersoPortfolio();
 }
 function handlePersoRows(rows){
-  persoData = { pea: parsePersoBlock(rows, PEA_COL), cto: parsePersoBlock(rows, CTO_COL), cashImmo: parsePersoCashImmo(rows) };
+  persoDataReal = { pea: parsePersoBlock(rows, PEA_COL), cto: parsePersoBlock(rows, CTO_COL), cashImmo: parsePersoCashImmo(rows) };
   // cashTotal peut désormais venir directement de la cellule relais (BE/BF ligne 4,
   // zone dense qui survit à gviz) même si ldds/livretA restent introuvables — pas la
   // peine de déclencher un refetch fetch()-only (peu fiable en file://, voir plus haut)
   // rien que pour un détail LDDS/Livret A déjà satisfait au niveau du total affiché.
-  const needsRefetch = (persoData.cashImmo.cashTotal == null)
-    || persoData.pea.capitalInvestiTotal == null || persoData.cto.capitalInvestiTotal == null;
+  const needsRefetch = (persoDataReal.cashImmo.cashTotal == null)
+    || persoDataReal.pea.capitalInvestiTotal == null || persoDataReal.cto.capitalInvestiTotal == null;
   if (needsRefetch) refetchPersoSparseFieldsViaCsv();
   renderPersoPortfolio();
 }
@@ -2393,6 +2488,8 @@ function renderPersoOverview(){
 }
 
 function renderPersoPortfolio(){
+  persoData = persoUnlocked ? persoDataReal : PERSO_FAKE_DATA;
+  renderPersoLockUI();
   renderPersoOverview();
   renderPersoCompare();
   renderPersoAccountSummary('pea', persoData.pea);

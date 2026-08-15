@@ -255,6 +255,11 @@
   .dividende-goal-row input:focus, .dividende-goal-row select:focus{border-color:var(--gold);}
   .dividende-goal-result{font-family:var(--font-mono);font-weight:700;color:var(--gold);font-size:13px;margin-top:10px;line-height:1.5;}
   .dividende-actions{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:18px 0 10px;}
+  .perso-lock-form{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .perso-lock-note{font-size:12px;color:var(--gold);font-weight:600;}
+  .perso-lock-form input{background:var(--panel);border:1px solid var(--hair);border-radius:7px;padding:6px 10px;color:var(--text);font-family:var(--font-mono);font-size:13px;width:110px;outline:none;letter-spacing:.2em;}
+  .perso-lock-form input:focus{border-color:var(--gold);}
+  .perso-lock-error{font-size:11.5px;color:var(--red);}
   .dividende-total-capital{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--text-dim);}
   .dividende-total-capital input{background:var(--panel);border:1px solid var(--hair);border-radius:7px;padding:6px 10px;color:var(--text);font-family:var(--font-mono);font-size:13px;width:130px;outline:none;}
   .dividende-total-capital input:focus{border-color:var(--gold);}
