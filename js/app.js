@@ -3702,16 +3702,27 @@ let stockScaleMode = 'normal'; // 'normal' | 'indexed' | 'log'
 // pointillé) pour ne pas entrer en collision avec yellow/white/violet déjà réservés au
 // prix/SMA200/SMA30 en mode normal (seul mode où les deux familles coexistent sur le
 // même graphique).
+// `marked:true` (au lieu d'un `borderDash`) distingue les 5 métriques qui partagent leur
+// couleur avec une autre : Chart.js 4.4.4 plante de façon reproductible ("Failed to
+// execute 'setLineDash'... cannot be converted to a sequence") dès qu'un borderDash non
+// vide est appliqué à CES séries précises (overlay sur axe caché, données annuelles très
+// creuses avec spanGaps) — confirmé en isolant chaque overlay un par un dans un graphique
+// dédié : les 5 avec un dash (ex-[6,3]/[2,2]) plantent TOUJOURS, les 4 en dash:[] (solide)
+// jamais ; retirer juste borderDash sur les 5 suffit à supprimer le plantage. Remplacé par
+// des points visibles (pointRadius) plutôt qu'un simple trait solide identique à l'overlay
+// de même couleur, pour garder une distinction visuelle quand plusieurs overlays sont
+// combinés — cohérent avec la nature de ces séries (une valeur par an, donc des points
+// espacés ont plus de sens qu'un pointillé continu de toute façon).
 const STOCK_OVERLAY_METRICS = {
-  div:       { label:'Dividende/action',      field:'dividende',    color:THEME.gold,  dash:[] },
-  ca:        { label:'Chiffre d\'affaires',    field:'ca',           color:THEME.blue,  dash:[] },
-  margeOp:   { label:'Marge opérationnelle',  field:'margeOp',      color:THEME.green, dash:[] },
-  detteOcf:  { label:'Dette / OCF',           field:'detteOCF',     color:THEME.red,   dash:[] },
-  actions:   { label:'Actions en circulation',field:'actions',      color:THEME.gold,  dash:[6,3] },
-  fcfAction: { label:'FCF/action',            field:'fcfParAction', color:THEME.blue,  dash:[6,3] },
-  pfcf:      { label:'P/FCF',                 field:'pFcf',         color:THEME.green, dash:[6,3] },
-  cash:      { label:'Trésorerie',            field:'cash',         color:THEME.red,   dash:[6,3] },
-  roic:      { label:'ROIC',                  field:'roic',         color:THEME.gold,  dash:[2,2] }
+  div:       { label:'Dividende/action',      field:'dividende',    color:THEME.gold,  marked:false },
+  ca:        { label:'Chiffre d\'affaires',    field:'ca',           color:THEME.blue,  marked:false },
+  margeOp:   { label:'Marge opérationnelle',  field:'margeOp',      color:THEME.green, marked:false },
+  detteOcf:  { label:'Dette / OCF',           field:'detteOCF',     color:THEME.red,   marked:false },
+  actions:   { label:'Actions en circulation',field:'actions',      color:THEME.gold,  marked:true },
+  fcfAction: { label:'FCF/action',            field:'fcfParAction', color:THEME.blue,  marked:true },
+  pfcf:      { label:'P/FCF',                 field:'pFcf',         color:THEME.green, marked:true },
+  cash:      { label:'Trésorerie',            field:'cash',         color:THEME.red,   marked:true },
+  roic:      { label:'ROIC',                  field:'roic',         color:THEME.gold,  marked:true }
 };
 // Reprojette une série ANNUELLE (hist, indexée par année) sur l'axe hebdomadaire réel
 // du cours de bourse : chaque valeur est placée au label le plus proche du 1er juillet
@@ -4057,7 +4068,7 @@ function buildStockChartConfig(range){
     if (!stockOverlays[key]) return;
     const meta = STOCK_OVERLAY_METRICS[key];
     const axisId = 'yOv_' + key;
-    const ds = { label:meta.label, data:mapAnnualSeriesToWeeklyLabels(labels, meta.field), borderColor:meta.color, backgroundColor:meta.color, borderWidth:1.75, borderDash:meta.dash, pointRadius:0, spanGaps:true, tension:0.15, _legend:true, _indexable:true };
+    const ds = { label:meta.label, data:mapAnnualSeriesToWeeklyLabels(labels, meta.field), borderColor:meta.color, backgroundColor:meta.color, borderWidth:1.75, pointRadius:meta.marked ? 3 : 0, pointHoverRadius:meta.marked ? 5 : 3, spanGaps:true, tension:0.15, _legend:true, _indexable:true };
     if (stockScaleMode === 'normal'){ ds.yAxisID = axisId; overlayAxisIds.push(axisId); }
     datasets.push(ds);
   });
@@ -4099,6 +4110,18 @@ function buildStockChartConfig(range){
     type:'line',
     data:{ labels, datasets },
     options:{ responsive:true, maintainAspectRatio:false,
+      // animation:false — sans ça, Chart.js anime la première apparition d'un nouvel
+      // axe (ex. overlay "Actions en circulation" ajouté à la volée) et interpole ses
+      // options en cours de route, y compris borderDash ([6,3] devenant transitoirement
+      // le simple nombre 6) : plante avec "Failed to execute 'setLineDash'... cannot be
+      // converted to a sequence", laissant le canvas totalement vide sans jamais se
+      // corriger (constaté en test réel : reproductible au clic sur "Actions en circ.",
+      // mais UNIQUEMENT la toute première fois qu'un axe overlay apparaît dans la
+      // session — les bascules suivantes, même sur un overlay différent, ne replantent
+      // pas, cohérent avec un bug de transition d'animation plutôt qu'un problème de
+      // données). Un graphique boursier n'a de toute façon aucun besoin d'animation
+      // d'apparition.
+      animation:false,
       plugins:{ legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true, font:{size:9}, filter: item => item.text && config.data.datasets[item.datasetIndex]._legend}} },
       scales:{
         x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:8}, border:{color:THEME.hair} },
@@ -4112,21 +4135,55 @@ function buildStockChartConfig(range){
   return config;
 }
 
+// Certaines combinaisons d'overlays (ex. "Actions en circulation" sur un axe caché,
+// série très creuse avec spanGaps) font planter Chart.js EN COURS de construction
+// (bug interne "Failed to execute 'setLineDash'... cannot be converted to a sequence",
+// confirmé en test réel, cause exacte non identifiée côté Chart.js 4.4.4). Le vrai
+// problème n'est pas ce plantage isolé mais ses conséquences : si `new Chart()` explose
+// AVANT de retourner, `chartInstances.stock = makeChart(...)` n'est jamais exécuté, donc
+// notre propre référence ne pointe jamais vers cette instance ratée — mais Chart.js l'a
+// quand même enregistrée en interne contre le <canvas>. Résultat : PLUS AUCUN rendu
+// futur sur ce canvas ne peut réussir, avec une 2e erreur distincte ("Canvas is already
+// in use... must be destroyed before the canvas... can be reused") qui casse le
+// graphique DÉFINITIVEMENT pour le reste de la session — exactement le symptôme "je
+// clique et après plus rien ne fonctionne" remonté par l'utilisateur. Chart.getChart(canvas)
+// retrouve cette instance orpheline (invisible depuis chartInstances) et permet de la
+// détruire malgré tout, avant une nouvelle tentative — rend le graphique résilient à ce
+// bug quelle que soit sa cause exacte, plutôt que de courir après la cause précise.
+function renderStockChartAttempt(canvasEl){
+  const config = buildStockChartConfig(stockRange);
+  chartInstances.stock = makeChart('stock', 'chartStock', config);
+  const noteEl = document.getElementById('stockScaleNote');
+  noteEl.textContent = config._scaleNote || '';
+  noteEl.style.display = config._scaleNote ? 'block' : 'none';
+}
 function renderStockChart(){
   if (!stockFull) return;
+  const canvasEl = document.getElementById('chartStock');
   if (chartInstances.stock) chartInstances.stock.destroy();
+  delete chartInstances.stock;
+  const orphan = typeof Chart.getChart === 'function' ? Chart.getChart(canvasEl) : null;
+  if (orphan) orphan.destroy();
   const statusEl = document.getElementById('stockStatus');
   try{
-    const config = buildStockChartConfig(stockRange);
-    chartInstances.stock = makeChart('stock', 'chartStock', config);
-    const noteEl = document.getElementById('stockScaleNote');
-    noteEl.textContent = config._scaleNote || '';
-    noteEl.style.display = config._scaleNote ? 'block' : 'none';
+    renderStockChartAttempt(canvasEl);
+    statusEl.style.display = 'none';
   }catch(e){
-    // Jamais d'échec silencieux, et surtout jamais d'exception qui remonte non
-    // attrapée depuis un clic sur un toggle (ça peut laisser l'app entière dans un état
-    // cassé) — message visible + détail en console pour diagnostiquer.
-    console.error('Erreur graphique boursier :', e);
+    console.error('Erreur graphique boursier (1re tentative) :', e);
+    // Nouvelle tentative après nettoyage de l'orpheline laissée par l'échec ci-dessus —
+    // dans la quasi-totalité des cas observés en test, elle réussit du premier coup.
+    try{
+      const orphan2 = typeof Chart.getChart === 'function' ? Chart.getChart(canvasEl) : null;
+      if (orphan2) orphan2.destroy();
+      renderStockChartAttempt(canvasEl);
+      statusEl.style.display = 'none';
+      return;
+    }catch(e2){
+      // Jamais d'échec silencieux, et surtout jamais d'exception qui remonte non
+      // attrapée depuis un clic sur un toggle (ça peut laisser l'app entière dans un état
+      // cassé) — message visible + détail en console pour diagnostiquer.
+      console.error('Erreur graphique boursier (2e tentative) :', e2);
+    }
     delete chartInstances.stock;
     statusEl.textContent = "Erreur d'affichage du graphique avec cette combinaison d'options — désactive le dernier réglage changé. (Détail en console.)";
     statusEl.style.display = 'block';
