@@ -1709,6 +1709,105 @@ function exportMacroTableAsPdf(boxId, title){
   if (!box) return;
   exportSectionAsPdf(title, null, `<div class="print-section">${box.innerHTML}</div>`);
 }
+// Rendu manuel du <table> vers un <canvas> (pas de librairie externe, même principe que
+// le reste du site — voir "Choix technique" du print CSS) : les tableaux macro n'avaient
+// jusqu'ici qu'un export PDF, pas PNG/JPEG comme tous les graphiques (demande explicite,
+// "je n'ai pas la possibilité d'exporter mon PNG et JPEG" sur ces deux tableaux
+// précisément). getComputedStyle() lit directement les couleurs déjà résolues par les
+// classes CSS existantes (ex. mp-red-strong/mp-green-light sur Force Relative) — aucune
+// couleur recopiée à la main, donc jamais désynchronisé si les seuils changent.
+function tableToImageDataUrl(tableEl, title){
+  const rows = Array.from(tableEl.querySelectorAll('tr'));
+  if (!rows.length) return null;
+  const grid = rows.map(tr => Array.from(tr.children));
+  const nCols = Math.max(...grid.map(r => r.length));
+  const scale = 2;
+  const padX = 14, rowH = 30, headH = 34, titleH = 56, footH = 34;
+  // Largeur de colonne = texte le plus large de cette colonne (mesuré une fois avec un
+  // contexte de mesure temporaire), colonne 0 plus large (libellés de ligne).
+  const measureCanvas = document.createElement('canvas');
+  const mctx = measureCanvas.getContext('2d');
+  const colW = new Array(nCols).fill(70);
+  grid.forEach(r => r.forEach((cell, ci) => {
+    const cs = getComputedStyle(cell);
+    mctx.font = (cs.fontWeight >= 600 ? '700 ' : '400 ') + '12px "Plus Jakarta Sans", sans-serif';
+    const w = mctx.measureText(cell.textContent.trim()).width + padX * 2;
+    if (w > colW[ci]) colW[ci] = w;
+  }));
+  const totalW = colW.reduce((a, b) => a + b, 0);
+  const totalH = titleH + rows.length * rowH + footH + 10;
+  const canvas = document.createElement('canvas');
+  canvas.width = totalW * scale; canvas.height = totalH * scale;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(scale, scale);
+  ctx.fillStyle = '#0D1013';
+  ctx.fillRect(0, 0, totalW, totalH);
+  ctx.fillStyle = THEME.gold;
+  ctx.font = '700 16px "Space Grotesk", sans-serif';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(title, padX, titleH / 2 + 6);
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.beginPath(); ctx.moveTo(0, titleH); ctx.lineTo(totalW, titleH); ctx.stroke();
+  let y = titleH;
+  grid.forEach((r, ri) => {
+    const isHead = ri === 0;
+    const h = isHead ? headH : rowH;
+    let x = 0;
+    r.forEach((cell, ci) => {
+      const cs = getComputedStyle(cell);
+      const bg = cs.backgroundColor;
+      if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent'){
+        ctx.fillStyle = bg;
+        ctx.fillRect(x, y, colW[ci], h);
+      } else if (!isHead && ri % 2 === 0){
+        ctx.fillStyle = 'rgba(255,255,255,0.015)';
+        ctx.fillRect(x, y, colW[ci], h);
+      }
+      ctx.fillStyle = isHead ? '#8B93A0' : (cs.color || '#E9EBEE');
+      ctx.textAlign = ci === 0 ? 'left' : 'center';
+      const tx = ci === 0 ? x + padX : x + colW[ci] / 2;
+      // Les en-têtes ont un sous-libellé imbriqué (.mp-cat, ex. "SENSIBLE" sous
+      // "Technologie (%)") — cell.textContent les concatène sans séparateur ; on les
+      // sépare en 2 lignes distinctes plutôt que de les coller.
+      const catEl = isHead ? cell.querySelector('.mp-cat') : null;
+      if (catEl){
+        const mainText = cell.textContent.replace(catEl.textContent, '').trim();
+        ctx.font = '700 10px "Plus Jakarta Sans", sans-serif';
+        ctx.fillText(mainText, tx, y + h / 2 - 7, colW[ci] - padX);
+        ctx.fillStyle = '#5C6470';
+        ctx.font = '400 8px "Plus Jakarta Sans", sans-serif';
+        ctx.fillText(catEl.textContent.trim(), tx, y + h / 2 + 7, colW[ci] - padX);
+      } else {
+        ctx.font = (isHead ? '700 10px' : (ci === 0 ? '600 12px' : '400 12px')) + ' "Plus Jakarta Sans", sans-serif';
+        ctx.fillText(cell.textContent.trim(), tx, y + h / 2, colW[ci] - padX);
+      }
+      x += colW[ci];
+    });
+    y += h;
+  });
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(totalW, y); ctx.stroke();
+  ctx.fillStyle = '#5C6470';
+  ctx.font = '400 10px "Plus Jakarta Sans", sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('Données fournies par Wolf Analysis', padX, y + footH / 2 + 4);
+  return canvas.toDataURL('image/png');
+}
+async function exportMacroTableAsImage(boxId, title, format){
+  const box = document.getElementById(boxId);
+  const tableEl = box && box.querySelector('table');
+  if (!tableEl) return;
+  const rawUrl = tableToImageDataUrl(tableEl, title);
+  if (!rawUrl) return;
+  const mime = format === 'jpg' ? 'image/jpeg' : 'image/png';
+  const url = await roundedImageDataUrl(rawUrl, mime, format === 'jpg' ? '#0D1013' : null);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = title.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') + '.' + (format === 'jpg' ? 'jpg' : 'png');
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
 // Export global demandé par l'utilisateur : les 4 graphiques + les 2 tableaux de
 // l'onglet Macroéconomie dans un seul document PDF, plutôt que 6 exports séparés.
 const MACRO_EXPORT_ALL_CHARTS = [

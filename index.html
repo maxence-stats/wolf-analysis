@@ -733,13 +733,21 @@
       <div class="section-label">Force relative sectorielle</div>
       <div class="macro-power-card">
         <div id="macroPowerTable" class="macro-power-table-wrap"></div>
-        <div class="macro-export-row"><button onclick="exportMacroTableAsPdf('macroPowerTable','Force relative sectorielle')">⭳ Exporter PDF</button></div>
+        <div class="macro-export-row">
+          <button onclick="exportMacroTableAsPdf('macroPowerTable','Force relative sectorielle')">PDF</button>
+          <button onclick="exportMacroTableAsImage('macroPowerTable','Force relative sectorielle','png')">PNG</button>
+          <button onclick="exportMacroTableAsImage('macroPowerTable','Force relative sectorielle','jpg')">JPG</button>
+        </div>
       </div>
 
       <div class="section-label">Indicateurs macroéconomiques (États-Unis)</div>
       <div class="macro-power-card">
         <div id="macroFundamentalsTable"></div>
-        <div class="macro-export-row"><button onclick="exportMacroTableAsPdf('macroFundamentalsTable','Indicateurs macroéconomiques (États-Unis)')">⭳ Exporter PDF</button></div>
+        <div class="macro-export-row">
+          <button onclick="exportMacroTableAsPdf('macroFundamentalsTable','Indicateurs macroéconomiques (États-Unis)')">PDF</button>
+          <button onclick="exportMacroTableAsImage('macroFundamentalsTable','Indicateurs macroéconomiques (États-Unis)','png')">PNG</button>
+          <button onclick="exportMacroTableAsImage('macroFundamentalsTable','Indicateurs macroéconomiques (États-Unis)','jpg')">JPG</button>
+        </div>
       </div>
     </div>
 
