@@ -573,7 +573,18 @@ function handlePortfolioRows(rows){
         summary.capitalInvesti = capitalInvesti;
         summary.valorisationTotale = parseNum(c[PCOL.valorisationTotale]);
         summary.gainsEuros = parseNum(c[PCOL.gainsEuros]);
-        summary.gainsPct = parseNum(c[PCOL.gainsPct]);
+        // La cellule Sheet est au format "Pourcentage" : l'API renvoie la fraction brute
+        // (0,0086) et non la valeur affichée (0,86%) — contrairement à spxPerfMensuelle/
+        // spxPerfTotale ci-dessous, qui sont déjà des nombres "pourcentage" bruts dans le
+        // Sheet (14 pour 14%, pas 0,14). Confirmé en comparant à
+        // (valorisationTotale-capitalInvesti)/capitalInvesti : sans ce ×100, le site
+        // affichait "+0,0%" alors que le vrai gain était +0,86% (bug remonté par
+        // l'utilisateur : "je ne peux pas avoir zéro pour cent... il y a un problème"),
+        // et le graphique Wolf Portfolio vs S&P 500 traçait une ligne quasiment plate à
+        // zéro à côté du S&P correctement à l'échelle (même cause racine que "la ligne
+        // reste flat").
+        const gainsPctRaw = parseNum(c[PCOL.gainsPct]);
+        summary.gainsPct = gainsPctRaw != null ? gainsPctRaw * 100 : null;
         summary.cashEuros = parseNum(c[PCOL.cashEuros]);
         summaryFound = true;
       }
@@ -581,10 +592,13 @@ function handlePortfolioRows(rows){
 
     const moisDate = parseStr(c[PCOL.moisDate]);
     if (moisDate && moisDate.toUpperCase() !== 'MOIS'){
+      const rendementMensuelRaw = parseNum(c[PCOL.moisRendement]);
+      const rendementTotalRaw = parseNum(c[PCOL.rendementTotal]);
       monthly.push({
         mois: moisDate,
-        rendementMensuel: parseNum(c[PCOL.moisRendement]),
-        rendementTotal: parseNum(c[PCOL.rendementTotal]),
+        // Même correctif ×100 que gainsPct ci-dessus, même cause (cellules "Pourcentage").
+        rendementMensuel: rendementMensuelRaw != null ? rendementMensuelRaw * 100 : null,
+        rendementTotal: rendementTotalRaw != null ? rendementTotalRaw * 100 : null,
         spxPerfMensuelle: parseNum(c[PCOL.spxPerfMensuelle]),
         spxPerfTotale: parseNum(c[PCOL.spxPerfTotale])
       });
@@ -2182,19 +2196,24 @@ async function exportPortfolioAsPdf(){
 }
 
 let portfolioVsSpxChart = null;
-function renderPortfolioVsSpx(){
-  const canvas = document.getElementById('chartPortfolioVsSpx');
-  if (!canvas) return;
-  if (portfolioVsSpxChart) portfolioVsSpxChart.destroy();
-  // Le Sheet a des lignes de mois pré-remplies au-delà du mois courant (dates futures
-  // sans données) — on ne garde que les mois où au moins une des deux séries a une valeur.
-  const monthly = portfolioData.monthly.filter(m => m.rendementTotal != null || m.spxPerfTotale != null);
-  if (!monthly.length) return;
+// "2026-04-05T22:00:00.000Z" -> "Avr. 2026" — le Sheet renvoie des dates ISO complètes
+// (voir loadAllDataFromAppsScript) utilisées telles quelles comme labels d'axe X avant
+// ce correctif : illisible, retour utilisateur explicite ("les dates... on n'y comprend
+// rien du tout"). Mois abrégé en français, capitalisé (toLocaleDateString le renvoie en
+// minuscules).
+function fmtMonthLabel(iso){
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return String(iso);
+  const s = d.toLocaleDateString('fr-FR', { month:'short', year:'numeric' });
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 
-  portfolioVsSpxChart = new Chart(canvas.getContext('2d'), {
+function buildPortfolioVsSpxConfig(monthly){
+  return {
     type:'line',
     data:{
-      labels: monthly.map(m => m.mois),
+      labels: monthly.map(m => fmtMonthLabel(m.mois)),
       datasets:[
         { label:'Wolf Portfolio', data: monthly.map(m => m.rendementTotal), borderColor:THEME.gold, backgroundColor:'rgba(217,164,65,0.08)', fill:true, tension:0.2, pointRadius:2, spanGaps:true },
         { label:'S&P 500', data: monthly.map(m => m.spxPerfTotale), borderColor:THEME.blue, borderWidth:1.5, pointRadius:2, tension:0.2, spanGaps:true }
@@ -2203,11 +2222,52 @@ function renderPortfolioVsSpx(){
     options:{ responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true } } },
       scales:{
-        x:{ grid:{display:false}, ticks:{color:THEME.dim}, border:{color:THEME.hair} },
+        x:{ grid:{display:false}, ticks:{color:THEME.dim, maxRotation:0, autoSkipPadding:12}, border:{color:THEME.hair} },
         y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'%'} }
       }
     }
-  });
+  };
+}
+function buildPortfolioVsSpxMonthlyConfig(monthly){
+  return {
+    type:'line',
+    data:{
+      labels: monthly.map(m => fmtMonthLabel(m.mois)),
+      datasets:[
+        { label:'Wolf Portfolio', data: monthly.map(m => m.rendementMensuel), borderColor:THEME.gold, backgroundColor:'rgba(217,164,65,0.08)', fill:true, tension:0.25, pointRadius:3, spanGaps:true },
+        { label:'S&P 500', data: monthly.map(m => m.spxPerfMensuelle), borderColor:THEME.blue, borderWidth:1.5, pointRadius:3, tension:0.25, spanGaps:true }
+      ]
+    },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true } } },
+      scales:{
+        x:{ grid:{display:false}, ticks:{color:THEME.dim, maxRotation:0, autoSkipPadding:12}, border:{color:THEME.hair} },
+        y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'%'} }
+      }
+    }
+  };
+}
+function renderPortfolioVsSpx(){
+  const canvas = document.getElementById('chartPortfolioVsSpx');
+  if (!canvas) return;
+  if (portfolioVsSpxChart) portfolioVsSpxChart.destroy();
+  // Le Sheet a des lignes de mois pré-remplies au-delà du mois courant (dates futures
+  // sans données) — on ne garde que les mois où au moins une des deux séries a une valeur.
+  const monthly = portfolioData.monthly.filter(m => m.rendementTotal != null || m.spxPerfTotale != null);
+  if (!monthly.length) return;
+  portfolioVsSpxChart = new Chart(canvas.getContext('2d'), buildPortfolioVsSpxConfig(monthly));
+}
+function openPortfolioVsSpxZoom(){
+  const monthly = portfolioData.monthly.filter(m => m.rendementTotal != null || m.spxPerfTotale != null);
+  if (!monthly.length) return;
+  document.getElementById('zoomTitle').textContent = 'Wolf Portfolio vs S&P 500 — Performance cumulée';
+  document.getElementById('zoomRangeRow').innerHTML = '';
+  document.getElementById('zoomCagrRow').innerHTML = '';
+  document.getElementById('zoomStockIndicatorRow').style.display = 'none';
+  zoomKey = null;
+  if (window.__zoomChart) window.__zoomChart.destroy();
+  document.getElementById('zoomModal').style.display = 'flex';
+  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), buildPortfolioVsSpxConfig(monthly));
 }
 
 let portfolioVsSpxMonthlyChart = null;
@@ -2217,24 +2277,19 @@ function renderPortfolioVsSpxMonthly(){
   if (portfolioVsSpxMonthlyChart) portfolioVsSpxMonthlyChart.destroy();
   const monthly = portfolioData.monthly.filter(m => m.rendementMensuel != null || m.spxPerfMensuelle != null);
   if (!monthly.length) return;
-
-  portfolioVsSpxMonthlyChart = new Chart(canvas.getContext('2d'), {
-    type:'line',
-    data:{
-      labels: monthly.map(m => m.mois),
-      datasets:[
-        { label:'Wolf Portfolio', data: monthly.map(m => m.rendementMensuel), borderColor:THEME.gold, backgroundColor:'rgba(217,164,65,0.08)', fill:true, tension:0.25, pointRadius:3, spanGaps:true },
-        { label:'S&P 500', data: monthly.map(m => m.spxPerfMensuelle), borderColor:THEME.blue, borderWidth:1.5, pointRadius:3, tension:0.25, spanGaps:true }
-      ]
-    },
-    options:{ responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true } } },
-      scales:{
-        x:{ grid:{display:false}, ticks:{color:THEME.dim}, border:{color:THEME.hair} },
-        y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'%'} }
-      }
-    }
-  });
+  portfolioVsSpxMonthlyChart = new Chart(canvas.getContext('2d'), buildPortfolioVsSpxMonthlyConfig(monthly));
+}
+function openPortfolioVsSpxMonthlyZoom(){
+  const monthly = portfolioData.monthly.filter(m => m.rendementMensuel != null || m.spxPerfMensuelle != null);
+  if (!monthly.length) return;
+  document.getElementById('zoomTitle').textContent = 'Wolf Portfolio vs S&P 500 — Performance mensuelle';
+  document.getElementById('zoomRangeRow').innerHTML = '';
+  document.getElementById('zoomCagrRow').innerHTML = '';
+  document.getElementById('zoomStockIndicatorRow').style.display = 'none';
+  zoomKey = null;
+  if (window.__zoomChart) window.__zoomChart.destroy();
+  document.getElementById('zoomModal').style.display = 'flex';
+  window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), buildPortfolioVsSpxMonthlyConfig(monthly));
 }
 
 function renderPortfolio(){
@@ -7427,6 +7482,8 @@ loadIdeesBaseline();
 loadRevueBaseline();
 initDividendPortfolio();
 initConstruction();
+document.getElementById('portfolioVsSpxZoomBtn').addEventListener('click', openPortfolioVsSpxZoom);
+document.getElementById('portfolioVsSpxMonthlyZoomBtn').addEventListener('click', openPortfolioVsSpxMonthlyZoom);
 document.getElementById('peaDonutZoomBtn').addEventListener('click', () => openPersoDonutZoom('pea', persoData.pea, 'PEA — Crédit Agricole'));
 document.getElementById('ctoDonutZoomBtn').addEventListener('click', () => openPersoDonutZoom('cto', persoData.cto, 'CTO — Saxo'));
 

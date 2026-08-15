@@ -845,8 +845,8 @@
   .macro-power-table th{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:.03em;color:var(--text-dim);border-bottom:1px solid var(--hair);}
   .macro-power-table td:first-child, .macro-power-table th:first-child{text-align:left;position:sticky;left:0;background:var(--panel-2);color:var(--text-dim);font-size:11px;}
   .macro-power-table .mp-cat{display:block;font-size:9px;color:var(--text-faint);font-weight:400;text-transform:none;}
-  .macro-power-table tbody tr:hover td{background:rgba(255,255,255,0.02);}
-  .macro-power-table tbody tr:hover td:first-child{background:var(--panel-2);}
+  .macro-power-table tbody td:hover{background:rgba(255,255,255,0.06);}
+  .macro-power-table tbody td:first-child:hover{background:var(--panel-2);}
   .mp-red-strong{background:rgba(229,99,107,0.32);color:#fff;font-weight:700;}
   .mp-red-light{background:rgba(229,99,107,0.14);color:var(--text);}
   .mp-green-light{background:rgba(79,209,165,0.14);color:var(--text);}
