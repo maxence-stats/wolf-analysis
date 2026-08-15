@@ -3181,9 +3181,10 @@ function pessimisticScenarioForCompany(nom){
   const savedPess = saved && saved.scenarios && saved.scenarios.pessimiste;
   const pess = savedPess || {
     cagr: cagrHist != null ? +(cagrHist - 5).toFixed(1) : 0,
-    multiple: medianeHist != null ? +(medianeHist - 3).toFixed(1) : 0
+    multiple: medianeHist != null ? +(medianeHist - 3).toFixed(1) : 0,
+    rachat: 0
   };
-  const { rendement5A } = computeScenario(fcfActuel, prixActuel, pess.cagr, pess.multiple);
+  const { rendement5A } = computeScenario(fcfActuel, prixActuel, pess.cagr, pess.multiple, pess.rachat || 0);
   return { rendement5A, fromSaved: !!savedPess };
 }
 
@@ -4914,10 +4915,24 @@ let scenarioCharts = {};
 // un clic règle directement le champ plutôt que de devoir taper la valeur.
 const SCENARIO_QUICK_MULTIPLES = [10, 15, 20, 25];
 
-function computeScenario(fcfActuel, prixActuel, cagr, multiple){
+// rachatPct (%/an) : levier optionnel sur les actions en circulation, demande explicite
+// de l'utilisateur ("introduire dans le calcul les actions en circulation... la baisse
+// moyenne des actions"). Défaut 0 pour les 3 scénarios (voir renderValorisation) — le
+// comportement existant est inchangé tant que l'utilisateur ne touche pas ce champ.
+// Volontairement traité comme un levier ADDITIONNEL et non un recalcul automatique
+// depuis cagrActions (historique déjà en mémoire, colonne cagrActions) : le CAGR
+// FCF/OCF saisi dans chaque scénario est déjà celui du FCF/OCF PAR ACTION historique
+// (fcfParAction), qui intègre donc déjà l'effet des rachats passés — en déduire
+// automatiquement un 2e ajustement dans la même formule risquerait de compter l'effet
+// des rachats deux fois. Ici rachatPct exprime explicitement une hypothèse
+// SUPPLÉMENTAIRE, au-delà de la tendance déjà capturée par le CAGR historique — positif
+// = rachats nets (dilution du nombre d'actions), négatif = émission nette (dilution de
+// la valeur par action).
+function computeScenario(fcfActuel, prixActuel, cagr, multiple, rachatPct){
   const prixJusteSim = fcfActuel * multiple;
   const prixCible = prixJusteSim * 0.8;
-  const prixEst5A = fcfActuel * Math.pow(1 + cagr / 100, 5) * multiple;
+  const rachatFactor = Math.pow(1 + (rachatPct || 0) / 100, 5);
+  const prixEst5A = fcfActuel * Math.pow(1 + cagr / 100, 5) * multiple * rachatFactor;
   const rendement5A = prixActuel > 0 ? (Math.pow(prixEst5A / prixActuel, 1 / 5) - 1) * 100 : null;
   return { prixJusteSim, prixCible, prixEst5A, rendement5A };
 }
@@ -4946,6 +4961,10 @@ function scenarioCardHtml(s){
         <div class="scenario-quick-picks">
           ${SCENARIO_QUICK_MULTIPLES.map(v => `<button type="button" class="scenario-quick-btn" data-quick-mult="${v}">${v}x</button>`).join('')}
         </div>
+      </div>
+      <div class="scenario-row">
+        <div class="scenario-row-head"><span>Rachat d'actions suppl. (%/an)</span><span class="val" id="vo-${s.key}-rachatVal">—</span></div>
+        <input type="number" class="scenario-number" id="vo-${s.key}-rachat" step="0.1" title="Hypothèse additionnelle de baisse des actions en circulation, au-delà de la tendance déjà intégrée dans le CAGR ci-dessus. 0 = pas d'hypothèse supplémentaire.">
       </div>
       <div class="scenario-results">
         <div><div class="r-k">Prix juste sim.</div><div class="r-v" id="vo-${s.key}-prixJuste">—</div></div>
@@ -5010,7 +5029,8 @@ function renderValorisation(nom){
   SCENARIOS.forEach(s => {
     scenarioValues[s.key] = {
       cagr: cagrHist != null ? +(cagrHist + s.deltaCagr).toFixed(1) : 0,
-      multiple: medianeHist != null ? +(medianeHist + s.deltaMultiple).toFixed(1) : 0
+      multiple: medianeHist != null ? +(medianeHist + s.deltaMultiple).toFixed(1) : 0,
+      rachat: 0
     };
   });
 
@@ -5031,10 +5051,12 @@ function renderValorisation(nom){
 function wireScenarioCard(s, hist, fcfActuel, prixActuel){
   const cagrInput = document.getElementById('vo-' + s.key + '-cagr');
   const multInput = document.getElementById('vo-' + s.key + '-mult');
+  const rachatInput = document.getElementById('vo-' + s.key + '-rachat');
   document.getElementById('vo-' + s.key + '-fcf').textContent = fcfActuel != null ? fmtEUR(fcfActuel) : 'N/D';
 
   cagrInput.value = scenarioValues[s.key].cagr;
   multInput.value = scenarioValues[s.key].multiple;
+  rachatInput.value = scenarioValues[s.key].rachat;
 
   const card = document.querySelector(`.scenario-card[data-key="${s.key}"]`);
   function syncQuickButtons(){
@@ -5046,11 +5068,13 @@ function wireScenarioCard(s, hist, fcfActuel, prixActuel){
   function update(){
     scenarioValues[s.key].cagr = parseFloat(cagrInput.value);
     scenarioValues[s.key].multiple = parseFloat(multInput.value);
+    scenarioValues[s.key].rachat = parseFloat(rachatInput.value) || 0;
     syncQuickButtons();
     updateScenarioCard(s, hist, fcfActuel, prixActuel);
   }
   cagrInput.addEventListener('input', update);
   multInput.addEventListener('input', update);
+  rachatInput.addEventListener('input', update);
   syncQuickButtons();
 
   if (card){
@@ -5066,16 +5090,17 @@ function wireScenarioCard(s, hist, fcfActuel, prixActuel){
 }
 
 function updateScenarioCard(s, hist, fcfActuel, prixActuel){
-  const { cagr, multiple } = scenarioValues[s.key];
+  const { cagr, multiple, rachat } = scenarioValues[s.key];
   document.getElementById('vo-' + s.key + '-cagrVal').textContent = cagr.toLocaleString('fr-FR', {minimumFractionDigits:1}) + '%';
   document.getElementById('vo-' + s.key + '-multVal').textContent = multiple.toLocaleString('fr-FR', {minimumFractionDigits:1}) + 'x';
+  document.getElementById('vo-' + s.key + '-rachatVal').textContent = (rachat >= 0 ? '+' : '') + rachat.toLocaleString('fr-FR', {minimumFractionDigits:1}) + '%';
 
   if (fcfActuel == null || prixActuel == null){
     ['prixJuste','prixCible','prixEst','rendement'].forEach(k => { document.getElementById('vo-'+s.key+'-'+k).textContent = 'N/D'; });
     return;
   }
 
-  const { prixJusteSim, prixCible, prixEst5A, rendement5A } = computeScenario(fcfActuel, prixActuel, cagr, multiple);
+  const { prixJusteSim, prixCible, prixEst5A, rendement5A } = computeScenario(fcfActuel, prixActuel, cagr, multiple, rachat);
 
   document.getElementById('vo-'+s.key+'-prixJuste').textContent = fmtEUR(prixJusteSim);
   document.getElementById('vo-'+s.key+'-prixCible').textContent = fmtEUR(prixCible);
@@ -5214,7 +5239,7 @@ function persistObjectifsLocal(){
 function saveObjectif(nom){
   if (!objectifsStore[nom]) objectifsStore[nom] = [];
   const snapshot = {};
-  SCENARIOS.forEach(s => { snapshot[s.key] = { cagr: scenarioValues[s.key].cagr, multiple: scenarioValues[s.key].multiple }; });
+  SCENARIOS.forEach(s => { snapshot[s.key] = { cagr: scenarioValues[s.key].cagr, multiple: scenarioValues[s.key].multiple, rachat: scenarioValues[s.key].rachat || 0 }; });
   objectifsStore[nom].push({ date: new Date().toISOString().slice(0, 10), scenarios: snapshot, metric: valorisationMetric });
   persistObjectifsLocal();
   renderObjectifsHistory(nom);
@@ -5263,11 +5288,13 @@ function applyObjectif(nom, idx){
   SCENARIOS.forEach(s => {
     const v = entry.scenarios[s.key];
     if (!v) return;
-    scenarioValues[s.key] = { cagr: v.cagr, multiple: v.multiple };
+    scenarioValues[s.key] = { cagr: v.cagr, multiple: v.multiple, rachat: v.rachat || 0 };
     const cagrInput = document.getElementById('vo-' + s.key + '-cagr');
     const multInput = document.getElementById('vo-' + s.key + '-mult');
+    const rachatInput = document.getElementById('vo-' + s.key + '-rachat');
     if (cagrInput) cagrInput.value = v.cagr;
     if (multInput) multInput.value = v.multiple;
+    if (rachatInput) rachatInput.value = v.rachat || 0;
   });
   const hist = companies[nom];
   const latest = hist[hist.length - 1];
