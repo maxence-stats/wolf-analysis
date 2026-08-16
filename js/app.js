@@ -1612,24 +1612,44 @@ async function exportZoomChartAsImage(format){
 let exportCart = [];
 let exportCartClearConfirming = false;
 
-function addCurrentZoomChartToCart(){
-  if (!window.__zoomChart) return;
-  const title = document.getElementById('zoomTitle').textContent || 'Graphique';
+// Capture générique d'une instance Chart.js vivante vers le panier — utilisée à la fois
+// par le bouton de la modale de zoom (addCurrentZoomChartToCart) et par les petites
+// icônes 🧺 posées directement sur chaque carte de graphique (Analyse/Macro/Valorisation),
+// pour ajouter sans avoir à ouvrir le zoom. `btnEl` optionnel : retour visuel (✓/⚠) sur le
+// bouton effectivement cliqué.
+function addChartInstanceToCart(chart, title, btnEl){
+  if (!chart){
+    if (btnEl) flashCartBtn(btnEl, false);
+    else alert("Le graphique n'a pas pu être généré — réessaie de l'ouvrir en grand.");
+    return;
+  }
   let dataUrl;
-  // Même précaution que exportZoomChartAsPdf/Image : canvas potentiellement "tainté"
-  // (donut Portfolio, logos dessinés sans crossOrigin — voir CLAUDE.md piège #13).
-  try{ dataUrl = chartToHiResDataUrl(window.__zoomChart, 'image/png', 2); }
+  // Canvas potentiellement "tainté" (donut Portfolio, logos dessinés sans crossOrigin —
+  // voir CLAUDE.md piège #13) : toBase64Image lève alors SecurityError.
+  try{ dataUrl = chartToHiResDataUrl(chart, 'image/png', 2); }
   catch(e){ alert("Ce graphique ne peut pas être ajouté au panier (image externe non compatible) — utilise le bouton d'export dédié de son onglet."); return; }
-  if (!dataUrl) return;
+  if (!dataUrl){ if (btnEl) flashCartBtn(btnEl, false); return; }
   exportCart.push({ title, dataUrl });
   renderExportCartWidget();
-  const btn = document.getElementById('zoomAddToCartBtn');
-  if (btn){
-    const original = btn.textContent;
-    btn.textContent = '✓ Ajouté au panier';
-    btn.disabled = true;
-    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1100);
-  }
+  if (btnEl) flashCartBtn(btnEl, true);
+}
+function flashCartBtn(btnEl, success){
+  const original = btnEl.textContent;
+  btnEl.textContent = success ? '✓' : '⚠';
+  btnEl.classList.toggle('cart-btn-flash-ok', success);
+  btnEl.classList.toggle('cart-btn-flash-err', !success);
+  btnEl.disabled = true;
+  setTimeout(() => {
+    btnEl.textContent = original;
+    btnEl.classList.remove('cart-btn-flash-ok', 'cart-btn-flash-err');
+    btnEl.disabled = false;
+  }, 1000);
+}
+
+function addCurrentZoomChartToCart(){
+  if (!window.__zoomChart){ alert("Le graphique n'a pas pu être généré — ferme la modale et rouvre-la en grand."); return; }
+  const title = document.getElementById('zoomTitle').textContent || 'Graphique';
+  addChartInstanceToCart(window.__zoomChart, title, document.getElementById('zoomAddToCartBtn'));
 }
 
 function removeFromExportCart(idx){
@@ -1658,12 +1678,18 @@ function renderExportCartWidget(){
   if (clearBtn) clearBtn.textContent = exportCartClearConfirming ? 'Confirmer ?' : 'Vider';
 }
 
+// Titre du document éditable par l'utilisateur (#exportCartTitleInput) : demande
+// explicite — l'utilisateur veut un document présentable en newsletter, pas le libellé
+// technique "Export groupé" imposé par défaut. Mémorisé le temps de la session
+// (exportCartTitle) pour ne pas se réinitialiser à chaque ajout/retrait d'un graphique.
+let exportCartTitle = '';
 function exportCartAsPdf(){
   if (exportCart.length === 0) return;
+  const title = exportCartTitle.trim() || 'Wolf Analysis';
   const body = exportCart.map(item =>
     `<div class="print-section"><h3>${item.title}</h3><img class="print-chart-img" src="${item.dataUrl}" alt=""></div>`
   ).join('');
-  exportSectionAsPdf('Export groupé', `${exportCart.length} graphique${exportCart.length > 1 ? 's' : ''}`, body);
+  exportSectionAsPdf(title, `${exportCart.length} graphique${exportCart.length > 1 ? 's' : ''}`, body);
 }
 
 function exportMacroChartAsPdf(key, title){
@@ -3893,6 +3919,31 @@ function makeChart(key, id, config){
   chartConfigs[key] = config;
   return new Chart(document.getElementById(id).getContext('2d'), config);
 }
+// Chart.js peut laisser un canvas "orphelin" enregistré en interne si new Chart() plante
+// en cours de construction (ex. bug setLineDash déjà rencontré sur certains overlays du
+// cours de bourse) : la variable JS censée recevoir l'instance n'est jamais assignée,
+// mais le canvas reste marqué "in use" côté Chart.js — toute tentative suivante échoue
+// avec "Canvas is already in use" même après avoir corrigé la cause du premier échec.
+// Nettoyage + une seule reprise, même pattern que renderStockChart() (constaté en test :
+// suffit dans la quasi-totalité des cas). Retourne null si les deux tentatives échouent,
+// jamais d'exception qui remonte jusqu'à l'appelant.
+function newChartWithOrphanCleanup(canvasEl, config){
+  const orphan = typeof Chart.getChart === 'function' ? Chart.getChart(canvasEl) : null;
+  if (orphan) orphan.destroy();
+  try{
+    return new Chart(canvasEl.getContext('2d'), config);
+  }catch(e){
+    console.error('Erreur de construction du graphique (1re tentative) :', e);
+    try{
+      const orphan2 = typeof Chart.getChart === 'function' ? Chart.getChart(canvasEl) : null;
+      if (orphan2) orphan2.destroy();
+      return new Chart(canvasEl.getContext('2d'), config);
+    }catch(e2){
+      console.error('Erreur de construction du graphique (2e tentative) :', e2);
+      return null;
+    }
+  }
+}
 function destroyCharts(){
   Object.values(chartInstances).forEach(ch => ch && ch.destroy());
   chartInstances = {};
@@ -4911,26 +4962,27 @@ function renderZoomRangeRow(){
 
 function renderZoomChart(){
   if (window.__zoomChart){ window.__zoomChart.destroy(); window.__zoomChart = null; }
-  // Jamais d'exception non attrapée depuis ce point (voir renderStockChart()) — une
-  // combinaison d'overlays qui plante ne doit pas laisser toute la modale/l'app cassée.
-  try{
-    if (ZOOM_SPECIAL_RANGES[zoomKey]){
-      const config = zoomSpecialChartConfig();
-      if (config) window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), config);
-      if (zoomKey === 'stock'){
-        const noteEl = document.getElementById('zoomStockScaleNote');
-        noteEl.textContent = (config && config._scaleNote) || '';
-        noteEl.style.display = (config && config._scaleNote) ? 'block' : 'none';
-      }
-      return;
+  const canvasEl = document.getElementById('zoomCanvas');
+  // newChartWithOrphanCleanup() gère elle-même l'échec de construction (voir sa doc) —
+  // jamais d'exception non attrapée depuis ce point, une combinaison d'overlays qui
+  // plante ne doit pas laisser toute la modale/l'app cassée. Bug remonté : sans ce
+  // nettoyage, un premier échec (ex. bug setLineDash) laissait window.__zoomChart à null
+  // en permanence, rendant le bouton panier/export silencieusement inopérant même après
+  // avoir rouvert le zoom.
+  if (ZOOM_SPECIAL_RANGES[zoomKey]){
+    const config = zoomSpecialChartConfig();
+    if (config) window.__zoomChart = newChartWithOrphanCleanup(canvasEl, config);
+    if (zoomKey === 'stock'){
+      const noteEl = document.getElementById('zoomStockScaleNote');
+      noteEl.textContent = (config && config._scaleNote) || '';
+      noteEl.style.display = (config && config._scaleNote) ? 'block' : 'none';
     }
-    const baseConfig = chartConfigs[zoomKey];
-    if (!baseConfig) return;
-    const nYears = (!ZOOM_HISTORICAL_KEYS.includes(zoomKey) || zoomRange === 'max') ? null : parseInt(zoomRange, 10);
-    window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), sliceChartConfigByYears(baseConfig, nYears));
-  }catch(e){
-    console.error('Erreur graphique (zoom) :', e);
+    return;
   }
+  const baseConfig = chartConfigs[zoomKey];
+  if (!baseConfig) return;
+  const nYears = (!ZOOM_HISTORICAL_KEYS.includes(zoomKey) || zoomRange === 'max') ? null : parseInt(zoomRange, 10);
+  window.__zoomChart = newChartWithOrphanCleanup(canvasEl, sliceChartConfigByYears(baseConfig, nYears));
 }
 
 function openZoom(key, title){
@@ -5136,7 +5188,7 @@ function scenarioCardHtml(s){
         <div><div class="r-k">Prix est. (5a)</div><div class="r-v" id="vo-${s.key}-prixEst">—</div></div>
         <div><div class="r-k">Rendement (5a)</div><div class="r-v" id="vo-${s.key}-rendement">—</div></div>
       </div>
-      <div class="scenario-chart-holder"><canvas id="vo-${s.key}-chart"></canvas></div>
+      <div class="scenario-chart-holder"><canvas id="vo-${s.key}-chart"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(scenarioCharts['${s.key}'], '${s.label}', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
       <div class="macro-export-row">
         <button onclick="exportScenarioChartAsPdf('${s.key}')">PDF</button>
         <button onclick="exportScenarioChartAsImage('${s.key}','png')">PNG</button>
@@ -7685,6 +7737,7 @@ document.getElementById('exportCartList').addEventListener('click', (e) => {
   const btn = e.target.closest('[data-cart-remove]');
   if (btn) removeFromExportCart(parseInt(btn.dataset.cartRemove, 10));
 });
+document.getElementById('exportCartTitleInput').addEventListener('input', (e) => { exportCartTitle = e.target.value; });
 renderExportCartWidget();
 
 document.getElementById('saveObjectifBtn').addEventListener('click', () => { if (activeCompany) saveObjectif(activeCompany); });

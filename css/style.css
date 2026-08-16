@@ -703,6 +703,14 @@
   .chart-card h3{font-family:var(--font-display);font-size:14.5px;font-weight:600;margin:0 0 2px;color:var(--text);}
   .chart-card p{margin:0 0 12px;font-size:12px;color:var(--text-faint);}
   .chart-holder{position:relative;height:220px;}
+  /* Bouton flottant "Ajouter au panier" en bas à droite du graphique lui-même (pas dans
+     l'en-tête de la carte) — demande explicite : pouvoir ajouter un graphique au panier
+     d'export groupé sans devoir d'abord l'ouvrir en grand. Overlay plutôt qu'une ligne de
+     boutons sous le graphique, pour ne pas ajouter de hauteur (densité inchangée). */
+  .chart-card-cart-btn{position:absolute;right:8px;bottom:8px;width:26px;height:26px;border-radius:50%;border:1px solid var(--card-border);background:rgba(21,26,31,0.85);color:var(--text-dim);font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px);transition:transform .12s ease,color .12s ease,border-color .12s ease;z-index:2;}
+  .chart-card-cart-btn:hover{color:var(--gold);border-color:var(--gold);transform:scale(1.1);}
+  .chart-card-cart-btn.cart-btn-flash-ok{color:var(--green);border-color:var(--green);}
+  .chart-card-cart-btn.cart-btn-flash-err{color:var(--red);border-color:var(--red);}
   .range-buttons{display:flex;gap:6px;margin:10px 0 14px;flex-wrap:wrap;}
   .range-buttons button{font-family:var(--font-mono);font-size:11px;font-weight:600;padding:5px 11px;border-radius:14px;border:1px solid var(--hair);background:var(--panel-2);color:var(--text-dim);cursor:pointer;}
   .range-buttons button:hover{border-color:var(--gold);color:var(--text);}
@@ -761,8 +769,16 @@
      persistant sur toutes les pages (#exportCartWidget). Sélectionner des graphiques
      sur N'IMPORTE QUELLE page de l'app puis les exporter tous dans un seul PDF, dans
      l'ordre de sélection — demande explicite de l'utilisateur. */
-  .export-cart-add-btn{margin-left:auto;background:linear-gradient(135deg,var(--gold),var(--gold-2));color:#1A1305;border:none;font-weight:700;}
+  /* Bouton "Ajouter au panier" de la modale de zoom : posé dans .zoom-panel-head (haut,
+     à côté du logo/titre) plutôt que dans #zoomExportRow (bas, sous le graphique) —
+     demande explicite pour qu'il soit visible sans avoir à scroller la modale. Stylé de
+     façon autonome (pas hérité de .macro-export-row button) puisqu'il n'est plus dans
+     cette rangée. */
+  .export-cart-add-btn{flex-shrink:0;white-space:nowrap;background:linear-gradient(135deg,var(--gold),var(--gold-2));color:#1A1305;border:none;font-weight:700;font-family:var(--font-body);font-size:12.5px;padding:8px 14px;border-radius:8px;cursor:pointer;}
   .export-cart-add-btn:hover{color:#1A1305;filter:brightness(1.08);}
+  .export-cart-add-btn:disabled{opacity:0.7;cursor:default;}
+  .export-cart-title-input{margin:0 12px;padding:8px 10px;background:var(--panel);border:1px solid var(--hair);border-radius:8px;color:var(--text);font-size:12px;font-family:var(--font-body);}
+  .export-cart-title-input:focus{outline:none;border-color:var(--gold);}
   .export-cart-widget{position:fixed;right:22px;bottom:22px;z-index:1002;font-family:var(--font-body);}
   .export-cart-toggle{display:flex;align-items:center;gap:7px;background:var(--card-bg);border:1px solid var(--card-border);color:var(--text);border-radius:999px;padding:10px 16px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,0.4);}
   .export-cart-toggle:hover{border-color:var(--gold);}

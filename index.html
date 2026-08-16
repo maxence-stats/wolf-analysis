@@ -166,7 +166,7 @@
           <button data-overlay="pfcf">+ P/FCF</button>
           <button data-overlay="cash">+ Trésorerie</button>
         </div>
-        <div class="chart-holder" style="height:320px;"><canvas id="chartStock"></canvas></div>
+        <div class="chart-holder" style="height:320px;"><canvas id="chartStock"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['stock'], 'Cours de bourse', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
         <div class="stock-status" id="stockStatus"></div>
         <div class="stock-source" id="stockScaleNote" style="display:none;"></div>
         <div class="stock-source" id="stockSourceNote">Source : Yahoo Finance (repli automatique sur Stooq si indisponible)</div>
@@ -180,7 +180,7 @@
             <button class="zoom-btn" onclick="openZoom('div',&quot;Dividende &amp; Payout ratio&quot;)" aria-label="Agrandir">⤢</button>
           </div>
         </div>
-        <div class="chart-holder"><canvas id="chartDiv"></canvas></div>
+        <div class="chart-holder"><canvas id="chartDiv"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['div'], &quot;Dividende &amp; Payout ratio&quot;, this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
       </div>
 
       <div class="chart-card">
@@ -191,7 +191,7 @@
             <button class="zoom-btn" onclick="openZoom('ca',&quot;Chiffre d'affaires&quot;)" aria-label="Agrandir">⤢</button>
           </div>
         </div>
-        <div class="chart-holder"><canvas id="chartCA"></canvas></div>
+        <div class="chart-holder"><canvas id="chartCA"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['ca'], &quot;Chiffre d'affaires&quot;, this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
       </div>
 
       <div class="chart-card">
@@ -201,7 +201,7 @@
             <button class="zoom-btn" onclick="openZoom('marges',&quot;Marge opérationnelle &amp; ROIC&quot;)" aria-label="Agrandir">⤢</button>
           </div>
         </div>
-        <div class="chart-holder"><canvas id="chartMarges"></canvas></div>
+        <div class="chart-holder"><canvas id="chartMarges"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['marges'], &quot;Marge opérationnelle &amp; ROIC&quot;, this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
       </div>
 
       <div class="chart-card">
@@ -212,7 +212,7 @@
             <button class="zoom-btn" onclick="openZoom('fcf',&quot;Free Cash Flow par action&quot;)" aria-label="Agrandir">⤢</button>
           </div>
         </div>
-        <div class="chart-holder"><canvas id="chartFCF"></canvas></div>
+        <div class="chart-holder"><canvas id="chartFCF"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['fcf'], 'Free Cash Flow par action', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
       </div>
 
       <div class="chart-card">
@@ -223,7 +223,7 @@
           </div>
         </div>
         <div class="mediane-badges-row" id="medianeBadgesPfcf"></div>
-        <div class="chart-holder"><canvas id="chartPFCF"></canvas></div>
+        <div class="chart-holder"><canvas id="chartPFCF"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['pfcf'], 'Multiple P/FCF payé par le marché', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
       </div>
 
       <div class="chart-card">
@@ -233,7 +233,7 @@
             <button class="zoom-btn" onclick="openZoom('ocf',&quot;Operating Cash Flow par action&quot;)" aria-label="Agrandir">⤢</button>
           </div>
         </div>
-        <div class="chart-holder"><canvas id="chartOCF"></canvas></div>
+        <div class="chart-holder"><canvas id="chartOCF"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['ocf'], 'Operating Cash Flow par action', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
       </div>
 
       <div class="chart-card">
@@ -248,7 +248,7 @@
           <button data-series="pfcf" class="active">P/FCF</button>
           <button data-series="pocf" class="active">P/OCF</button>
         </div>
-        <div class="chart-holder"><canvas id="chartPFCFPOCF"></canvas></div>
+        <div class="chart-holder"><canvas id="chartPFCFPOCF"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['pfcfpocf'], 'Multiples P/FCF vs P/OCF', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
       </div>
 
       <div class="chart-card">
@@ -259,7 +259,7 @@
             <button class="zoom-btn" onclick="openZoom('actions',&quot;Actions en circulation&quot;)" aria-label="Agrandir">⤢</button>
           </div>
         </div>
-        <div class="chart-holder"><canvas id="chartActions"></canvas></div>
+        <div class="chart-holder"><canvas id="chartActions"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['actions'], 'Actions en circulation', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
       </div>
 
       <div class="chart-card">
@@ -269,7 +269,7 @@
             <button class="zoom-btn" onclick="openZoom('dette',&quot;Dette / OCF&quot;)" aria-label="Agrandir">⤢</button>
           </div>
         </div>
-        <div class="chart-holder"><canvas id="chartDette"></canvas></div>
+        <div class="chart-holder"><canvas id="chartDette"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['dette'], 'Dette / OCF', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
       </div>
 
       <div class="chart-card">
@@ -279,7 +279,7 @@
             <button class="zoom-btn" onclick="openZoom('cash',&quot;Trésorerie &amp; investissements&quot;)" aria-label="Agrandir">⤢</button>
           </div>
         </div>
-        <div class="chart-holder"><canvas id="chartCash"></canvas></div>
+        <div class="chart-holder"><canvas id="chartCash"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['cash'], &quot;Trésorerie &amp; investissements&quot;, this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
       </div>
     </div>
     </div>
@@ -670,7 +670,7 @@
           <div class="range-buttons" id="macroCycleRangeButtons">
             <button data-range="5">5a</button><button data-range="10">10a</button><button class="active" data-range="20">20a</button><button data-range="max">Max</button>
           </div>
-          <div class="chart-holder" style="height:340px;"><canvas id="chartMacroCycle"></canvas></div>
+          <div class="chart-holder" style="height:340px;"><canvas id="chartMacroCycle"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(MACRO_CHART_GETTERS.cycle(), 'Cycle de Marché — Offensif vs Défensif', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
           <div id="macroCycleStatus" class="stock-status" style="display:none;"></div>
           <div class="macro-export-row">
             <button onclick="exportMacroChartAsPdf('cycle','Cycle de Marché — Offensif vs Défensif')">PDF</button>
@@ -688,7 +688,7 @@
             <button data-range="m1">1m</button><button data-range="m2">2m</button><button data-range="m3">3m</button>
             <button data-range="1">1a</button><button data-range="2">2a</button><button class="active" data-range="3">3a</button>
           </div>
-          <div class="chart-holder" style="height:340px;"><canvas id="chartMacroRotation"></canvas></div>
+          <div class="chart-holder" style="height:340px;"><canvas id="chartMacroRotation"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(MACRO_CHART_GETTERS.rotation(), 'Rotation Sectorielle GICS vs S&amp;P 500', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
           <p class="chart-hint">Clique sur un secteur dans la légende ci-dessus pour l'afficher/le masquer (11 secteurs, ça peut vite surcharger).</p>
           <div id="macroRotationStatus" class="stock-status" style="display:none;"></div>
           <div class="macro-export-row">
@@ -705,7 +705,7 @@
             <div><h3>Poids relatif des secteurs</h3><p class="chart-subtitle">Approximation à partir des ratios sectoriels actuels — pas une vraie pondération de capitalisation</p></div>
             <div class="chart-card-actions"><button class="zoom-btn" onclick="openMacroWeightZoom()" aria-label="Agrandir">⤢</button></div>
           </div>
-          <div class="chart-holder" style="height:340px;"><canvas id="chartMacroWeight"></canvas></div>
+          <div class="chart-holder" style="height:340px;"><canvas id="chartMacroWeight"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(MACRO_CHART_GETTERS.weight(), 'Poids relatif des secteurs', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
           <div class="macro-export-row">
             <button onclick="exportMacroChartAsPdf('weight','Poids relatif des secteurs')">PDF</button>
             <button onclick="exportMacroChartAsImage('weight','poids-sectoriel','png')">PNG</button>
@@ -721,7 +721,7 @@
           <div class="range-buttons" id="macroRankingRowButtons">
             <button class="active" data-row="Classement">Classement</button><button data-row="1 moi">1m</button><button data-row="2 mois">2m</button><button data-row="3 mois">3m</button><button data-row="6 mois">6m</button><button data-row="1 ans">1a</button><button data-row="2 ans">2a</button><button data-row="3 ans">3a</button>
           </div>
-          <div class="chart-holder" style="height:340px;"><canvas id="chartMacroRanking"></canvas></div>
+          <div class="chart-holder" style="height:340px;"><canvas id="chartMacroRanking"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(MACRO_CHART_GETTERS.ranking(), 'Classement sectoriel', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
           <div class="macro-export-row">
             <button onclick="exportMacroChartAsPdf('ranking','Classement sectoriel')">PDF</button>
             <button onclick="exportMacroChartAsImage('ranking','classement-sectoriel','png')">PNG</button>
@@ -763,6 +763,7 @@
     <div class="zoom-panel-head">
       <img id="zoomEntityLogo" class="zoom-entity-logo" src="" alt="" style="display:none;">
       <h3 id="zoomTitle">—</h3>
+      <button id="zoomAddToCartBtn" class="export-cart-add-btn" onclick="addCurrentZoomChartToCart()" title="Ajouter au panier d'export groupé">🧺 Ajouter au panier</button>
       <button class="zoom-close" onclick="closeZoom()" aria-label="Fermer">✕</button>
     </div>
     <div class="zoom-controls-row" id="zoomControlsRow">
@@ -816,7 +817,6 @@
       <button onclick="exportZoomChartAsPdf()">PDF</button>
       <button onclick="exportZoomChartAsImage('png')">PNG</button>
       <button onclick="exportZoomChartAsImage('jpg')">JPG</button>
-      <button id="zoomAddToCartBtn" class="export-cart-add-btn" onclick="addCurrentZoomChartToCart()">🧺 Ajouter au PDF groupé</button>
     </div>
     <div class="zoom-footer">
       Données fournies par Wolf Analysis
@@ -836,6 +836,7 @@
       <span>Export groupé</span>
       <button id="exportCartClearBtn" title="Vider">Vider</button>
     </div>
+    <input type="text" id="exportCartTitleInput" class="export-cart-title-input" placeholder="Titre du document (ex : Analyse TotalEnergies — Août 2026)" maxlength="120">
     <div id="exportCartList" class="export-cart-list"></div>
     <button id="exportCartExportBtn" class="export-cart-export-btn">⭳ Exporter le PDF</button>
   </div>
