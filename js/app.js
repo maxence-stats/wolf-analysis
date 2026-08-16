@@ -1884,6 +1884,27 @@ function tableToImageDataUrl(tableEl, title){
   ctx.fillText('Données fournies par Wolf Analysis', padX, y + footH / 2 + 4);
   return canvas.toDataURL('image/png');
 }
+// Agrandir un tableau macro (Force relative / Fondamentaux) et l'ajouter au panier
+// d'export groupé — demandé explicitement, ces 2 tableaux n'avaient jusqu'ici que
+// l'export PDF/PNG/JPG direct, pas de zoom ni d'accès au panier. Réutilise le rendu
+// canvas déjà en place (tableToImageDataUrl) : pas de nouveau composant, juste la
+// lightbox image existante (#imageZoomModal, déjà utilisée par le Cerveau numérique).
+function zoomMacroTable(boxId, title){
+  const box = document.getElementById(boxId);
+  const tableEl = box && box.querySelector('table');
+  if (!tableEl) return;
+  const url = tableToImageDataUrl(tableEl, title);
+  if (url) openImageZoom(url);
+}
+function addMacroTableToCart(boxId, title, btnEl){
+  const box = document.getElementById(boxId);
+  const tableEl = box && box.querySelector('table');
+  const dataUrl = tableEl ? tableToImageDataUrl(tableEl, title) : null;
+  if (!dataUrl){ flashCartBtn(btnEl, false); return; }
+  exportCart.push({ title, dataUrl });
+  renderExportCartWidget();
+  flashCartBtn(btnEl, true);
+}
 async function exportMacroTableAsImage(boxId, title, format){
   const box = document.getElementById(boxId);
   const tableEl = box && box.querySelector('table');
@@ -2358,6 +2379,20 @@ async function buildPortfolioExportChartImg(holdings){
   return dataUrl ? `<img class="print-chart-img" src="${dataUrl}" alt="Répartition du portefeuille">` : '';
 }
 
+// Panier : le donut affiché est tainté (logos de position sans crossOrigin, voir plus
+// haut), donc addChartInstanceToCart() échouerait sur portfolioDonutChart directement —
+// on réutilise le même graphique jetable hors-écran que l'export PDF.
+async function addPortfolioDonutToCart(btnEl){
+  const holdings = portfolioData.holdings.filter(h => h.valorisation != null && h.valorisation > 0);
+  if (!holdings.length){ flashCartBtn(btnEl, false); return; }
+  const imgHtml = await buildPortfolioExportChartImg(holdings);
+  const match = imgHtml.match(/src="([^"]+)"/);
+  if (!match){ flashCartBtn(btnEl, false); return; }
+  exportCart.push({ title:'Répartition — Wolf Portfolio', dataUrl: match[1] });
+  renderExportCartWidget();
+  flashCartBtn(btnEl, true);
+}
+
 async function exportPortfolioAsPdf(){
   const summary = `<div class="print-section"><h3>Résumé</h3>
     <table class="print-table"><tbody>
@@ -2613,19 +2648,26 @@ function buildPersoDonutConfig(prefix, block){
   const holdings = block.positions.filter(h => h.valorisation != null && h.valorisation > 0);
   if (!holdings.length) return null;
   const total = holdings.reduce((s, h) => s + h.valorisation, 0);
+  // Logos sur les segments (portfolioSegmentLogosPlugin, même plugin que le donut Wolf
+  // Portfolio) — manquant jusqu'ici malgré la légende à côté qui, elle, les affichait déjà :
+  // bug signalé par l'utilisateur ("tu les as mis, mais pas sur le camembert").
+  const logos = holdings.map(h => companyLogoUrl(h.nom));
   return {
     type:'doughnut',
     data:{ labels: holdings.map(h => h.nom), datasets:[{
       data: holdings.map(h => h.valorisation),
       backgroundColor: holdings.map((_, i) => PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length]),
-      borderColor:THEME.hair, borderWidth:2
+      borderColor:THEME.hair, borderWidth:2,
+      _logos: logos
     }] },
     options:{ responsive:true, maintainAspectRatio:false, cutout:'46%',
-      plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label: ctx => {
+      plugins:{ legend:{ display:false }, tooltip:{ position:'nearest', caretPadding:14, callbacks:{ label: ctx => {
         const pct = total ? (ctx.parsed / total * 100) : 0;
         return ctx.label + ' : ' + pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%';
       } } } }
-    }
+    },
+    plugins:[portfolioSegmentLogosPlugin()],
+    _logos: logos
   };
 }
 function renderPersoDonutLegend(prefix, block){
@@ -2651,6 +2693,13 @@ function renderPersoDonut(prefix, block){
   renderPersoDonutLegend(prefix, block);
   if (!config) return;
   persoDonutCharts[prefix] = new Chart(canvas.getContext('2d'), config);
+  // Préchargement des logos avant premier dessin (loadImageCached résout même en cas
+  // d'échec, avec null — voir portfolioImageCache) : sans ce .then(), le tout premier
+  // rendu dessine avant que les images aient fini de charger, laissant les segments sans
+  // logo jusqu'au prochain re-render.
+  Promise.all(config._logos.map(loadImageCached)).then(() => {
+    if (persoDonutCharts[prefix]) persoDonutCharts[prefix].update();
+  });
 }
 function openPersoDonutZoom(prefix, block, label){
   const config = buildPersoDonutConfig(prefix, block);
@@ -2663,6 +2712,9 @@ function openPersoDonutZoom(prefix, block, label){
   if (window.__zoomChart) window.__zoomChart.destroy();
   document.getElementById('zoomModal').style.display = 'flex';
   window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), config);
+  Promise.all(config._logos.map(loadImageCached)).then(() => {
+    if (window.__zoomChart) window.__zoomChart.update();
+  });
 }
 
 let persoVsCacCharts = { pea:null, cto:null };
@@ -2676,7 +2728,10 @@ function renderPersoVsCacChart(prefix, block, label){
   persoVsCacCharts[prefix] = new Chart(canvas.getContext('2d'), {
     type:'line',
     data:{
-      labels: monthly.map(m => m.mois),
+      // fmtMonthLabel() : labels bruts illisibles sinon (même bug déjà corrigé pour Wolf
+      // Portfolio, jamais appliqué ici — signalé par l'utilisateur, "les dates elles sont
+      // marquées bizarres").
+      labels: monthly.map(m => fmtMonthLabel(m.mois)),
       datasets:[
         { label, data: monthly.map(m => m.valeurPart), borderColor:THEME.gold, backgroundColor:'rgba(217,164,65,0.08)', fill:true, tension:0.2, pointRadius:2, spanGaps:true },
         { label:'CAC 40', data: monthly.map(m => m.valeurPartCac40), borderColor:THEME.blue, borderWidth:1.5, pointRadius:2, tension:0.2, spanGaps:true }
@@ -2927,6 +2982,39 @@ function renderClassement(){
     : '<div class="objectifs-empty">Aucune entreprise survalorisée.</div>';
 }
 
+// Export PDF du Classement — n'existait pas jusqu'ici (demande explicite). Reconstruit
+// les 3 listes depuis les mêmes données/tri que renderClassement() (pas un clonage du
+// DOM affiché, qui est déjà scindé en 2 colonnes visuelles pour le rendement dividende —
+// ici on veut un seul tableau classé, plus lisible à l'impression), respecte le filtre
+// secteur actif au moment du clic.
+function exportClassementAsPdf(){
+  const filterSelect = document.getElementById('classementSecteurFilter');
+  const secteurFiltre = filterSelect.value;
+  const secteurLabel = secteurFiltre ? filterSelect.options[filterSelect.selectedIndex].text : null;
+
+  const rows = Object.keys(companies).map(nom => {
+    const latest = companies[nom][companies[nom].length - 1];
+    return { nom, logo: latest.lienImage, rendementDiv: latest.rendementDiv, ecartValeur: latest.ecartValeur, secteurKey: normalizeSector(latest.secteur) || 'autre' };
+  }).filter(r => !secteurFiltre || r.secteurKey === secteurFiltre);
+
+  const byDiv = rows.filter(r => r.rendementDiv != null).sort((a, b) => b.rendementDiv - a.rendementDiv);
+  const sousValo = rows.filter(r => r.ecartValeur != null && r.ecartValeur < 0).sort((a, b) => a.ecartValeur - b.ecartValeur);
+  const survalo = rows.filter(r => r.ecartValeur != null && r.ecartValeur >= 0).sort((a, b) => a.ecartValeur - b.ecartValeur);
+
+  const table = (list, valueFn) => list.length
+    ? `<table class="print-table"><thead><tr><th>#</th><th>Entreprise</th><th>Valeur</th></tr></thead><tbody>${list.map((r, i) => {
+        const logoImg = r.logo ? `<img class="print-inline-logo" src="${r.logo}" alt="">` : '';
+        return `<tr><td>${i + 1}</td><td>${logoImg}${r.nom.replace(/</g,'&lt;')}</td><td>${valueFn(r)}</td></tr>`;
+      }).join('')}</tbody></table>`
+    : '<p style="color:#999">Aucune donnée disponible.</p>';
+
+  const body = `
+    <div class="print-section"><h3>Meilleur rendement du dividende</h3>${table(byDiv, r => fmtPct(r.rendementDiv))}</div>
+    <div class="print-section"><h3>Sous-valorisées</h3>${table(sousValo, r => fmtPct(r.ecartValeur * 100))}</div>
+    <div class="print-section"><h3>Survalorisées</h3>${table(survalo, r => fmtPct(r.ecartValeur * 100))}</div>`;
+  exportSectionAsPdf('Classement', secteurLabel, body);
+}
+
 function initClassement(){
   ['classementDivLeft', 'classementDivRight', 'classementValoSous', 'classementValoSurvalo'].forEach(id => {
     const box = document.getElementById(id);
@@ -2945,6 +3033,8 @@ function initClassement(){
   });
   const filter = document.getElementById('classementSecteurFilter');
   if (filter) filter.addEventListener('change', renderClassement);
+  const exportPdfBtn = document.getElementById('classementExportPdfBtn');
+  if (exportPdfBtn) exportPdfBtn.addEventListener('click', exportClassementAsPdf);
 }
 
 /* ============================================================
@@ -3562,15 +3652,23 @@ function computeConstructionSimChart(totalCapital, rendementDivMoyen, cagrDivMoy
 
 function initConstruction(){
   const addBtn = document.getElementById('constructionAddBtn');
-  if (addBtn) addBtn.addEventListener('click', () => {
-    const nomInput = document.getElementById('constructionCompanyInput');
-    const amountInput = document.getElementById('constructionAmountInput');
+  const nomInput = document.getElementById('constructionCompanyInput');
+  const amountInput = document.getElementById('constructionAmountInput');
+  const submitConstruction = () => {
     const nom = nomInput.value.trim();
     const montant = parseFloat(amountInput.value);
     if (!companies[nom]){ alert("Entreprise inconnue — choisis un nom dans la liste suggérée."); return; }
     if (!montant || montant <= 0){ alert('Indique un montant positif.'); return; }
     addConstructionPosition(nom, montant);
     nomInput.value = '';
+  };
+  if (addBtn) addBtn.addEventListener('click', submitConstruction);
+  // Cliquer une suggestion de la <datalist> ne déclenche pas d'événement clavier, donc
+  // le champ se remplissait sans que rien ne se passe (même bug déjà rencontré et
+  // corrigé sur le sélecteur d'entreprise du Cerveau numérique) — on soumet
+  // automatiquement dès que la valeur correspond exactement à une entreprise suivie.
+  if (nomInput) nomInput.addEventListener('input', () => {
+    if (companies[nomInput.value.trim()]) submitConstruction();
   });
   const exportBtn = document.getElementById('constructionExportBtn');
   if (exportBtn) exportBtn.addEventListener('click', exportConstructionPortfolio);

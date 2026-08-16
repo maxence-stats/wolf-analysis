@@ -875,6 +875,12 @@
   .macro-export-row{display:flex;gap:6px;margin-top:10px;}
   .macro-export-row button{background:var(--panel);border:1px solid var(--hair);color:var(--text-dim);border-radius:6px;padding:4px 10px;font-size:10.5px;font-family:var(--font-mono);cursor:pointer;}
   .macro-export-row button:hover{border-color:var(--gold);color:var(--text);}
+  /* .macro-export-row button (ci-dessus) a une spécificité plus élevée que
+     .export-cart-add-btn seule (classe+élément > classe) et écraserait son style doré —
+     même piège déjà documenté (CLAUDE.md, cascade CSS) : sélecteur composé pour regagner
+     la priorité dans ce contexte précis. */
+  .macro-export-row .export-cart-add-btn{background:linear-gradient(135deg,var(--gold),var(--gold-2));color:#1A1305;border:none;padding:8px 14px;font-size:12.5px;font-family:var(--font-body);}
+  .macro-export-row .export-cart-add-btn:hover{color:#1A1305;filter:brightness(1.08);}
   .macro-charts-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;}
   .macro-charts-row .chart-card{margin-bottom:0;}
   @media (max-width:1100px){ .macro-charts-row{grid-template-columns:1fr;} }

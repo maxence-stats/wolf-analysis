@@ -340,7 +340,7 @@
               <button class="zoom-btn" onclick="openPortfolioZoom()" aria-label="Agrandir">⤢</button>
             </div>
           </div>
-          <div class="chart-holder" style="height:560px;"><canvas id="chartPortfolioDonut"></canvas></div>
+          <div class="chart-holder" style="height:560px;"><canvas id="chartPortfolioDonut"></canvas><button class="chart-card-cart-btn" onclick="addPortfolioDonutToCart(this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
         </div>
       </div>
 
@@ -348,11 +348,11 @@
       <div class="portfolio-compare-grid">
         <div class="chart-card">
           <div class="chart-card-head"><div><h3>Performance cumulée</h3><p class="chart-subtitle">Rendement total depuis le début (mars 2026)</p></div><div class="chart-card-actions"><button class="zoom-btn" id="portfolioVsSpxZoomBtn" aria-label="Agrandir">⤢</button></div></div>
-          <div class="chart-holder" style="height:280px;"><canvas id="chartPortfolioVsSpx"></canvas></div>
+          <div class="chart-holder" style="height:280px;"><canvas id="chartPortfolioVsSpx"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(portfolioVsSpxChart, 'Wolf Portfolio vs S&amp;P 500 — Performance cumulée', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
         </div>
         <div class="chart-card">
           <div class="chart-card-head"><div><h3>Performance mensuelle</h3><p class="chart-subtitle">Variation d'un mois sur l'autre</p></div><div class="chart-card-actions"><button class="zoom-btn" id="portfolioVsSpxMonthlyZoomBtn" aria-label="Agrandir">⤢</button></div></div>
-          <div class="chart-holder" style="height:280px;"><canvas id="chartPortfolioVsSpxMonthly"></canvas></div>
+          <div class="chart-holder" style="height:280px;"><canvas id="chartPortfolioVsSpxMonthly"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(portfolioVsSpxMonthlyChart, 'Wolf Portfolio vs S&amp;P 500 — Performance mensuelle', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
         </div>
       </div>
     </div>
@@ -527,6 +527,7 @@
         <select id="classementSecteurFilter">
           <option value="">Tous les secteurs</option>
         </select>
+        <button class="zoom-btn objectifs-export" id="classementExportPdfBtn">🖨 Exporter PDF</button>
       </div>
       <div class="classement-grid">
         <div class="classement-card">
@@ -734,9 +735,11 @@
       <div class="macro-power-card">
         <div id="macroPowerTable" class="macro-power-table-wrap"></div>
         <div class="macro-export-row">
+          <button onclick="zoomMacroTable('macroPowerTable','Force relative sectorielle')">⤢ Agrandir</button>
           <button onclick="exportMacroTableAsPdf('macroPowerTable','Force relative sectorielle')">PDF</button>
           <button onclick="exportMacroTableAsImage('macroPowerTable','Force relative sectorielle','png')">PNG</button>
           <button onclick="exportMacroTableAsImage('macroPowerTable','Force relative sectorielle','jpg')">JPG</button>
+          <button class="export-cart-add-btn" onclick="addMacroTableToCart('macroPowerTable','Force relative sectorielle', this)">🧺 Ajouter au panier</button>
         </div>
       </div>
 
@@ -744,9 +747,11 @@
       <div class="macro-power-card">
         <div id="macroFundamentalsTable"></div>
         <div class="macro-export-row">
+          <button onclick="zoomMacroTable('macroFundamentalsTable','Indicateurs macroéconomiques (États-Unis)')">⤢ Agrandir</button>
           <button onclick="exportMacroTableAsPdf('macroFundamentalsTable','Indicateurs macroéconomiques (États-Unis)')">PDF</button>
           <button onclick="exportMacroTableAsImage('macroFundamentalsTable','Indicateurs macroéconomiques (États-Unis)','png')">PNG</button>
           <button onclick="exportMacroTableAsImage('macroFundamentalsTable','Indicateurs macroéconomiques (États-Unis)','jpg')">JPG</button>
+          <button class="export-cart-add-btn" onclick="addMacroTableToCart('macroFundamentalsTable','Indicateurs macroéconomiques (États-Unis)', this)">🧺 Ajouter au panier</button>
         </div>
       </div>
     </div>
