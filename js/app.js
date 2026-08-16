@@ -1692,6 +1692,276 @@ function exportCartAsPdf(){
   exportSectionAsPdf(title, `${exportCart.length} graphique${exportCart.length > 1 ? 's' : ''}`, body);
 }
 
+/* ============================================================
+   ÉDITEUR PDF — page libre (glisser-déposer, texte) pour composer un document
+   newsletter-ready à partir des graphiques du panier + de texte ajouté à la main —
+   demande explicite ("un peu comme un éditeur de PDF... la possibilité de déplacer
+   les éléments, de rajouter du texte"). Stockage IndexedDB (mêmes raisons que le
+   Cerveau numérique : images en base64, localStorage saturerait vite son quota —
+   voir "Conventions de code" CLAUDE.md).
+   Position/taille de chaque bloc stockées en % de la page (0-100) — indépendant de
+   toute unité écran, la même valeur pilote l'affichage ET l'impression sans aucune
+   conversion (voir .pdf-editor-page / .pdf-editor-print-page dans le CSS, mêmes
+   dimensions physiques 182mm×269mm = A4 moins la marge @page déjà en place).
+   ============================================================ */
+const PDFEDIT_DB_NAME = 'wolfAnalysisPdfEditor';
+const PDFEDIT_STORE = 'state';
+let pdfEditDB = null;
+let pdfEditDoc = { title:'', pages:[{ blocks:[] }] };
+let pdfEditCurrentPage = 0;
+let pdfEditActiveBlockId = null;
+let pdfEditClearConfirming = false;
+
+function openPdfEditDB(){
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(PDFEDIT_DB_NAME, 1);
+    req.onupgradeneeded = () => { req.result.createObjectStore(PDFEDIT_STORE); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function loadPdfEditDoc(){
+  try{
+    pdfEditDB = await openPdfEditDB();
+    const stored = await new Promise((resolve, reject) => {
+      const req = pdfEditDB.transaction(PDFEDIT_STORE, 'readonly').objectStore(PDFEDIT_STORE).get('state');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    if (stored && stored.pages && stored.pages.length) pdfEditDoc = stored;
+  }catch(e){ /* IndexedDB indisponible (navigation privée stricte...) — document vide par défaut, non bloquant */ }
+  renderPdfEditor();
+}
+function persistPdfEditDoc(){
+  if (!pdfEditDB) return;
+  try{ pdfEditDB.transaction(PDFEDIT_STORE, 'readwrite').objectStore(PDFEDIT_STORE).put(pdfEditDoc, 'state'); }
+  catch(e){ /* ignore */ }
+}
+
+function pdfEditNewBlockId(){ return 'b' + Date.now() + Math.random().toString(36).slice(2, 7); }
+
+function pdfEditAddTextBlock(){
+  const p = pdfEditDoc.pages[pdfEditCurrentPage];
+  p.blocks.push({ id: pdfEditNewBlockId(), type:'text', html:'Texte…', x:10, y:10, w:40, h:15, fontSize:14 });
+  persistPdfEditDoc();
+  renderPdfEditor();
+}
+function pdfEditAddPage(){
+  pdfEditDoc.pages.push({ blocks:[] });
+  pdfEditCurrentPage = pdfEditDoc.pages.length - 1;
+  persistPdfEditDoc();
+  renderPdfEditor();
+}
+function pdfEditRemovePage(idx){
+  if (pdfEditDoc.pages.length <= 1) return;
+  pdfEditDoc.pages.splice(idx, 1);
+  if (pdfEditCurrentPage >= pdfEditDoc.pages.length) pdfEditCurrentPage = pdfEditDoc.pages.length - 1;
+  persistPdfEditDoc();
+  renderPdfEditor();
+}
+function pdfEditRemoveBlock(id){
+  const p = pdfEditDoc.pages[pdfEditCurrentPage];
+  const idx = p.blocks.findIndex(b => b.id === id);
+  if (idx !== -1) p.blocks.splice(idx, 1);
+  persistPdfEditDoc();
+  renderPdfEditor();
+}
+
+// Transfère le panier courant vers une nouvelle page de l'éditeur, en grille 2
+// colonnes — point d'entrée principal demandé ("je clique sur l'onglet, ok, j'ai
+// fait ma sélection, j'ai un PDF"). N'écrase jamais un document déjà en cours :
+// ajoute une page à la suite plutôt que de repartir de zéro.
+function openCartInPdfEditor(){
+  if (exportCart.length === 0){ alert("Le panier est vide — ajoute des graphiques avant de les ouvrir dans l'éditeur."); return; }
+  pdfEditDoc.pages.push({ blocks: [] });
+  const pageIdx = pdfEditDoc.pages.length - 1;
+  const cols = 2;
+  exportCart.forEach((item, i) => {
+    const col = i % cols, row = Math.floor(i / cols);
+    pdfEditDoc.pages[pageIdx].blocks.push({
+      id: pdfEditNewBlockId(), type:'image', src:item.dataUrl,
+      x: 5 + col * 47, y: 5 + row * 35, w: 44, h: 30
+    });
+  });
+  pdfEditCurrentPage = pageIdx;
+  if (!pdfEditDoc.title && exportCartTitle) pdfEditDoc.title = exportCartTitle;
+  persistPdfEditDoc();
+  switchPage('pagePdfEditor');
+  renderPdfEditor();
+}
+
+function renderPdfEditorTabs(){
+  const box = document.getElementById('pdfEditorPageTabs');
+  if (!box) return;
+  box.innerHTML = pdfEditDoc.pages.map((p, i) => `
+    <button class="pdf-editor-tab${i === pdfEditCurrentPage ? ' active' : ''}" data-page-idx="${i}">
+      Page ${i + 1}${pdfEditDoc.pages.length > 1 ? `<span class="pdf-editor-tab-close" data-remove-page="${i}">✕</span>` : ''}
+    </button>`).join('');
+}
+
+function pdfEditApplyBlockStyle(el, block){
+  el.style.left = block.x + '%';
+  el.style.top = block.y + '%';
+  el.style.width = block.w + '%';
+  el.style.height = block.h + '%';
+}
+
+function renderPdfEditorCanvas(){
+  const canvas = document.getElementById('pdfEditorPageCanvas');
+  if (!canvas) return;
+  const page = pdfEditDoc.pages[pdfEditCurrentPage];
+  canvas.innerHTML = page.blocks.map(b => `
+    <div class="pdf-editor-block${b.id === pdfEditActiveBlockId ? ' active' : ''}" data-block-id="${b.id}" style="left:${b.x}%;top:${b.y}%;width:${b.w}%;height:${b.h}%;">
+      <div class="pdf-editor-block-drag" title="Déplacer">⠿</div>
+      <button class="pdf-editor-block-delete" data-remove-block="${b.id}" title="Supprimer">✕</button>
+      ${b.type === 'text' ? `
+        <div class="pdf-editor-block-toolbar">
+          <button data-fmt-bold="${b.id}" title="Gras"><b>G</b></button>
+          <button data-fmt-size="-1" data-block="${b.id}" title="Réduire">A-</button>
+          <button data-fmt-size="1" data-block="${b.id}" title="Agrandir">A+</button>
+        </div>
+        <div class="pdf-editor-text-inner" contenteditable="true" style="font-size:${b.fontSize || 14}px" data-block-id="${b.id}">${b.html}</div>
+      ` : `<img src="${b.src}" alt="">`}
+      <div class="pdf-editor-resize-handle" data-resize="${b.id}"></div>
+    </div>
+  `).join('');
+  page.blocks.forEach(b => {
+    const el = canvas.querySelector(`[data-block-id="${b.id}"]`);
+    if (el) wirePdfEditorBlock(el, b);
+  });
+}
+
+function wirePdfEditorBlock(el, block){
+  el.addEventListener('mousedown', () => {
+    pdfEditActiveBlockId = block.id;
+    document.querySelectorAll('.pdf-editor-block').forEach(x => x.classList.toggle('active', x.dataset.blockId === block.id));
+  });
+
+  const dragHandle = el.querySelector('.pdf-editor-block-drag');
+  dragHandle.addEventListener('mousedown', e => {
+    e.preventDefault(); e.stopPropagation();
+    const canvas = document.getElementById('pdfEditorPageCanvas');
+    const rect = canvas.getBoundingClientRect();
+    const startX = e.clientX, startY = e.clientY, startLeft = block.x, startTop = block.y;
+    function onMove(me){
+      const dx = (me.clientX - startX) / rect.width * 100;
+      const dy = (me.clientY - startY) / rect.height * 100;
+      block.x = Math.max(0, Math.min(100 - block.w, startLeft + dx));
+      block.y = Math.max(0, Math.min(100 - block.h, startTop + dy));
+      pdfEditApplyBlockStyle(el, block);
+    }
+    function onUp(){
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      persistPdfEditDoc();
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+
+  const resizeHandle = el.querySelector('.pdf-editor-resize-handle');
+  resizeHandle.addEventListener('mousedown', e => {
+    e.preventDefault(); e.stopPropagation();
+    const canvas = document.getElementById('pdfEditorPageCanvas');
+    const rect = canvas.getBoundingClientRect();
+    const startX = e.clientX, startY = e.clientY, startW = block.w, startH = block.h;
+    function onMove(me){
+      const dw = (me.clientX - startX) / rect.width * 100;
+      const dh = (me.clientY - startY) / rect.height * 100;
+      block.w = Math.max(6, Math.min(100 - block.x, startW + dw));
+      block.h = Math.max(4, Math.min(100 - block.y, startH + dh));
+      pdfEditApplyBlockStyle(el, block);
+    }
+    function onUp(){
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      persistPdfEditDoc();
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+
+  if (block.type === 'text'){
+    const textEl = el.querySelector('.pdf-editor-text-inner');
+    textEl.addEventListener('input', () => { block.html = textEl.innerHTML; persistPdfEditDoc(); });
+  }
+}
+
+function renderPdfEditor(){
+  const titleInput = document.getElementById('pdfEditorTitleInput');
+  if (titleInput && document.activeElement !== titleInput) titleInput.value = pdfEditDoc.title || '';
+  renderPdfEditorTabs();
+  renderPdfEditorCanvas();
+}
+
+function initPdfEditor(){
+  document.getElementById('pdfEditorAddTextBtn').addEventListener('click', pdfEditAddTextBlock);
+  document.getElementById('pdfEditorAddPageBtn').addEventListener('click', pdfEditAddPage);
+  document.getElementById('pdfEditorExportBtn').addEventListener('click', exportPdfEditorAsPdf);
+  document.getElementById('pdfEditorTitleInput').addEventListener('input', e => { pdfEditDoc.title = e.target.value; persistPdfEditDoc(); });
+  document.getElementById('pdfEditorPageTabs').addEventListener('click', e => {
+    const closeBtn = e.target.closest('[data-remove-page]');
+    if (closeBtn){ pdfEditRemovePage(parseInt(closeBtn.dataset.removePage, 10)); return; }
+    const tab = e.target.closest('[data-page-idx]');
+    if (tab){ pdfEditCurrentPage = parseInt(tab.dataset.pageIdx, 10); renderPdfEditor(); }
+  });
+  const canvasEl = document.getElementById('pdfEditorPageCanvas');
+  // Boutons "G"/taille : mousedown+preventDefault avant que le click n'exécute la
+  // commande, sinon la sélection de texte est perdue avant — même pattern déjà
+  // établi pour le gras du Cerveau numérique.
+  canvasEl.addEventListener('mousedown', e => {
+    if (e.target.closest('[data-fmt-bold], [data-fmt-size]')) e.preventDefault();
+  });
+  canvasEl.addEventListener('click', e => {
+    const delBtn = e.target.closest('[data-remove-block]');
+    if (delBtn){ pdfEditRemoveBlock(delBtn.dataset.removeBlock); return; }
+    const boldBtn = e.target.closest('[data-fmt-bold]');
+    if (boldBtn){ document.execCommand('bold'); return; }
+    const sizeBtn = e.target.closest('[data-fmt-size]');
+    if (sizeBtn){
+      const b = pdfEditDoc.pages[pdfEditCurrentPage].blocks.find(x => x.id === sizeBtn.dataset.block);
+      if (b){
+        b.fontSize = Math.max(8, Math.min(48, (b.fontSize || 14) + parseInt(sizeBtn.dataset.fmtSize, 10) * 2));
+        persistPdfEditDoc();
+        renderPdfEditorCanvas();
+      }
+    }
+  });
+  document.getElementById('pdfEditorClearBtn').addEventListener('click', () => {
+    const btn = document.getElementById('pdfEditorClearBtn');
+    if (!pdfEditClearConfirming){
+      pdfEditClearConfirming = true;
+      btn.textContent = 'Confirmer ?';
+      setTimeout(() => { pdfEditClearConfirming = false; btn.textContent = 'Vider le document'; }, 3000);
+      return;
+    }
+    pdfEditDoc = { title:'', pages:[{ blocks:[] }] };
+    pdfEditCurrentPage = 0;
+    pdfEditClearConfirming = false;
+    btn.textContent = 'Vider le document';
+    persistPdfEditDoc();
+    renderPdfEditor();
+  });
+  loadPdfEditDoc();
+}
+
+function exportPdfEditorAsPdf(){
+  const area = document.getElementById('printArea');
+  area.innerHTML = pdfEditDoc.pages.map(p => `
+    <div class="pdf-editor-print-page">
+      ${p.blocks.map(b => `
+        <div class="pdf-editor-print-block" style="left:${b.x}%;top:${b.y}%;width:${b.w}%;height:${b.h}%;">
+          ${b.type === 'image' ? `<img src="${b.src}" alt="">` : `<div class="pdf-editor-print-text" style="font-size:${b.fontSize || 14}px">${b.html}</div>`}
+        </div>`).join('')}
+    </div>`).join('');
+  const imgs = Array.from(area.querySelectorAll('img'));
+  const waits = imgs.map(img => img.complete ? Promise.resolve() : new Promise(res => {
+    img.addEventListener('load', res, { once:true });
+    img.addEventListener('error', res, { once:true });
+  }));
+  Promise.race([Promise.all(waits), new Promise(res => setTimeout(res, 4000))]).then(() => window.print());
+}
+
 function exportMacroChartAsPdf(key, title){
   const chart = MACRO_CHART_GETTERS[key] && MACRO_CHART_GETTERS[key]();
   if (!chart) return;
@@ -7836,7 +8106,9 @@ document.getElementById('exportCartList').addEventListener('click', (e) => {
   if (btn) removeFromExportCart(parseInt(btn.dataset.cartRemove, 10));
 });
 document.getElementById('exportCartTitleInput').addEventListener('input', (e) => { exportCartTitle = e.target.value; });
+document.getElementById('exportCartEditBtn').addEventListener('click', openCartInPdfEditor);
 renderExportCartWidget();
+initPdfEditor();
 
 document.getElementById('saveObjectifBtn').addEventListener('click', () => { if (activeCompany) saveObjectif(activeCompany); });
 document.getElementById('exportObjectifsBtn').addEventListener('click', exportObjectifs);

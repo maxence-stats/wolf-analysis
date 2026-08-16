@@ -54,6 +54,7 @@
       <button class="page-nav-btn" data-page="pageIdees">Idées</button>
       <button class="page-nav-btn" data-page="pageRevue">Revue de la semaine</button>
       <button class="page-nav-btn" data-page="pageMacro">Macroéconomie</button>
+      <button class="page-nav-btn" data-page="pagePdfEditor">🖊️ Éditeur PDF</button>
     </div>
 
     <div class="page-subnav" id="portfolioSubnav" style="display:none;">
@@ -756,6 +757,26 @@
       </div>
     </div>
 
+    <!-- Éditeur PDF : composition libre (glisser-déposer, texte) d'un document
+         newsletter-ready à partir des graphiques du panier + de texte ajouté à la main —
+         demande explicite. Stockage IndexedDB (mêmes raisons que le Cerveau numérique :
+         images en base64, localStorage saturerait vite son quota). -->
+    <div id="pagePdfEditor" class="page">
+      <div class="section-label">Éditeur PDF</div>
+      <div class="pdf-editor-toolbar">
+        <input type="text" id="pdfEditorTitleInput" placeholder="Titre du document…" maxlength="120">
+        <button class="zoom-btn objectifs-export" id="pdfEditorAddTextBtn">+ Texte</button>
+        <button class="zoom-btn objectifs-export" id="pdfEditorAddPageBtn">+ Page</button>
+        <button class="zoom-btn objectifs-export" id="pdfEditorClearBtn">Vider le document</button>
+        <button class="export-cart-add-btn" id="pdfEditorExportBtn">🖨 Exporter en PDF</button>
+      </div>
+      <div class="pdf-editor-page-tabs" id="pdfEditorPageTabs"></div>
+      <p class="chart-hint">Glisse la poignée ⠿ pour déplacer un bloc, la poignée en bas à droite pour le redimensionner. Clique dans un bloc de texte pour l'éditer.</p>
+      <div class="pdf-editor-canvas-wrap">
+        <div class="pdf-editor-page" id="pdfEditorPageCanvas"></div>
+      </div>
+    </div>
+
     <footer>
       Données fournies par Wolf Analysis
       <img src="https://i.postimg.cc/43WmYDB1/20260714-LOGO-WINTER-PNG.png" alt="Wolf Analysis" style="height:16px;width:auto;vertical-align:middle;margin-left:6px;border-radius:3px;">
@@ -843,7 +864,8 @@
     </div>
     <input type="text" id="exportCartTitleInput" class="export-cart-title-input" placeholder="Titre du document (ex : Analyse TotalEnergies — Août 2026)" maxlength="120">
     <div id="exportCartList" class="export-cart-list"></div>
-    <button id="exportCartExportBtn" class="export-cart-export-btn">⭳ Exporter le PDF</button>
+    <button id="exportCartEditBtn" class="export-cart-edit-btn">🖊️ Ouvrir dans l'éditeur</button>
+    <button id="exportCartExportBtn" class="export-cart-export-btn">⭳ Exporter le PDF direct</button>
   </div>
 </div>
 

@@ -794,9 +794,44 @@
   .export-cart-item-remove{background:none;border:none;color:var(--text-faint);font-size:14px;cursor:pointer;line-height:1;padding:2px 4px;}
   .export-cart-item-remove:hover{color:var(--red);}
   .export-cart-empty{padding:20px 10px;text-align:center;color:var(--text-faint);font-size:12px;}
-  .export-cart-export-btn{margin:8px;padding:10px;border:none;border-radius:8px;background:linear-gradient(135deg,var(--gold),var(--gold-2));color:#1A1305;font-weight:700;font-size:13px;cursor:pointer;}
+  .export-cart-export-btn{margin:8px 8px 4px;padding:10px;border:none;border-radius:8px;background:linear-gradient(135deg,var(--gold),var(--gold-2));color:#1A1305;font-weight:700;font-size:13px;cursor:pointer;}
   .export-cart-export-btn:hover{filter:brightness(1.08);}
   .export-cart-export-btn:disabled{opacity:0.5;cursor:not-allowed;filter:none;}
+  .export-cart-edit-btn{margin:4px 8px 0;padding:9px;border:1px solid var(--hair);border-radius:8px;background:var(--panel);color:var(--text);font-weight:600;font-size:12.5px;cursor:pointer;}
+  .export-cart-edit-btn:hover{border-color:var(--gold);color:var(--gold-2);}
+
+  /* ---------- ÉDITEUR PDF ----------
+     Page libre (glisser-déposer, texte) pour composer un document newsletter-ready.
+     Position/taille des blocs stockées en % de la page (indépendant de tout zoom
+     écran/pixel — la même valeur sert à l'écran ET à l'impression). Page dimensionnée
+     en 182mm×269mm (A4 moins la marge d'impression @page{margin:14mm} déjà en place
+     pour tous les autres exports du site) plutôt que 210×297 pleine page : évite tout
+     conflit avec cette règle @page globale sans avoir à la surcharger conditionnellement
+     (@page ne supporte pas de sélecteur descendant type body.xxx). */
+  .pdf-editor-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:10px;}
+  .pdf-editor-toolbar input{flex:1;min-width:220px;padding:9px 12px;background:var(--panel-2);border:1px solid var(--hair);border-radius:8px;color:var(--text);font-size:13px;}
+  .pdf-editor-toolbar input:focus{outline:none;border-color:var(--gold);}
+  .pdf-editor-page-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;}
+  .pdf-editor-tab{display:flex;align-items:center;gap:6px;background:var(--panel-2);border:1px solid var(--hair);color:var(--text-dim);border-radius:8px;padding:6px 10px;font-size:12px;font-family:var(--font-mono);cursor:pointer;}
+  .pdf-editor-tab.active{border-color:var(--gold);color:var(--text);}
+  .pdf-editor-tab-close{color:var(--text-faint);}
+  .pdf-editor-tab-close:hover{color:var(--red);}
+  .pdf-editor-canvas-wrap{overflow:auto;padding:30px 10px;display:flex;justify-content:center;background:#05070a;border-radius:14px;margin-top:6px;}
+  .pdf-editor-page{position:relative;width:182mm;height:269mm;background:var(--bg);box-shadow:0 10px 40px rgba(0,0,0,0.5);flex-shrink:0;}
+  .pdf-editor-block{position:absolute;box-sizing:border-box;border:1px dashed transparent;}
+  .pdf-editor-block:hover, .pdf-editor-block.active{border-color:var(--gold);}
+  .pdf-editor-block-drag{position:absolute;top:-15px;left:-15px;width:26px;height:26px;background:var(--gold);color:#1A1305;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:move;font-size:13px;opacity:0;transition:opacity .12s;z-index:3;}
+  .pdf-editor-block:hover .pdf-editor-block-drag, .pdf-editor-block.active .pdf-editor-block-drag{opacity:1;}
+  .pdf-editor-block-delete{position:absolute;top:-15px;right:-15px;width:22px;height:22px;background:var(--red);color:#fff;border:none;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;opacity:0;transition:opacity .12s;z-index:3;}
+  .pdf-editor-block:hover .pdf-editor-block-delete, .pdf-editor-block.active .pdf-editor-block-delete{opacity:1;}
+  .pdf-editor-resize-handle{position:absolute;right:-6px;bottom:-6px;width:14px;height:14px;background:var(--gold);border-radius:3px;cursor:nwse-resize;opacity:0;transition:opacity .12s;z-index:3;}
+  .pdf-editor-block:hover .pdf-editor-resize-handle, .pdf-editor-block.active .pdf-editor-resize-handle{opacity:1;}
+  .pdf-editor-block img{width:100%;height:100%;object-fit:contain;display:block;pointer-events:none;}
+  .pdf-editor-text-inner{width:100%;height:100%;outline:none;color:var(--text);font-family:var(--font-body);padding:4px;overflow:auto;box-sizing:border-box;}
+  .pdf-editor-block-toolbar{position:absolute;top:-40px;left:-1px;display:flex;gap:4px;background:var(--panel-2);border:1px solid var(--hair);border-radius:8px;padding:4px;opacity:0;pointer-events:none;transition:opacity .12s;z-index:3;}
+  .pdf-editor-block.active .pdf-editor-block-toolbar{opacity:1;pointer-events:auto;}
+  .pdf-editor-block-toolbar button{background:none;border:none;color:var(--text-dim);width:22px;height:22px;border-radius:4px;cursor:pointer;font-size:11px;font-family:var(--font-body);}
+  .pdf-editor-block-toolbar button:hover{background:var(--hair);color:var(--text);}
 
   footer{margin-top:40px;text-align:center;font-size:11px;color:var(--text-faint);font-family:var(--font-mono);}
 
@@ -865,6 +900,14 @@
     .print-cec-text-soustitre{font-family:var(--font-display);font-size:13px;font-weight:600;font-style:italic;color:var(--text-dim);}
     .print-cec-text-titre{font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--text);}
     .print-footer{margin-top:22px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);font-size:10px;color:var(--text-faint);text-align:right;font-family:var(--font-mono);}
+    /* Éditeur PDF : chaque page = la zone imprimable exacte (182mm×269mm, A4 moins la
+       marge @page ci-dessous), blocs positionnés en % — identique pixel-pour-pixel à
+       l'écran, aucune conversion d'unité nécessaire. */
+    .pdf-editor-print-page{position:relative;width:182mm;height:269mm;page-break-after:always;overflow:hidden;}
+    .pdf-editor-print-page:last-child{page-break-after:auto;}
+    .pdf-editor-print-block{position:absolute;box-sizing:border-box;}
+    .pdf-editor-print-block img{width:100%;height:100%;object-fit:contain;}
+    .pdf-editor-print-text{width:100%;height:100%;overflow:hidden;color:var(--text);font-family:var(--font-body);white-space:pre-wrap;}
     @page{margin:14mm;background:var(--bg);}
   }
 
