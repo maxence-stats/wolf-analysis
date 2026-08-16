@@ -1832,13 +1832,17 @@ function renderPdfEditorCanvas(){
 }
 
 function wirePdfEditorBlock(el, block){
-  el.addEventListener('mousedown', () => {
+  // pointerdown/move/up (pas mousedown/mousemove/mouseup) : unifie souris et tactile —
+  // sur mobile, mousedown ne se déclenche jamais pour un doigt. touch-action:none sur
+  // .pdf-editor-block-drag/.pdf-editor-resize-handle (CSS) empêche le navigateur
+  // d'interpréter le geste comme un scroll pendant le déplacement/redimensionnement.
+  el.addEventListener('pointerdown', () => {
     pdfEditActiveBlockId = block.id;
     document.querySelectorAll('.pdf-editor-block').forEach(x => x.classList.toggle('active', x.dataset.blockId === block.id));
   });
 
   const dragHandle = el.querySelector('.pdf-editor-block-drag');
-  dragHandle.addEventListener('mousedown', e => {
+  dragHandle.addEventListener('pointerdown', e => {
     e.preventDefault(); e.stopPropagation();
     const canvas = document.getElementById('pdfEditorPageCanvas');
     const rect = canvas.getBoundingClientRect();
@@ -1851,16 +1855,16 @@ function wirePdfEditorBlock(el, block){
       pdfEditApplyBlockStyle(el, block);
     }
     function onUp(){
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
       persistPdfEditDoc();
     }
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
   });
 
   const resizeHandle = el.querySelector('.pdf-editor-resize-handle');
-  resizeHandle.addEventListener('mousedown', e => {
+  resizeHandle.addEventListener('pointerdown', e => {
     e.preventDefault(); e.stopPropagation();
     const canvas = document.getElementById('pdfEditorPageCanvas');
     const rect = canvas.getBoundingClientRect();
@@ -1873,12 +1877,12 @@ function wirePdfEditorBlock(el, block){
       pdfEditApplyBlockStyle(el, block);
     }
     function onUp(){
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
       persistPdfEditDoc();
     }
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
   });
 
   if (block.type === 'text'){
@@ -1894,10 +1898,60 @@ function renderPdfEditor(){
   renderPdfEditorCanvas();
 }
 
+// Zoom de la page dans l'Éditeur PDF — demande explicite : sur mobile, la page fait
+// 182mm (~688px) de large, bien plus que l'écran, donc "pincer-zoomer/glisser dans le
+// cadre, comme visualiser un PDF classique sur téléphone" plutôt qu'un mode liste séparé.
+// CSS `zoom` (pas transform:scale) sur .pdf-editor-page : contrairement à
+// transform:scale, `zoom` change la taille de LAYOUT réelle de l'élément, donc
+// .pdf-editor-canvas-wrap{overflow:auto} calcule tout seul la bonne zone de défilement
+// sans code JS de recalcul — le panoramique (pan) devient un simple scroll tactile natif.
+// getBoundingClientRect() (utilisé par le drag/resize des blocs) reflète déjà la taille
+// zoomée, donc aucun changement nécessaire côté positionnement des blocs.
+let pdfEditorZoom = 1;
+const PDFEDIT_MIN_ZOOM = 0.3, PDFEDIT_MAX_ZOOM = 2.5;
+function setPdfEditorZoom(z){
+  pdfEditorZoom = Math.max(PDFEDIT_MIN_ZOOM, Math.min(PDFEDIT_MAX_ZOOM, z));
+  const page = document.getElementById('pdfEditorPageCanvas');
+  if (page) page.style.zoom = pdfEditorZoom;
+  const label = document.getElementById('pdfEditorZoomLabel');
+  if (label) label.textContent = Math.round(pdfEditorZoom * 100) + '%';
+}
+// Pincer-zoomer à 2 doigts : suit chaque pointer actif dans une Map, calcule la
+// distance entre les deux au fil du geste, et applique le ratio à un zoom de référence
+// capturé au moment où le 2e doigt se pose (pas de recalcul cumulatif approximatif).
+// Ne gêne pas le déplacement/redimensionnement d'un bloc à 1 doigt : cette logique ne
+// fait rien tant qu'il n'y a pas exactement 2 pointers actifs simultanément.
+function initPdfEditorPinchZoom(){
+  const wrap = document.getElementById('pdfEditorCanvasWrap');
+  if (!wrap) return;
+  const activePointers = new Map();
+  let pinchStartDist = null, pinchStartZoom = 1;
+  wrap.addEventListener('pointerdown', e => { activePointers.set(e.pointerId, { x:e.clientX, y:e.clientY }); });
+  wrap.addEventListener('pointermove', e => {
+    if (!activePointers.has(e.pointerId)) return;
+    activePointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    if (activePointers.size !== 2) return;
+    const pts = Array.from(activePointers.values());
+    const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    if (pinchStartDist == null){ pinchStartDist = dist; pinchStartZoom = pdfEditorZoom; return; }
+    setPdfEditorZoom(pinchStartZoom * (dist / pinchStartDist));
+  });
+  function releasePointer(e){
+    activePointers.delete(e.pointerId);
+    if (activePointers.size < 2) pinchStartDist = null;
+  }
+  wrap.addEventListener('pointerup', releasePointer);
+  wrap.addEventListener('pointercancel', releasePointer);
+}
+
 function initPdfEditor(){
   document.getElementById('pdfEditorAddTextBtn').addEventListener('click', pdfEditAddTextBlock);
   document.getElementById('pdfEditorAddPageBtn').addEventListener('click', pdfEditAddPage);
   document.getElementById('pdfEditorExportBtn').addEventListener('click', exportPdfEditorAsPdf);
+  document.getElementById('pdfEditorZoomIn').addEventListener('click', () => setPdfEditorZoom(pdfEditorZoom + 0.15));
+  document.getElementById('pdfEditorZoomOut').addEventListener('click', () => setPdfEditorZoom(pdfEditorZoom - 0.15));
+  document.getElementById('pdfEditorZoomReset').addEventListener('click', () => setPdfEditorZoom(1));
+  initPdfEditorPinchZoom();
   document.getElementById('pdfEditorTitleInput').addEventListener('input', e => { pdfEditDoc.title = e.target.value; persistPdfEditDoc(); });
   document.getElementById('pdfEditorPageTabs').addEventListener('click', e => {
     const closeBtn = e.target.closest('[data-remove-page]');
@@ -1909,7 +1963,7 @@ function initPdfEditor(){
   // Boutons "G"/taille : mousedown+preventDefault avant que le click n'exécute la
   // commande, sinon la sélection de texte est perdue avant — même pattern déjà
   // établi pour le gras du Cerveau numérique.
-  canvasEl.addEventListener('mousedown', e => {
+  canvasEl.addEventListener('pointerdown', e => {
     if (e.target.closest('[data-fmt-bold], [data-fmt-size]')) e.preventDefault();
   });
   canvasEl.addEventListener('click', e => {
@@ -4047,6 +4101,74 @@ function switchPage(pageId){
   }
 }
 
+// Menu mobile (☰) : liste à plat TOUTES les pages, y compris les sous-onglets
+// normalement masqués tant qu'on n'a pas cliqué leur bouton parent sur desktop — évite
+// de répliquer la logique de groupe/visibilité conditionnelle de switchPage() dans une
+// 2e UI. Manifeste déclaratif plutôt que lu depuis le DOM (.page-nav-btn/.page-subnav-btn
+// contiennent des emoji + un texte qu'il faudrait re-parser) — un seul endroit à tenir à
+// jour si un onglet est ajouté/retiré, mais ça reste un doublon volontaire et assumé de
+// la liste des boutons desktop (voir index.html .page-nav/.page-subnav).
+const MOBILE_NAV_MANIFEST = [
+  { page:'pageAnalyse', label:'Analyse' },
+  { page:'pageValorisation', label:'Valorisation', indent:true },
+  { group:'💼 Portefeuille', items:[
+    { page:'pagePortfolio', label:'Wolf Portfolio' },
+    { page:'pageDividende', label:'Dividende' },
+    { page:'pagePerso', label:'Perso (PEA/CTO)' },
+    { page:'pageConstruction', label:'Construction de portefeuille' }
+  ] },
+  { group:'🔍 Screener', items:[
+    { page:'pageSecteur', label:'Secteur' },
+    { page:'pageClassement', label:'Classement' },
+    { page:'pageWatchlist', label:'Watchlist' },
+    { page:'pageComparaison', label:'Comparaison' }
+  ] },
+  { page:'pageCerveau', label:'Cerveau numérique' },
+  { page:'pageAlertes', label:'Alertes' },
+  { page:'pageIdees', label:'Idées' },
+  { page:'pageRevue', label:'Revue de la semaine' },
+  { page:'pageMacro', label:'Macroéconomie' },
+  { page:'pagePdfEditor', label:'🖊️ Éditeur PDF' }
+];
+function mobileNavItemHtml(item){
+  const active = document.getElementById(item.page) && document.getElementById(item.page).classList.contains('active');
+  return `<button class="mobile-nav-item${item.indent ? ' indent' : ''}${active ? ' active' : ''}" data-page="${item.page}">${item.label}</button>`;
+}
+function renderMobileNav(){
+  const list = document.getElementById('mobileNavList');
+  if (!list) return;
+  list.innerHTML = MOBILE_NAV_MANIFEST.map(entry => {
+    if (entry.group){
+      return `<div class="mobile-nav-group-label">${entry.group}</div>` + entry.items.map(mobileNavItemHtml).join('');
+    }
+    return mobileNavItemHtml(entry);
+  }).join('');
+}
+function closeMobileNav(){
+  document.getElementById('mobileNavPanel').classList.remove('open');
+  document.getElementById('mobileNavBackdrop').classList.remove('open');
+}
+function initMobileNav(){
+  const toggle = document.getElementById('mobileNavToggle');
+  const panel = document.getElementById('mobileNavPanel');
+  const backdrop = document.getElementById('mobileNavBackdrop');
+  if (!toggle || !panel) return;
+  toggle.addEventListener('click', () => {
+    renderMobileNav(); // reconstruit à l'ouverture pour refléter la page active courante
+    panel.classList.add('open');
+    backdrop.classList.add('open');
+  });
+  document.getElementById('mobileNavClose').addEventListener('click', closeMobileNav);
+  backdrop.addEventListener('click', closeMobileNav);
+  document.getElementById('mobileNavList').addEventListener('click', e => {
+    const btn = e.target.closest('[data-page]');
+    if (!btn) return;
+    switchPage(btn.dataset.page);
+    closeMobileNav();
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMobileNav(); });
+}
+
 function selectCompany(nom){
   if (!companies[nom]) return;
   activeCompany = nom;
@@ -6059,7 +6181,7 @@ function moveToWatchlist(nom, listKey){
 
 function watchlistChipHtml(nom, logo){
   const safe = nom.replace(/"/g, '&quot;');
-  return `<div class="watchlist-chip" draggable="true" data-nom="${safe}" title="${safe}"><img src="${logo || ''}" alt=""></div>`;
+  return `<div class="watchlist-chip" data-nom="${safe}" title="${safe}"><img src="${logo || ''}" alt=""></div>`;
 }
 
 function applyWatchlistSearchFilter(){
@@ -6096,35 +6218,52 @@ function initWatchlist(){
   const page = document.getElementById('pageWatchlist');
   if (!page) return;
 
-  page.addEventListener('dragstart', e => {
+  // Glisser-déposer "maison" en Pointer Events (pas le drag-and-drop HTML5 natif
+  // utilisé avant, draggable="true"/dragstart/dragover/drop) : HTML5 DnD ne se
+  // déclenche JAMAIS au toucher sur mobile (aucun événement dragstart pour un doigt),
+  // rendant tout l'onglet inutilisable sur téléphone. Même pattern déjà établi et
+  // éprouvé pour le glisser-déposer du Cerveau numérique (voir wireCerveauBlockDrag) :
+  // pointerdown + document.elementFromPoint() au relâchement, unifié souris/tactile.
+  function clearWatchlistDragHighlights(){
+    document.querySelectorAll('.watchlist-dropzone.dragover, #watchlistPool.dragover').forEach(el => el.classList.remove('dragover'));
+  }
+  function findWatchlistDropZone(el){
+    return el ? el.closest('.watchlist-dropzone, #watchlistPool') : null;
+  }
+  page.addEventListener('pointerdown', e => {
     const chip = e.target.closest('.watchlist-chip[data-nom]');
     if (!chip) return;
-    e.dataTransfer.setData('text/plain', chip.dataset.nom);
-    e.dataTransfer.effectAllowed = 'move';
-    chip.classList.add('dragging');
-  });
-  page.addEventListener('dragend', e => {
-    const chip = e.target.closest('.watchlist-chip');
-    if (chip) chip.classList.remove('dragging');
-  });
+    const nom = chip.dataset.nom;
+    let moved = false;
+    const startX = e.clientX, startY = e.clientY;
 
-  const dropTargets = [document.getElementById('watchlistPool'), ...page.querySelectorAll('.watchlist-dropzone')];
-  dropTargets.forEach(zone => {
-    if (!zone) return;
-    zone.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; zone.classList.add('dragover'); });
-    zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
-    zone.addEventListener('drop', e => {
-      e.preventDefault();
-      zone.classList.remove('dragover');
-      const nom = e.dataTransfer.getData('text/plain');
-      if (!nom) return;
-      moveToWatchlist(nom, zone.dataset.list || null);
-    });
-  });
-
-  page.addEventListener('click', e => {
-    const chip = e.target.closest('.watchlist-chip[data-nom]');
-    if (chip) goToAnalyse(chip.dataset.nom);
+    function onMove(me){
+      if (!moved){
+        // Seuil de 4px avant de considérer que c'est un glisser (pas un simple tap) —
+        // évite un déplacement fantôme sur un clic/tap légèrement tremblant.
+        if (Math.abs(me.clientX - startX) < 4 && Math.abs(me.clientY - startY) < 4) return;
+        moved = true;
+        chip.classList.add('dragging');
+      }
+      clearWatchlistDragHighlights();
+      const zone = findWatchlistDropZone(document.elementFromPoint(me.clientX, me.clientY));
+      if (zone) zone.classList.add('dragover');
+    }
+    function onUp(me){
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      chip.classList.remove('dragging');
+      clearWatchlistDragHighlights();
+      // Le tap/clic est géré directement ici (pas via un listener 'click' séparé) :
+      // après un pointerup suite à un vrai glisser tactile, le click de compatibilité
+      // du navigateur est trop peu fiable (timing, cible recalculée après un
+      // re-rendu du DOM) pour distinguer proprement tap et glisser sur mobile.
+      if (!moved){ goToAnalyse(nom); return; }
+      const zone = findWatchlistDropZone(document.elementFromPoint(me.clientX, me.clientY));
+      if (zone) moveToWatchlist(nom, zone.dataset.list || null);
+    }
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
   });
 
   const searchInput = document.getElementById('watchlistSearch');
@@ -6913,7 +7052,12 @@ function wireCerveauResize(box, chain){
       : chain.phases[phaseIdx].entreprises[parseInt(card.dataset.ent, 10)];
     const imageZone = card.querySelector('.cec-image');
 
-    handle.addEventListener('mousedown', e => {
+    // pointerdown/move/up (pas mousedown/mousemove/mouseup) : unifie souris, tactile et
+    // stylet en un seul jeu d'événements — sans ça, redimensionner au doigt sur mobile
+    // ne déclenchait rien du tout (mousedown ne fire jamais pour un touch). touch-action:
+    // none sur la poignée (CSS) empêche le navigateur d'interpréter le geste comme un
+    // scroll pendant le redimensionnement.
+    handle.addEventListener('pointerdown', e => {
       e.preventDefault();
       e.stopPropagation();
       const phaseBox = card.closest('.cerveau-phase');
@@ -6933,12 +7077,12 @@ function wireCerveauResize(box, chain){
         obj.imgHeight = h;
       }
       function onUp(){
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
         persistCerveauData();
       }
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
     });
   });
 
@@ -6950,7 +7094,7 @@ function wireCerveauResize(box, chain){
     const phaseIdx = parseInt(card.dataset.phase, 10);
     const bloc = chain.phases[phaseIdx].blocsLibres[parseInt(card.dataset.bloc, 10)];
 
-    handle.addEventListener('mousedown', e => {
+    handle.addEventListener('pointerdown', e => {
       e.preventDefault();
       e.stopPropagation();
       const phaseBox = card.closest('.cerveau-phase');
@@ -6965,12 +7109,12 @@ function wireCerveauResize(box, chain){
         bloc.width = w;
       }
       function onUp(){
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
         persistCerveauData();
       }
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
     });
   });
 }
@@ -6994,7 +7138,11 @@ function wireCerveauBlockDrag(box, chain){
     const listSelector = isFree ? '.cerveau-freeblock-list' : '.cerveau-entity-list';
 
     list.querySelectorAll(selector).forEach(card => {
-      card.addEventListener('mousedown', e => {
+      // pointerdown (pas mousedown) : voir wireCerveauResize plus haut, même raison —
+      // fonctionne pour souris ET tactile sans code séparé. touch-action:none sur
+      // .cerveau-entity-card/.cerveau-freeblock (CSS) empêche le scroll de la page de
+      // se déclencher pendant le glisser au doigt.
+      card.addEventListener('pointerdown', e => {
         // Ne pas capturer le clic si l'utilisateur interagit avec un champ, un bouton
         // ou la poignée de redimensionnement — seule la carte "vide" (corps, en-tête
         // hors boutons) sert de prise pour déplacer le bloc. `.cec-free-text` (zone de
@@ -7035,8 +7183,8 @@ function wireCerveauBlockDrag(box, chain){
           if (targetList) targetList.classList.add('cec-drop-target');
         }
         function onUp(ev){
-          document.removeEventListener('mousemove', onMove);
-          document.removeEventListener('mouseup', onUp);
+          document.removeEventListener('pointermove', onMove);
+          document.removeEventListener('pointerup', onUp);
           card.classList.remove('cec-dragging');
           clearHighlights();
           if (!moved) return; // simple clic, pas un glisser — rien à faire
@@ -7067,8 +7215,8 @@ function wireCerveauBlockDrag(box, chain){
           persistCerveauData();
           renderCerveau();
         }
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onUp);
       });
     });
   });
@@ -8118,6 +8266,7 @@ document.querySelectorAll('.page-subnav-btn').forEach(btn => {
 initSearch();
 initSectorGrid();
 initClassement();
+initMobileNav();
 
 // Panier d'export groupé (voir renderExportCartWidget/addCurrentZoomChartToCart) — pas de
 // prompt()/confirm() natifs pour "Vider" (voir CLAUDE.md piège #7), confirmation en 2 clics

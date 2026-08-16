@@ -15,6 +15,22 @@
   <div class="brand-bar">
     <img src="https://i.postimg.cc/43WmYDB1/20260714-LOGO-WINTER-PNG.png" alt="Wolf Academy" class="brand-logo">
     <div class="brand-title">Wolf Analysis</div>
+    <button id="mobileNavToggle" class="mobile-nav-toggle" aria-label="Menu">☰</button>
+  </div>
+
+  <!-- Menu mobile (☰) : sur petit écran, la nav principale (.page-nav, qui passe déjà à
+       la ligne sur plusieurs rangées) prend trop de place en haut de l'écran — demande
+       explicite de bascule vers un tiroir. Liste à plat toutes les pages (y compris les
+       sous-onglets Portefeuille/Screener/Analyse, normalement masqués tant qu'on n'a pas
+       cliqué le bouton parent) pour un accès direct en un seul tap, plutôt que de
+       répliquer la logique de groupe/sous-nav desktop dans une 2e UI. -->
+  <div id="mobileNavBackdrop" class="mobile-nav-backdrop"></div>
+  <div id="mobileNavPanel" class="mobile-nav-panel">
+    <div class="mobile-nav-panel-head">
+      <span>Navigation</span>
+      <button id="mobileNavClose" aria-label="Fermer">✕</button>
+    </div>
+    <nav id="mobileNavList"></nav>
   </div>
 
   <div class="topbar">
@@ -771,8 +787,14 @@
         <button class="export-cart-add-btn" id="pdfEditorExportBtn">🖨 Exporter en PDF</button>
       </div>
       <div class="pdf-editor-page-tabs" id="pdfEditorPageTabs"></div>
-      <p class="chart-hint">Glisse la poignée ⠿ pour déplacer un bloc, la poignée en bas à droite pour le redimensionner. Clique dans un bloc de texte pour l'éditer.</p>
-      <div class="pdf-editor-canvas-wrap">
+      <p class="chart-hint">Glisse la poignée ⠿ pour déplacer un bloc, la poignée en bas à droite pour le redimensionner. Clique dans un bloc de texte pour l'éditer. Sur mobile : pince pour zoomer, glisse pour te déplacer dans la page.</p>
+      <div class="pdf-editor-zoom-row">
+        <button id="pdfEditorZoomOut" title="Réduire">－</button>
+        <span id="pdfEditorZoomLabel">100%</span>
+        <button id="pdfEditorZoomIn" title="Agrandir">＋</button>
+        <button id="pdfEditorZoomReset" title="Réinitialiser">Réinitialiser</button>
+      </div>
+      <div class="pdf-editor-canvas-wrap" id="pdfEditorCanvasWrap">
         <div class="pdf-editor-page" id="pdfEditorPageCanvas"></div>
       </div>
     </div>

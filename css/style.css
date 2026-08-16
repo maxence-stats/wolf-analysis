@@ -81,6 +81,29 @@
   .page-subnav-btn{background:var(--panel);border:1px solid var(--hair);border-radius:20px;color:var(--text-dim);font-family:var(--font-body);font-size:12.5px;font-weight:500;padding:6px 14px;cursor:pointer;transition:background .12s ease,color .12s ease,border-color .12s ease;}
   .page-subnav-btn:hover{color:var(--text);}
   .page-subnav-btn.active{background:rgba(217,164,65,0.14);border-color:var(--gold);color:var(--gold);font-weight:600;}
+
+  /* ---------- MENU MOBILE (☰) ----------
+     Sur petit écran, .page-nav (flex-wrap) passe sur 3-4 rangées et prend trop de
+     place en haut de l'écran — demande explicite de bascule vers un tiroir. Masqué
+     par défaut (desktop), affiché uniquement sous le breakpoint mobile ci-dessous. */
+  .mobile-nav-toggle{display:none;margin-left:auto;background:var(--panel-2);border:1px solid var(--hair);color:var(--text);width:38px;height:38px;border-radius:9px;font-size:17px;cursor:pointer;flex-shrink:0;}
+  .mobile-nav-backdrop{display:none;position:fixed;inset:0;background:rgba(4,5,7,0.7);z-index:1010;}
+  .mobile-nav-backdrop.open{display:block;}
+  .mobile-nav-panel{position:fixed;top:0;left:0;bottom:0;width:min(300px,82vw);background:var(--card-bg);border-right:1px solid var(--card-border);z-index:1011;transform:translateX(-100%);transition:transform .2s ease;display:flex;flex-direction:column;}
+  .mobile-nav-panel.open{transform:translateX(0);}
+  .mobile-nav-panel-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--hair);font-family:var(--font-display);font-weight:700;font-size:15px;color:var(--text);}
+  .mobile-nav-panel-head button{background:none;border:1px solid var(--hair);color:var(--text-dim);width:30px;height:30px;border-radius:8px;font-size:13px;cursor:pointer;}
+  #mobileNavList{overflow-y:auto;flex:1;padding:10px 10px 24px;}
+  .mobile-nav-group-label{font-family:var(--font-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);padding:14px 10px 6px;}
+  .mobile-nav-item{display:block;width:100%;text-align:left;background:none;border:none;color:var(--text-dim);font-family:var(--font-body);font-size:14.5px;padding:11px 10px;border-radius:9px;cursor:pointer;}
+  .mobile-nav-item.indent{padding-left:24px;font-size:13.5px;}
+  .mobile-nav-item:hover{background:rgba(255,255,255,0.04);color:var(--text);}
+  .mobile-nav-item.active{background:rgba(217,164,65,0.14);color:var(--gold);font-weight:600;}
+
+  @media (max-width:760px){
+    .page-nav, .page-subnav{display:none !important;}
+    .mobile-nav-toggle{display:block;}
+  }
   .page{display:none;}
   .page.active{display:block;}
 
@@ -312,7 +335,7 @@
   .watchlist-column h3{font-family:var(--font-display);font-size:14px;font-weight:700;margin:0 0 12px;}
   .watchlist-dropzone{display:flex;flex-wrap:wrap;gap:10px;min-height:80px;border-radius:10px;transition:background .12s ease;}
   .watchlist-dropzone.dragover, .watchlist-pool.dragover{background:rgba(217,164,65,0.1);}
-  .watchlist-chip{width:44px;height:44px;background:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:6px;cursor:grab;border:1px solid var(--hair);}
+  .watchlist-chip{width:44px;height:44px;background:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:6px;cursor:grab;border:1px solid var(--hair);touch-action:none;}
   .watchlist-chip img{max-width:100%;max-height:100%;object-fit:contain;pointer-events:none;}
   .watchlist-chip.dragging{opacity:0.35;}
   @media (max-width:1300px){ .watchlist-grid{grid-template-columns:repeat(2,1fr);} }
@@ -352,7 +375,12 @@
      la carte et hauteur de l'image sont désormais libres (px inline, voir
      wireCerveauResize) plutôt que 4 tailles fixes — poignée de redimensionnement en bas
      à droite de l'image, glisser pour ajuster largeur ET hauteur à la fois. */
-  .cerveau-entity-card, .cerveau-freeblock{width:200px;background:var(--panel-2);border:var(--card-border);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;cursor:grab;}
+  .cerveau-entity-card, .cerveau-freeblock{width:200px;background:var(--panel-2);border:var(--card-border);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;cursor:grab;touch-action:none;}
+  /* Réautorise le geste tactile natif (scroll/sélection) sur les zones interactives à
+     l'intérieur d'une carte draggable — sans ça, touch-action:none hérité du parent
+     empêcherait aussi de faire défiler/sélectionner du texte dans ces champs. */
+  .cerveau-entity-card input, .cerveau-entity-card textarea, .cerveau-entity-card button, .cerveau-entity-card a, .cerveau-entity-card .cec-free-text, .cerveau-entity-card .cec-image,
+  .cerveau-freeblock input, .cerveau-freeblock textarea, .cerveau-freeblock button, .cerveau-freeblock a, .cerveau-freeblock .cec-free-text, .cerveau-freeblock .cec-image{touch-action:auto;}
   .cerveau-entity-card:active, .cerveau-freeblock:active{cursor:grabbing;}
   .cerveau-entity-card.cec-dragging, .cerveau-freeblock.cec-dragging{opacity:0.35;}
   .cerveau-entity-list.cec-drop-target, .cerveau-freeblock-list.cec-drop-target{outline:2px dashed var(--gold);outline-offset:4px;border-radius:8px;}
@@ -372,7 +400,7 @@
   .cec-img-url{right:5px;}
   .cec-img-remove{right:31px;}
   .cec-img-url:hover, .cec-img-remove:hover{background:rgba(4,5,7,0.9);}
-  .cec-resize-handle{position:absolute;bottom:0;right:0;width:18px;height:18px;cursor:nwse-resize;background:linear-gradient(135deg, transparent 50%, rgba(217,164,65,0.55) 50%);border-bottom-right-radius:4px;}
+  .cec-resize-handle{position:absolute;bottom:0;right:0;width:18px;height:18px;cursor:nwse-resize;background:linear-gradient(135deg, transparent 50%, rgba(217,164,65,0.55) 50%);border-bottom-right-radius:4px;touch-action:none;}
   .cec-resize-handle:hover{background:linear-gradient(135deg, transparent 45%, var(--gold) 45%);}
   .cec-url-row{display:flex;gap:6px;padding:8px;background:var(--panel);}
   .cec-url-input{flex:1;min-width:0;background:var(--panel-2);border:1px solid var(--hair);border-radius:6px;padding:5px 8px;color:var(--text);font-size:11.5px;outline:none;}
@@ -816,15 +844,25 @@
   .pdf-editor-tab.active{border-color:var(--gold);color:var(--text);}
   .pdf-editor-tab-close{color:var(--text-faint);}
   .pdf-editor-tab-close:hover{color:var(--red);}
+  .pdf-editor-zoom-row{display:flex;align-items:center;gap:8px;margin:8px 0 0;}
+  .pdf-editor-zoom-row button{background:var(--panel-2);border:1px solid var(--hair);color:var(--text-dim);border-radius:6px;width:28px;height:28px;font-size:14px;cursor:pointer;}
+  .pdf-editor-zoom-row button:hover{border-color:var(--gold);color:var(--text);}
+  .pdf-editor-zoom-row #pdfEditorZoomReset{width:auto;padding:0 10px;font-size:11px;font-family:var(--font-mono);}
+  .pdf-editor-zoom-row span{font-family:var(--font-mono);font-size:12px;color:var(--text-dim);min-width:42px;text-align:center;}
+  /* overflow:auto : le panoramique (pan) sur mobile est un simple scroll tactile natif
+     une fois la page zoomée au-delà de la largeur du cadre — aucun code JS necessaire
+     pour ça, seul le pincer-zoomer (2 doigts) est piloté manuellement (voir
+     initPdfEditorPinchZoom) puisque le CSS `zoom` de .pdf-editor-page n'a pas
+     d'équivalent geste natif à lui seul. */
   .pdf-editor-canvas-wrap{overflow:auto;padding:30px 10px;display:flex;justify-content:center;background:#05070a;border-radius:14px;margin-top:6px;}
   .pdf-editor-page{position:relative;width:182mm;height:269mm;background:var(--bg);box-shadow:0 10px 40px rgba(0,0,0,0.5);flex-shrink:0;}
   .pdf-editor-block{position:absolute;box-sizing:border-box;border:1px dashed transparent;}
   .pdf-editor-block:hover, .pdf-editor-block.active{border-color:var(--gold);}
-  .pdf-editor-block-drag{position:absolute;top:-15px;left:-15px;width:26px;height:26px;background:var(--gold);color:#1A1305;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:move;font-size:13px;opacity:0;transition:opacity .12s;z-index:3;}
+  .pdf-editor-block-drag{position:absolute;top:-15px;left:-15px;width:26px;height:26px;background:var(--gold);color:#1A1305;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:move;font-size:13px;opacity:0;transition:opacity .12s;z-index:3;touch-action:none;}
   .pdf-editor-block:hover .pdf-editor-block-drag, .pdf-editor-block.active .pdf-editor-block-drag{opacity:1;}
   .pdf-editor-block-delete{position:absolute;top:-15px;right:-15px;width:22px;height:22px;background:var(--red);color:#fff;border:none;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;opacity:0;transition:opacity .12s;z-index:3;}
   .pdf-editor-block:hover .pdf-editor-block-delete, .pdf-editor-block.active .pdf-editor-block-delete{opacity:1;}
-  .pdf-editor-resize-handle{position:absolute;right:-6px;bottom:-6px;width:14px;height:14px;background:var(--gold);border-radius:3px;cursor:nwse-resize;opacity:0;transition:opacity .12s;z-index:3;}
+  .pdf-editor-resize-handle{position:absolute;right:-6px;bottom:-6px;width:14px;height:14px;background:var(--gold);border-radius:3px;cursor:nwse-resize;opacity:0;transition:opacity .12s;z-index:3;touch-action:none;}
   .pdf-editor-block:hover .pdf-editor-resize-handle, .pdf-editor-block.active .pdf-editor-resize-handle{opacity:1;}
   .pdf-editor-block img{width:100%;height:100%;object-fit:contain;display:block;pointer-events:none;}
   .pdf-editor-text-inner{width:100%;height:100%;outline:none;color:var(--text);font-family:var(--font-body);padding:4px;overflow:auto;box-sizing:border-box;}
