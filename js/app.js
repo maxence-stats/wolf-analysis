@@ -2450,6 +2450,16 @@ function portfolioCenterImagePlugin(){
   };
 }
 
+// Logos en "callout" à l'extérieur du donut (ligne pointillée + badge), plutôt que
+// posés directement sur le segment — demande explicite ("c'est un peu déformé...
+// préférerais que tu sortes du graphique, tu mets une flèche ou un tiret qui pointe
+// chacune des zones"). Deux bénéfices : le badge peut être plus grand sans empiéter
+// sur les segments voisins, et l'image est dessinée en "contain" (ratio conservé,
+// jamais étirée en carré comme avant — cause réelle de la déformation signalée : un
+// logo non carré était étiré via drawImage(img,...,size,size) sans respecter son
+// ratio naturel). Nécessite layout.padding sur la config Chart.js (voir
+// buildPortfolioDonutConfig/buildPersoDonutConfig) pour laisser la place aux callouts
+// tout autour du donut, sinon ils se retrouvent coupés par les bords du canvas.
 function portfolioSegmentLogosPlugin(){
   return {
     id: 'portfolioSegmentLogos',
@@ -2462,40 +2472,60 @@ function portfolioSegmentLogosPlugin(){
       const dataset = chart.data.datasets[0];
       const total = dataset.data.reduce((a, b) => a + b, 0);
       const ctx = chart.ctx;
+      const badgeSize = 34;
+      const lineGap = 6, lineLen = 22;
       meta.data.forEach((arc, i) => {
         const pct = total ? dataset.data[i] / total : 0;
-        if (pct < 0.02) return; // segment trop fin pour un logo lisible
+        if (pct < 0.02) return; // segment trop fin pour un callout lisible
         const angle = (arc.startAngle + arc.endAngle) / 2;
-        const r = (arc.innerRadius + arc.outerRadius) / 2;
-        const x = arc.x + Math.cos(angle) * r;
-        const y = arc.y + Math.sin(angle) * r;
-        const size = Math.min(56, Math.max(24, (arc.outerRadius - arc.innerRadius) * 0.9));
+        const cos = Math.cos(angle), sin = Math.sin(angle);
+        const lineStartR = arc.outerRadius + lineGap;
+        const lineEndR = lineStartR + lineLen;
+        const badgeR = lineEndR + badgeSize / 2 + 2;
+        const lx1 = arc.x + cos * lineStartR, ly1 = arc.y + sin * lineStartR;
+        const lx2 = arc.x + cos * lineEndR, ly2 = arc.y + sin * lineEndR;
+        const bx = arc.x + cos * badgeR, by = arc.y + sin * badgeR;
+
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.setLineDash([2, 3]);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(lx1, ly1);
+        ctx.lineTo(lx2, ly2);
+        ctx.stroke();
+        ctx.restore();
+
         const src = dataset._logos && dataset._logos[i];
         const img = src && portfolioImageCache[src];
+        const label = String(chart.data.labels[i]);
         ctx.save();
         ctx.beginPath();
-        ctx.arc(x, y, size / 2, 0, Math.PI * 2);
+        ctx.arc(bx, by, badgeSize / 2, 0, Math.PI * 2);
         ctx.fillStyle = '#fff';
         ctx.fill();
-        const label = String(chart.data.labels[i]);
         if (img){
           ctx.save();
           ctx.beginPath();
-          ctx.arc(x, y, size / 2 - 1, 0, Math.PI * 2);
+          ctx.arc(bx, by, badgeSize / 2 - 1, 0, Math.PI * 2);
           ctx.clip();
-          ctx.drawImage(img, x - size / 2, y - size / 2, size, size);
+          // "contain" : l'image garde son ratio naturel, jamais étirée en carré.
+          const inner = badgeSize - 6;
+          const scale = Math.min(inner / img.naturalWidth, inner / img.naturalHeight);
+          const dw = img.naturalWidth * scale, dh = img.naturalHeight * scale;
+          ctx.drawImage(img, bx - dw / 2, by - dh / 2, dw, dh);
           ctx.restore();
         } else if (label.toUpperCase() === 'CASH'){
-          ctx.font = Math.round(size * 0.55) + 'px sans-serif';
+          ctx.font = Math.round(badgeSize * 0.5) + 'px sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText('💶', x, y);
+          ctx.fillText('💶', bx, by);
         } else {
           ctx.fillStyle = '#0D1013';
-          ctx.font = 'bold ' + Math.round(size * 0.42) + 'px sans-serif';
+          ctx.font = 'bold ' + Math.round(badgeSize * 0.4) + 'px sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText(label.charAt(0).toUpperCase(), x, y);
+          ctx.fillText(label.charAt(0).toUpperCase(), bx, by);
         }
         ctx.restore();
       });
@@ -2525,6 +2555,10 @@ function buildPortfolioDonutConfig(){
     },
     options:{
       responsive:true, maintainAspectRatio:false, cutout:'46%',
+      // Marge fixe tout autour : laisse la place aux callouts logo (ligne + badge,
+      // ~56px au-delà du bord du donut) dessinés par portfolioSegmentLogosPlugin —
+      // sans elle, les callouts des segments proches du bord du canvas sont coupés.
+      layout:{ padding:56 },
       plugins:{
         legend:{ display:false },
         // position:'nearest' + caretPadding : la bulle suit le curseur au lieu de
@@ -2931,6 +2965,9 @@ function buildPersoDonutConfig(prefix, block){
       _logos: logos
     }] },
     options:{ responsive:true, maintainAspectRatio:false, cutout:'46%',
+      // Marge fixe : laisse la place aux callouts logo à l'extérieur du donut, voir
+      // portfolioSegmentLogosPlugin (même raison que buildPortfolioDonutConfig).
+      layout:{ padding:56 },
       plugins:{ legend:{ display:false }, tooltip:{ position:'nearest', caretPadding:14, callbacks:{ label: ctx => {
         const pct = total ? (ctx.parsed / total * 100) : 0;
         return ctx.label + ' : ' + pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%';
