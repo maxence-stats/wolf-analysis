@@ -782,12 +782,16 @@
       <div class="pdf-editor-toolbar">
         <input type="text" id="pdfEditorTitleInput" placeholder="Titre du document…" maxlength="120">
         <button class="zoom-btn objectifs-export" id="pdfEditorAddTextBtn">+ Texte</button>
+        <div class="pdf-editor-insert-wrap">
+          <button class="zoom-btn objectifs-export" id="pdfEditorInsertChartBtn">🧺 + Graphique</button>
+          <div class="pdf-editor-insert-panel" id="pdfEditorInsertPanel" style="display:none;"></div>
+        </div>
         <button class="zoom-btn objectifs-export" id="pdfEditorAddPageBtn">+ Page</button>
         <button class="zoom-btn objectifs-export" id="pdfEditorClearBtn">Vider le document</button>
         <button class="export-cart-add-btn" id="pdfEditorExportBtn">🖨 Exporter en PDF</button>
       </div>
       <div class="pdf-editor-page-tabs" id="pdfEditorPageTabs"></div>
-      <p class="chart-hint">Glisse la poignée ⠿ pour déplacer un bloc, la poignée en bas à droite pour le redimensionner. Clique dans un bloc de texte pour l'éditer. Sur mobile : pince pour zoomer, glisse pour te déplacer dans la page.</p>
+      <p class="chart-hint">Glisse la poignée ⠿ pour déplacer un bloc, la poignée en bas à droite pour le redimensionner. Clique dans un bloc de texte pour l'éditer. Pour ajouter un graphique : clique l'icône 🧺 sur n'importe quel graphique du site (Analyse, Macro, Valorisation…) pour l'ajouter au panier, puis reviens ici et clique « 🧺 + Graphique » pour l'insérer sur la page. Sur mobile : pince pour zoomer, glisse pour te déplacer dans la page.</p>
       <div class="pdf-editor-zoom-row">
         <button id="pdfEditorZoomOut" title="Réduire">－</button>
         <span id="pdfEditorZoomLabel">100%</span>

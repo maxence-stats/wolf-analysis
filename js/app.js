@@ -1740,9 +1740,15 @@ function persistPdfEditDoc(){
 
 function pdfEditNewBlockId(){ return 'b' + Date.now() + Math.random().toString(36).slice(2, 7); }
 
+// Marge non cliquable tout autour de la page (en % de la largeur/hauteur) — demande
+// explicite : le texte pouvait être positionné jusqu'au bord exact de la feuille, sans
+// aucune retenue visuelle. Bornes appliquées partout où un bloc est positionné/
+// redimensionné (ajout, glisser, redimensionnement, insertion depuis le panier) —
+// jamais recalculées après coup, directement dans le clamp de chaque geste.
+const PDFEDIT_MARGIN = 5;
 function pdfEditAddTextBlock(){
   const p = pdfEditDoc.pages[pdfEditCurrentPage];
-  p.blocks.push({ id: pdfEditNewBlockId(), type:'text', html:'Texte…', x:10, y:10, w:40, h:15, fontSize:14 });
+  p.blocks.push({ id: pdfEditNewBlockId(), type:'text', html:'Texte…', x:PDFEDIT_MARGIN+5, y:PDFEDIT_MARGIN+5, w:40, h:15, fontSize:14 });
   persistPdfEditDoc();
   renderPdfEditor();
 }
@@ -1780,13 +1786,41 @@ function openCartInPdfEditor(){
     const col = i % cols, row = Math.floor(i / cols);
     pdfEditDoc.pages[pageIdx].blocks.push({
       id: pdfEditNewBlockId(), type:'image', src:item.dataUrl,
-      x: 5 + col * 47, y: 5 + row * 35, w: 44, h: 30
+      x: PDFEDIT_MARGIN + col * 47, y: PDFEDIT_MARGIN + row * 35, w: 44, h: 30
     });
   });
   pdfEditCurrentPage = pageIdx;
   if (!pdfEditDoc.title && exportCartTitle) pdfEditDoc.title = exportCartTitle;
   persistPdfEditDoc();
   switchPage('pagePdfEditor');
+  renderPdfEditor();
+}
+
+// Insertion À LA CARTE d'UN SEUL graphique depuis l'éditeur lui-même — demande
+// explicite ("trouve-moi le meilleur moyen pour pouvoir ajouter chaque graphique
+// qu'on veut, que ce soit la valorisation, que ce soit n'importe quoi"). Plutôt que
+// d'inventer un nouveau système de sélection de graphique par page, réutilise le
+// panier d'export déjà en place partout sur le site (icônes 🧺 sur chaque graphique) :
+// ce bouton ouvre juste un petit panneau listant ce qui s'y trouve déjà, et insère une
+// COPIE du graphique choisi sur la page courante (ne retire rien du panier, pour
+// pouvoir réutiliser le même graphique sur plusieurs pages/documents si besoin).
+function renderPdfEditorInsertPanel(){
+  const panel = document.getElementById('pdfEditorInsertPanel');
+  if (!panel) return;
+  panel.innerHTML = exportCart.length === 0
+    ? '<div class="pdf-editor-insert-empty">Panier vide — clique 🧺 sur un graphique du site pour l\'ajouter, puis reviens ici.</div>'
+    : exportCart.map((item, i) => `<button class="pdf-editor-insert-item" data-insert-idx="${i}"><img src="${item.dataUrl}" alt=""><span>${item.title}</span></button>`).join('');
+}
+function pdfEditInsertFromCart(idx){
+  const item = exportCart[idx];
+  if (!item) return;
+  const p = pdfEditDoc.pages[pdfEditCurrentPage];
+  const n = p.blocks.length;
+  p.blocks.push({
+    id: pdfEditNewBlockId(), type:'image', src:item.dataUrl,
+    x: PDFEDIT_MARGIN + (n % 3) * 4, y: PDFEDIT_MARGIN + (n % 3) * 4, w: 44, h: 30
+  });
+  persistPdfEditDoc();
   renderPdfEditor();
 }
 
@@ -1850,8 +1884,8 @@ function wirePdfEditorBlock(el, block){
     function onMove(me){
       const dx = (me.clientX - startX) / rect.width * 100;
       const dy = (me.clientY - startY) / rect.height * 100;
-      block.x = Math.max(0, Math.min(100 - block.w, startLeft + dx));
-      block.y = Math.max(0, Math.min(100 - block.h, startTop + dy));
+      block.x = Math.max(PDFEDIT_MARGIN, Math.min(100 - PDFEDIT_MARGIN - block.w, startLeft + dx));
+      block.y = Math.max(PDFEDIT_MARGIN, Math.min(100 - PDFEDIT_MARGIN - block.h, startTop + dy));
       pdfEditApplyBlockStyle(el, block);
     }
     function onUp(){
@@ -1872,8 +1906,8 @@ function wirePdfEditorBlock(el, block){
     function onMove(me){
       const dw = (me.clientX - startX) / rect.width * 100;
       const dh = (me.clientY - startY) / rect.height * 100;
-      block.w = Math.max(6, Math.min(100 - block.x, startW + dw));
-      block.h = Math.max(4, Math.min(100 - block.y, startH + dh));
+      block.w = Math.max(6, Math.min(100 - PDFEDIT_MARGIN - block.x, startW + dw));
+      block.h = Math.max(4, Math.min(100 - PDFEDIT_MARGIN - block.y, startH + dh));
       pdfEditApplyBlockStyle(el, block);
     }
     function onUp(){
@@ -1952,6 +1986,23 @@ function initPdfEditor(){
   document.getElementById('pdfEditorZoomOut').addEventListener('click', () => setPdfEditorZoom(pdfEditorZoom - 0.15));
   document.getElementById('pdfEditorZoomReset').addEventListener('click', () => setPdfEditorZoom(1));
   initPdfEditorPinchZoom();
+  const insertBtn = document.getElementById('pdfEditorInsertChartBtn');
+  const insertPanel = document.getElementById('pdfEditorInsertPanel');
+  insertBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    const opening = insertPanel.style.display === 'none';
+    if (opening) renderPdfEditorInsertPanel();
+    insertPanel.style.display = opening ? 'block' : 'none';
+  });
+  insertPanel.addEventListener('click', e => {
+    const item = e.target.closest('[data-insert-idx]');
+    if (!item) return;
+    pdfEditInsertFromCart(parseInt(item.dataset.insertIdx, 10));
+    insertPanel.style.display = 'none';
+  });
+  document.addEventListener('click', e => {
+    if (insertPanel.style.display !== 'none' && !e.target.closest('.pdf-editor-insert-wrap')) insertPanel.style.display = 'none';
+  });
   document.getElementById('pdfEditorTitleInput').addEventListener('input', e => { pdfEditDoc.title = e.target.value; persistPdfEditDoc(); });
   document.getElementById('pdfEditorPageTabs').addEventListener('click', e => {
     const closeBtn = e.target.closest('[data-remove-page]');
