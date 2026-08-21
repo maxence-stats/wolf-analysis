@@ -22,7 +22,13 @@ const COL = {
   // logique que le P/FCF existant. cagrOcf20 (AE) volontairement absent : comme
   // cagrFcf20, non utilisé dans les formules de scénario, seulement une donnée
   // disponible pour un futur badge éventuel.
-  pOcf:12, cagrOcf10:29, medianePOcf:31, medianePOcf20:33
+  pOcf:12, cagrOcf10:29, medianePOcf:31, medianePOcf20:33,
+  // PER/EPS : colonnes réellement présentes dans le Sheet (vérifié directement sur le
+  // JSON brut de l'API Apps Script avant d'écrire ce mapping — voir CLAUDE.md "Pièges
+  // techniques" point 11) mais jamais mappées jusqu'ici. Pas de "Médiane PER" fournie
+  // par le Sheet (contrairement à médianePFCF/medianePOcf) — calculée côté client,
+  // voir medianOfLastYears().
+  per:11, eps:16, cagrEps5:17, cagrEps10:18, cagrEps20:19
 };
 
 let companies = {};   // { nomEntreprise: [ {annee, ...valeurs}, ... ] sorted asc }
@@ -382,6 +388,18 @@ function parseNum(raw){
 function parseStr(raw){
   return raw == null ? '' : String(raw).trim();
 }
+// Les colonnes CAGR X ans (%) du Sheet sont formatées en cellule "Pourcentage" côté
+// Google Sheets, contrairement à Rendement Div/Marge Op./ROIC/Payout (déjà en nombre
+// pré-mis à l'échelle malgré le "(%)" dans leur nom) — getValues()/l'API Apps Script
+// renvoie donc une fraction brute (0,0341 pour 3,41%) pour CES colonnes précises. Bug
+// réel confirmé en test (les 4 badges CAGR affichaient "+0,0%" partout sur le site,
+// même pattern déjà rencontré et corrigé une fois pour gainsPct du Wolf Portfolio) —
+// converti ici, à la source, plutôt que de patcher chaque affichage individuellement
+// (c'est justement l'incohérence entre affichages qui avait causé le bug).
+function parsePct100(raw){
+  const n = parseNum(raw);
+  return n == null ? null : n * 100;
+}
 function escapeHtml(s){
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
@@ -413,36 +431,41 @@ function handleCsvRows(rows){
       ecartValeur: parseNum(c[COL.ecartValeur]),
       dividende: parseNum(c[COL.dividende]),
       rendementDiv: parseNum(c[COL.rendementDiv]),
-      cagrDiv5: parseNum(c[COL.cagrDiv5]),
-      cagrDiv10: parseNum(c[COL.cagrDiv10]),
-      cagrDiv20: parseNum(c[COL.cagrDiv20]),
+      cagrDiv5: parsePct100(c[COL.cagrDiv5]),
+      cagrDiv10: parsePct100(c[COL.cagrDiv10]),
+      cagrDiv20: parsePct100(c[COL.cagrDiv20]),
       payoutRatio: parseNum(c[COL.payoutRatio]),
       fcfpeg: parseNum(c[COL.fcfpeg]),
       fcfParAction: parseNum(c[COL.fcfParAction]),
-      cagrFcf5: parseNum(c[COL.cagrFcf5]),
-      cagrFcf10: parseNum(c[COL.cagrFcf10]),
-      cagrFcf20: parseNum(c[COL.cagrFcf20]),
+      cagrFcf5: parsePct100(c[COL.cagrFcf5]),
+      cagrFcf10: parsePct100(c[COL.cagrFcf10]),
+      cagrFcf20: parsePct100(c[COL.cagrFcf20]),
       pFcf: parseNum(c[COL.pFcf]),
       medianePFCF: parseNum(c[COL.medianePFCF]),
       medianePFCF20: parseNum(c[COL.medianePFCF20]),
       pOcf: parseNum(c[COL.pOcf]),
-      cagrOcf10: parseNum(c[COL.cagrOcf10]),
+      cagrOcf10: parsePct100(c[COL.cagrOcf10]),
       medianePOcf: parseNum(c[COL.medianePOcf]),
       medianePOcf20: parseNum(c[COL.medianePOcf20]),
+      per: parseNum(c[COL.per]),
+      eps: parseNum(c[COL.eps]),
+      cagrEps5: parsePct100(c[COL.cagrEps5]),
+      cagrEps10: parsePct100(c[COL.cagrEps10]),
+      cagrEps20: parsePct100(c[COL.cagrEps20]),
       // OCF/action non présent en colonne brute dans le Sheet : dérivé de prixActuel/pOcf,
       // même principe déjà utilisé pour le toggle FCF/OCF de l'onglet Valorisation.
       ocfParAction: (prixActuel != null && parseNum(c[COL.pOcf])) ? prixActuel / parseNum(c[COL.pOcf]) : null,
       ca: parseNum(c[COL.ca]),
-      cagrCA5: parseNum(c[COL.cagrCA5]),
-      cagrCA10: parseNum(c[COL.cagrCA10]),
-      cagrCA20: parseNum(c[COL.cagrCA20]),
+      cagrCA5: parsePct100(c[COL.cagrCA5]),
+      cagrCA10: parsePct100(c[COL.cagrCA10]),
+      cagrCA20: parsePct100(c[COL.cagrCA20]),
       margeOp: parseNum(c[COL.margeOp]),
       roic: parseNum(c[COL.roic]),
       detteOCF: parseNum(c[COL.detteOCF]),
       cash: parseNum(c[COL.cash]),
       cashInvesti: parseNum(c[COL.cashInvesti]),
       actions: parseNum(c[COL.actions]),
-      cagrActions: parseNum(c[COL.cagrActions])
+      cagrActions: parsePct100(c[COL.cagrActions])
     };
 
     if (!companies[nom]) companies[nom] = [];
@@ -4035,7 +4058,7 @@ function pessimisticScenarioForCompany(nom){
   const hist = companies[nom];
   if (!hist || !hist.length) return null;
   const latest = hist[hist.length - 1];
-  const { fcfActuel, cagrHist, medianeHist } = valorisationInputs(latest);
+  const { fcfActuel, cagrHist, medianeHist } = valorisationInputs(latest, hist);
   const prixActuel = latest.prixActuel;
   if (fcfActuel == null || prixActuel == null) return null;
   const savedList = objectifsStore[nom];
@@ -4462,6 +4485,18 @@ const baseGrid = { color: THEME.hair, drawTicks:false };
 
 function fmtEUR(v, d=2){ return v==null ? 'N/D' : v.toLocaleString('fr-FR',{minimumFractionDigits:d,maximumFractionDigits:d}) + ' €'; }
 function fmtPct(v, d=1){ return v==null ? 'N/D' : v.toLocaleString('fr-FR',{minimumFractionDigits:d,maximumFractionDigits:d}) + ' %'; }
+// Médiane calculée côté client sur les N dernières années d'historique disponibles pour
+// un champ donné — utilisée pour le PER (pas de "Médiane PER" fournie par le Sheet,
+// contrairement à médianePFCF/medianePOcf qui le sont déjà) et pour les badges médiane
+// FCF/OCF par action (valeurs brutes en €, demande explicite : "les médiane 10 et 20
+// ans sur ce graphique aussi"). Ignore les valeurs manquantes plutôt que de les traiter
+// comme 0 — jamais de médiane faussée par des trous de données.
+function medianOfLastYears(hist, field, years){
+  const vals = hist.slice(-years).map(r => r[field]).filter(v => v != null).sort((a, b) => a - b);
+  if (!vals.length) return null;
+  const mid = Math.floor(vals.length / 2);
+  return vals.length % 2 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
+}
 function setBadge(id, label, value){
   const el = document.getElementById(id);
   if (!el) return;
@@ -5917,7 +5952,18 @@ function computeScenario(fcfActuel, prixActuel, cagr, multiple, rachatPct){
   return { prixJusteSim, prixCible, prixEst5A, rendement5A };
 }
 
+// Libellés par métrique de valorisation — le PER casse le pattern "toUpperCase()"
+// direct utilisé jusqu'ici pour FCF/OCF : la quantité "fixe"/dont on projette la
+// croissance est l'EPS (pas le PER lui-même, qui est le MULTIPLE appliqué à l'EPS),
+// contrairement à FCF/OCF où la même grandeur sert à la fois de quantité fixe ET de
+// racine du nom du multiple (P/FCF, P/OCF).
+function valorisationLabels(){
+  if (valorisationMetric === 'per') return { fixed:'EPS', mediane:'PER', growth:'EPS' };
+  const u = valorisationMetric.toUpperCase();
+  return { fixed:u, mediane:'P/' + u, growth:u };
+}
 function scenarioCardHtml(s){
+  const vl = valorisationLabels();
   return `
     <div class="scenario-card ${s.key}" data-key="${s.key}">
       <div class="scenario-title-row">
@@ -5925,18 +5971,18 @@ function scenarioCardHtml(s){
         <button class="zoom-btn scenario-zoom-btn" data-zoom-scenario="${s.key}" title="Agrandir">⤢</button>
       </div>
       <div class="scenario-fcf-history">
-        <span>Médiane P/${valorisationMetric.toUpperCase()} 10 ans <b>${document.getElementById('voMedianeHist').textContent}</b></span>
-        <span>Médiane P/${valorisationMetric.toUpperCase()} 20 ans <b>${document.getElementById('voMediane20').textContent}</b></span>
+        <span>Médiane ${vl.mediane} 10 ans <b>${document.getElementById('voMedianeHist').textContent}</b></span>
+        <span>Médiane ${vl.mediane} 20 ans <b>${document.getElementById('voMediane20').textContent}</b></span>
       </div>
       <div class="scenario-row fixe">
-        <div class="scenario-row-head"><span>${valorisationMetric.toUpperCase()} Actuel (Fixe)</span><span class="val" id="vo-${s.key}-fcf">—</span></div>
+        <div class="scenario-row-head"><span>${vl.fixed} Actuel (Fixe)</span><span class="val" id="vo-${s.key}-fcf">—</span></div>
       </div>
       <div class="scenario-row">
-        <div class="scenario-row-head"><span>CAGR ${valorisationMetric.toUpperCase()} Prévu (%)</span><span class="val" id="vo-${s.key}-cagrVal">—</span></div>
+        <div class="scenario-row-head"><span>CAGR ${vl.growth} Prévu (%)</span><span class="val" id="vo-${s.key}-cagrVal">—</span></div>
         <input type="number" class="scenario-number" id="vo-${s.key}-cagr" step="0.1">
       </div>
       <div class="scenario-row">
-        <div class="scenario-row-head"><span>Médiane ${valorisationMetric.toUpperCase()} (Multiple)</span><span class="val" id="vo-${s.key}-multVal">—</span></div>
+        <div class="scenario-row-head"><span>Médiane ${vl.mediane} (Multiple)</span><span class="val" id="vo-${s.key}-multVal">—</span></div>
         <input type="number" class="scenario-number" id="vo-${s.key}-mult" min="0" step="0.1">
         <div class="scenario-quick-picks">
           ${SCENARIO_QUICK_MULTIPLES.map(v => `<button type="button" class="scenario-quick-btn" data-quick-mult="${v}">${v}x</button>`).join('')}
@@ -5977,10 +6023,16 @@ function setValorisationMetric(metric){
   document.querySelectorAll('#valoMetricToggle button').forEach(b => b.classList.toggle('active', b.dataset.metric === metric));
   if (activeCompany) renderValorisation(activeCompany);
 }
-function valorisationInputs(latest){
+function valorisationInputs(latest, hist){
   if (valorisationMetric === 'ocf'){
     const ocfActuel = (latest.prixActuel != null && latest.pOcf) ? latest.prixActuel / latest.pOcf : null;
     return { fcfActuel: ocfActuel, cagrHist: latest.cagrOcf10, medianeHist: latest.medianePOcf, mediane20: latest.medianePOcf20, label:'OCF' };
+  }
+  if (valorisationMetric === 'per'){
+    // Pas de "Médiane PER" fournie par le Sheet (contrairement à médianePFCF/
+    // medianePOcf) — calculée côté client sur les 10/20 dernières années d'historique.
+    const h = hist || (activeCompany && companies[activeCompany]) || [];
+    return { fcfActuel: latest.eps, cagrHist: latest.cagrEps10, medianeHist: medianOfLastYears(h, 'per', 10), mediane20: medianOfLastYears(h, 'per', 20), label:'PER' };
   }
   return { fcfActuel: latest.fcfParAction, cagrHist: latest.cagrFcf10, medianeHist: latest.medianePFCF, mediane20: latest.medianePFCF20, label:'FCF' };
 }
@@ -5989,18 +6041,22 @@ function renderValorisation(nom){
   const hist = companies[nom];
   if (!hist) return;
   const latest = hist[hist.length - 1];
-  const { fcfActuel, cagrHist, medianeHist, mediane20, label } = valorisationInputs(latest);
+  const { fcfActuel, cagrHist, medianeHist, mediane20 } = valorisationInputs(latest, hist);
   const prixActuel = latest.prixActuel;
+  // Le PER casse le raccourci "un seul label pour tout" utilisé par FCF/OCF : la
+  // quantité fixe/qui croît est l'EPS, le multiple appliqué est le PER — deux libellés
+  // différents, voir valorisationLabels().
+  const vl = valorisationLabels();
 
   document.getElementById('voPrixActuel').textContent = prixActuel != null ? fmtEUR(prixActuel) : 'N/D';
-  document.getElementById('voFcfLabel').textContent = label + ' actuel';
+  document.getElementById('voFcfLabel').textContent = vl.fixed + ' actuel';
   document.getElementById('voFcfActuel').textContent = fcfActuel != null ? fmtEUR(fcfActuel) : 'N/D';
   // Libellés dynamiques FCF/OCF sur les tuiles CAGR et médiane — sans ça, rien ne
   // distinguait "CAGR (historique)" d'un CAGR FCF ou OCF une fois la valorisation
   // enregistrée/rechargée, source de doute signalée explicitement par l'utilisateur.
-  document.getElementById('voCagrLabel').textContent = 'CAGR ' + label + ' (historique)';
-  document.getElementById('voMedianeLabel').textContent = 'Médiane ' + label + ' (historique)';
-  document.getElementById('voMediane20Label').textContent = 'Médiane ' + label + ' (20 ans)';
+  document.getElementById('voCagrLabel').textContent = 'CAGR ' + vl.growth + ' (historique)';
+  document.getElementById('voMedianeLabel').textContent = 'Médiane ' + vl.mediane + ' (historique)';
+  document.getElementById('voMediane20Label').textContent = 'Médiane ' + vl.mediane + ' (20 ans)';
   document.getElementById('voCagrHist').textContent = cagrHist != null ? fmtPct(cagrHist) : 'N/D';
   document.getElementById('voMedianeHist').textContent = medianeHist != null ? medianeHist.toLocaleString('fr-FR', {minimumFractionDigits:1}) + 'x' : 'N/D';
   document.getElementById('voMediane20').textContent = mediane20 != null ? mediane20.toLocaleString('fr-FR', {minimumFractionDigits:1}) + 'x' : 'N/D';
@@ -6278,7 +6334,7 @@ function applyObjectif(nom, idx){
   });
   const hist = companies[nom];
   const latest = hist[hist.length - 1];
-  const { fcfActuel } = valorisationInputs(latest);
+  const { fcfActuel } = valorisationInputs(latest, hist);
   SCENARIOS.forEach(s => updateScenarioCard(s, hist, fcfActuel, latest.prixActuel));
 }
 
