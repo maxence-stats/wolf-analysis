@@ -3403,6 +3403,24 @@ function renderPersoOverview(){
   });
 }
 
+// Fusionne les positions PEA + CTO par nom d'entreprise (une même entreprise détenue
+// dans les 2 comptes devient une seule part, valorisations sommées) — demande
+// explicite : "un graphique qui réunit le tout... voir au global combien chaque
+// position représente dans le portefeuille global", les 2 donuts séparés existants
+// (par compte) ne répondaient pas à ce besoin. Renvoie un objet {positions:[...]}
+// directement compatible avec renderPersoDonut/renderPersoDonutLegend/
+// renderPersoHoldingsList (déjà génériques, prennent n'importe quel {positions}).
+function buildPersoCombinedPositions(){
+  const totals = {};
+  ['pea', 'cto'].forEach(acc => {
+    (persoData[acc].positions || []).forEach(p => {
+      if (p.valorisation == null || p.valorisation <= 0) return;
+      totals[p.nom] = (totals[p.nom] || 0) + p.valorisation;
+    });
+  });
+  return { positions: Object.keys(totals).map(nom => ({ nom, valorisation: totals[nom] })) };
+}
+
 function renderPersoPortfolio(){
   persoData = persoUnlocked ? persoDataReal : PERSO_FAKE_DATA;
   renderPersoLockUI();
@@ -3414,6 +3432,9 @@ function renderPersoPortfolio(){
   renderPersoHoldingsList('cto', persoData.cto);
   renderPersoDonut('pea', persoData.pea);
   renderPersoDonut('cto', persoData.cto);
+  const combined = buildPersoCombinedPositions();
+  renderPersoHoldingsList('persoCombined', combined);
+  renderPersoDonut('persoCombined', combined);
   renderPersoVsCacChart('pea', persoData.pea, 'PEA');
   renderPersoVsCacChart('cto', persoData.cto, 'CTO');
   applyPersoBlur();
@@ -8639,6 +8660,7 @@ document.getElementById('portfolioVsSpxZoomBtn').addEventListener('click', openP
 document.getElementById('portfolioVsSpxMonthlyZoomBtn').addEventListener('click', openPortfolioVsSpxMonthlyZoom);
 document.getElementById('peaDonutZoomBtn').addEventListener('click', () => openPersoDonutZoom('pea', persoData.pea, 'PEA — Crédit Agricole'));
 document.getElementById('ctoDonutZoomBtn').addEventListener('click', () => openPersoDonutZoom('cto', persoData.cto, 'CTO — Saxo'));
+document.getElementById('persoCombinedDonutZoomBtn').addEventListener('click', () => openPersoDonutZoom('persoCombined', buildPersoCombinedPositions(), 'Toutes les positions (PEA + CTO)'));
 
 // Floutage des montants (pas les %) — activable/désactivable, pour partager un écran/
 // une capture du portefeuille perso sans montrer les sommes exactes. Approche par

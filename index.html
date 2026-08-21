@@ -452,6 +452,19 @@
         </div>
       </div>
 
+      <!-- Répartition combinée PEA+CTO position par position (pas juste les 4 grosses
+           tuiles compte/cash/immobilier de la Vue d'ensemble ci-dessus) — demande
+           explicite : "un graphique qui réunit le tout... voir au global combien chaque
+           position représente dans le portefeuille global". Une même entreprise détenue
+           dans les 2 comptes est fusionnée en une seule part (somme des valorisations). -->
+      <div class="section-label">Répartition combinée des positions (PEA + CTO)</div>
+      <div class="chart-card portfolio-donut-card">
+        <div class="chart-card-head"><div><h3>Toutes les positions réunies</h3><p>Poids de chaque entreprise dans PEA + CTO cumulés</p></div><div class="chart-card-actions"><button class="zoom-btn" id="persoCombinedDonutZoomBtn" aria-label="Agrandir">⤢</button></div></div>
+        <div class="chart-holder donut-holder" style="height:340px;"><canvas id="chartPersoCombinedDonut"></canvas></div>
+        <div class="donut-logo-legend" id="persoCombinedDonutLegend"></div>
+      </div>
+      <div class="portfolio-holdings-list" id="persoCombinedHoldingsList"></div>
+
       <div class="section-label">Comparaison PEA / CTO</div>
       <div class="portfolio-compare-grid" id="persoCompareGrid"></div>
 
@@ -683,7 +696,7 @@
       <div class="macro-charts-row">
         <div class="chart-card macro-cycle-card">
           <div class="chart-card-head">
-            <div><h3>Cycle de Marché — Offensif vs Défensif</h3><p class="chart-subtitle">(Technologie + Finance + Industrie) / (Santé + Conso. de base + Services publics) — EMA 20 &amp; écarts-types</p></div>
+            <div><h3>Cycle de Marché — Offensif vs Défensif</h3><p class="chart-subtitle">(Technologie + Finance + Industrie) / (Santé + Conso. de base + Services publics) — EMA 20 &amp; écarts-types — historique disponible sur la feuille (~3 ans)</p></div>
             <div class="chart-card-actions">
               <span class="macro-cycle-badge" id="macroCycleBadge"></span>
               <button class="zoom-btn" onclick="openMacroCycleZoom()" aria-label="Agrandir">⤢</button>
