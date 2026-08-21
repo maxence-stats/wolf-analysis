@@ -5739,6 +5739,46 @@ const COMPARISON_CHART_LABELS = {
 let comparisonDetailSelection = { A:null, B:null };
 let comparisonColumnCharts = { A:{}, B:{} };
 
+// CAGR sur les 4 graphiques qui en ont un sur l'onglet Analyse (Div/CA/FCF/Actions) —
+// demande explicite : "il faut le CAGR de croissance... pour pouvoir bien comparer les
+// entreprises les unes par rapport aux autres... sur chacun des petits graphiques".
+// Mêmes champs/seuils exacts que renderCompany() (cagrBadgeSpan déjà partagée).
+function comparisonChartBadgesHtml(key, latest){
+  if (key === 'div') return cagrBadgeSpan('CAGR div. 10a', latest.cagrDiv10);
+  if (key === 'ca') return cagrBadgeSpan('CAGR CA 10a', latest.cagrCA10);
+  if (key === 'fcf') return cagrBadgeSpan('CAGR 5a', latest.cagrFcf5) + cagrBadgeSpan('CAGR 10a', latest.cagrFcf10) + cagrBadgeSpan('CAGR 20a', latest.cagrFcf20);
+  if (key === 'actions') return cagrBadgeSpan('CAGR actions 20a', latest.cagrActions);
+  return '';
+}
+// 3 scénarios de valorisation en LECTURE SEULE (pas de sliders indépendants par
+// colonne — même métrique/valeurs par défaut que l'onglet Valorisation pour rester
+// cohérent, ajuster précisément se fait toujours là-bas) — demande explicite : "avoir
+// la possibilité de faire les trois scénarios de valorisation directement sur cet
+// onglet-là dans les deux colonnes... vraiment faire un match entre les deux
+// entreprises". Réutilise computeScenario()/valorisationInputs() telles quelles (mêmes
+// formules exactes que la Valorisation), jamais de recalcul divergent.
+function comparisonScenariosHtml(nom){
+  const hist = companies[nom];
+  const latest = hist[hist.length - 1];
+  const { fcfActuel, cagrHist, medianeHist } = valorisationInputs(latest, hist);
+  const prixActuel = latest.prixActuel;
+  if (fcfActuel == null || prixActuel == null || cagrHist == null || medianeHist == null){
+    return '<p class="chart-hint">Données insuffisantes pour simuler une valorisation.</p>';
+  }
+  return `<div class="comparaison-scenarios-row">${SCENARIOS.map(s => {
+    const cagr = +(cagrHist + s.deltaCagr).toFixed(1);
+    const multiple = +(medianeHist + s.deltaMultiple).toFixed(1);
+    const r = computeScenario(fcfActuel, prixActuel, cagr, multiple, 0);
+    return `<div class="comparaison-scenario-mini ${s.key}">
+      <div class="k">${s.label}</div>
+      <div class="comparaison-scenario-mini-row"><span>CAGR</span><b>${cagr >= 0 ? '+' : ''}${cagr.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</b></div>
+      <div class="comparaison-scenario-mini-row"><span>Multiple</span><b>${multiple.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}x</b></div>
+      <div class="comparaison-scenario-mini-row"><span>Prix juste sim.</span><b>${fmtEUR(r.prixJusteSim)}</b></div>
+      <div class="comparaison-scenario-mini-row"><span>Prix est. (5a)</span><b>${fmtEUR(r.prixEst5A)}</b></div>
+      <div class="comparaison-scenario-mini-row"><span>Rendement (5a)</span><b class="${r.rendement5A != null && r.rendement5A >= 0 ? 'pos' : 'neg'}">${r.rendement5A != null ? (r.rendement5A >= 0 ? '+' : '') + fmtPct(r.rendement5A) : 'N/D'}</b></div>
+    </div>`;
+  }).join('')}</div>`;
+}
 function comparisonColumnHtml(colId, nom){
   const hist = companies[nom];
   const latest = hist[hist.length - 1];
@@ -5760,12 +5800,21 @@ function comparisonColumnHtml(colId, nom){
         <svg class="gauge" id="cmp${colId}Gauge" viewBox="0 0 1000 90"></svg>
       </div>
       <div class="ratio-grid">${ratioCardsHtml(latest)}</div>
+      <div class="section-label" style="margin:14px 0 8px;">Scénarios de valorisation (${valorisationLabels().mediane})</div>
+      ${comparisonScenariosHtml(nom)}
       <div class="comparaison-column-charts">
-        ${HISTORICAL_CHART_KEYS.map(key => `
+        ${HISTORICAL_CHART_KEYS.map(key => {
+          const badges = comparisonChartBadgesHtml(key, latest);
+          return `
           <div class="chart-card">
-            <div class="chart-card-head"><h3>${COMPARISON_CHART_LABELS[key]}</h3></div>
+            <div class="chart-card-head">
+              <h3>${COMPARISON_CHART_LABELS[key]}</h3>
+              <button class="zoom-btn" data-cmp-zoom="${colId}|${key}" aria-label="Agrandir">⤢</button>
+            </div>
+            ${badges ? `<div class="mediane-badges-row">${badges}</div>` : ''}
             <div class="chart-holder" style="height:200px;"><canvas id="cmp${colId}-${key}"></canvas><button class="chart-card-cart-btn" data-cmp-cart="${colId}|${key}" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
-          </div>`).join('')}
+          </div>`;
+        }).join('')}
       </div>
     </div>`;
 }
@@ -5796,6 +5845,16 @@ function renderComparisonDetailColumns(){
 function setComparisonDetailCompany(colId, nom){
   comparisonDetailSelection[colId] = nom;
   renderComparisonDetailColumns();
+  // Ajoute automatiquement l'entreprise choisie au grand graphique superposé du haut —
+  // demande explicite : "il faut que naturellement ce soit les deux entreprises qui
+  // soient choisies au lieu de devoir les rechoisir pour les affronter". N'enlève
+  // jamais rien du grand graphique (l'utilisateur peut y avoir déjà d'autres entreprises
+  // en cours de comparaison), ajoute seulement si absent.
+  if (nom && !comparaisonSelected.includes(nom)){
+    comparaisonSelected.push(nom);
+    renderComparaisonPicker();
+    renderComparaisonCharts();
+  }
 }
 function initComparisonDetail(){
   ['A', 'B'].forEach(colId => {
@@ -5829,6 +5888,18 @@ function initComparisonDetail(){
       const [colId, key] = cartBtn.dataset.cmpCart.split('|');
       const nom = comparisonDetailSelection[colId];
       addChartInstanceToCart(comparisonColumnCharts[colId][key], COMPARISON_CHART_LABELS[key] + ' — ' + nom, cartBtn);
+      return;
+    }
+    // Agrandir : réutilise openZoom() telle quelle avec la clé composite cmp-A-div/etc —
+    // makeChart() alimente déjà chartConfigs[key] pour CETTE clé (voir
+    // renderComparisonDetailColumns), donc openZoom() la retrouve directement sans
+    // aucun système de zoom séparé à construire — demande explicite ("on ne peut pas
+    // grossir les graphiques, il faut la petite ampoule").
+    const zoomBtn = e.target.closest('[data-cmp-zoom]');
+    if (zoomBtn){
+      const [colId, key] = zoomBtn.dataset.cmpZoom.split('|');
+      const nom = comparisonDetailSelection[colId];
+      openZoom('cmp-' + colId + '-' + key, COMPARISON_CHART_LABELS[key] + ' — ' + nom);
     }
   });
 }
