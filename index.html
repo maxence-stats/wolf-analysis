@@ -226,10 +226,11 @@
         <div class="chart-card-head">
           <div><h3>Free Cash Flow par action</h3><p>Cash réellement généré après investissements</p></div>
           <div class="chart-card-actions">
-            <span class="chart-badge" id="badgeFcf">CAGR 10a —</span>
             <button class="zoom-btn" onclick="openZoom('fcf',&quot;Free Cash Flow par action&quot;)" aria-label="Agrandir">⤢</button>
           </div>
         </div>
+        <div class="mediane-badges-row" id="cagrBadgesFcf"></div>
+        <div class="mediane-badges-row" id="medianeBadgesFcfAction"></div>
         <div class="chart-holder"><canvas id="chartFCF"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['fcf'], 'Free Cash Flow par action', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
       </div>
 
@@ -251,6 +252,7 @@
             <button class="zoom-btn" onclick="openZoom('ocf',&quot;Operating Cash Flow par action&quot;)" aria-label="Agrandir">⤢</button>
           </div>
         </div>
+        <div class="mediane-badges-row" id="medianeBadgesOcfAction"></div>
         <div class="chart-holder"><canvas id="chartOCF"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['ocf'], 'Operating Cash Flow par action', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
       </div>
 

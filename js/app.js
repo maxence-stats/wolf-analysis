@@ -4505,6 +4505,14 @@ function setBadge(id, label, value){
   el.textContent = label + ' ' + (value >= 0 ? '+' : '') + value.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%';
   el.classList.add(value >= 0 ? 'pos' : 'neg');
 }
+// Même rendu que setBadge() mais en chaîne HTML (pas un élément DOM ciblé par id) —
+// pour construire une RANGÉE de plusieurs badges (ex. CAGR 5a/10a/20a) via innerHTML,
+// contrairement à setBadge() qui pilote un badge unique déjà présent dans le DOM.
+function cagrBadgeSpan(label, value){
+  const cls = value == null ? '' : (value >= 0 ? 'pos' : 'neg');
+  const txt = value != null ? (value >= 0 ? '+' : '') + value.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%' : '—';
+  return `<span class="chart-badge ${cls}">${label} ${txt}</span>`;
+}
 // Une médiane P/FCF ou P/OCF est un chiffre unique (pas une série qui varie dans le
 // temps) — affichée en badge au-dessus du graphique, pas en ligne plate dessus (retour
 // utilisateur explicite, voir renderPfcfPocfChart()). Pas de sémantique pos/neg ici
@@ -4597,8 +4605,18 @@ function renderCompany(nom){
 
   setBadge('badgeDiv', 'CAGR div. 10a', latest.cagrDiv10);
   setBadge('badgeCA', 'CAGR CA 10a', latest.cagrCA10);
-  setBadge('badgeFcf', 'CAGR FCF 10a', latest.cagrFcf10);
   setBadge('badgeActions', 'CAGR actions 20a', latest.cagrActions);
+  // Carte FCF/action : les 3 CAGR (5/10/20a) directement sur la carte plutôt qu'un
+  // seul badge 10a — demande explicite ("que tu affiches bien le CAGR de FCF sur
+  // cinq, dix et vingt ans, là je ne l'ai pas toujours"). + médiane FCF/action et
+  // OCF/action sur 10/20 ans (valeur brute en €, pas un multiple) — demande explicite
+  // complémentaire.
+  document.getElementById('cagrBadgesFcf').innerHTML =
+    cagrBadgeSpan('CAGR 5a', latest.cagrFcf5) + cagrBadgeSpan('CAGR 10a', latest.cagrFcf10) + cagrBadgeSpan('CAGR 20a', latest.cagrFcf20);
+  document.getElementById('medianeBadgesFcfAction').innerHTML =
+    medianeBadgeHtml('Médiane 10a', medianOfLastYears(hist, 'fcfParAction', 10), ' €') + medianeBadgeHtml('Médiane 20a', medianOfLastYears(hist, 'fcfParAction', 20), ' €');
+  document.getElementById('medianeBadgesOcfAction').innerHTML =
+    medianeBadgeHtml('Médiane 10a', medianOfLastYears(hist, 'ocfParAction', 10), ' €') + medianeBadgeHtml('Médiane 20a', medianOfLastYears(hist, 'ocfParAction', 20), ' €');
 
   renderValorisation(nom);
   renderAnalyseValoSummary(nom);
