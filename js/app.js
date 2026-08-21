@@ -3723,7 +3723,9 @@ const DIVIDEND_BASELINE_URL = 'data/dividende.json';
 // explicite : pouvoir "mettre zéro si on veut l'inclure ou pas", donc opt-in par action,
 // pas une hypothèse imposée). Objet séparé de `positions` (qui reste les poids en %) et
 // de `totalCapital`, pour ne pas perturber migrateDividendPortfolioToPercent().
-let dividendPortfolioStore = { positions: {}, totalCapital: 0, growthWindows: {} };
+// growthCustom[nom] : % de croissance saisi librement par l'utilisateur (voir champ
+// "Perso" de growthWindowBadgesHtml()), utilisé quand growthWindows[nom] === 'custom'.
+let dividendPortfolioStore = { positions: {}, totalCapital: 0, growthWindows: {}, growthCustom: {} };
 
 // Migration : les stores existants (créés avant ce changement) ont positions[nom] en €
 // bruts — reconvertit en % du total (déduit de la somme existante) une seule fois, sans
@@ -3753,6 +3755,11 @@ function mergeDividendPortfolio(extra){
   if (extra.growthWindows){
     Object.keys(extra.growthWindows).forEach(k => {
       if (dividendPortfolioStore.growthWindows[k] == null) dividendPortfolioStore.growthWindows[k] = extra.growthWindows[k];
+    });
+  }
+  if (extra.growthCustom){
+    Object.keys(extra.growthCustom).forEach(k => {
+      if (dividendPortfolioStore.growthCustom[k] == null) dividendPortfolioStore.growthCustom[k] = extra.growthCustom[k];
     });
   }
 }
@@ -3800,14 +3807,23 @@ let dividendProjectionChart = null;
 // Fonction partagée entre le Portefeuille Dividende et la Construction de portefeuille
 // (même mécanique de sélection de la croissance du cours par position, sur demande
 // explicite de l'utilisateur : "il faut aussi que je le mette... et que ce soit à moi
-// de le choisir" sur les deux onglets).
-function growthWindowBadgesHtml(nom, current, medians){
-  return ['5','10','20'].map(w => {
+// de le choisir" sur les deux onglets). En plus des 3 médianes historiques (5a/10a/20a),
+// un champ "Perso" libre : l'utilisateur peut taper directement le % de croissance qu'il
+// veut utiliser pour le calcul, sans être limité aux fenêtres historiques — demande
+// explicite de l'utilisateur après une première passe qui ne proposait que les médianes.
+function growthWindowBadgesHtml(nom, current, medians, customVal){
+  const presets = ['5','10','20'].map(w => {
     const val = medians[w];
     const disabled = val == null;
     const active = current === w;
     return `<button class="dividende-growth-badge${active ? ' active' : ''}" data-nom="${nom}" data-window="${w}" ${disabled ? 'disabled' : ''}>${w}a ${val != null ? (val >= 0 ? '+' : '') + fmtPct(val) : 'N/D'}</button>`;
   }).join('');
+  const customActive = current === 'custom';
+  const customField = `<span class="dividende-growth-custom${customActive ? ' active' : ''}">
+    <input type="number" step="0.1" class="dividende-growth-custom-input" data-nom="${nom}" placeholder="Perso" value="${customVal != null ? customVal : ''}">
+    <span class="dividende-growth-custom-suffix">%/an</span>
+  </span>`;
+  return presets + customField;
 }
 
 function dividendPositionMetrics(nom, pct, totalCapital){
@@ -3818,13 +3834,14 @@ function dividendPositionMetrics(nom, pct, totalCapital){
   const montant = totalCapital * pct / 100;
   const dividendeAnnuel = (rendement != null) ? montant * rendement / 100 : null;
   const growthWindow = dividendPortfolioStore.growthWindows[nom] || 'off';
+  const growthCustom = dividendPortfolioStore.growthCustom[nom];
   const medianReturns = { '5': medianAnnualReturn(nom, 5), '10': medianAnnualReturn(nom, 10), '20': medianAnnualReturn(nom, 20) };
-  const selectedMedian = growthWindow !== 'off' ? medianReturns[growthWindow] : null;
+  const selectedMedian = growthWindow === 'custom' ? (growthCustom != null ? growthCustom : null) : (growthWindow !== 'off' ? medianReturns[growthWindow] : null);
   return {
     nom, pct, montant, logo: latest.lienImage,
     rendement, dividendeAnnuel,
     cagr5: latest.cagrDiv5, cagr10: latest.cagrDiv10, cagr20: latest.cagrDiv20,
-    growthWindow, medianReturns, selectedMedian
+    growthWindow, medianReturns, growthCustom, selectedMedian
   };
 }
 
@@ -3874,7 +3891,7 @@ function renderDividendPortfolio(){
       <div class="dividende-row-field"><label>Rendement</label><span>${r.rendement != null ? fmtPct(r.rendement) : 'N/D'}</span></div>
       <div class="dividende-row-field"><label>Div. annuel</label><span>${r.dividendeAnnuel != null ? fmtEUR(r.dividendeAnnuel, 0) : 'N/D'}</span></div>
       <div class="dividende-row-field"><label>CAGR 5/10/20a</label><span>${fmtPct(r.cagr5)} / ${fmtPct(r.cagr10)} / ${fmtPct(r.cagr20)}</span></div>
-      <div class="dividende-row-field dividende-row-field-wide"><label>Médiane perf./an (clic = activer pour le simulateur)</label><div class="dividende-growth-badges">${growthWindowBadgesHtml(safe, r.growthWindow, r.medianReturns)}</div></div>
+      <div class="dividende-row-field dividende-row-field-wide"><label>Médiane perf./an (clic = activer, ou tape ton propre % dans « Perso »)</label><div class="dividende-growth-badges">${growthWindowBadgesHtml(safe, r.growthWindow, r.medianReturns, r.growthCustom)}</div></div>
       <button class="cec-remove" data-action="dividende-remove" data-nom="${safe}" title="Retirer">✕</button>
     </div>`;
   }).join('') : '<div class="objectifs-empty">Aucune position — ajoute des entreprises depuis l\'onglet Classement (liste "Meilleur rendement du dividende").</div>';
@@ -3907,6 +3924,7 @@ function wireDividendRows(){
     btn.addEventListener('click', () => {
       delete dividendPortfolioStore.positions[btn.dataset.nom];
       delete dividendPortfolioStore.growthWindows[btn.dataset.nom];
+      delete dividendPortfolioStore.growthCustom[btn.dataset.nom];
       persistDividendPortfolioLocal();
       renderDividendPortfolio();
     });
@@ -3915,6 +3933,20 @@ function wireDividendRows(){
     btn.addEventListener('click', () => {
       const current = dividendPortfolioStore.growthWindows[btn.dataset.nom] || 'off';
       dividendPortfolioStore.growthWindows[btn.dataset.nom] = current === btn.dataset.window ? 'off' : btn.dataset.window;
+      persistDividendPortfolioLocal();
+      renderDividendPortfolio();
+    });
+  });
+  document.querySelectorAll('.dividende-growth-custom-input').forEach(input => {
+    input.addEventListener('change', () => {
+      const val = parseFloat(input.value);
+      if (isNaN(val)){
+        delete dividendPortfolioStore.growthCustom[input.dataset.nom];
+        if (dividendPortfolioStore.growthWindows[input.dataset.nom] === 'custom') dividendPortfolioStore.growthWindows[input.dataset.nom] = 'off';
+      } else {
+        dividendPortfolioStore.growthCustom[input.dataset.nom] = val;
+        dividendPortfolioStore.growthWindows[input.dataset.nom] = 'custom';
+      }
       persistDividendPortfolioLocal();
       renderDividendPortfolio();
     });
@@ -4145,7 +4177,7 @@ function initDividendPortfolio(){
 // mieux à "choisir des actions et un montant" plutôt que répartir un capital déjà fixé.
 const CONSTRUCTION_LS_KEY = 'wolfAnalysisConstruction';
 const CONSTRUCTION_BASELINE_URL = 'data/construction.json';
-let constructionStore = { positions: {}, growthWindows: {} }; // positions[nom] = montant investi en € ; growthWindows[nom] = '5'|'10'|'20'|'off', voir medianAnnualReturn()
+let constructionStore = { positions: {}, growthWindows: {}, growthCustom: {} }; // positions[nom] = montant investi en € ; growthWindows[nom] = '5'|'10'|'20'|'custom'|'off', voir medianAnnualReturn() ; growthCustom[nom] = % saisi librement
 let constructionSimHorizon = 10;
 
 // Rendement annualisé du scénario Pessimiste (5 ans) d'une entreprise, réutilisant
@@ -4191,6 +4223,11 @@ function mergeConstruction(extra){
       if (constructionStore.growthWindows[k] == null) constructionStore.growthWindows[k] = extra.growthWindows[k];
     });
   }
+  if (extra.growthCustom){
+    Object.keys(extra.growthCustom).forEach(k => {
+      if (constructionStore.growthCustom[k] == null) constructionStore.growthCustom[k] = extra.growthCustom[k];
+    });
+  }
 }
 
 async function loadConstructionBaseline(){
@@ -4230,13 +4267,14 @@ function constructionPositionMetrics(nom, montant){
   const latest = hist[hist.length - 1];
   const pess = pessimisticScenarioForCompany(nom);
   const growthWindow = constructionStore.growthWindows[nom] || 'off';
+  const growthCustom = constructionStore.growthCustom[nom];
   const medianReturns = { '5': medianAnnualReturn(nom, 5), '10': medianAnnualReturn(nom, 10), '20': medianAnnualReturn(nom, 20) };
-  const selectedMedian = growthWindow !== 'off' ? medianReturns[growthWindow] : null;
+  const selectedMedian = growthWindow === 'custom' ? (growthCustom != null ? growthCustom : null) : (growthWindow !== 'off' ? medianReturns[growthWindow] : null);
   return {
     nom, montant, logo: latest.lienImage,
     rendementDiv: latest.rendementDiv, cagrDiv10: latest.cagrDiv10,
     pessRendement: pess ? pess.rendement5A : null,
-    growthWindow, medianReturns, selectedMedian
+    growthWindow, medianReturns, growthCustom, selectedMedian
   };
 }
 
@@ -4290,7 +4328,7 @@ function renderConstructionPortfolio(){
       <div class="dividende-row-field"><label>Poids</label><span>${pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</span></div>
       <div class="dividende-row-field"><label>Rendement div.</label><span>${r.rendementDiv != null ? fmtPct(r.rendementDiv) : 'N/D'}</span></div>
       <div class="dividende-row-field"><label>Scénario Pessimiste (5a)</label><span${r.pessRendement != null && r.pessRendement < 0 ? ' class="neg"' : ''}>${r.pessRendement != null ? (r.pessRendement >= 0 ? '+' : '') + fmtPct(r.pessRendement) : 'N/D'}</span></div>
-      <div class="dividende-row-field dividende-row-field-wide"><label>Croissance du cours (clic = utiliser dans le simulateur)</label><div class="dividende-growth-badges">${growthWindowBadgesHtml(safe, r.growthWindow, r.medianReturns)}</div></div>
+      <div class="dividende-row-field dividende-row-field-wide"><label>Croissance du cours (clic = utiliser, ou tape ton propre % dans « Perso »)</label><div class="dividende-growth-badges">${growthWindowBadgesHtml(safe, r.growthWindow, r.medianReturns, r.growthCustom)}</div></div>
       <button class="cec-remove" data-action="construction-remove" data-nom="${safe}" title="Retirer">✕</button>
     </div>`;
   }).join('') : '<div class="objectifs-empty">Aucune position — ajoute une entreprise suivie ci-dessus avec un montant.</div>';
@@ -4307,6 +4345,7 @@ function renderConstructionPortfolio(){
     btn.addEventListener('click', () => {
       delete constructionStore.positions[btn.dataset.nom];
       delete constructionStore.growthWindows[btn.dataset.nom];
+      delete constructionStore.growthCustom[btn.dataset.nom];
       persistConstructionLocal();
       renderConstructionPortfolio();
     });
@@ -4315,6 +4354,20 @@ function renderConstructionPortfolio(){
     btn.addEventListener('click', () => {
       const current = constructionStore.growthWindows[btn.dataset.nom] || 'off';
       constructionStore.growthWindows[btn.dataset.nom] = current === btn.dataset.window ? 'off' : btn.dataset.window;
+      persistConstructionLocal();
+      renderConstructionPortfolio();
+    });
+  });
+  listBox.querySelectorAll('.dividende-growth-custom-input').forEach(input => {
+    input.addEventListener('change', () => {
+      const val = parseFloat(input.value);
+      if (isNaN(val)){
+        delete constructionStore.growthCustom[input.dataset.nom];
+        if (constructionStore.growthWindows[input.dataset.nom] === 'custom') constructionStore.growthWindows[input.dataset.nom] = 'off';
+      } else {
+        constructionStore.growthCustom[input.dataset.nom] = val;
+        constructionStore.growthWindows[input.dataset.nom] = 'custom';
+      }
       persistConstructionLocal();
       renderConstructionPortfolio();
     });
@@ -5546,6 +5599,9 @@ function comparaisonToggleCompany(nom){
   if (idx === -1) comparaisonSelected.push(nom); else comparaisonSelected.splice(idx, 1);
   renderComparaisonPicker();
   renderComparaisonCharts();
+  // Les colonnes détaillées (jauge/ratios/graphiques) suivent directement cette même
+  // sélection — voir renderComparisonDetailColumns().
+  renderComparisonDetailColumns();
 }
 
 document.getElementById('comparaisonSectorFilter').addEventListener('change', renderComparaisonPicker);
@@ -5812,8 +5868,13 @@ const COMPARISON_CHART_LABELS = {
   fcf:'Free Cash Flow par action', pfcf:'Rendement FCF', ocf:'Operating Cash Flow par action',
   actions:'Actions en circulation', dette:'Dette / OCF', cash:'Trésorerie & investissements'
 };
-let comparisonDetailSelection = { A:null, B:null };
-let comparisonColumnCharts = { A:{}, B:{} };
+// Colonnes pilotées DIRECTEMENT par la sélection du picker du haut (comparaisonSelected),
+// jusqu'à 4 — plus de recherche séparée par colonne : demande explicite de l'utilisateur
+// ("tu n'aies pas besoin de me redemander entreprise A, entreprise B... c'est les
+// entreprises que je sélectionne qu'il faut comparer"), et extension de 2 à 4 colonnes
+// ("si jamais je choisis plusieurs entreprises... jusqu'à quatre entreprises").
+const COMPARISON_DETAIL_COLS = ['A', 'B', 'C', 'D'];
+let comparisonColumnCharts = { A:{}, B:{}, C:{}, D:{} };
 
 // CAGR sur les 4 graphiques qui en ont un sur l'onglet Analyse (Div/CA/FCF/Actions) —
 // demande explicite : "il faut le CAGR de croissance... pour pouvoir bien comparer les
@@ -5866,7 +5927,7 @@ function comparisonColumnHtml(colId, nom){
           <p class="eyebrow">${latest.ticker || '—'}</p>
           <h3>${nom}</h3>
         </div>
-        <button class="cec-remove" data-remove-col="${colId}" title="Retirer">✕</button>
+        <button class="cec-remove" data-remove-nom="${escapeHtml(nom)}" title="Retirer">✕</button>
       </div>
       <div class="gauge-card">
         <div class="gauge-top">
@@ -5885,10 +5946,10 @@ function comparisonColumnHtml(colId, nom){
           <div class="chart-card">
             <div class="chart-card-head">
               <h3>${COMPARISON_CHART_LABELS[key]}</h3>
-              <button class="zoom-btn" data-cmp-zoom="${colId}|${key}" aria-label="Agrandir">⤢</button>
+              <button class="zoom-btn" data-cmp-zoom-col="${colId}" data-cmp-zoom-key="${key}" data-cmp-zoom-nom="${escapeHtml(nom)}" aria-label="Agrandir">⤢</button>
             </div>
             ${badges ? `<div class="mediane-badges-row">${badges}</div>` : ''}
-            <div class="chart-holder" style="height:200px;"><canvas id="cmp${colId}-${key}"></canvas><button class="chart-card-cart-btn" data-cmp-cart="${colId}|${key}" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
+            <div class="chart-holder" style="height:200px;"><canvas id="cmp${colId}-${key}"></canvas><button class="chart-card-cart-btn" data-cmp-cart-col="${colId}" data-cmp-cart-key="${key}" data-cmp-cart-nom="${escapeHtml(nom)}" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
           </div>`;
         }).join('')}
       </div>
@@ -5898,15 +5959,16 @@ function comparisonColumnHtml(colId, nom){
 function renderComparisonDetailColumns(){
   const box = document.getElementById('comparaisonDetailColumns');
   if (!box) return;
-  Object.values(comparisonColumnCharts.A).forEach(ch => ch && ch.destroy());
-  Object.values(comparisonColumnCharts.B).forEach(ch => ch && ch.destroy());
-  comparisonColumnCharts = { A:{}, B:{} };
+  COMPARISON_DETAIL_COLS.forEach(c => {
+    Object.values(comparisonColumnCharts[c] || {}).forEach(ch => ch && ch.destroy());
+    comparisonColumnCharts[c] = {};
+  });
 
-  const cols = ['A', 'B'].filter(c => comparisonDetailSelection[c] && companies[comparisonDetailSelection[c]]);
-  box.innerHTML = cols.map(c => comparisonColumnHtml(c, comparisonDetailSelection[c])).join('');
+  const selection = comparaisonSelected.filter(nom => companies[nom]).slice(0, 4);
+  box.innerHTML = selection.map((nom, i) => comparisonColumnHtml(COMPARISON_DETAIL_COLS[i], nom)).join('');
 
-  cols.forEach(colId => {
-    const nom = comparisonDetailSelection[colId];
+  selection.forEach((nom, i) => {
+    const colId = COMPARISON_DETAIL_COLS[i];
     const hist = companies[nom];
     const latest = hist[hist.length - 1];
     const years = hist.map(r => r.annee);
@@ -5918,51 +5980,17 @@ function renderComparisonDetailColumns(){
     });
   });
 }
-function setComparisonDetailCompany(colId, nom){
-  comparisonDetailSelection[colId] = nom;
-  renderComparisonDetailColumns();
-  // Ajoute automatiquement l'entreprise choisie au grand graphique superposé du haut —
-  // demande explicite : "il faut que naturellement ce soit les deux entreprises qui
-  // soient choisies au lieu de devoir les rechoisir pour les affronter". N'enlève
-  // jamais rien du grand graphique (l'utilisateur peut y avoir déjà d'autres entreprises
-  // en cours de comparaison), ajoute seulement si absent.
-  if (nom && !comparaisonSelected.includes(nom)){
-    comparaisonSelected.push(nom);
-    renderComparaisonPicker();
-    renderComparaisonCharts();
-  }
-}
 function initComparisonDetail(){
-  ['A', 'B'].forEach(colId => {
-    const input = document.getElementById('comparaisonDetailSearch' + colId);
-    const box = document.getElementById('comparaisonDetailSuggestions' + colId);
-    if (!input || !box) return;
-    input.addEventListener('input', () => {
-      const q = input.value.trim().toLowerCase();
-      if (!q){ box.classList.remove('open'); box.innerHTML = ''; return; }
-      const matches = Object.keys(companies).filter(n => n.toLowerCase().includes(q)).slice(0, 8);
-      box.innerHTML = matches.length
-        ? matches.map(n => `<div class="search-suggestion" data-name="${n.replace(/"/g,'&quot;')}">${n}</div>`).join('')
-        : '<div class="search-suggestion" style="color:var(--text-faint);cursor:default;">Aucun résultat</div>';
-      box.classList.add('open');
-    });
-    box.addEventListener('click', e => {
-      const item = e.target.closest('.search-suggestion[data-name]');
-      if (!item) return;
-      setComparisonDetailCompany(colId, item.dataset.name);
-      input.value = '';
-      box.classList.remove('open');
-      box.innerHTML = '';
-    });
-    document.addEventListener('click', e => { if (!e.target.closest('.search-wrap')) box.classList.remove('open'); });
-  });
+  renderComparisonDetailColumns();
   document.getElementById('comparaisonDetailColumns').addEventListener('click', e => {
-    const rmBtn = e.target.closest('[data-remove-col]');
-    if (rmBtn){ setComparisonDetailCompany(rmBtn.dataset.removeCol, null); return; }
-    const cartBtn = e.target.closest('[data-cmp-cart]');
+    // Retirer une colonne retire l'entreprise de la sélection du picker du haut
+    // (source de vérité unique désormais — voir comparaisonToggleCompany), qui
+    // redessine à la fois le grand graphique et ces colonnes.
+    const rmBtn = e.target.closest('[data-remove-nom]');
+    if (rmBtn){ comparaisonToggleCompany(rmBtn.dataset.removeNom); return; }
+    const cartBtn = e.target.closest('[data-cmp-cart-col]');
     if (cartBtn){
-      const [colId, key] = cartBtn.dataset.cmpCart.split('|');
-      const nom = comparisonDetailSelection[colId];
+      const { cmpCartCol: colId, cmpCartKey: key, cmpCartNom: nom } = cartBtn.dataset;
       addChartInstanceToCart(comparisonColumnCharts[colId][key], COMPARISON_CHART_LABELS[key] + ' — ' + nom, cartBtn);
       return;
     }
@@ -5971,10 +5999,9 @@ function initComparisonDetail(){
     // renderComparisonDetailColumns), donc openZoom() la retrouve directement sans
     // aucun système de zoom séparé à construire — demande explicite ("on ne peut pas
     // grossir les graphiques, il faut la petite ampoule").
-    const zoomBtn = e.target.closest('[data-cmp-zoom]');
+    const zoomBtn = e.target.closest('[data-cmp-zoom-col]');
     if (zoomBtn){
-      const [colId, key] = zoomBtn.dataset.cmpZoom.split('|');
-      const nom = comparisonDetailSelection[colId];
+      const { cmpZoomCol: colId, cmpZoomKey: key, cmpZoomNom: nom } = zoomBtn.dataset;
       openZoom('cmp-' + colId + '-' + key, COMPARISON_CHART_LABELS[key] + ' — ' + nom);
     }
   });
@@ -6837,12 +6864,23 @@ function watchlistLocationOf(nom){
   return WATCHLIST_LISTS.find(key => watchlistStore[key].includes(nom)) || null;
 }
 
-function moveToWatchlist(nom, listKey){
+// targetNom/before : position d'insertion précise dans la liste de destination — clic
+// et glisse sur une entreprise déjà présente dans une liste (ou entre deux) pour
+// l'insérer juste avant/après elle, au lieu d'atterrir systématiquement en fin de liste.
+// Demande explicite de l'utilisateur : "je puisse en intervertir quelques-unes... si je
+// vais en mettre une plus en premier ou plus en deuxième". targetNom omis/absent de la
+// liste = ajout en fin (comportement d'origine, ex. dépôt sur une zone vide).
+function moveToWatchlist(nom, listKey, targetNom, before){
   WATCHLIST_LISTS.forEach(key => {
     const idx = watchlistStore[key].indexOf(nom);
     if (idx !== -1) watchlistStore[key].splice(idx, 1);
   });
-  if (listKey) watchlistStore[listKey].push(nom);
+  if (listKey){
+    const arr = watchlistStore[listKey];
+    const targetIdx = targetNom ? arr.indexOf(targetNom) : -1;
+    if (targetIdx !== -1) arr.splice(targetIdx + (before ? 0 : 1), 0, nom);
+    else arr.push(nom);
+  }
   persistWatchlistLocal();
   renderWatchlist();
 }
@@ -6894,9 +6932,26 @@ function initWatchlist(){
   // pointerdown + document.elementFromPoint() au relâchement, unifié souris/tactile.
   function clearWatchlistDragHighlights(){
     document.querySelectorAll('.watchlist-dropzone.dragover, #watchlistPool.dragover').forEach(el => el.classList.remove('dragover'));
+    document.querySelectorAll('.watchlist-chip.drop-before, .watchlist-chip.drop-after').forEach(el => el.classList.remove('drop-before', 'drop-after'));
   }
   function findWatchlistDropZone(el){
     return el ? el.closest('.watchlist-dropzone, #watchlistPool') : null;
+  }
+  // Résout la cible précise du dépôt : la zone (liste/pool), et si le pointeur survole
+  // une autre puce déjà présente dans cette zone, laquelle et de quel côté (avant/après)
+  // — permet de réordonner/intervertir DANS une même liste, pas juste changer de liste.
+  function findWatchlistDropTarget(x, y, draggedChip){
+    const el = document.elementFromPoint(x, y);
+    const zone = findWatchlistDropZone(el);
+    if (!zone) return null;
+    const chipEl = el.closest('.watchlist-chip[data-nom]');
+    let targetNom = null, before = true;
+    if (chipEl && chipEl !== draggedChip){
+      const rect = chipEl.getBoundingClientRect();
+      before = x < rect.left + rect.width / 2;
+      targetNom = chipEl.dataset.nom;
+    }
+    return { zone, targetNom, before };
   }
   page.addEventListener('pointerdown', e => {
     const chip = e.target.closest('.watchlist-chip[data-nom]');
@@ -6914,8 +6969,14 @@ function initWatchlist(){
         chip.classList.add('dragging');
       }
       clearWatchlistDragHighlights();
-      const zone = findWatchlistDropZone(document.elementFromPoint(me.clientX, me.clientY));
-      if (zone) zone.classList.add('dragover');
+      const target = findWatchlistDropTarget(me.clientX, me.clientY, chip);
+      if (target){
+        target.zone.classList.add('dragover');
+        if (target.targetNom){
+          const targetEl = target.zone.querySelector(`.watchlist-chip[data-nom="${CSS.escape(target.targetNom)}"]`);
+          if (targetEl) targetEl.classList.add(target.before ? 'drop-before' : 'drop-after');
+        }
+      }
     }
     function onUp(me){
       document.removeEventListener('pointermove', onMove);
@@ -6927,8 +6988,8 @@ function initWatchlist(){
       // du navigateur est trop peu fiable (timing, cible recalculée après un
       // re-rendu du DOM) pour distinguer proprement tap et glisser sur mobile.
       if (!moved){ goToAnalyse(nom); return; }
-      const zone = findWatchlistDropZone(document.elementFromPoint(me.clientX, me.clientY));
-      if (zone) moveToWatchlist(nom, zone.dataset.list || null);
+      const target = findWatchlistDropTarget(me.clientX, me.clientY, chip);
+      if (target) moveToWatchlist(nom, target.zone.dataset.list || null, target.targetNom, target.before);
     }
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup', onUp);
