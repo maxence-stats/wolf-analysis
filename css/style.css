@@ -280,6 +280,27 @@
   .comparaison-company-row img{width:20px;height:20px;object-fit:contain;background:#fff;border-radius:4px;padding:2px;flex-shrink:0;}
   .comparaison-company-noimg{width:20px;height:20px;flex-shrink:0;}
 
+  /* Comparaison détaillée côte à côte (2 fiches complètes façon Analyse, l'une à côté de
+     l'autre) */
+  .comparaison-detail-pickers{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px;}
+  .comparaison-detail-pickers .search-wrap{max-width:none;}
+  .comparaison-detail-columns{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;}
+  .comparaison-column{background:var(--card-bg);border:var(--card-border);border-radius:16px;padding:18px;box-shadow:var(--shadow-card);min-width:0;}
+  .comparaison-column-head{display:flex;align-items:center;gap:12px;margin-bottom:16px;}
+  .comparaison-column-logo{width:44px;height:44px;object-fit:contain;background:#fff;border-radius:9px;padding:5px;flex-shrink:0;}
+  .comparaison-column-head h3{font-family:var(--font-display);font-size:16px;font-weight:700;margin:1px 0 0;color:var(--text);}
+  .comparaison-column-head .eyebrow{margin:0;}
+  .comparaison-column-head .cec-remove{margin-left:auto;}
+  .comparaison-column .ratio-grid{grid-template-columns:repeat(2,1fr);gap:8px;margin:16px 0;}
+  .comparaison-column .ratio-card{padding:10px 12px;}
+  .comparaison-column .gauge-card{padding:14px 16px 12px;}
+  .comparaison-column-charts{display:flex;flex-direction:column;gap:14px;}
+  .comparaison-column-charts .chart-card{padding:14px 14px 6px;}
+  .comparaison-column-charts .chart-card h3{font-size:13px;}
+  @media (max-width:1100px){
+    .comparaison-detail-pickers, .comparaison-detail-columns{grid-template-columns:1fr;}
+  }
+
   /* ---------- PORTEFEUILLE DIVIDENDE ---------- */
   .dividende-goal-card{background:var(--card-bg);border:var(--card-border);border-radius:14px;padding:18px 22px;box-shadow:var(--shadow-card);margin:18px 0;}
   .dividende-goal-card label{display:block;font-size:11.5px;color:var(--text-dim);margin-bottom:8px;}

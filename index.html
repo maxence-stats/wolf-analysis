@@ -656,6 +656,28 @@
         <div class="stock-status" id="comparaisonStatus"></div>
         <div class="chart-holder" style="height:380px;"><canvas id="chartComparaison"></canvas></div>
       </div>
+
+      <!-- Comparaison détaillée côte à côte : ouvrir 2 entreprises individuellement avec
+           les mêmes graphiques que l'onglet Analyse, l'une à côté de l'autre — demande
+           explicite. Réutilise buildHistoricalChartConfig()/ratioCardsHtml()/drawGauge()
+           (mêmes formules/couleurs exactes que l'onglet Analyse), avec des ids de
+           canvas/éléments dédiés par colonne pour ne jamais entrer en conflit avec les
+           instances Chart.js de l'onglet Analyse. -->
+      <div class="section-label">Comparaison détaillée côte à côte</div>
+      <p class="valo-intro">Choisis jusqu'à 2 entreprises pour voir leurs fiches complètes (jauge, ratios, graphiques historiques) l'une à côté de l'autre.</p>
+      <div class="comparaison-detail-pickers">
+        <div class="search-wrap">
+          <span class="search-icon">⌕</span>
+          <input type="text" id="comparaisonDetailSearchA" class="search-input" placeholder="Entreprise A…" autocomplete="off">
+          <div class="search-suggestions" id="comparaisonDetailSuggestionsA"></div>
+        </div>
+        <div class="search-wrap">
+          <span class="search-icon">⌕</span>
+          <input type="text" id="comparaisonDetailSearchB" class="search-input" placeholder="Entreprise B…" autocomplete="off">
+          <div class="search-suggestions" id="comparaisonDetailSuggestionsB"></div>
+        </div>
+      </div>
+      <div class="comparaison-detail-columns" id="comparaisonDetailColumns"></div>
     </div>
 
     <div id="pageCerveau" class="page">

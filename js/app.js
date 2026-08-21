@@ -4642,8 +4642,6 @@ function renderCompany(nom){
   renderValorisation(nom);
   renderAnalyseValoSummary(nom);
 
-  const series = k => hist.map(r => r[k]);
-
   // destroyCharts() vide chartInstances en bloc — appelé avant loadStockChart() pour ne
   // pas effacer le graphique boursier juste après sa création (piège révélé par la
   // nouvelle source de prix synchrone : contrairement à l'ancien relais Yahoo/Stooq,
@@ -4652,7 +4650,32 @@ function renderCompany(nom){
   destroyCharts();
   loadStockChart(latest.ticker, nom);
 
-  chartInstances.div = makeChart('div', 'chartDiv', {
+  HISTORICAL_CHART_KEYS.forEach(key => {
+    chartInstances[key] = makeChart(key, HISTORICAL_CHART_CANVAS_ID[key], buildHistoricalChartConfig(key, hist, years));
+  });
+  document.getElementById('medianeBadgesPfcf').innerHTML =
+    medianeBadgeHtml('Médiane 10a', latest.medianePFCF ? 100/latest.medianePFCF : null, '%') + medianeBadgeHtml('Médiane 20a', latest.medianePFCF20 ? 100/latest.medianePFCF20 : null, '%');
+
+  // P/FCF et P/OCF superposés (retour utilisateur : juste les deux séries, activables/
+  // désactivables séparément — voir #pfcfPocfToggles/togglePfcfPocfSeries()) — familles
+  // de couleur or=FCF / bleu=OCF, cohérent avec le reste du site.
+  renderPfcfPocfChart();
+  document.getElementById('medianeBadgesPfcfPocf').innerHTML =
+    medianeBadgeHtml('Médiane P/FCF 10a', latest.medianePFCF) + medianeBadgeHtml('Médiane P/FCF 20a', latest.medianePFCF20) +
+    medianeBadgeHtml('Médiane P/OCF 10a', latest.medianePOcf) + medianeBadgeHtml('Médiane P/OCF 20a', latest.medianePOcf20);
+}
+
+// 9 graphiques historiques "simples" (hors cours de bourse, très stateful/async, et
+// P/FCF vs P/OCF, qui a son propre état de visibilité par série) — config EXTRAITE en
+// fonction pure (hist/years en paramètres, pas de closure sur activeCompany) pour être
+// réutilisée TELLE QUELLE à la fois par l'onglet Analyse et par les colonnes côte-à-côte
+// de l'onglet Comparaison ("reprends exactement les mêmes codes" — demande explicite) :
+// une seule source de vérité pour le style, jamais deux implémentations à resynchroniser.
+const HISTORICAL_CHART_KEYS = ['div','ca','marges','fcf','pfcf','ocf','actions','dette','cash'];
+const HISTORICAL_CHART_CANVAS_ID = { div:'chartDiv', ca:'chartCA', marges:'chartMarges', fcf:'chartFCF', pfcf:'chartPFCF', ocf:'chartOCF', actions:'chartActions', dette:'chartDette', cash:'chartCash' };
+function buildHistoricalChartConfig(key, hist, years){
+  const series = k => hist.map(r => r[k]);
+  if (key === 'div') return {
     type:'bar',
     data:{ labels:years, datasets:[
       { label:'Dividende (€)', data:series('dividende'), backgroundColor:THEME.gold, borderRadius:4, yAxisID:'y', order:2, barPercentage:0.55 },
@@ -4662,79 +4685,60 @@ function renderCompany(nom){
       plugins:{ legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true}}},
       scales:{ x: baseAxis, y:{ position:'left', grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+' €'} }, y1:{ position:'right', grid:{display:false}, ticks:{color:THEME.dim, callback:v=>v+'%'} } }
     }
-  });
-
-  chartInstances.ca = makeChart('ca', 'chartCA', {
+  };
+  if (key === 'ca') return {
     type:'line',
     data:{ labels:years, datasets:[{ label:'CA (Md€)', data:series('ca').map(v => v==null?null:+(v/1000).toFixed(1)), borderColor:THEME.gold, backgroundColor:'rgba(217,164,65,0.15)', fill:true, tension:0.35, pointRadius:3, spanGaps:true }]},
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+' Md€'} } } }
-  });
-
-  chartInstances.marges = makeChart('marges', 'chartMarges', {
+  };
+  if (key === 'marges') return {
     type:'line',
     data:{ labels:years, datasets:[
       { label:'Marge opérationnelle (%)', data:series('margeOp'), borderColor:THEME.gold, backgroundColor:THEME.gold, tension:0.35, pointRadius:3, spanGaps:true },
       { label:'ROIC (%)', data:series('roic'), borderColor:THEME.blue, backgroundColor:THEME.blue, tension:0.35, pointRadius:3, spanGaps:true }
     ]},
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true}}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'%'} } } }
-  });
-
-  chartInstances.fcf = makeChart('fcf', 'chartFCF', {
+  };
+  if (key === 'fcf') return {
     type:'bar',
     data:{ labels:years, datasets:[{ label:'FCF / action (€)', data:series('fcfParAction'), backgroundColor:THEME.blue, borderRadius:4, barPercentage:0.6 }]},
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+' €'} } } }
-  });
-
-  // Ancien graphique "Multiple P/FCF payé par le marché" retiré — redondant avec P/FCF
-  // vs P/OCF juste à côté (même donnée). Remplacé par le Rendement FCF (l'inverse du
-  // multiple, en %) : FCF/action ÷ Prix — demande explicite, métrique qui n'existait
-  // nulle part ailleurs sur le site. Dérivée de pFcf (déjà mappé) plutôt que recalculée
-  // depuis fcfParAction/prixActuel séparément, pour rester exactement cohérente avec le
+  };
+  // Rendement FCF (remplace l'ancien "Multiple P/FCF payé par le marché", redondant avec
+  // P/FCF vs P/OCF juste à côté) — dérivé de pFcf (déjà mappé) plutôt que recalculé
+  // depuis fcfParAction/prixActuel séparément, pour rester exactement cohérent avec le
   // multiple déjà affiché ailleurs (même source, juste inversée).
-  chartInstances.pfcf = makeChart('pfcf', 'chartPFCF', {
+  if (key === 'pfcf') return {
     type:'bar',
     data:{ labels:years, datasets:[
       { label:'Rendement FCF (%)', data: hist.map(r => r.pFcf ? +(100/r.pFcf).toFixed(2) : null), backgroundColor:THEME.gold, borderRadius:4, barPercentage:0.6 }
     ]},
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'%'} } } }
-  });
-  document.getElementById('medianeBadgesPfcf').innerHTML =
-    medianeBadgeHtml('Médiane 10a', latest.medianePFCF ? 100/latest.medianePFCF : null, '%') + medianeBadgeHtml('Médiane 20a', latest.medianePFCF20 ? 100/latest.medianePFCF20 : null, '%');
-
-  chartInstances.ocf = makeChart('ocf', 'chartOCF', {
+  };
+  if (key === 'ocf') return {
     type:'bar',
     data:{ labels:years, datasets:[{ label:'OCF / action (€)', data:series('ocfParAction'), backgroundColor:THEME.gold, borderRadius:4, barPercentage:0.6 }]},
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+' €'} } } }
-  });
-
-  // P/FCF et P/OCF superposés (retour utilisateur : juste les deux séries, activables/
-  // désactivables séparément — voir #pfcfPocfToggles/togglePfcfPocfSeries()) — familles
-  // de couleur or=FCF / bleu=OCF, cohérent avec le reste du site.
-  renderPfcfPocfChart();
-  document.getElementById('medianeBadgesPfcfPocf').innerHTML =
-    medianeBadgeHtml('Médiane P/FCF 10a', latest.medianePFCF) + medianeBadgeHtml('Médiane P/FCF 20a', latest.medianePFCF20) +
-    medianeBadgeHtml('Médiane P/OCF 10a', latest.medianePOcf) + medianeBadgeHtml('Médiane P/OCF 20a', latest.medianePOcf20);
-
-  chartInstances.actions = makeChart('actions', 'chartActions', {
+  };
+  if (key === 'actions') return {
     type:'line',
     data:{ labels:years, datasets:[{ label:'Actions en circulation (M)', data:series('actions'), borderColor:THEME.blue, backgroundColor:'rgba(74,159,224,0.12)', fill:true, tension:0.35, pointRadius:3, spanGaps:true }]},
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'M'} } } }
-  });
-
-  chartInstances.dette = makeChart('dette', 'chartDette', {
+  };
+  if (key === 'dette') return {
     type:'bar',
     data:{ labels:years, datasets:[{ label:'Dette / OCF (x)', data:series('detteOCF'), backgroundColor:THEME.blue, borderRadius:4, barPercentage:0.6 }]},
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'x'} } } }
-  });
-
-  chartInstances.cash = makeChart('cash', 'chartCash', {
+  };
+  // cash
+  return {
     type:'bar',
     data:{ labels:years, datasets:[
       { label:'Cash (M€)', data:series('cash'), backgroundColor:THEME.blue, borderRadius:4, barPercentage:0.55 },
       { label:'Cash investi (M€)', data:series('cashInvesti'), backgroundColor:THEME.gold, borderRadius:4, barPercentage:0.55 }
     ]},
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true}}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+' M€'} } } }
-  });
+  };
 }
 
 let chartConfigs = {};
@@ -5676,6 +5680,117 @@ function openComparaisonZoom(){
   openZoom('comparaison', 'Comparaison multi-entreprises');
 }
 
+/* ============================================================
+   COMPARAISON DÉTAILLÉE CÔTE À CÔTE — 2 fiches complètes (jauge, ratios, graphiques
+   historiques) affichées l'une à côté de l'autre, réutilisant EXACTEMENT les mêmes
+   fonctions que l'onglet Analyse (buildHistoricalChartConfig/ratioCardsHtml/drawGauge)
+   — demande explicite ("qu'on ait les mêmes graphiques que dans l'analyse... tu
+   reprennes exactement les mêmes codes"). Registre d'instances Chart.js SÉPARÉ de
+   chartInstances (réservé à LA société active de l'onglet Analyse) : cmpA/cmpB
+   vivent en parallèle sans jamais s'écraser mutuellement ni avec l'onglet Analyse.
+   ============================================================ */
+const COMPARISON_CHART_LABELS = {
+  div:'Dividende & Payout ratio', ca:"Chiffre d'affaires", marges:'Marge opérationnelle & ROIC',
+  fcf:'Free Cash Flow par action', pfcf:'Rendement FCF', ocf:'Operating Cash Flow par action',
+  actions:'Actions en circulation', dette:'Dette / OCF', cash:'Trésorerie & investissements'
+};
+let comparisonDetailSelection = { A:null, B:null };
+let comparisonColumnCharts = { A:{}, B:{} };
+
+function comparisonColumnHtml(colId, nom){
+  const hist = companies[nom];
+  const latest = hist[hist.length - 1];
+  return `
+    <div class="comparaison-column" data-col="${colId}">
+      <div class="comparaison-column-head">
+        <img class="comparaison-column-logo" src="${latest.lienImage || ''}" alt="">
+        <div>
+          <p class="eyebrow">${latest.ticker || '—'}</p>
+          <h3>${nom}</h3>
+        </div>
+        <button class="cec-remove" data-remove-col="${colId}" title="Retirer">✕</button>
+      </div>
+      <div class="gauge-card">
+        <div class="gauge-top">
+          <div class="gauge-title">Positionnement sur l'échelle de valorisation</div>
+          <div class="gauge-verdict" id="cmp${colId}Verdict">—</div>
+        </div>
+        <svg class="gauge" id="cmp${colId}Gauge" viewBox="0 0 1000 90"></svg>
+      </div>
+      <div class="ratio-grid">${ratioCardsHtml(latest)}</div>
+      <div class="comparaison-column-charts">
+        ${HISTORICAL_CHART_KEYS.map(key => `
+          <div class="chart-card">
+            <div class="chart-card-head"><h3>${COMPARISON_CHART_LABELS[key]}</h3></div>
+            <div class="chart-holder" style="height:200px;"><canvas id="cmp${colId}-${key}"></canvas><button class="chart-card-cart-btn" data-cmp-cart="${colId}|${key}" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+function renderComparisonDetailColumns(){
+  const box = document.getElementById('comparaisonDetailColumns');
+  if (!box) return;
+  Object.values(comparisonColumnCharts.A).forEach(ch => ch && ch.destroy());
+  Object.values(comparisonColumnCharts.B).forEach(ch => ch && ch.destroy());
+  comparisonColumnCharts = { A:{}, B:{} };
+
+  const cols = ['A', 'B'].filter(c => comparisonDetailSelection[c] && companies[comparisonDetailSelection[c]]);
+  box.innerHTML = cols.map(c => comparisonColumnHtml(c, comparisonDetailSelection[c])).join('');
+
+  cols.forEach(colId => {
+    const nom = comparisonDetailSelection[colId];
+    const hist = companies[nom];
+    const latest = hist[hist.length - 1];
+    const years = hist.map(r => r.annee);
+    drawGauge(latest, 'cmp' + colId + 'Gauge', 'cmp' + colId + 'Verdict');
+    HISTORICAL_CHART_KEYS.forEach(key => {
+      comparisonColumnCharts[colId][key] = makeChart(
+        'cmp-' + colId + '-' + key, 'cmp' + colId + '-' + key, buildHistoricalChartConfig(key, hist, years)
+      );
+    });
+  });
+}
+function setComparisonDetailCompany(colId, nom){
+  comparisonDetailSelection[colId] = nom;
+  renderComparisonDetailColumns();
+}
+function initComparisonDetail(){
+  ['A', 'B'].forEach(colId => {
+    const input = document.getElementById('comparaisonDetailSearch' + colId);
+    const box = document.getElementById('comparaisonDetailSuggestions' + colId);
+    if (!input || !box) return;
+    input.addEventListener('input', () => {
+      const q = input.value.trim().toLowerCase();
+      if (!q){ box.classList.remove('open'); box.innerHTML = ''; return; }
+      const matches = Object.keys(companies).filter(n => n.toLowerCase().includes(q)).slice(0, 8);
+      box.innerHTML = matches.length
+        ? matches.map(n => `<div class="search-suggestion" data-name="${n.replace(/"/g,'&quot;')}">${n}</div>`).join('')
+        : '<div class="search-suggestion" style="color:var(--text-faint);cursor:default;">Aucun résultat</div>';
+      box.classList.add('open');
+    });
+    box.addEventListener('click', e => {
+      const item = e.target.closest('.search-suggestion[data-name]');
+      if (!item) return;
+      setComparisonDetailCompany(colId, item.dataset.name);
+      input.value = '';
+      box.classList.remove('open');
+      box.innerHTML = '';
+    });
+    document.addEventListener('click', e => { if (!e.target.closest('.search-wrap')) box.classList.remove('open'); });
+  });
+  document.getElementById('comparaisonDetailColumns').addEventListener('click', e => {
+    const rmBtn = e.target.closest('[data-remove-col]');
+    if (rmBtn){ setComparisonDetailCompany(rmBtn.dataset.removeCol, null); return; }
+    const cartBtn = e.target.closest('[data-cmp-cart]');
+    if (cartBtn){
+      const [colId, key] = cartBtn.dataset.cmpCart.split('|');
+      const nom = comparisonDetailSelection[colId];
+      addChartInstanceToCart(comparisonColumnCharts[colId][key], COMPARISON_CHART_LABELS[key] + ' — ' + nom, cartBtn);
+    }
+  });
+}
+
 document.getElementById('macroCycleRangeButtons').addEventListener('click', e => {
   const btn = e.target.closest('button[data-range]');
   if (!btn) return;
@@ -5897,9 +6012,41 @@ function addGaugeToCart(btnEl){
   renderExportCartWidget();
   flashCartBtn(btnEl, true);
 }
-function drawGauge(latest){
-  const svg = document.getElementById('gaugeSvg');
-  const badge = document.getElementById('verdictBadge');
+// Les 8 mêmes cartes ratio que l'onglet Analyse (#pageAnalyse .ratio-grid), en chaîne
+// HTML autonome plutôt qu'une manipulation DOM par id fixe — réutilisable telle quelle
+// pour les colonnes de l'onglet Comparaison. Mêmes formules/seuils exacts que le rendu
+// principal (voir renderCompany()) : jamais une 2e version divergente des règles
+// FCF PEG (<1 vert / 1-1,10 orange / >1,10 rouge) ou du calcul de rendement 5 ans.
+function ratioCardsHtml(latest){
+  const ecart = latest.ecartValeur != null
+    ? `<div class="v ${latest.ecartValeur >= 0 ? 'pos' : 'neg'}">${fmtPct(latest.ecartValeur * 100)}</div>` : `<div class="v">N/D</div>`;
+  const fcfpegCls = latest.fcfpeg == null ? '' : (latest.fcfpeg < 1 ? 'pos' : latest.fcfpeg <= 1.10 ? 'warn' : 'neg');
+  const fcfpeg = latest.fcfpeg != null
+    ? `<div class="v ${fcfpegCls}">${latest.fcfpeg.toLocaleString('fr-FR',{minimumFractionDigits:2})}</div>` : `<div class="v">N/D</div>`;
+  const medFcf = latest.medianePFCF != null ? latest.medianePFCF.toLocaleString('fr-FR',{minimumFractionDigits:1}) + 'x' : 'N/D';
+  let rend5 = `<div class="v">N/D</div>`;
+  if (latest.prixJuste != null && latest.prixActuel != null && latest.rendementDiv != null){
+    const reversion = Math.pow(latest.prixJuste / latest.prixActuel, 1 / 5) - 1;
+    const r5 = reversion * 100 + latest.rendementDiv;
+    rend5 = `<div class="v ${r5 >= 0 ? 'pos' : 'neg'}">${r5 >= 0 ? '+' : ''}${fmtPct(r5)}</div>`;
+  }
+  return `
+    <div class="ratio-card"><div class="k">Prix juste</div><div class="v">${fmtEUR(latest.prixJuste)}</div><div class="sub">valorisation intrinsèque</div></div>
+    <div class="ratio-card"><div class="k">Prix cible</div><div class="v">${fmtEUR(latest.prixCible)}</div><div class="sub">seuil d'achat, marge de sécurité</div></div>
+    <div class="ratio-card"><div class="k">Écart de valeur</div>${ecart}<div class="sub">entre prix juste et prix cible</div></div>
+    <div class="ratio-card"><div class="k">Rendement du dividende</div><div class="v">${fmtPct(latest.rendementDiv)}</div><div class="sub">sur prix actuel</div></div>
+    <div class="ratio-card"><div class="k">Rendement total estimé, 5 ans</div>${rend5}<div class="sub">retour à la juste valeur + dividende</div></div>
+    <div class="ratio-card"><div class="k">FCF PEG</div>${fcfpeg}<div class="sub">prix / FCF rapporté à la croissance</div></div>
+    <div class="ratio-card"><div class="k">Médiane P/FCF</div><div class="v">${medFcf}</div><div class="sub">multiple médian historique</div></div>
+    <div class="ratio-card"><div class="k">Payout ratio</div><div class="v">${fmtPct(latest.payoutRatio)}</div><div class="sub">dernier exercice</div></div>
+  `;
+}
+// svgId/badgeId optionnels (défaut : la jauge principale de l'onglet Analyse) — permet
+// de réutiliser telle quelle cette même fonction pour les colonnes de l'onglet
+// Comparaison (jauge par entreprise, ids dédiés par colonne), "mêmes codes" partout.
+function drawGauge(latest, svgId, badgeId){
+  const svg = document.getElementById(svgId || 'gaugeSvg');
+  const badge = document.getElementById(badgeId || 'verdictBadge');
   badge.className = 'gauge-verdict';
 
   if (latest.prixCible == null || latest.prixJuste == null || latest.prixActuel == null){
@@ -8599,6 +8746,7 @@ initSearch();
 initSectorGrid();
 initClassement();
 initMobileNav();
+initComparisonDetail();
 
 // Panier d'export groupé (voir renderExportCartWidget/addCurrentZoomChartToCart) — pas de
 // prompt()/confirm() natifs pour "Vider" (voir CLAUDE.md piège #7), confirmation en 2 clics
