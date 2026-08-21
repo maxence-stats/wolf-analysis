@@ -118,6 +118,7 @@
       <div class="gauge-top">
         <div class="gauge-title">Positionnement sur l'échelle de valorisation</div>
         <div class="gauge-verdict" id="verdictBadge">—</div>
+        <button class="chart-card-cart-btn gauge-cart-btn" onclick="addGaugeToCart(this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button>
       </div>
       <svg class="gauge" id="gaugeSvg" viewBox="0 0 1000 90"></svg>
       <div class="gauge-legend">
@@ -234,13 +235,13 @@
 
       <div class="chart-card">
         <div class="chart-card-head">
-          <div><h3>Multiple P/FCF payé par le marché</h3><p>Combien les investisseurs paient chaque euro de FCF</p></div>
+          <div><h3>Rendement FCF</h3><p>FCF par action rapporté au prix — l'inverse du multiple P/FCF</p></div>
           <div class="chart-card-actions">
-            <button class="zoom-btn" onclick="openZoom('pfcf',&quot;Multiple P/FCF payé par le marché&quot;)" aria-label="Agrandir">⤢</button>
+            <button class="zoom-btn" onclick="openZoom('pfcf',&quot;Rendement FCF&quot;)" aria-label="Agrandir">⤢</button>
           </div>
         </div>
         <div class="mediane-badges-row" id="medianeBadgesPfcf"></div>
-        <div class="chart-holder"><canvas id="chartPFCF"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['pfcf'], 'Multiple P/FCF payé par le marché', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
+        <div class="chart-holder"><canvas id="chartPFCF"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['pfcf'], 'Rendement FCF', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
       </div>
 
       <div class="chart-card">

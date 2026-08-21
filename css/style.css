@@ -683,6 +683,10 @@
   .gauge-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;flex-wrap:wrap;gap:8px;}
   .gauge-title{font-family:var(--font-display);font-weight:600;font-size:15px;color:var(--text);}
   .gauge-verdict{font-family:var(--font-mono);font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;}
+  /* .chart-card-cart-btn est pensée pour flotter en overlay (position:absolute) dans un
+     .chart-holder — ici c'est un simple enfant flex de .gauge-top parmi d'autres,
+     override en conséquence plutôt que de dupliquer tout le style du bouton. */
+  .gauge-cart-btn{position:static;opacity:1;}
   .verdict-over{background:rgba(229,99,107,0.12);color:var(--red);border:1px solid rgba(229,99,107,0.3);box-shadow:0 0 18px -6px rgba(229,99,107,0.4);}
   .verdict-fair{background:rgba(217,164,65,0.12);color:var(--gold);border:1px solid rgba(217,164,65,0.3);box-shadow:0 0 18px -6px rgba(217,164,65,0.4);}
   .verdict-under{background:rgba(79,209,165,0.12);color:var(--green);border:1px solid rgba(79,209,165,0.3);box-shadow:0 0 18px -6px rgba(79,209,165,0.4);}

@@ -2101,7 +2101,7 @@ const ANALYSE_CHART_EXPORT_LIST = [
   ['ca', "Chiffre d'affaires"],
   ['marges', 'Marge opérationnelle & ROIC'],
   ['fcf', 'FCF par action'],
-  ['pfcf', 'P/FCF & Médiane P/FCF'],
+  ['pfcf', 'Rendement FCF'],
   ['actions', 'Actions en circulation'],
   ['dette', 'Dette nette / OCF'],
   ['cash', 'Trésorerie & investissements']
@@ -2110,6 +2110,11 @@ function exportAnalyseFullAsPdf(){
   if (!activeCompany) return;
   const latest = companies[activeCompany][companies[activeCompany].length - 1];
   const logo = companyLogoUrl(activeCompany);
+  // Jauge de valorisation (SVG, couleurs déjà en hex réel via THEME.xxx au dessin —
+  // pas de var(--...) à résoudre, l'outerHTML s'imprime tel quel) — demande explicite,
+  // absente jusqu'ici de l'export complet.
+  const gaugeBox = document.querySelector('#pageAnalyse .gauge-card');
+  const gaugeHtml = gaugeBox ? `<div class="print-section"><h3>Positionnement sur l'échelle de valorisation</h3>${gaugeBox.outerHTML}</div>` : '';
   const ratiosBox = document.querySelector('#pageAnalyse .ratio-grid');
   const ratiosHtml = ratiosBox ? `<div class="print-section"><h3>Ratios clés</h3>${ratiosBox.outerHTML}</div>` : '';
   const valoBox = document.getElementById('analyseValoCard');
@@ -2122,7 +2127,7 @@ function exportAnalyseFullAsPdf(){
     if (!url) return '';
     return `<div class="print-section"><h3>${title}</h3><img class="print-chart-img" src="${url}" alt=""></div>`;
   }).join('');
-  exportSectionAsPdf(activeCompany, (latest.ticker || '') + ' — Analyse complète', ratiosHtml + valoHtml + chartsHtml, logo);
+  exportSectionAsPdf(activeCompany, (latest.ticker || '') + ' — Analyse complète', gaugeHtml + ratiosHtml + valoHtml + chartsHtml, logo);
 }
 function exportValorisationFullAsPdf(){
   if (!activeCompany) return;
@@ -4304,8 +4309,8 @@ function setBadge(id, label, value){
 // temps) — affichée en badge au-dessus du graphique, pas en ligne plate dessus (retour
 // utilisateur explicite, voir renderPfcfPocfChart()). Pas de sémantique pos/neg ici
 // (un multiple n'est ni "positif" ni "négatif" en soi), contrairement à setBadge().
-function medianeBadgeHtml(label, value){
-  return `<span class="chart-badge mediane-badge">${label} <b>${value != null ? value.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + 'x' : '—'}</b></span>`;
+function medianeBadgeHtml(label, value, unit){
+  return `<span class="chart-badge mediane-badge">${label} <b>${value != null ? value.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + (unit || 'x') : '—'}</b></span>`;
 }
 // P/FCF et P/OCF superposés, chacun activable/désactivable indépendamment (retour
 // utilisateur : "possibilité de désactiver les P/FCF ou les P/OCF") — fonction
@@ -4441,19 +4446,21 @@ function renderCompany(nom){
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+' €'} } } }
   });
 
-  // Retour utilisateur explicite : une médiane est un chiffre unique, pas une série qui
-  // varie dans le temps — une ligne plate sur tout le graphique n'apporte rien ("ça n'a
-  // aucun intérêt"). Remplacé par des badges texte au-dessus du graphique (même logique
-  // que les badges CAGR existants), voir medianeBadgeHtml()/#medianeBadgesPfcf plus bas.
+  // Ancien graphique "Multiple P/FCF payé par le marché" retiré — redondant avec P/FCF
+  // vs P/OCF juste à côté (même donnée). Remplacé par le Rendement FCF (l'inverse du
+  // multiple, en %) : FCF/action ÷ Prix — demande explicite, métrique qui n'existait
+  // nulle part ailleurs sur le site. Dérivée de pFcf (déjà mappé) plutôt que recalculée
+  // depuis fcfParAction/prixActuel séparément, pour rester exactement cohérente avec le
+  // multiple déjà affiché ailleurs (même source, juste inversée).
   chartInstances.pfcf = makeChart('pfcf', 'chartPFCF', {
     type:'bar',
     data:{ labels:years, datasets:[
-      { label:'P/FCF (x)', data:series('pFcf'), backgroundColor:THEME.gold, borderRadius:4, barPercentage:0.6 }
+      { label:'Rendement FCF (%)', data: hist.map(r => r.pFcf ? +(100/r.pFcf).toFixed(2) : null), backgroundColor:THEME.gold, borderRadius:4, barPercentage:0.6 }
     ]},
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'x'} } } }
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'%'} } } }
   });
   document.getElementById('medianeBadgesPfcf').innerHTML =
-    medianeBadgeHtml('Médiane 10a', latest.medianePFCF) + medianeBadgeHtml('Médiane 20a', latest.medianePFCF20);
+    medianeBadgeHtml('Médiane 10a', latest.medianePFCF ? 100/latest.medianePFCF : null, '%') + medianeBadgeHtml('Médiane 20a', latest.medianePFCF20 ? 100/latest.medianePFCF20 : null, '%');
 
   chartInstances.ocf = makeChart('ocf', 'chartOCF', {
     type:'bar',
@@ -5595,7 +5602,7 @@ function openZoom(key, title){
   const latestZoom = activeCompany && companies[activeCompany] ? companies[activeCompany][companies[activeCompany].length - 1] : null;
   if ((key === 'pfcf' || key === 'pfcfpocf') && latestZoom){
     medianeRow.innerHTML = key === 'pfcf'
-      ? medianeBadgeHtml('Médiane 10a', latestZoom.medianePFCF) + medianeBadgeHtml('Médiane 20a', latestZoom.medianePFCF20)
+      ? medianeBadgeHtml('Médiane 10a', latestZoom.medianePFCF ? 100/latestZoom.medianePFCF : null, '%') + medianeBadgeHtml('Médiane 20a', latestZoom.medianePFCF20 ? 100/latestZoom.medianePFCF20 : null, '%')
       : medianeBadgeHtml('Médiane P/FCF 10a', latestZoom.medianePFCF) + medianeBadgeHtml('Médiane P/FCF 20a', latestZoom.medianePFCF20) +
         medianeBadgeHtml('Médiane P/OCF 10a', latestZoom.medianePOcf) + medianeBadgeHtml('Médiane P/OCF 20a', latestZoom.medianePOcf20);
   } else {
@@ -5637,6 +5644,20 @@ document.getElementById('zoomRangeRow').addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeZoom(); });
 
+// Panier : la jauge est du SVG (pas un canvas Chart.js) — sérialisée directement en
+// data URI image/svg+xml plutôt que rastérisée, plus simple et suffisant puisque
+// <img src="data:image/svg+xml;..."> s'imprime très bien dans #printArea. Couleurs déjà
+// en hex réel dans les attributs SVG (voir drawGauge, THEME.xxx résolu au dessin), pas
+// de var(--...) à résoudre donc aucun risque de perte de style hors du DOM principal.
+function addGaugeToCart(btnEl){
+  const svg = document.getElementById('gaugeSvg');
+  if (!svg || !svg.innerHTML.trim()){ flashCartBtn(btnEl, false); return; }
+  const xml = new XMLSerializer().serializeToString(svg);
+  const dataUrl = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(xml)));
+  exportCart.push({ title: "Positionnement sur l'échelle de valorisation", dataUrl });
+  renderExportCartWidget();
+  flashCartBtn(btnEl, true);
+}
 function drawGauge(latest){
   const svg = document.getElementById('gaugeSvg');
   const badge = document.getElementById('verdictBadge');
