@@ -3791,6 +3791,25 @@ function exportDividendPortfolio(){
 
 let dividendProjectionChart = null;
 
+// 3 badges cliquables affichant TOUJOURS les 3 fenêtres (5a/10a/20a), au lieu d'un
+// <select> qui cachait les valeurs derrière un menu déroulant — retour explicite de
+// l'utilisateur : "tu vas directement d'office les mettre les trois... sous chaque
+// entreprise". Cliquer sur la fenêtre déjà active la désactive (repasse à 'off') ;
+// "N/D" reste affiché tel quel (bouton désactivé) quand l'entreprise n'est pas dans
+// les ~20 de l'historique de prix dédié — pas un bug, une vraie limite de couverture.
+// Fonction partagée entre le Portefeuille Dividende et la Construction de portefeuille
+// (même mécanique de sélection de la croissance du cours par position, sur demande
+// explicite de l'utilisateur : "il faut aussi que je le mette... et que ce soit à moi
+// de le choisir" sur les deux onglets).
+function growthWindowBadgesHtml(nom, current, medians){
+  return ['5','10','20'].map(w => {
+    const val = medians[w];
+    const disabled = val == null;
+    const active = current === w;
+    return `<button class="dividende-growth-badge${active ? ' active' : ''}" data-nom="${nom}" data-window="${w}" ${disabled ? 'disabled' : ''}>${w}a ${val != null ? (val >= 0 ? '+' : '') + fmtPct(val) : 'N/D'}</button>`;
+  }).join('');
+}
+
 function dividendPositionMetrics(nom, pct, totalCapital){
   const hist = companies[nom];
   if (!hist) return null;
@@ -3844,19 +3863,6 @@ function renderDividendPortfolio(){
     <div class="ratio-card"><div class="k">Alloué</div><div class="v${Math.round(pctAlloue) === 100 ? '' : ' warn'}">${pctAlloue.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</div><div class="sub">${Math.round(pctAlloue) === 100 ? 'du capital total' : 'sur 100% du capital total'}</div></div>
     <div class="ratio-card"><div class="k">Dividendes annuels estimés</div><div class="v">${fmtEUR(dividendeAnnuelTotal, 0)}</div><div class="sub">au rendement actuel</div></div>
     <div class="ratio-card"><div class="k">Rendement moyen pondéré</div><div class="v">${rendementMoyen != null ? fmtPct(rendementMoyen) : 'N/D'}</div><div class="sub">sur capital investi</div></div>`;
-
-  // 3 badges cliquables affichant TOUJOURS les 3 fenêtres (5a/10a/20a), au lieu d'un
-  // <select> qui cachait les valeurs derrière un menu déroulant — retour explicite de
-  // l'utilisateur : "tu vas directement d'office les mettre les trois... sous chaque
-  // entreprise". Cliquer sur la fenêtre déjà active la désactive (repasse à 'off') ;
-  // "N/D" reste affiché tel quel (bouton désactivé) quand l'entreprise n'est pas dans
-  // les ~20 de l'historique de prix dédié — pas un bug, une vraie limite de couverture.
-  const growthWindowBadgesHtml = (nom, current, medians) => ['5','10','20'].map(w => {
-    const val = medians[w];
-    const disabled = val == null;
-    const active = current === w;
-    return `<button class="dividende-growth-badge${active ? ' active' : ''}" data-nom="${nom}" data-window="${w}" ${disabled ? 'disabled' : ''}>${w}a ${val != null ? (val >= 0 ? '+' : '') + fmtPct(val) : 'N/D'}</button>`;
-  }).join('');
 
   listBox.innerHTML = rows.length ? rows.map(r => {
     const safe = r.nom.replace(/"/g,'&quot;');
@@ -4066,6 +4072,41 @@ function closeDividendeSimZoom(){
 }
 
 function initDividendPortfolio(){
+  const addInput = document.getElementById('dividendeAddSearch');
+  const addBox = document.getElementById('dividendeAddSuggestions');
+  if (addInput && addBox){
+    const pickCompany = nom => {
+      addDividendPosition(nom);
+      renderDividendPortfolio();
+      addInput.value = '';
+      addBox.classList.remove('open');
+      addBox.innerHTML = '';
+    };
+    addInput.addEventListener('input', () => {
+      const q = addInput.value.trim().toLowerCase();
+      if (!q){ addBox.classList.remove('open'); addBox.innerHTML = ''; return; }
+      const matches = Object.keys(companies).filter(n => n.toLowerCase().includes(q)).slice(0, 8);
+      addBox.innerHTML = matches.length
+        ? matches.map(n => `<div class="search-suggestion" data-name="${n.replace(/"/g,'&quot;')}">${n}${dividendPortfolioStore.positions[n] != null ? ' <span style="color:var(--text-faint);">(déjà ajoutée)</span>' : ''}</div>`).join('')
+        : '<div class="search-suggestion" style="color:var(--text-faint);cursor:default;">Aucun résultat</div>';
+      addBox.classList.add('open');
+    });
+    addBox.addEventListener('click', e => {
+      const item = e.target.closest('.search-suggestion[data-name]');
+      if (item) pickCompany(item.dataset.name);
+    });
+    document.addEventListener('click', e => {
+      if (!e.target.closest('#dividendeAddSearch') && !e.target.closest('#dividendeAddSuggestions')) addBox.classList.remove('open');
+    });
+    addInput.addEventListener('keydown', e => {
+      if (e.key === 'Escape'){ addBox.classList.remove('open'); addInput.blur(); }
+      if (e.key === 'Enter'){
+        const first = addBox.querySelector('.search-suggestion[data-name]');
+        if (first) pickCompany(first.dataset.name);
+      }
+    });
+  }
+
   const exportBtn = document.getElementById('dividendeExportBtn');
   if (exportBtn) exportBtn.addEventListener('click', exportDividendPortfolio);
 
@@ -4104,7 +4145,7 @@ function initDividendPortfolio(){
 // mieux à "choisir des actions et un montant" plutôt que répartir un capital déjà fixé.
 const CONSTRUCTION_LS_KEY = 'wolfAnalysisConstruction';
 const CONSTRUCTION_BASELINE_URL = 'data/construction.json';
-let constructionStore = { positions: {} }; // positions[nom] = montant investi en €
+let constructionStore = { positions: {}, growthWindows: {} }; // positions[nom] = montant investi en € ; growthWindows[nom] = '5'|'10'|'20'|'off', voir medianAnnualReturn()
 let constructionSimHorizon = 10;
 
 // Rendement annualisé du scénario Pessimiste (5 ans) d'une entreprise, réutilisant
@@ -4145,6 +4186,11 @@ function mergeConstruction(extra){
   Object.keys(extra.positions).forEach(k => {
     if (constructionStore.positions[k] == null) constructionStore.positions[k] = extra.positions[k];
   });
+  if (extra.growthWindows){
+    Object.keys(extra.growthWindows).forEach(k => {
+      if (constructionStore.growthWindows[k] == null) constructionStore.growthWindows[k] = extra.growthWindows[k];
+    });
+  }
 }
 
 async function loadConstructionBaseline(){
@@ -4183,10 +4229,14 @@ function constructionPositionMetrics(nom, montant){
   if (!hist) return null;
   const latest = hist[hist.length - 1];
   const pess = pessimisticScenarioForCompany(nom);
+  const growthWindow = constructionStore.growthWindows[nom] || 'off';
+  const medianReturns = { '5': medianAnnualReturn(nom, 5), '10': medianAnnualReturn(nom, 10), '20': medianAnnualReturn(nom, 20) };
+  const selectedMedian = growthWindow !== 'off' ? medianReturns[growthWindow] : null;
   return {
     nom, montant, logo: latest.lienImage,
     rendementDiv: latest.rendementDiv, cagrDiv10: latest.cagrDiv10,
-    pessRendement: pess ? pess.rendement5A : null
+    pessRendement: pess ? pess.rendement5A : null,
+    growthWindow, medianReturns, selectedMedian
   };
 }
 
@@ -4216,6 +4266,14 @@ function renderConstructionPortfolio(){
   const cagrDivMoyen = weightedAvg('cagrDiv10');
   const pessMoyen = weightedAvg('pessRendement');
 
+  // Croissance du cours choisie par l'utilisateur (badges 5a/10a/20a, mêmes médianes que
+  // le Portefeuille Dividende — voir growthWindowBadgesHtml()) : moyenne pondérée des
+  // seules positions où une fenêtre est active. Prioritaire sur le Scénario Pessimiste
+  // dans le simulateur dès qu'au moins une position en a une (voir computeConstructionSimSeries).
+  const growthRows = rows.filter(r => r.growthWindow !== 'off' && r.selectedMedian != null);
+  const growthWeight = growthRows.reduce((s, r) => s + r.montant, 0);
+  const growthWindowMoyen = growthWeight ? growthRows.reduce((s, r) => s + r.selectedMedian * r.montant, 0) / growthWeight : null;
+
   summaryBox.innerHTML = `
     <div class="ratio-card"><div class="k">Capital investi</div><div class="v">${fmtEUR(totalCapital, 0)}</div><div class="sub">${rows.length} position${rows.length > 1 ? 's' : ''}</div></div>
     <div class="ratio-card"><div class="k">Dividendes annuels estimés</div><div class="v">${fmtEUR(dividendeAnnuelTotal, 0)}</div><div class="sub">au rendement actuel</div></div>
@@ -4232,6 +4290,7 @@ function renderConstructionPortfolio(){
       <div class="dividende-row-field"><label>Poids</label><span>${pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</span></div>
       <div class="dividende-row-field"><label>Rendement div.</label><span>${r.rendementDiv != null ? fmtPct(r.rendementDiv) : 'N/D'}</span></div>
       <div class="dividende-row-field"><label>Scénario Pessimiste (5a)</label><span${r.pessRendement != null && r.pessRendement < 0 ? ' class="neg"' : ''}>${r.pessRendement != null ? (r.pessRendement >= 0 ? '+' : '') + fmtPct(r.pessRendement) : 'N/D'}</span></div>
+      <div class="dividende-row-field dividende-row-field-wide"><label>Croissance du cours (clic = utiliser dans le simulateur)</label><div class="dividende-growth-badges">${growthWindowBadgesHtml(safe, r.growthWindow, r.medianReturns)}</div></div>
       <button class="cec-remove" data-action="construction-remove" data-nom="${safe}" title="Retirer">✕</button>
     </div>`;
   }).join('') : '<div class="objectifs-empty">Aucune position — ajoute une entreprise suivie ci-dessus avec un montant.</div>';
@@ -4247,12 +4306,21 @@ function renderConstructionPortfolio(){
   listBox.querySelectorAll('[data-action="construction-remove"]').forEach(btn => {
     btn.addEventListener('click', () => {
       delete constructionStore.positions[btn.dataset.nom];
+      delete constructionStore.growthWindows[btn.dataset.nom];
+      persistConstructionLocal();
+      renderConstructionPortfolio();
+    });
+  });
+  listBox.querySelectorAll('.dividende-growth-badge').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const current = constructionStore.growthWindows[btn.dataset.nom] || 'off';
+      constructionStore.growthWindows[btn.dataset.nom] = current === btn.dataset.window ? 'off' : btn.dataset.window;
       persistConstructionLocal();
       renderConstructionPortfolio();
     });
   });
 
-  computeConstructionSimChart(totalCapital, rendementDivMoyen, cagrDivMoyen, pessMoyen);
+  computeConstructionSimChart(totalCapital, rendementDivMoyen, cagrDivMoyen, pessMoyen, growthWindowMoyen);
 }
 
 // Même moteur que le simulateur Dividende (capital(t) = capital(t-1)×(1+croissance%) +
@@ -4260,12 +4328,16 @@ function renderConstructionPortfolio(){
 // Pessimiste pondéré (toggle possible) plutôt que d'une médiane de prix par action —
 // et le capital de départ est directement le total des montants investis (pas de champ
 // séparé, "composer son portefeuille" fixe déjà le capital de départ).
-function computeConstructionSimSeries(totalCapital, rendementDivMoyen, cagrDivMoyen, pessMoyen){
+function computeConstructionSimSeries(totalCapital, rendementDivMoyen, cagrDivMoyen, pessMoyen, growthWindowMoyen){
   const monthly = parseFloat(document.getElementById('constructionSimMonthly')?.value) || 0;
   const reinvest = !!document.getElementById('constructionSimReinvest')?.checked;
   const includeGrowth = !!document.getElementById('constructionSimGrowth')?.checked;
   const horizon = constructionSimHorizon;
-  const growthPct = includeGrowth && pessMoyen != null ? pessMoyen : 0;
+  // Priorité à la croissance du cours choisie par l'utilisateur (badges 5a/10a/20a) dès
+  // qu'au moins une position en a une active — sinon repli sur le Scénario Pessimiste
+  // pondéré (comportement d'origine, inchangé tant que l'utilisateur n'a rien sélectionné).
+  const growthSource = growthWindowMoyen != null ? growthWindowMoyen : pessMoyen;
+  const growthPct = includeGrowth && growthSource != null ? growthSource : 0;
   const yieldPct = rendementDivMoyen || 0;
   const cagrDiv = cagrDivMoyen || 0;
 
@@ -4284,11 +4356,11 @@ function computeConstructionSimSeries(totalCapital, rendementDivMoyen, cagrDivMo
   return { years, capital, dividende };
 }
 
-function computeConstructionSimChart(totalCapital, rendementDivMoyen, cagrDivMoyen, pessMoyen){
+function computeConstructionSimChart(totalCapital, rendementDivMoyen, cagrDivMoyen, pessMoyen, growthWindowMoyen){
   const canvas = document.getElementById('chartConstructionProjection');
   const resultsBox = document.getElementById('constructionSimResults');
   if (!canvas) return;
-  const { years, capital, dividende } = computeConstructionSimSeries(totalCapital, rendementDivMoyen, cagrDivMoyen, pessMoyen);
+  const { years, capital, dividende } = computeConstructionSimSeries(totalCapital, rendementDivMoyen, cagrDivMoyen, pessMoyen, growthWindowMoyen);
   if (constructionProjectionChart) constructionProjectionChart.destroy();
   constructionProjectionChart = new Chart(canvas.getContext('2d'), {
     type:'line',
@@ -4307,11 +4379,15 @@ function computeConstructionSimChart(totalCapital, rendementDivMoyen, cagrDivMoy
   });
   if (resultsBox){
     const n = years.length - 1;
+    const growthSource = growthWindowMoyen != null ? growthWindowMoyen : pessMoyen;
+    const growthLabel = document.getElementById('constructionSimGrowth')?.checked && growthSource != null
+      ? (growthSource >= 0 ? '+' : '') + fmtPct(growthSource) + '/an' + (growthWindowMoyen != null ? ' (cours, pondéré)' : ' (Pessimiste)')
+      : 'Off';
     resultsBox.innerHTML = `
       <div><div class="k">Montant investi (année 0)</div><div class="v">${fmtEUR(totalCapital, 0)}</div></div>
       <div><div class="k">Valorisation projetée (année ${n})</div><div class="v">${fmtEUR(capital[n], 0)}</div></div>
       <div><div class="k">Dividendes annuels (année ${n})</div><div class="v">${fmtEUR(dividende[n], 0)}</div></div>
-      <div><div class="k">Croissance capital utilisée</div><div class="v">${document.getElementById('constructionSimGrowth')?.checked && pessMoyen != null ? (pessMoyen >= 0 ? '+' : '') + fmtPct(pessMoyen) + '/an' : 'Off'}</div></div>`;
+      <div><div class="k">Croissance capital utilisée</div><div class="v">${growthLabel}</div></div>`;
   }
 }
 

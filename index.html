@@ -380,9 +380,9 @@
 
     <div id="pageDividende" class="page">
       <div class="section-label">Portefeuille Dividende</div>
-      <p class="valo-intro">Construit depuis l'onglet Classement (bouton « + » sur la liste "Meilleur rendement du
-        dividende"). Chaque position se règle en % du capital total à répartir — le montant en € est calculé
-        automatiquement.</p>
+      <p class="valo-intro">Ajoute une entreprise directement ci-dessous, ou depuis l'onglet Classement (bouton « + »
+        sur la liste "Meilleur rendement du dividende"). Chaque position se règle en % du capital total à répartir —
+        le montant en € est calculé automatiquement.</p>
 
       <div class="ratio-grid" id="dividendeSummary"></div>
 
@@ -390,6 +390,11 @@
         <div class="dividende-positions-col">
           <div class="section-label">Positions</div>
           <div class="dividende-actions">
+            <div class="search-wrap">
+              <span class="search-icon">⌕</span>
+              <input type="text" id="dividendeAddSearch" class="search-input" placeholder="Ajouter une entreprise…" autocomplete="off">
+              <div class="search-suggestions" id="dividendeAddSuggestions"></div>
+            </div>
             <label class="dividende-total-capital">Capital total à répartir (€)
               <input type="number" id="dividendeTotalCapital" step="100" min="0">
             </label>
@@ -505,8 +510,9 @@
     <div id="pageConstruction" class="page">
       <div class="section-label">Construction de portefeuille</div>
       <p class="valo-intro">Choisis librement des entreprises suivies et un montant investi pour composer ton propre
-        portefeuille, puis simule sa performance future (dividendes + plus-value selon le scénario Pessimiste de
-        chacune, défini dans son onglet Valorisation).</p>
+        portefeuille, puis simule sa performance future (dividendes + plus-value). La croissance utilisée dans le
+        simulateur vient soit du scénario Pessimiste (Valorisation), soit — si tu actives un badge 5a/10a/20a sur une
+        position — de la croissance médiane réelle du cours sur cette fenêtre, pondérée entre les positions.</p>
 
       <div class="ratio-grid" id="constructionSummary"></div>
 
@@ -542,7 +548,7 @@
             </div>
             <div class="dividende-sim-reinvest-row">
               <label class="dividende-checkbox"><input type="checkbox" id="constructionSimReinvest" checked> Réinvestir les dividendes (intérêts composés)</label>
-              <label class="dividende-checkbox"><input type="checkbox" id="constructionSimGrowth" checked> Inclure la plus-value (scénario Pessimiste pondéré)</label>
+              <label class="dividende-checkbox"><input type="checkbox" id="constructionSimGrowth" checked> Inclure la plus-value (Pessimiste, ou croissance du cours si sélectionnée ci-contre)</label>
             </div>
             <div class="chart-holder" style="height:260px;"><canvas id="chartConstructionProjection"></canvas></div>
             <div class="dividende-sim-results" id="constructionSimResults"></div>
