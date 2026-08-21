@@ -2813,7 +2813,7 @@ function portfolioSegmentLogosPlugin(){
           const dw = img.naturalWidth * scale, dh = img.naturalHeight * scale;
           ctx.drawImage(img, bx - dw / 2, by - dh / 2, dw, dh);
           ctx.restore();
-        } else if (label.toUpperCase() === 'CASH'){
+        } else if (label.toUpperCase().includes('CASH')){
           ctx.font = Math.round(badgeSize * 0.5) + 'px sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
@@ -2853,10 +2853,13 @@ function buildPortfolioDonutConfig(){
     },
     options:{
       responsive:true, maintainAspectRatio:false, cutout:'46%',
-      // Marge fixe tout autour : laisse la place aux callouts logo (ligne + badge,
-      // ~56px au-delà du bord du donut) dessinés par portfolioSegmentLogosPlugin —
-      // sans elle, les callouts des segments proches du bord du canvas sont coupés.
-      layout:{ padding:56 },
+      // Marge fixe tout autour : laisse la place aux callouts logo (ligne + badge)
+      // dessinés par portfolioSegmentLogosPlugin — sans elle, les callouts des segments
+      // proches du bord du canvas sont coupés. Calcul exact (bug trouvé en test, la
+      // valeur précédente ne comptait que jusqu'au CENTRE du badge, pas son bord externe,
+      // d'où des logos "des fois un peu coupés") : lineGap(6) + lineLen(22) + badgeSize
+      // (34, donc son rayon 17 pour atteindre le bord) + marge de sécurité(2) = 68.
+      layout:{ padding:68 },
       plugins:{
         legend:{ display:false },
         // position:'nearest' + caretPadding : la bulle suit le curseur au lieu de
@@ -2923,6 +2926,7 @@ function renderPortfolioHoldingsList(){
         <span class="portfolio-holding-swatch" style="background:${swatch}"></span>
         <div class="portfolio-holding-logo">${logo ? `<img src="${logo}" alt="">` : h.nom.toUpperCase() === 'CASH' ? `<span>💶</span>` : `<span>${h.nom.charAt(0).toUpperCase()}</span>`}</div>
         <div class="portfolio-holding-name">${h.nom}</div>
+        <div class="portfolio-holding-amount">${fmtEUR(h.valorisation, 0)}</div>
         <div class="portfolio-holding-pct">${pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</div>
         <div class="portfolio-holding-perf ${perfClass}">${h.perf != null ? (h.perf >= 0 ? '+' : '') + fmtPct(h.perf) : '—'}</div>
       </div>`;
@@ -3228,8 +3232,9 @@ function renderPersoHoldingsList(prefix, block){
       const perfClass = h.perfPct == null ? '' : (h.perfPct >= 0 ? 'pos' : 'neg');
       return `<div class="portfolio-holding-row">
         <span class="portfolio-holding-swatch" style="background:${swatch}"></span>
-        <div class="portfolio-holding-logo">${logo ? `<img src="${logo}" alt="">` : h.nom.toUpperCase() === 'CASH' ? `<span>💶</span>` : `<span>${h.nom.charAt(0).toUpperCase()}</span>`}</div>
+        <div class="portfolio-holding-logo">${logo ? `<img src="${logo}" alt="">` : h.nom.toUpperCase().includes('CASH') ? `<span>💶</span>` : h.nom.toUpperCase().includes('IMMOBILIER') ? `<span>🏠</span>` : `<span>${h.nom.charAt(0).toUpperCase()}</span>`}</div>
         <div class="portfolio-holding-name">${h.nom}</div>
+        <div class="portfolio-holding-amount">${fmtEUR(h.valorisation, 0)}</div>
         <div class="portfolio-holding-pct">${pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</div>
         <div class="portfolio-holding-perf ${perfClass}">${h.perfPct != null ? (h.perfPct >= 0 ? '+' : '') + fmtPct(h.perfPct) : '—'}</div>
       </div>`;
@@ -3264,11 +3269,12 @@ function buildPersoDonutConfig(prefix, block){
     }] },
     options:{ responsive:true, maintainAspectRatio:false, cutout:'46%',
       // Marge fixe : laisse la place aux callouts logo à l'extérieur du donut, voir
-      // portfolioSegmentLogosPlugin (même raison que buildPortfolioDonutConfig).
-      layout:{ padding:56 },
+      // portfolioSegmentLogosPlugin (même raison que buildPortfolioDonutConfig — calcul
+      // exact du bord externe du badge, bug de logos coupés corrigé en même temps ici).
+      layout:{ padding:68 },
       plugins:{ legend:{ display:false }, tooltip:{ position:'nearest', caretPadding:14, callbacks:{ label: ctx => {
         const pct = total ? (ctx.parsed / total * 100) : 0;
-        return ctx.label + ' : ' + pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%';
+        return ctx.label + ' : ' + fmtEUR(ctx.parsed, 0) + ' (' + pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%)';
       } } } }
     },
     plugins:[portfolioSegmentLogosPlugin()],
@@ -3284,8 +3290,9 @@ function renderPersoDonutLegend(prefix, block){
     const swatch = PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length];
     return `<div class="donut-legend-chip">
       <span class="donut-legend-swatch" style="background:${swatch}"></span>
-      <div class="donut-legend-logo">${logo ? `<img src="${logo}" alt="">` : h.nom.toUpperCase() === 'CASH' ? '<span>💶</span>' : `<span>${h.nom.charAt(0).toUpperCase()}</span>`}</div>
+      <div class="donut-legend-logo">${logo ? `<img src="${logo}" alt="">` : h.nom.toUpperCase().includes('CASH') ? '<span>💶</span>' : h.nom.toUpperCase().includes('IMMOBILIER') ? '<span>🏠</span>' : `<span>${h.nom.charAt(0).toUpperCase()}</span>`}</div>
       <span class="donut-legend-name">${h.nom}</span>
+      <span class="donut-legend-amount">${fmtEUR(h.valorisation, 0)}</span>
     </div>`;
   }).join('');
 }
@@ -3323,7 +3330,12 @@ function openPersoDonutZoom(prefix, block, label){
 }
 
 let persoVsCacCharts = { pea:null, cto:null };
-function renderPersoVsCacChart(prefix, block, label){
+// yBounds ({min,max}) optionnel — calculé une fois sur les 2 comptes COMBINÉS (voir
+// renderPersoPortfolio()) et appliqué identiquement aux 2 graphiques PEA/CTO, pour que
+// les échelles verticales soient vraiment comparables visuellement au lieu que chaque
+// graphique s'auto-cadre sur sa propre plage de valeurs — demande explicite ("il faut
+// qu'il soit bien aligné, là il y a un problème").
+function renderPersoVsCacChart(prefix, block, label, yBounds){
   const canvasId = 'chart' + prefix.charAt(0).toUpperCase() + prefix.slice(1) + 'VsCac';
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
@@ -3346,10 +3358,25 @@ function renderPersoVsCacChart(prefix, block, label){
       plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true, color:THEME.dim } } },
       scales:{
         x:{ grid:{display:false}, ticks:{color:THEME.dim}, border:{color:THEME.hair} },
-        y:{ grid:baseGrid, ticks:{color:THEME.dim} }
+        y:{ grid:baseGrid, ticks:{color:THEME.dim}, min: yBounds ? yBounds.min : undefined, max: yBounds ? yBounds.max : undefined }
       }
     }
   });
+}
+// Calcule une plage [min,max] commune sur les valeurs de part + CAC40 des 2 comptes
+// combinés, avec 5% de marge de chaque côté (évite des courbes collées aux bords).
+function persoVsCacSharedBounds(){
+  const vals = [];
+  ['pea', 'cto'].forEach(prefix => {
+    (persoData[prefix].monthly || []).forEach(m => {
+      if (m.valeurPart != null) vals.push(m.valeurPart);
+      if (m.valeurPartCac40 != null) vals.push(m.valeurPartCac40);
+    });
+  });
+  if (!vals.length) return null;
+  const lo = Math.min(...vals), hi = Math.max(...vals);
+  const margin = (hi - lo) * 0.05 || hi * 0.05 || 5;
+  return { min: lo - margin, max: hi + margin };
 }
 
 // Vue d'ensemble globale (PEA + CTO + Cash + Immobilier) : demande explicite — voir où
@@ -3410,7 +3437,13 @@ function renderPersoOverview(){
 // (par compte) ne répondaient pas à ce besoin. Renvoie un objet {positions:[...]}
 // directement compatible avec renderPersoDonut/renderPersoDonutLegend/
 // renderPersoHoldingsList (déjà génériques, prennent n'importe quel {positions}).
-function buildPersoCombinedPositions(){
+// includeCashImmo (défaut true) : ajoute Cash et Immobilier comme positions à part
+// entière, pour que les % soient calculés à l'échelle du PATRIMOINE TOTAL (pas
+// seulement PEA+CTO) — demande explicite : "j'ai toutes les positions à l'échelle du
+// patrimoine total". La Vue d'ensemble juste au-dessus ne montre que 4 gros blocs
+// (PEA/CTO/Cash/Immobilier) ; ici, chaque position individuelle est visible à la même
+// échelle globale.
+function buildPersoCombinedPositions(includeCashImmo){
   const totals = {};
   ['pea', 'cto'].forEach(acc => {
     (persoData[acc].positions || []).forEach(p => {
@@ -3418,6 +3451,11 @@ function buildPersoCombinedPositions(){
       totals[p.nom] = (totals[p.nom] || 0) + p.valorisation;
     });
   });
+  if (includeCashImmo !== false){
+    const ci = persoData.cashImmo || {};
+    if (ci.cashTotal > 0) totals['Cash (LDDS + Livret A)'] = (totals['Cash (LDDS + Livret A)'] || 0) + ci.cashTotal;
+    if (ci.immobilier > 0) totals['Immobilier'] = (totals['Immobilier'] || 0) + ci.immobilier;
+  }
   return { positions: Object.keys(totals).map(nom => ({ nom, valorisation: totals[nom] })) };
 }
 
@@ -3435,8 +3473,9 @@ function renderPersoPortfolio(){
   const combined = buildPersoCombinedPositions();
   renderPersoHoldingsList('persoCombined', combined);
   renderPersoDonut('persoCombined', combined);
-  renderPersoVsCacChart('pea', persoData.pea, 'PEA');
-  renderPersoVsCacChart('cto', persoData.cto, 'CTO');
+  const persoVsCacBounds = persoVsCacSharedBounds();
+  renderPersoVsCacChart('pea', persoData.pea, 'PEA', persoVsCacBounds);
+  renderPersoVsCacChart('cto', persoData.cto, 'CTO', persoVsCacBounds);
   applyPersoBlur();
 }
 
@@ -4611,7 +4650,10 @@ function renderCompany(nom){
     else fcfpegEl.classList.add('neg');
   } else { fcfpegEl.textContent = 'N/D'; }
   document.getElementById('rMedFcf').textContent = latest.medianePFCF != null ? latest.medianePFCF.toLocaleString('fr-FR',{minimumFractionDigits:1}) + 'x' : 'N/D';
-  document.getElementById('rPayout').textContent = fmtPct(latest.payoutRatio);
+  // Remplace l'ancienne carte "Payout ratio" (déjà visible dans le graphique Dividende
+  // en tant que courbe) par le P/FCF ACTUEL (pas la médiane, déjà couverte par la carte
+  // "Médiane P/FCF" juste à côté) — demande explicite.
+  document.getElementById('rPfcfActuel').textContent = latest.pFcf != null ? latest.pFcf.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + 'x' : 'N/D';
 
   const rend5El = document.getElementById('rRend5');
   rend5El.className = 'v';
@@ -6038,7 +6080,7 @@ function ratioCardsHtml(latest){
     <div class="ratio-card"><div class="k">Rendement total estimé, 5 ans</div>${rend5}<div class="sub">retour à la juste valeur + dividende</div></div>
     <div class="ratio-card"><div class="k">FCF PEG</div>${fcfpeg}<div class="sub">prix / FCF rapporté à la croissance</div></div>
     <div class="ratio-card"><div class="k">Médiane P/FCF</div><div class="v">${medFcf}</div><div class="sub">multiple médian historique</div></div>
-    <div class="ratio-card"><div class="k">Payout ratio</div><div class="v">${fmtPct(latest.payoutRatio)}</div><div class="sub">dernier exercice</div></div>
+    <div class="ratio-card"><div class="k">P/FCF actuel</div><div class="v">${latest.pFcf != null ? latest.pFcf.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + 'x' : 'N/D'}</div><div class="sub">multiple payé aujourd'hui</div></div>
   `;
 }
 // svgId/badgeId optionnels (défaut : la jauge principale de l'onglet Analyse) — permet
@@ -8822,6 +8864,10 @@ function applyPersoBlur(){
     const isPct = el.textContent.trim().endsWith('%');
     el.classList.toggle('perso-blurred', persoBlurEnabled && !isPct);
   });
+  // Montants € ajoutés aux listes de positions (voir renderPersoHoldingsList) : jamais
+  // couverts par .ratio-card .v ci-dessus, donc jamais floutés sans cet ajout — un oubli
+  // aurait laissé les montants réels visibles malgré "Flouter les montants" activé.
+  page.querySelectorAll('.portfolio-holding-amount, .donut-legend-amount').forEach(el => el.classList.toggle('perso-blurred', persoBlurEnabled));
 }
 document.getElementById('persoBlurToggleBtn').addEventListener('click', function(){
   persoBlurEnabled = !persoBlurEnabled;

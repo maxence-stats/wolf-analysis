@@ -137,7 +137,7 @@
       <div class="ratio-card"><div class="k">Rendement total estimé, 5 ans</div><div class="v" id="rRend5">—</div><div class="sub">retour à la juste valeur + dividende</div></div>
       <div class="ratio-card"><div class="k">FCF PEG</div><div class="v" id="rFcfpeg">—</div><div class="sub">prix / FCF rapporté à la croissance</div></div>
       <div class="ratio-card"><div class="k">Médiane P/FCF</div><div class="v" id="rMedFcf">—</div><div class="sub">multiple médian historique</div></div>
-      <div class="ratio-card"><div class="k">Payout ratio</div><div class="v" id="rPayout">—</div><div class="sub">dernier exercice</div></div>
+      <div class="ratio-card"><div class="k">P/FCF actuel</div><div class="v" id="rPfcfActuel">—</div><div class="sub">multiple payé aujourd'hui</div></div>
     </div>
 
     <div class="section-label" id="analyseValoSectionLabel" style="display:none;">Valorisation enregistrée</div>
@@ -457,13 +457,15 @@
            explicite : "un graphique qui réunit le tout... voir au global combien chaque
            position représente dans le portefeuille global". Une même entreprise détenue
            dans les 2 comptes est fusionnée en une seule part (somme des valorisations). -->
-      <div class="section-label">Répartition combinée des positions (PEA + CTO)</div>
-      <div class="chart-card portfolio-donut-card">
-        <div class="chart-card-head"><div><h3>Toutes les positions réunies</h3><p>Poids de chaque entreprise dans PEA + CTO cumulés</p></div><div class="chart-card-actions"><button class="zoom-btn" id="persoCombinedDonutZoomBtn" aria-label="Agrandir">⤢</button></div></div>
-        <div class="chart-holder donut-holder" style="height:340px;"><canvas id="chartPersoCombinedDonut"></canvas></div>
-        <div class="donut-logo-legend" id="persoCombinedDonutLegend"></div>
+      <div class="section-label">Répartition combinée des positions — échelle du patrimoine total</div>
+      <p class="valo-intro">Chaque position (PEA + CTO fusionnés), Cash et Immobilier, pondérés à l'échelle de tout le patrimoine — pas seulement PEA+CTO.</p>
+      <div class="perso-combined-layout">
+        <div class="chart-card portfolio-donut-card">
+          <div class="chart-card-head"><div><h3>Toutes les positions réunies</h3><p>Poids de chaque position dans le patrimoine total</p></div><div class="chart-card-actions"><button class="zoom-btn" id="persoCombinedDonutZoomBtn" aria-label="Agrandir">⤢</button></div></div>
+          <div class="chart-holder donut-holder" style="height:460px;"><canvas id="chartPersoCombinedDonut"></canvas></div>
+        </div>
+        <div class="portfolio-holdings-list" id="persoCombinedHoldingsList"></div>
       </div>
-      <div class="portfolio-holdings-list" id="persoCombinedHoldingsList"></div>
 
       <div class="section-label">Comparaison PEA / CTO</div>
       <div class="portfolio-compare-grid" id="persoCompareGrid"></div>
