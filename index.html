@@ -358,7 +358,7 @@
               <button class="zoom-btn" onclick="openPortfolioZoom()" aria-label="Agrandir">⤢</button>
             </div>
           </div>
-          <div class="chart-holder" style="height:560px;"><canvas id="chartPortfolioDonut"></canvas><button class="chart-card-cart-btn" onclick="addPortfolioDonutToCart(this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
+          <div class="chart-holder donut-holder" style="height:560px;"><canvas id="chartPortfolioDonut"></canvas><button class="chart-card-cart-btn" onclick="addPortfolioDonutToCart(this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
         </div>
       </div>
 
@@ -445,7 +445,7 @@
       <div class="portfolio-composition">
         <div class="portfolio-summary" id="persoOverviewSummary"></div>
         <div class="chart-card portfolio-donut-card">
-          <div class="chart-holder" style="height:280px;"><canvas id="chartPersoOverview"></canvas></div>
+          <div class="chart-holder donut-holder" style="height:280px;"><canvas id="chartPersoOverview"></canvas></div>
         </div>
       </div>
 
@@ -458,7 +458,7 @@
           <div class="portfolio-summary" id="peaSummary"></div>
           <div class="chart-card portfolio-donut-card">
             <div class="chart-card-head"><div><h3>Répartition PEA</h3><p>Poids de chaque position</p></div><div class="chart-card-actions"><button class="zoom-btn" id="peaDonutZoomBtn" aria-label="Agrandir">⤢</button></div></div>
-            <div class="chart-holder" style="height:280px;"><canvas id="chartPeaDonut"></canvas></div>
+            <div class="chart-holder donut-holder" style="height:280px;"><canvas id="chartPeaDonut"></canvas></div>
             <div class="donut-logo-legend" id="peaDonutLegend"></div>
           </div>
           <div class="portfolio-holdings-list" id="peaHoldingsList"></div>
@@ -472,7 +472,7 @@
           <div class="portfolio-summary" id="ctoSummary"></div>
           <div class="chart-card portfolio-donut-card">
             <div class="chart-card-head"><div><h3>Répartition CTO</h3><p>Poids de chaque position</p></div><div class="chart-card-actions"><button class="zoom-btn" id="ctoDonutZoomBtn" aria-label="Agrandir">⤢</button></div></div>
-            <div class="chart-holder" style="height:280px;"><canvas id="chartCtoDonut"></canvas></div>
+            <div class="chart-holder donut-holder" style="height:280px;"><canvas id="chartCtoDonut"></canvas></div>
             <div class="donut-logo-legend" id="ctoDonutLegend"></div>
           </div>
           <div class="portfolio-holdings-list" id="ctoHoldingsList"></div>
@@ -724,7 +724,7 @@
             <div><h3>Poids relatif des secteurs</h3><p class="chart-subtitle">Approximation à partir des ratios sectoriels actuels — pas une vraie pondération de capitalisation</p></div>
             <div class="chart-card-actions"><button class="zoom-btn" onclick="openMacroWeightZoom()" aria-label="Agrandir">⤢</button></div>
           </div>
-          <div class="chart-holder" style="height:340px;"><canvas id="chartMacroWeight"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(MACRO_CHART_GETTERS.weight(), 'Poids relatif des secteurs', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
+          <div class="chart-holder donut-holder" style="height:340px;"><canvas id="chartMacroWeight"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(MACRO_CHART_GETTERS.weight(), 'Poids relatif des secteurs', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
           <div class="macro-export-row">
             <button onclick="exportMacroChartAsPdf('weight','Poids relatif des secteurs')">PDF</button>
             <button onclick="exportMacroChartAsImage('weight','poids-sectoriel','png')">PNG</button>
@@ -788,9 +788,21 @@
           <div class="pdf-editor-insert-panel" id="pdfEditorInsertPanel" style="display:none;"></div>
         </div>
         <button class="zoom-btn objectifs-export" id="pdfEditorAddPageBtn">+ Page</button>
+        <div class="pdf-editor-insert-wrap">
+          <button class="zoom-btn objectifs-export" id="pdfEditorSaveBtn">💾 Enregistrer</button>
+          <div class="pdf-editor-insert-panel pdf-editor-save-name-panel" id="pdfEditorSaveNamePanel" style="display:none;">
+            <input type="text" id="pdfEditorSaveNameInput" placeholder="Nom du document…" maxlength="80">
+            <button id="pdfEditorSaveNameConfirm">Enregistrer</button>
+          </div>
+        </div>
+        <div class="pdf-editor-insert-wrap">
+          <button class="zoom-btn objectifs-export" id="pdfEditorMyDocsBtn">📁 Mes documents</button>
+          <div class="pdf-editor-insert-panel" id="pdfEditorMyDocsPanel" style="display:none;"></div>
+        </div>
         <button class="zoom-btn objectifs-export" id="pdfEditorClearBtn">Vider le document</button>
         <button class="export-cart-add-btn" id="pdfEditorExportBtn">🖨 Exporter en PDF</button>
       </div>
+      <div class="pdf-editor-saved-label" id="pdfEditorSavedLabel"></div>
       <div class="pdf-editor-page-tabs" id="pdfEditorPageTabs"></div>
       <p class="chart-hint">Glisse la poignée ⠿ pour déplacer un bloc, la poignée en bas à droite pour le redimensionner. Clique dans un bloc de texte pour l'éditer. Pour ajouter un graphique : clique l'icône 🧺 sur n'importe quel graphique du site (Analyse, Macro, Valorisation…) pour l'ajouter au panier, puis reviens ici et clique « 🧺 + Graphique » pour l'insérer sur la page. Sur mobile : pince pour zoomer, glisse pour te déplacer dans la page.</p>
       <div class="pdf-editor-zoom-row">

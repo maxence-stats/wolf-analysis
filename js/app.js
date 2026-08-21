@@ -1711,6 +1711,13 @@ let pdfEditDoc = { title:'', pages:[{ blocks:[] }] };
 let pdfEditCurrentPage = 0;
 let pdfEditActiveBlockId = null;
 let pdfEditClearConfirming = false;
+// Bibliothèque de documents nommés, distincte du brouillon auto-sauvegardé ci-dessus
+// (clé IndexedDB 'state') — demande explicite : "je puisse chercher dans l'application
+// ou retrouver les dossiers comme je les ai enregistrés". Même object store IndexedDB,
+// juste une clé différente ('saved'), pas besoin d'un 2e object store pour ça.
+let pdfEditSavedDocs = [];
+let pdfEditCurrentSavedId = null; // id du document ouvert depuis la bibliothèque, ou null si jamais enregistré sous ce nom
+let pdfEditDeleteConfirmingId = null;
 
 function openPdfEditDB(){
   return new Promise((resolve, reject) => {
@@ -1720,15 +1727,20 @@ function openPdfEditDB(){
     req.onerror = () => reject(req.error);
   });
 }
+function pdfEditDbGet(key){
+  return new Promise((resolve, reject) => {
+    const req = pdfEditDB.transaction(PDFEDIT_STORE, 'readonly').objectStore(PDFEDIT_STORE).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
 async function loadPdfEditDoc(){
   try{
     pdfEditDB = await openPdfEditDB();
-    const stored = await new Promise((resolve, reject) => {
-      const req = pdfEditDB.transaction(PDFEDIT_STORE, 'readonly').objectStore(PDFEDIT_STORE).get('state');
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
+    const stored = await pdfEditDbGet('state');
     if (stored && stored.pages && stored.pages.length) pdfEditDoc = stored;
+    const savedStored = await pdfEditDbGet('saved');
+    if (Array.isArray(savedStored)) pdfEditSavedDocs = savedStored;
   }catch(e){ /* IndexedDB indisponible (navigation privée stricte...) — document vide par défaut, non bloquant */ }
   renderPdfEditor();
 }
@@ -1736,6 +1748,66 @@ function persistPdfEditDoc(){
   if (!pdfEditDB) return;
   try{ pdfEditDB.transaction(PDFEDIT_STORE, 'readwrite').objectStore(PDFEDIT_STORE).put(pdfEditDoc, 'state'); }
   catch(e){ /* ignore */ }
+}
+function persistPdfEditSavedDocs(){
+  if (!pdfEditDB) return;
+  try{ pdfEditDB.transaction(PDFEDIT_STORE, 'readwrite').objectStore(PDFEDIT_STORE).put(pdfEditSavedDocs, 'saved'); }
+  catch(e){ /* ignore */ }
+}
+// Enregistre le document courant sous un nom. Si pdfEditCurrentSavedId est déjà défini
+// (document ouvert depuis la bibliothèque, ou déjà enregistré une première fois), MET À
+// JOUR l'entrée existante plutôt que d'en créer une nouvelle — un même document nommé
+// reste un seul dossier qu'on met à jour, pas une nouvelle version à chaque clic.
+function pdfEditSaveCurrent(name){
+  const id = pdfEditCurrentSavedId || pdfEditNewBlockId();
+  const entry = {
+    id, name: name || 'Sans titre', savedAt: new Date().toISOString(),
+    title: pdfEditDoc.title, pages: JSON.parse(JSON.stringify(pdfEditDoc.pages))
+  };
+  const idx = pdfEditSavedDocs.findIndex(d => d.id === id);
+  if (idx !== -1) pdfEditSavedDocs[idx] = entry; else pdfEditSavedDocs.push(entry);
+  pdfEditCurrentSavedId = id;
+  persistPdfEditSavedDocs();
+  updatePdfEditorSavedLabel();
+}
+function pdfEditOpenSaved(id){
+  const entry = pdfEditSavedDocs.find(d => d.id === id);
+  if (!entry) return;
+  pdfEditDoc = { title: entry.title, pages: JSON.parse(JSON.stringify(entry.pages)) };
+  pdfEditCurrentSavedId = id;
+  pdfEditCurrentPage = 0;
+  persistPdfEditDoc();
+  renderPdfEditor();
+}
+function pdfEditDeleteSaved(id){
+  pdfEditSavedDocs = pdfEditSavedDocs.filter(d => d.id !== id);
+  if (pdfEditCurrentSavedId === id) pdfEditCurrentSavedId = null;
+  persistPdfEditSavedDocs();
+  updatePdfEditorSavedLabel();
+  renderPdfEditorMyDocsPanel();
+}
+function updatePdfEditorSavedLabel(){
+  const label = document.getElementById('pdfEditorSavedLabel');
+  if (!label) return;
+  const entry = pdfEditCurrentSavedId ? pdfEditSavedDocs.find(d => d.id === pdfEditCurrentSavedId) : null;
+  label.textContent = entry ? `Document : ${entry.name} — enregistré le ${new Date(entry.savedAt).toLocaleDateString('fr-FR', { day:'numeric', month:'short', year:'numeric' })} à ${new Date(entry.savedAt).toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' })}` : '';
+}
+function renderPdfEditorMyDocsPanel(){
+  const panel = document.getElementById('pdfEditorMyDocsPanel');
+  if (!panel) return;
+  if (!pdfEditSavedDocs.length){
+    panel.innerHTML = '<div class="pdf-editor-insert-empty">Aucun document enregistré pour l\'instant.</div>';
+    return;
+  }
+  const sorted = pdfEditSavedDocs.slice().sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
+  panel.innerHTML = sorted.map(d => `
+    <div class="pdf-editor-doc-item">
+      <button class="pdf-editor-doc-open" data-open-doc="${d.id}">
+        <span class="doc-name">${d.name}</span>
+        <span class="doc-date">${new Date(d.savedAt).toLocaleDateString('fr-FR', { day:'numeric', month:'short', year:'numeric' })}</span>
+      </button>
+      <button class="pdf-editor-doc-delete" data-delete-doc="${d.id}" title="Supprimer">${pdfEditDeleteConfirmingId === d.id ? '⚠️' : '✕'}</button>
+    </div>`).join('');
 }
 
 function pdfEditNewBlockId(){ return 'b' + Date.now() + Math.random().toString(36).slice(2, 7); }
@@ -1746,6 +1818,18 @@ function pdfEditNewBlockId(){ return 'b' + Date.now() + Math.random().toString(3
 // redimensionné (ajout, glisser, redimensionnement, insertion depuis le panier) —
 // jamais recalculées après coup, directement dans le clamp de chaque geste.
 const PDFEDIT_MARGIN = 5;
+// Police par bloc (b.fontFamily) — même pattern que b.fontSize déjà existant (état
+// stocké au niveau du bloc entier, pas une commande de sélection contentEditable :
+// document.execCommand('fontName', ...) est notoirement peu fiable/incohérent entre
+// navigateurs, contrairement à un simple style CSS piloté par notre propre modèle de
+// données). Choix limités aux polices déjà chargées par le site (Space Grotesk, Plus
+// Jakarta Sans) + 2 polices système toujours disponibles sans chargement supplémentaire.
+const PDFEDIT_FONTS = [
+  { value:"'Plus Jakarta Sans', sans-serif", label:'Plus Jakarta Sans' },
+  { value:"'Space Grotesk', sans-serif", label:'Space Grotesk' },
+  { value:"Georgia, serif", label:'Georgia (serif)' },
+  { value:"'Courier New', monospace", label:'Courier New (mono)' }
+];
 function pdfEditAddTextBlock(){
   const p = pdfEditDoc.pages[pdfEditCurrentPage];
   p.blocks.push({ id: pdfEditNewBlockId(), type:'text', html:'Texte…', x:PDFEDIT_MARGIN+5, y:PDFEDIT_MARGIN+5, w:40, h:15, fontSize:14 });
@@ -1851,10 +1935,14 @@ function renderPdfEditorCanvas(){
       ${b.type === 'text' ? `
         <div class="pdf-editor-block-toolbar">
           <button data-fmt-bold="${b.id}" title="Gras"><b>G</b></button>
+          <button data-fmt-italic="${b.id}" title="Italique"><i>I</i></button>
+          <select data-fmt-font="${b.id}" title="Police">
+            ${PDFEDIT_FONTS.map(f => `<option value="${f.value}"${(b.fontFamily || PDFEDIT_FONTS[0].value) === f.value ? ' selected' : ''}>${f.label}</option>`).join('')}
+          </select>
           <button data-fmt-size="-1" data-block="${b.id}" title="Réduire">A-</button>
           <button data-fmt-size="1" data-block="${b.id}" title="Agrandir">A+</button>
         </div>
-        <div class="pdf-editor-text-inner" contenteditable="true" style="font-size:${b.fontSize || 14}px" data-block-id="${b.id}">${b.html}</div>
+        <div class="pdf-editor-text-inner" contenteditable="true" style="font-size:${b.fontSize || 14}px;font-family:${b.fontFamily || PDFEDIT_FONTS[0].value}" data-block-id="${b.id}">${b.html}</div>
       ` : `<img src="${b.src}" alt="">`}
       <div class="pdf-editor-resize-handle" data-resize="${b.id}"></div>
     </div>
@@ -1930,6 +2018,7 @@ function renderPdfEditor(){
   if (titleInput && document.activeElement !== titleInput) titleInput.value = pdfEditDoc.title || '';
   renderPdfEditorTabs();
   renderPdfEditorCanvas();
+  updatePdfEditorSavedLabel();
 }
 
 // Zoom de la page dans l'Éditeur PDF — demande explicite : sur mobile, la page fait
@@ -2000,8 +2089,70 @@ function initPdfEditor(){
     pdfEditInsertFromCart(parseInt(item.dataset.insertIdx, 10));
     insertPanel.style.display = 'none';
   });
+
+  // Enregistrer : sauvegarde directe si le document a déjà un nom (déjà enregistré une
+  // première fois, ou ouvert depuis la bibliothèque) — sinon révèle un champ de saisie
+  // inline (jamais prompt(), voir CLAUDE.md piège #7) pour nommer le document avant sa
+  // première sauvegarde.
+  const saveBtn = document.getElementById('pdfEditorSaveBtn');
+  const saveNamePanel = document.getElementById('pdfEditorSaveNamePanel');
+  const saveNameInput = document.getElementById('pdfEditorSaveNameInput');
+  saveBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    if (pdfEditCurrentSavedId){
+      pdfEditSaveCurrent(pdfEditSavedDocs.find(d => d.id === pdfEditCurrentSavedId).name);
+      const original = saveBtn.textContent;
+      saveBtn.textContent = '✓ Enregistré';
+      setTimeout(() => { saveBtn.textContent = original; }, 1200);
+      return;
+    }
+    saveNamePanel.style.display = 'flex';
+    saveNameInput.value = pdfEditDoc.title || '';
+    saveNameInput.focus();
+  });
+  document.getElementById('pdfEditorSaveNameConfirm').addEventListener('click', () => {
+    const name = saveNameInput.value.trim();
+    if (!name) return;
+    pdfEditSaveCurrent(name);
+    saveNamePanel.style.display = 'none';
+  });
+  saveNameInput.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('pdfEditorSaveNameConfirm').click(); });
+
+  // Mes documents : liste des documents enregistrés (voir renderPdfEditorMyDocsPanel),
+  // ouvrir charge le document dans l'éditeur, supprimer en 2 clics inline (même pattern
+  // que "Vider le document" — jamais confirm() natif).
+  const myDocsBtn = document.getElementById('pdfEditorMyDocsBtn');
+  const myDocsPanel = document.getElementById('pdfEditorMyDocsPanel');
+  myDocsBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    const opening = myDocsPanel.style.display === 'none';
+    if (opening) renderPdfEditorMyDocsPanel();
+    myDocsPanel.style.display = opening ? 'block' : 'none';
+  });
+  myDocsPanel.addEventListener('click', e => {
+    const delBtn = e.target.closest('[data-delete-doc]');
+    if (delBtn){
+      const id = delBtn.dataset.deleteDoc;
+      if (pdfEditDeleteConfirmingId !== id){
+        pdfEditDeleteConfirmingId = id;
+        renderPdfEditorMyDocsPanel();
+        setTimeout(() => { if (pdfEditDeleteConfirmingId === id){ pdfEditDeleteConfirmingId = null; renderPdfEditorMyDocsPanel(); } }, 3000);
+        return;
+      }
+      pdfEditDeleteConfirmingId = null;
+      pdfEditDeleteSaved(id);
+      return;
+    }
+    const openBtn = e.target.closest('[data-open-doc]');
+    if (openBtn){
+      pdfEditOpenSaved(openBtn.dataset.openDoc);
+      myDocsPanel.style.display = 'none';
+    }
+  });
   document.addEventListener('click', e => {
     if (insertPanel.style.display !== 'none' && !e.target.closest('.pdf-editor-insert-wrap')) insertPanel.style.display = 'none';
+    if (saveNamePanel.style.display !== 'none' && !e.target.closest('.pdf-editor-insert-wrap')) saveNamePanel.style.display = 'none';
+    if (myDocsPanel.style.display !== 'none' && !e.target.closest('.pdf-editor-insert-wrap')) myDocsPanel.style.display = 'none';
   });
   document.getElementById('pdfEditorTitleInput').addEventListener('input', e => { pdfEditDoc.title = e.target.value; persistPdfEditDoc(); });
   document.getElementById('pdfEditorPageTabs').addEventListener('click', e => {
@@ -2015,13 +2166,15 @@ function initPdfEditor(){
   // commande, sinon la sélection de texte est perdue avant — même pattern déjà
   // établi pour le gras du Cerveau numérique.
   canvasEl.addEventListener('pointerdown', e => {
-    if (e.target.closest('[data-fmt-bold], [data-fmt-size]')) e.preventDefault();
+    if (e.target.closest('[data-fmt-bold], [data-fmt-italic], [data-fmt-size]')) e.preventDefault();
   });
   canvasEl.addEventListener('click', e => {
     const delBtn = e.target.closest('[data-remove-block]');
     if (delBtn){ pdfEditRemoveBlock(delBtn.dataset.removeBlock); return; }
     const boldBtn = e.target.closest('[data-fmt-bold]');
     if (boldBtn){ document.execCommand('bold'); return; }
+    const italicBtn = e.target.closest('[data-fmt-italic]');
+    if (italicBtn){ document.execCommand('italic'); return; }
     const sizeBtn = e.target.closest('[data-fmt-size]');
     if (sizeBtn){
       const b = pdfEditDoc.pages[pdfEditCurrentPage].blocks.find(x => x.id === sizeBtn.dataset.block);
@@ -2031,6 +2184,17 @@ function initPdfEditor(){
         renderPdfEditorCanvas();
       }
     }
+  });
+  // Police : select dédié par bloc (voir PDFEDIT_FONTS) — 'change' plutôt que 'click',
+  // un <select> ne délègue pas son choix via un simple clic délégué fiable.
+  canvasEl.addEventListener('change', e => {
+    const fontSel = e.target.closest('[data-fmt-font]');
+    if (!fontSel) return;
+    const b = pdfEditDoc.pages[pdfEditCurrentPage].blocks.find(x => x.id === fontSel.dataset.fmtFont);
+    if (!b) return;
+    b.fontFamily = fontSel.value;
+    persistPdfEditDoc();
+    renderPdfEditorCanvas();
   });
   document.getElementById('pdfEditorClearBtn').addEventListener('click', () => {
     const btn = document.getElementById('pdfEditorClearBtn');
@@ -2042,6 +2206,7 @@ function initPdfEditor(){
     }
     pdfEditDoc = { title:'', pages:[{ blocks:[] }] };
     pdfEditCurrentPage = 0;
+    pdfEditCurrentSavedId = null;
     pdfEditClearConfirming = false;
     btn.textContent = 'Vider le document';
     persistPdfEditDoc();
@@ -2056,7 +2221,7 @@ function exportPdfEditorAsPdf(){
     <div class="pdf-editor-print-page">
       ${p.blocks.map(b => `
         <div class="pdf-editor-print-block" style="left:${b.x}%;top:${b.y}%;width:${b.w}%;height:${b.h}%;">
-          ${b.type === 'image' ? `<img src="${b.src}" alt="">` : `<div class="pdf-editor-print-text" style="font-size:${b.fontSize || 14}px">${b.html}</div>`}
+          ${b.type === 'image' ? `<img src="${b.src}" alt="">` : `<div class="pdf-editor-print-text" style="font-size:${b.fontSize || 14}px;font-family:${b.fontFamily || PDFEDIT_FONTS[0].value}">${b.html}</div>`}
         </div>`).join('')}
     </div>`).join('');
   const imgs = Array.from(area.querySelectorAll('img'));

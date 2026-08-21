@@ -103,6 +103,18 @@
   @media (max-width:760px){
     .page-nav, .page-subnav{display:none !important;}
     .mobile-nav-toggle{display:block;}
+    /* Graphiques compressés à l'horizontale sur téléphone en portrait — les données
+       (souvent 20 ans d'historique hebdo/annuel) devenaient illisibles écrasées dans
+       ~340px de large. Demande explicite : "ne pas se compresser à l'horizontale,
+       garder le côté longitudinal" — on force une largeur minimale et on laisse
+       défiler horizontalement plutôt que de laisser Chart.js réduire le graphique à
+       la largeur de l'écran. .chart-holder est l'élément que Chart.js observe pour
+       dimensionner le canvas (responsive:true) : lui donner min-width suffit, pas
+       besoin de forcer overflow-x sur .chart-card, il ne sert que s'il y a réellement
+       un enfant plus large qu'elle (donc jamais pour un camembert/donut, exclu via
+       .donut-holder, qui n'a pas ce problème de densité de données). */
+    .chart-card{overflow-x:auto;}
+    .chart-holder:not(.donut-holder){min-width:520px;}
   }
   .page{display:none;}
   .page.active{display:block;}
@@ -848,6 +860,17 @@
   .pdf-editor-insert-item:hover{background:rgba(255,255,255,0.05);}
   .pdf-editor-insert-item img{width:32px;height:32px;object-fit:contain;background:#fff;border-radius:5px;padding:2px;flex-shrink:0;}
   .pdf-editor-insert-item span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .pdf-editor-doc-item{display:flex;align-items:center;gap:6px;border-radius:8px;padding:8px;}
+  .pdf-editor-doc-item:hover{background:rgba(255,255,255,0.05);}
+  .pdf-editor-doc-open{flex:1;min-width:0;background:none;border:none;color:var(--text);font-size:12.5px;text-align:left;cursor:pointer;padding:0;}
+  .pdf-editor-doc-open .doc-name{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .pdf-editor-doc-open .doc-date{display:block;font-size:10.5px;color:var(--text-faint);font-family:var(--font-mono);}
+  .pdf-editor-doc-delete{background:none;border:none;color:var(--text-faint);font-size:13px;cursor:pointer;flex-shrink:0;padding:4px;}
+  .pdf-editor-doc-delete:hover{color:var(--red);}
+  .pdf-editor-save-name-panel{width:260px;display:flex;flex-direction:column;gap:6px;padding:10px;}
+  .pdf-editor-save-name-panel input{padding:8px 10px;background:var(--panel-2);border:1px solid var(--hair);border-radius:8px;color:var(--text);font-size:12.5px;}
+  .pdf-editor-save-name-panel button{background:linear-gradient(135deg,var(--gold),var(--gold-2));color:#1A1305;border:none;border-radius:8px;padding:8px;font-weight:700;font-size:12px;cursor:pointer;}
+  .pdf-editor-saved-label{font-size:11px;color:var(--text-faint);font-family:var(--font-mono);margin:-4px 0 8px;}
   .pdf-editor-toolbar input{flex:1;min-width:220px;padding:9px 12px;background:var(--panel-2);border:1px solid var(--hair);border-radius:8px;color:var(--text);font-size:13px;}
   .pdf-editor-toolbar input:focus{outline:none;border-color:var(--gold);}
   .pdf-editor-page-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;}
@@ -883,10 +906,11 @@
   .pdf-editor-block:hover .pdf-editor-resize-handle, .pdf-editor-block.active .pdf-editor-resize-handle{opacity:1;}
   .pdf-editor-block img{width:100%;height:100%;object-fit:contain;display:block;pointer-events:none;}
   .pdf-editor-text-inner{width:100%;height:100%;outline:none;color:var(--text);font-family:var(--font-body);padding:4px;overflow:auto;box-sizing:border-box;}
-  .pdf-editor-block-toolbar{position:absolute;top:-40px;left:-1px;display:flex;gap:4px;background:var(--panel-2);border:1px solid var(--hair);border-radius:8px;padding:4px;opacity:0;pointer-events:none;transition:opacity .12s;z-index:3;}
+  .pdf-editor-block-toolbar{position:absolute;top:-40px;left:-1px;display:flex;align-items:center;gap:4px;background:var(--panel-2);border:1px solid var(--hair);border-radius:8px;padding:4px;opacity:0;pointer-events:none;transition:opacity .12s;z-index:3;white-space:nowrap;}
   .pdf-editor-block.active .pdf-editor-block-toolbar{opacity:1;pointer-events:auto;}
-  .pdf-editor-block-toolbar button{background:none;border:none;color:var(--text-dim);width:22px;height:22px;border-radius:4px;cursor:pointer;font-size:11px;font-family:var(--font-body);}
+  .pdf-editor-block-toolbar button{background:none;border:none;color:var(--text-dim);width:22px;height:22px;border-radius:4px;cursor:pointer;font-size:11px;font-family:var(--font-body);flex-shrink:0;}
   .pdf-editor-block-toolbar button:hover{background:var(--hair);color:var(--text);}
+  .pdf-editor-block-toolbar select{background:var(--panel);border:1px solid var(--hair);color:var(--text-dim);border-radius:4px;height:22px;font-size:10px;max-width:108px;cursor:pointer;}
 
   footer{margin-top:40px;text-align:center;font-size:11px;color:var(--text-faint);font-family:var(--font-mono);}
 
