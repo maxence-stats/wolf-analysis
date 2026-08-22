@@ -712,6 +712,40 @@
       <div class="section-label">Macroéconomie</div>
       <div class="macro-export-all-row"><button id="macroExportAllBtn" class="macro-export-all-btn" onclick="exportMacroFullPageAsPdf()">⭳ Exporter toute la page en PDF</button></div>
 
+      <!-- Crédit — priorité n°1 (demande explicite) : prix du risque → remboursement →
+           création de crédit → capacité à supporter la dette. Données FRED en direct
+           (API), voir loadCreditIndicators()/fetchFredSeries() dans app.js. -->
+      <div class="section-label">Crédit</div>
+      <p class="valo-intro">Prix du risque → remboursement → création de crédit → capacité à supporter la dette.
+        Source : API FRED (Federal Reserve), en direct.</p>
+      <div class="chart-card">
+        <div class="chart-card-head">
+          <div><h3>HY Spread — High Yield Option-Adjusted Spread</h3><p class="chart-subtitle">Écart de rendement High Yield vs Trésor US (ICE BofA / FRED) — prix du risque de crédit demandé par le marché. Historique limité à ~3 ans (restriction de licence ICE Data Indices depuis avril 2026, pas une limite du site).</p></div>
+          <div class="chart-card-actions"><button class="zoom-btn" onclick="openCreditZoom()" aria-label="Agrandir">⤢</button></div>
+        </div>
+        <div class="range-buttons" id="creditRangeButtons">
+          <button data-range="1">1a</button><button data-range="2">2a</button><button class="active" data-range="3">3a</button><button data-range="max">Max</button>
+        </div>
+        <div class="chart-holder" style="height:300px;"><canvas id="chartCredit"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(MACRO_CHART_GETTERS.credit(), 'HY Spread — High Yield OAS', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
+        <div id="creditChartStatus" class="stock-status" style="display:none;"></div>
+        <div class="macro-export-row">
+          <button onclick="exportMacroChartAsPdf('credit','HY Spread — High Yield OAS')">PDF</button>
+          <button onclick="exportMacroChartAsImage('credit','hy-spread','png')">PNG</button>
+          <button onclick="exportMacroChartAsImage('credit','hy-spread','jpg')">JPG</button>
+        </div>
+      </div>
+
+      <div class="macro-power-card">
+        <div id="creditIndicatorsTable"></div>
+        <div class="macro-export-row">
+          <button onclick="zoomMacroTable('creditIndicatorsTable','Indicateurs crédit')">⤢ Agrandir</button>
+          <button onclick="exportMacroTableAsPdf('creditIndicatorsTable','Indicateurs crédit')">PDF</button>
+          <button onclick="exportMacroTableAsImage('creditIndicatorsTable','Indicateurs crédit','png')">PNG</button>
+          <button onclick="exportMacroTableAsImage('creditIndicatorsTable','Indicateurs crédit','jpg')">JPG</button>
+          <button class="export-cart-add-btn" onclick="addMacroTableToCart('creditIndicatorsTable','Indicateurs crédit', this)">🧺 Ajouter au panier</button>
+        </div>
+      </div>
+
       <div class="macro-charts-row">
         <div class="chart-card macro-cycle-card">
           <div class="chart-card-head">
