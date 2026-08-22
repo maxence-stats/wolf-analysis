@@ -741,6 +741,7 @@
         endettement des ménages, + un proxy de momentum des bénéfices (Corporate Profits, pas l'EPS du S&P 500 —
         aucune source gratuite pour les vraies révisions/breadth/surprises, voir la note sous le tableau).
         Source : API FRED (Federal Reserve), en direct.</p>
+      <div class="credit-loading-status" style="display:none;"></div>
 
       <div class="chart-card">
         <div class="chart-card-head">
@@ -752,8 +753,11 @@
           <button data-mode="nominal" class="active">Valeurs nominales</button>
           <button data-mode="base100">Base 100</button>
         </div>
-        <div class="range-buttons" id="creditOverlayRangeButtons">
-          <button data-range="3">3a</button><button class="active" data-range="10">10a</button><button data-range="max">Max</button>
+        <div class="credit-range-row" id="creditOverlayRangeButtons">
+          <div class="range-buttons">
+            <button data-range="3">3a</button><button data-range="5">5a</button><button class="active" data-range="10">10a</button><button data-range="20">20a</button><button data-range="30">30a</button><button data-range="max">Max</button>
+          </div>
+          <span class="credit-range-custom"><input type="number" min="1" max="99" step="1" class="credit-range-custom-input" placeholder="Ans libre"></span>
         </div>
         <p class="chart-hint">Valeurs nominales : chaque indicateur garde sa propre échelle (survole une courbe pour lire sa vraie valeur) — les unités ne sont pas directement comparables entre elles. Base 100 : chaque série est ramenée à 100 au début de la période affichée, pour comparer les évolutions en %.</p>
         <div class="chart-holder" style="height:340px;"><canvas id="chartCreditOverlay"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(MACRO_CHART_GETTERS.credit(), 'Crédit &amp; Bénéfices — Superposition', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
@@ -871,6 +875,7 @@
 
     <div id="pageMacroEco" class="page">
       <div class="macro-export-all-row"><button class="macro-export-all-btn" onclick="exportMacroFullPageAsPdf()">⭳ Exporter toute la page en PDF</button></div>
+      <div class="credit-loading-status" style="display:none;"></div>
       <div class="section-label">Indicateurs macroéconomiques (États-Unis)</div>
       <div class="macro-power-card">
         <div id="macroFundamentalsTable"></div>
@@ -896,9 +901,13 @@
         <div class="chart-card">
           <div class="chart-card-head">
             <div><h3>Corporate Profits After Tax — proxy momentum bénéfices</h3><p class="chart-subtitle">Ensemble de l'économie US (BEA, comptabilité nationale) — PAS l'EPS du S&amp;P 500, aucune source gratuite trouvée pour les vraies révisions/breadth/surprises.</p></div>
+            <div class="chart-card-actions"><button class="zoom-btn" data-credit-zoom="earningsProxy" aria-label="Agrandir">⤢</button></div>
           </div>
-          <div class="range-buttons" data-credit-range-for="earningsProxy">
-            <button data-range="3">3a</button><button class="active" data-range="10">10a</button><button data-range="max">Max</button>
+          <div class="credit-range-row" data-credit-range-for="earningsProxy">
+            <div class="range-buttons">
+              <button data-range="3">3a</button><button data-range="5">5a</button><button class="active" data-range="10">10a</button><button data-range="20">20a</button><button data-range="30">30a</button><button data-range="max">Max</button>
+            </div>
+            <span class="credit-range-custom"><input type="number" min="1" max="99" step="1" class="credit-range-custom-input" placeholder="Ans libre"></span>
           </div>
           <div class="chart-holder" style="height:260px;"><canvas id="creditChart-earningsProxy"></canvas></div>
           <div id="creditStats-earningsProxy"></div>
@@ -906,9 +915,13 @@
         <div class="chart-card">
           <div class="chart-card-head">
             <div><h3>Buffett Indicator</h3><p class="chart-subtitle">Capitalisation boursière cotée US (Fed, comptes financiers Z.1) / PIB — jauge de valorisation globale du marché, au-delà de ~150% généralement lu comme cher.</p></div>
+            <div class="chart-card-actions"><button class="zoom-btn" data-credit-zoom="buffettIndicator" aria-label="Agrandir">⤢</button></div>
           </div>
-          <div class="range-buttons" data-credit-range-for="buffettIndicator">
-            <button data-range="3">3a</button><button class="active" data-range="10">10a</button><button data-range="max">Max</button>
+          <div class="credit-range-row" data-credit-range-for="buffettIndicator">
+            <div class="range-buttons">
+              <button data-range="3">3a</button><button data-range="5">5a</button><button class="active" data-range="10">10a</button><button data-range="20">20a</button><button data-range="30">30a</button><button data-range="max">Max</button>
+            </div>
+            <span class="credit-range-custom"><input type="number" min="1" max="99" step="1" class="credit-range-custom-input" placeholder="Ans libre"></span>
           </div>
           <div class="chart-holder" style="height:260px;"><canvas id="creditChart-buffettIndicator"></canvas></div>
           <div id="creditStats-buffettIndicator"></div>

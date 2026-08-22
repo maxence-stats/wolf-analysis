@@ -5248,9 +5248,21 @@ const CREDIT_SERIES = [
 ];
 let creditIndicatorsData = {}; // key -> { dates:[...], values:[...] }
 
+const CREDIT_FETCH_TIMEOUT_MS = 10000;
+// Retour utilisateur explicite ("tout le reste ne charge pas... il doit y avoir un
+// souci") : rien n'affichait le moindre état de progression pendant un chargement qui
+// peut réellement prendre 1-2 minutes (10 séries, en partie séquentielles) — un
+// chargement simplement LENT était donc indiscernable d'un chargement CASSÉ. Sécurité
+// supplémentaire en plus du timeout interne de fetchWithRetry() (AbortController) : un
+// Promise.race englobant, même pattern que loadAllDataFromAppsScript() — un fetch()
+// resté bloqué sans jamais résoudre/rejeter (constaté en contexte file:// pour d'autres
+// appels réseau du site, voir CLAUDE.md) ne doit jamais geler cette série indéfiniment.
 async function fetchFredSeries(seriesId, startDate){
   const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&api_key=${FRED_API_KEY}&file_type=json&observation_start=${startDate || CREDIT_START_DATE}`;
-  const res = await fetchWithRetry(url, { cache:'no-store' }, 15000);
+  const res = await Promise.race([
+    fetchWithRetry(url, { cache:'no-store' }, CREDIT_FETCH_TIMEOUT_MS),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('délai dépassé (>20s, les deux relais)')), CREDIT_FETCH_TIMEOUT_MS * 2 + 2000))
+  ]);
   const json = await res.json();
   if (!json || !Array.isArray(json.observations)) throw new Error('réponse FRED invalide pour ' + seriesId);
   const dates = [], values = [];
@@ -5332,6 +5344,44 @@ function creditVisibleSeries(){
   return CREDIT_SERIES.filter(s => !s.hidden);
 }
 
+// Statut de chargement visible (partagé par toutes les .credit-loading-status du DOM,
+// une dans le sous-onglet Crédit et une dans Macroéconomie — voir index.html) : retour
+// utilisateur explicite, un chargement de plusieurs dizaines de secondes SANS aucun
+// retour visuel était indiscernable d'un site cassé. isError bascule le style (rouge).
+function setCreditLoadingStatus(msg, isError){
+  document.querySelectorAll('.credit-loading-status').forEach(box => {
+    box.textContent = msg || '';
+    box.style.display = msg ? 'block' : 'none';
+    box.classList.toggle('error', !!isError);
+  });
+}
+
+// Lot de séries en concurrence LIMITÉE (pas tout en même temps — 8-10 requêtes
+// simultanées à travers les mêmes 2 relais CORS gratuits ont provoqué des rejets HTTP
+// 413 en test réel, probablement liés à la charge concurrente sur le proxy — voir
+// CREDIT_FETCH_CONCURRENCY) mais pas non plus une par une (bien trop lent avec 10
+// séries : jusqu'à plusieurs minutes constaté en test). 3 en parallèle est un compromis
+// vérifié en pratique : nettement plus rapide qu'un fetch strictement séquentiel, sans
+// retomber sur les 413 observés à 8+.
+const CREDIT_FETCH_CONCURRENCY = 3;
+async function fetchCreditSeriesBatch(list, onItemDone){
+  const data = {}, errors = [];
+  for (let i = 0; i < list.length; i += CREDIT_FETCH_CONCURRENCY){
+    const batch = list.slice(i, i + CREDIT_FETCH_CONCURRENCY);
+    await Promise.all(batch.map(async s => {
+      try{
+        const r = await fetchFredSeries(s.seriesId, s.startDate);
+        data[s.key] = s.deriveYoY ? deriveYoYSeries(r.dates, r.values) : r;
+      }catch(e){
+        console.error('Erreur de chargement FRED pour ' + s.seriesId + ' :', e);
+        errors.push({ s, message: (e && e.message) || String(e) });
+      }
+      if (onItemDone) onItemDone();
+    }));
+  }
+  return { data, errors };
+}
+
 async function loadCreditIndicators(){
   try{
     const raw = localStorage.getItem(CREDIT_LS_KEY);
@@ -5348,61 +5398,57 @@ async function loadCreditIndicators(){
     }
   }catch(e){ /* cache indisponible/corrompu — on retente un fetch */ }
 
-  // Séquentiel (pas Promise.all) : 8 requêtes lancées en même temps à travers les 2
-  // mêmes relais CORS publics et gratuits (déjà documentés comme instables isolément,
-  // voir corsProxyUrls) ont provoqué des rejets HTTP 413 en test réel, probablement liés
-  // à la charge concurrente sur le proxy plutôt qu'à la taille réelle d'une réponse
-  // individuelle — un fetch à la fois est plus lent (jusqu'à ~30-40s dans le pire cas,
-  // en tâche de fond, mis en cache 24h ensuite) mais nettement plus fiable. Chaque série
-  // est aussi indépendamment tolérante à l'échec : si UNE série échoue, les autres
-  // s'affichent quand même plutôt que de tout bloquer.
-  const data = {};
-  let anySuccess = false;
   const fetchable = CREDIT_SERIES.filter(s => s.seriesId);
-  const failed = [];
-  for (const s of fetchable){
-    try{
-      const r = await fetchFredSeries(s.seriesId, s.startDate);
-      data[s.key] = s.deriveYoY ? deriveYoYSeries(r.dates, r.values) : r;
-      anySuccess = true;
-    }catch(e){
-      console.error('Erreur de chargement FRED pour ' + s.seriesId + ' :', e);
-      failed.push(s);
-    }
+  let done = 0;
+  const total = fetchable.length;
+  setCreditLoadingStatus(`Chargement des indicateurs crédit… (0/${total})`, false);
+  const tick = () => { done++; setCreditLoadingStatus(`Chargement des indicateurs crédit… (${done}/${total})`, false); };
+
+  let { data, errors } = await fetchCreditSeriesBatch(fetchable, tick);
+
+  // 2e passe uniquement sur les séries en échec après la 1re — les grosses séries
+  // quotidiennes (~1 Mo, Baa10Y/Aaa10Y) sont proches du seuil de taille toléré par le
+  // relais CORS gratuit et échouent parfois de façon purement intermittente (constaté
+  // en test : pas systématiquement la même série qui échoue d'un chargement à l'autre).
+  if (errors.length){
+    const retryTargets = errors.map(e => e.s);
+    setCreditLoadingStatus(`Nouvelle tentative pour ${retryTargets.length} indicateur${retryTargets.length > 1 ? 's' : ''}…`, false);
+    const retry = await fetchCreditSeriesBatch(retryTargets, () => {});
+    Object.assign(data, retry.data);
+    errors = retry.errors; // ne garde que les échecs qui persistent après la 2e tentative
   }
-  // 2e passe pour les séries en échec après la 1re — les grosses séries quotidiennes
-  // (~1 Mo, Baa10Y/Aaa10Y) sont proches du seuil de taille toléré par le relais CORS
-  // gratuit et échouent parfois de façon purement intermittente (constaté en test :
-  // pas systématiquement la même série qui échoue d'un chargement à l'autre) — une
-  // 2e tentative, une fois les autres séries déjà passées, suffit souvent à récupérer.
-  for (const s of failed){
-    try{
-      const r = await fetchFredSeries(s.seriesId, s.startDate);
-      data[s.key] = s.deriveYoY ? deriveYoYSeries(r.dates, r.values) : r;
-      anySuccess = true;
-    }catch(e){
-      console.error('Erreur de chargement FRED pour ' + s.seriesId + ' (2e tentative) :', e);
-    }
-  }
-  if (!anySuccess){
-    renderCreditError();
+
+  if (Object.keys(data).length === 0){
+    setCreditLoadingStatus('', false);
+    renderCreditError(errors);
     return;
   }
   data.baaAaa = deriveDiffSeries(data.baa10y, data.aaa10y);
   data.buffettIndicator = deriveRatioPctSeries(data.mktCapRaw, data.gdpRaw, 1000);
   creditIndicatorsData = data;
   try{ localStorage.setItem(CREDIT_LS_KEY, JSON.stringify({ ts: Date.now(), data })); }catch(e){ /* quota / navigateur privé */ }
+
+  if (errors.length){
+    const names = errors.map(e => e.s.shortLabel || e.s.key).join(', ');
+    setCreditLoadingStatus(`Chargé, mais ${errors.length} indicateur${errors.length > 1 ? 's' : ''} indisponible${errors.length > 1 ? 's' : ''} pour le moment : ${names}. Nouvelle tentative au prochain chargement de la page.`, true);
+  } else {
+    setCreditLoadingStatus('', false);
+  }
   renderCreditTable();
   renderCreditChartsGrid();
   renderCreditOverlayToggles();
   renderCreditOverlayChart();
 }
 
-function renderCreditError(){
+// errors : [{s, message}] — affiche PRÉCISÉMENT quelle série a échoué et pourquoi,
+// demande explicite de l'utilisateur ("que ça m'affiche le pourquoi ça ne fonctionne
+// pas") plutôt qu'un message générique qui ne dit rien de plus qu'"une erreur".
+function renderCreditError(errors){
+  const detail = (errors || []).map(e => `${escapeHtml(e.s.shortLabel || e.s.key)} : ${escapeHtml(e.message)}`).join('<br>');
   const box = document.getElementById('creditIndicatorsTable');
   if (box) box.innerHTML = `<p class="macro-fund-note">Impossible de récupérer les indicateurs crédit depuis l'API FRED pour le
-    moment (relais réseau instable ou API indisponible) — le reste du site n'est pas affecté. Nouvelle tentative au
-    prochain chargement de la page.</p>`;
+    moment — le reste du site n'est pas affecté. Nouvelle tentative au prochain chargement de la page.
+    ${detail ? '<br><br><b>Détail des échecs :</b><br>' + detail : ''}</p>`;
   const grid = document.getElementById('creditChartsGrid');
   if (grid) grid.innerHTML = '';
   const status = document.getElementById('creditOverlayStatus');
@@ -5451,10 +5497,50 @@ function renderCreditTable(){
     <p class="macro-fund-note" style="margin-top:10px;">Source : API FRED (Federal Reserve), en direct. ${creditVisibleSeries().map(s => s.label + ' : ' + s.note).join(' ')}</p>`;
 }
 
-/* ---- Graphiques individuels (1 par indicateur, 3A/10A/Max chacun) ------------------- */
-const CREDIT_RANGE_OPTIONS = [['3','3a'],['10','10a'],['max','Max']];
-let creditIndicatorRanges = {}; // key -> '3'|'10'|'max', défaut '10'
+/* ---- Graphiques individuels (1 par indicateur) --------------------------------------
+   Plage uniforme sur tous les graphiques Crédit/Macroéconomie (superposition + 9 fiches
+   individuelles) — demande explicite : "3 ans, 5 ans, 10 ans, 20 ans, 30 ans et Max",
+   + une saisie libre du nombre d'années exact (voir creditRangeRowHtml/wireCreditRangeRow)
+   pour les cas où aucun preset ne tombe juste ("des fois il remonte jusqu'à super
+   longtemps"). ------------------------------------------------------------------------ */
+const CREDIT_RANGE_OPTIONS = [['3','3a'],['5','5a'],['10','10a'],['20','20a'],['30','30a'],['max','Max']];
+let creditIndicatorRanges = {}; // key -> '3'|'5'|'10'|'20'|'30'|'max'|"<n>" (libre), défaut '10'
 let creditIndicatorCharts = {}; // key -> instance Chart.js
+
+// Boutons de plage + champ de saisie libre, réutilisé par la superposition et par
+// chaque fiche individuelle (grille Crédit + les 2 fiches dédiées de Macroéconomie).
+// rangeForAttr identifie la ligne pour la délégation d'événements ET pour synchroniser
+// le zoom plein écran (préfixe 'creditind-', voir ZOOM_SPECIAL_RANGES plus bas).
+function creditRangeRowHtml(rangeForAttr, currentRange){
+  const isPreset = CREDIT_RANGE_OPTIONS.some(([val]) => val === currentRange);
+  return `<div class="credit-range-row" data-credit-range-for="${rangeForAttr}">
+    <div class="range-buttons">
+      ${CREDIT_RANGE_OPTIONS.map(([val,label]) => `<button data-range="${val}" class="${currentRange===val?'active':''}">${label}</button>`).join('')}
+    </div>
+    <span class="credit-range-custom"><input type="number" min="1" max="99" step="1" class="credit-range-custom-input" placeholder="Ans libre" value="${!isPreset && currentRange !== 'max' ? currentRange : ''}"></span>
+  </div>`;
+}
+// Câblage partagé : clic sur un preset OU saisie d'un nombre d'années libre, dans les
+// deux cas onRangeChange(range) reçoit une chaîne compatible avec creditSliceByRange()
+// (un preset comme '10'/'max', ou n'importe quel nombre saisi à la main).
+function wireCreditRangeRow(row, onRangeChange){
+  const customInput = row.querySelector('.credit-range-custom-input');
+  row.querySelector('.range-buttons').addEventListener('click', e => {
+    const btn = e.target.closest('button[data-range]');
+    if (!btn) return;
+    if (customInput) customInput.value = '';
+    row.querySelectorAll('.range-buttons button').forEach(b => b.classList.toggle('active', b === btn));
+    onRangeChange(btn.dataset.range);
+  });
+  if (customInput){
+    customInput.addEventListener('change', () => {
+      const val = parseInt(customInput.value, 10);
+      if (!val || val < 1) return;
+      row.querySelectorAll('.range-buttons button').forEach(b => b.classList.remove('active'));
+      onRangeChange(String(val));
+    });
+  }
+}
 
 // Découpe une série {dates,values} sur une plage donnée — 'max' renvoie tout
 // l'historique réellement disponible (voir CREDIT_START_DATE), pas une fenêtre glissante
@@ -5520,10 +5606,9 @@ function creditIndicatorCardHtml(s){
   return `<div class="chart-card">
     <div class="chart-card-head">
       <div><h3>${s.shortLabel}</h3><p class="chart-subtitle">${s.note}</p></div>
+      <div class="chart-card-actions"><button class="zoom-btn" data-credit-zoom="${s.key}" aria-label="Agrandir">⤢</button></div>
     </div>
-    <div class="range-buttons" data-credit-range-for="${s.key}">
-      ${CREDIT_RANGE_OPTIONS.map(([val,label]) => `<button data-range="${val}" class="${range===val?'active':''}">${label}</button>`).join('')}
-    </div>
+    ${creditRangeRowHtml(s.key, range)}
     <div class="chart-holder" style="height:220px;"><canvas id="creditChart-${s.key}"></canvas></div>
     <div id="creditStats-${s.key}"></div>
   </div>`;
@@ -5548,12 +5633,13 @@ function renderCreditChartsGrid(){
   box.innerHTML = visible.map(creditIndicatorCardHtml).join('');
   box.querySelectorAll('[data-credit-range-for]').forEach(row => {
     const key = row.dataset.creditRangeFor;
-    row.addEventListener('click', e => {
-      const btn = e.target.closest('button[data-range]');
-      if (!btn) return;
-      creditIndicatorRanges[key] = btn.dataset.range;
-      row.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
-      renderCreditIndicatorChart(key);
+    wireCreditRangeRow(row, range => { creditIndicatorRanges[key] = range; renderCreditIndicatorChart(key); });
+  });
+  box.querySelectorAll('[data-credit-zoom]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.creditZoom;
+      const meta = CREDIT_SERIES.find(s => s.key === key);
+      openZoom('creditind-' + key, meta ? meta.label : key);
     });
   });
   visible.forEach(s => renderCreditIndicatorChart(s.key));
@@ -5668,11 +5754,8 @@ document.getElementById('creditOverlayModeToggle').addEventListener('click', e =
   const btn = e.target.closest('button[data-mode]');
   if (btn) setCreditOverlayMode(btn.dataset.mode);
 });
-document.getElementById('creditOverlayRangeButtons').addEventListener('click', e => {
-  const btn = e.target.closest('button[data-range]');
-  if (!btn) return;
-  creditOverlayRange = btn.dataset.range;
-  document.querySelectorAll('#creditOverlayRangeButtons button').forEach(b => b.classList.toggle('active', b === btn));
+wireCreditRangeRow(document.getElementById('creditOverlayRangeButtons'), range => {
+  creditOverlayRange = range;
   renderCreditOverlayChart();
 });
 // Fiches dédiées du sous-onglet Macroéconomie (Corporate Profits, Buffett Indicator) :
@@ -5681,12 +5764,13 @@ document.getElementById('creditOverlayRangeButtons').addEventListener('click', e
 // que dans la boucle de délégation de la grille dynamique.
 document.querySelectorAll('#pageMacroEco [data-credit-range-for]').forEach(row => {
   const key = row.dataset.creditRangeFor;
-  row.addEventListener('click', e => {
-    const btn = e.target.closest('button[data-range]');
-    if (!btn) return;
-    creditIndicatorRanges[key] = btn.dataset.range;
-    row.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
-    renderCreditIndicatorChart(key);
+  wireCreditRangeRow(row, range => { creditIndicatorRanges[key] = range; renderCreditIndicatorChart(key); });
+});
+document.querySelectorAll('#pageMacroEco [data-credit-zoom]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const key = btn.dataset.creditZoom;
+    const meta = CREDIT_SERIES.find(s => s.key === key);
+    openZoom('creditind-' + key, meta ? meta.label : key);
   });
 });
 
@@ -6613,7 +6697,7 @@ let zoomCreditRange = '10';
 const ZOOM_STOCK_RANGES = [['1','1a'],['2','2a'],['3','3a'],['5','5a'],['10','10a'],['20','20a'],['max','Max']];
 const ZOOM_MACRO_CYCLE_RANGES = [['5','5a'],['10','10a'],['20','20a'],['max','Max']];
 const ZOOM_MACRO_ROTATION_RANGES = [['1','1a'],['2','2a'],['3','3a'],['m1','1m'],['m2','2m'],['m3','3m']];
-const ZOOM_CREDIT_RANGES = [['3','3a'],['10','10a'],['max','Max']];
+const ZOOM_CREDIT_RANGES = CREDIT_RANGE_OPTIONS;
 
 function renderZoomCagrRow(){
   const box = document.getElementById('zoomCagrRow');
@@ -6632,6 +6716,10 @@ function renderZoomCagrRow(){
 // graphiques macro à ratio temporel (demande explicite : pouvoir changer la plage
 // même en plein écran, pas seulement sur la petite carte).
 let zoomMacroRankingRow = 'Classement';
+// Une entrée 'creditind-<key>' par indicateur individuel Crédit/Macroéconomie (9 au
+// total), générée depuis CREDIT_SERIES plutôt qu'écrite à la main — nouvelle entrée
+// automatique si un indicateur est ajouté plus tard. Voir les branches génériques
+// "creditind-" ci-dessous dans zoomSpecialRange{Get,Set}/zoomSpecialChartConfig.
 const ZOOM_SPECIAL_RANGES = {
   stock: ZOOM_STOCK_RANGES,
   comparaison: ZOOM_STOCK_RANGES,
@@ -6640,6 +6728,7 @@ const ZOOM_SPECIAL_RANGES = {
   macroRanking: MACRO_RANKING_OPTIONS,
   credit: ZOOM_CREDIT_RANGES
 };
+creditVisibleSeries().forEach(s => { ZOOM_SPECIAL_RANGES['creditind-' + s.key] = CREDIT_RANGE_OPTIONS; });
 function zoomSpecialRangeGet(){
   if (zoomKey === 'stock') return zoomStockRange;
   if (zoomKey === 'comparaison') return zoomComparaisonRange;
@@ -6647,6 +6736,7 @@ function zoomSpecialRangeGet(){
   if (zoomKey === 'macroRotation') return zoomMacroRotationRange;
   if (zoomKey === 'macroRanking') return zoomMacroRankingRow;
   if (zoomKey === 'credit') return zoomCreditRange;
+  if (zoomKey && zoomKey.indexOf('creditind-') === 0) return creditIndicatorRanges[zoomKey.slice(10)] || '10';
   return null;
 }
 function zoomSpecialRangeSet(val){
@@ -6655,7 +6745,20 @@ function zoomSpecialRangeSet(val){
   else if (zoomKey === 'macroCycle') zoomMacroCycleRange = val;
   else if (zoomKey === 'macroRotation') zoomMacroRotationRange = val;
   else if (zoomKey === 'macroRanking') zoomMacroRankingRow = val;
-  else if (zoomKey === 'credit'){ zoomCreditRange = val; creditOverlayRange = val; document.querySelectorAll('#creditOverlayRangeButtons button').forEach(b => b.classList.toggle('active', b.dataset.range === val)); }
+  else if (zoomKey === 'credit'){
+    zoomCreditRange = val; creditOverlayRange = val;
+    document.querySelectorAll('#creditOverlayRangeButtons .range-buttons button').forEach(b => b.classList.toggle('active', b.dataset.range === val));
+    const input = document.querySelector('#creditOverlayRangeButtons .credit-range-custom-input');
+    if (input) input.value = '';
+  } else if (zoomKey && zoomKey.indexOf('creditind-') === 0){
+    const key = zoomKey.slice(10);
+    creditIndicatorRanges[key] = val;
+    document.querySelectorAll(`[data-credit-range-for="${key}"]`).forEach(row => {
+      row.querySelectorAll('.range-buttons button').forEach(b => b.classList.toggle('active', b.dataset.range === val));
+      const input = row.querySelector('.credit-range-custom-input');
+      if (input) input.value = '';
+    });
+  }
 }
 function zoomSpecialChartConfig(){
   if (zoomKey === 'stock') return buildStockChartConfig(zoomStockRange);
@@ -6664,6 +6767,10 @@ function zoomSpecialChartConfig(){
   if (zoomKey === 'macroRotation') return buildMacroRotationChartConfig(zoomMacroRotationRange);
   if (zoomKey === 'macroRanking') return buildMacroRankingChartConfig(zoomMacroRankingRow);
   if (zoomKey === 'credit') return buildCreditOverlayChartConfig();
+  if (zoomKey && zoomKey.indexOf('creditind-') === 0){
+    const key = zoomKey.slice(10);
+    return buildCreditIndicatorChartConfig(key, creditIndicatorRanges[key] || '10');
+  }
   return null;
 }
 
