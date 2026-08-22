@@ -2321,7 +2321,23 @@ function exportValorisationFullAsPdf(){
   if (!activeCompany) return;
   const logo = companyLogoUrl(activeCompany);
   const summaryBox = document.querySelector('#pageValorisation .valo-summary');
-  const summaryHtml = summaryBox ? `<div class="print-section"><h3>Résumé</h3>${summaryBox.outerHTML}</div>` : '';
+  // Le FCF/OCF/EPS actuel est désormais un <input> éditable (voir wireFcfActuelInput) :
+  // sa valeur vit dans la propriété .value, pas dans l'attribut HTML — un outerHTML brut
+  // imprimerait un champ vide. On clone et on remplace l'input par un texte statique
+  // reprenant sa valeur courante avant de sérialiser, et on retire le bouton ↺ (sans
+  // objet à l'impression).
+  let summaryHtml = '';
+  if (summaryBox){
+    const clone = summaryBox.cloneNode(true);
+    clone.querySelectorAll('input.ratio-card-input').forEach(inp => {
+      const span = document.createElement('div');
+      span.className = 'v';
+      span.textContent = inp.value !== '' ? inp.value : 'N/D';
+      inp.replaceWith(span);
+    });
+    clone.querySelectorAll('.ratio-card-reset').forEach(btn => btn.remove());
+    summaryHtml = `<div class="print-section"><h3>Résumé</h3>${clone.outerHTML}</div>`;
+  }
   const scenariosHtml = SCENARIOS.map(s => {
     const v = scenarioValues[s.key];
     if (!v) return '';
@@ -4191,7 +4207,7 @@ function pessimisticScenarioForCompany(nom){
   const hist = companies[nom];
   if (!hist || !hist.length) return null;
   const latest = hist[hist.length - 1];
-  const { fcfActuel, cagrHist, medianeHist } = valorisationInputs(latest, hist);
+  const { fcfActuel, cagrHist, medianeHist } = valorisationInputs(latest, hist, nom);
   const prixActuel = latest.prixActuel;
   if (fcfActuel == null || prixActuel == null) return null;
   const savedList = objectifsStore[nom];
@@ -5897,7 +5913,7 @@ function comparisonChartBadgesHtml(key, latest){
 function comparisonScenariosHtml(nom){
   const hist = companies[nom];
   const latest = hist[hist.length - 1];
-  const { fcfActuel, cagrHist, medianeHist } = valorisationInputs(latest, hist);
+  const { fcfActuel, cagrHist, medianeHist } = valorisationInputs(latest, hist, nom);
   const prixActuel = latest.prixActuel;
   if (fcfActuel == null || prixActuel == null || cagrHist == null || medianeHist == null){
     return '<p class="chart-hint">Données insuffisantes pour simuler une valorisation.</p>';
@@ -6377,7 +6393,7 @@ function scenarioCardHtml(s){
         <span>Médiane ${vl.mediane} 20 ans <b>${document.getElementById('voMediane20').textContent}</b></span>
       </div>
       <div class="scenario-row fixe">
-        <div class="scenario-row-head"><span>${vl.fixed} Actuel (Fixe)</span><span class="val" id="vo-${s.key}-fcf">—</span></div>
+        <div class="scenario-row-head"><span>${vl.fixed} Actuel</span><span class="val" id="vo-${s.key}-fcf">—</span></div>
       </div>
       <div class="scenario-row">
         <div class="scenario-row-head"><span>CAGR ${vl.growth} Prévu (%)</span><span class="val" id="vo-${s.key}-cagrVal">—</span></div>
@@ -6425,34 +6441,65 @@ function setValorisationMetric(metric){
   document.querySelectorAll('#valoMetricToggle button').forEach(b => b.classList.toggle('active', b.dataset.metric === metric));
   if (activeCompany) renderValorisation(activeCompany);
 }
-function valorisationInputs(latest, hist){
+
+// FCF/OCF/EPS "actuel" rempli automatiquement depuis les derniers résultats, mais
+// modifiable librement par l'utilisateur (tuile éditable, voir wireFcfActuelInput()) —
+// demande explicite : "je ne veux pas qu'ils soient fixes... mais que je puisse avoir la
+// possibilité de les modifier moi-même", pour FCF/OCF/PER. Clé = nom d'entreprise, puis
+// 'fcf'/'ocf'/'per' (même découpage que valorisationMetric) — persisté en localStorage,
+// pas de socle data/*.json (réglage personnel léger, comme les sliders CAGR/multiple qui
+// ne sont eux-mêmes jamais synchronisés entre appareils en dehors d'un objectif enregistré).
+const VALO_FCF_OVERRIDE_LS_KEY = 'wolfAnalysisValoFcfOverrides';
+let valorisationFcfOverrides = {};
+try{
+  const rawValoOverrides = localStorage.getItem(VALO_FCF_OVERRIDE_LS_KEY);
+  if (rawValoOverrides) valorisationFcfOverrides = JSON.parse(rawValoOverrides);
+}catch(e){ /* localStorage indisponible ou JSON corrompu */ }
+function persistValoFcfOverrides(){
+  try{ localStorage.setItem(VALO_FCF_OVERRIDE_LS_KEY, JSON.stringify(valorisationFcfOverrides)); }catch(e){ /* quota / navigateur privé */ }
+}
+
+function valorisationInputs(latest, hist, nom){
+  let result;
   if (valorisationMetric === 'ocf'){
     const ocfActuel = (latest.prixActuel != null && latest.pOcf) ? latest.prixActuel / latest.pOcf : null;
-    return { fcfActuel: ocfActuel, cagrHist: latest.cagrOcf10, medianeHist: latest.medianePOcf, mediane20: latest.medianePOcf20, label:'OCF' };
-  }
-  if (valorisationMetric === 'per'){
+    result = { fcfActuel: ocfActuel, cagrHist: latest.cagrOcf10, medianeHist: latest.medianePOcf, mediane20: latest.medianePOcf20, label:'OCF' };
+  } else if (valorisationMetric === 'per'){
     // Pas de "Médiane PER" fournie par le Sheet (contrairement à médianePFCF/
     // medianePOcf) — calculée côté client sur les 10/20 dernières années d'historique.
     const h = hist || (activeCompany && companies[activeCompany]) || [];
-    return { fcfActuel: latest.eps, cagrHist: latest.cagrEps10, medianeHist: medianOfLastYears(h, 'per', 10), mediane20: medianOfLastYears(h, 'per', 20), label:'PER' };
+    result = { fcfActuel: latest.eps, cagrHist: latest.cagrEps10, medianeHist: medianOfLastYears(h, 'per', 10), mediane20: medianOfLastYears(h, 'per', 20), label:'PER' };
+  } else {
+    result = { fcfActuel: latest.fcfParAction, cagrHist: latest.cagrFcf10, medianeHist: latest.medianePFCF, mediane20: latest.medianePFCF20, label:'FCF' };
   }
-  return { fcfActuel: latest.fcfParAction, cagrHist: latest.cagrFcf10, medianeHist: latest.medianePFCF, mediane20: latest.medianePFCF20, label:'FCF' };
+  result.fcfActuelAuto = result.fcfActuel;
+  const overrideNom = nom || activeCompany;
+  const override = overrideNom && valorisationFcfOverrides[overrideNom] ? valorisationFcfOverrides[overrideNom][valorisationMetric] : null;
+  if (override != null) result.fcfActuel = override;
+  return result;
 }
+
+// Valeur FCF/OCF/EPS "actuelle" utilisée par les 3 cartes de scénario — module-level
+// (pas un paramètre figé passé une fois) car l'utilisateur peut la modifier après coup
+// via la tuile éditable (wireFcfActuelInput()) : toute carte qui recalcule doit relire
+// la valeur COURANTE, jamais celle capturée au moment du premier rendu.
+let activeFcfActuel = null;
 
 function renderValorisation(nom){
   const hist = companies[nom];
   if (!hist) return;
   const latest = hist[hist.length - 1];
-  const { fcfActuel, cagrHist, medianeHist, mediane20 } = valorisationInputs(latest, hist);
+  const { fcfActuel, fcfActuelAuto, cagrHist, medianeHist, mediane20 } = valorisationInputs(latest, hist, nom);
   const prixActuel = latest.prixActuel;
   // Le PER casse le raccourci "un seul label pour tout" utilisé par FCF/OCF : la
   // quantité fixe/qui croît est l'EPS, le multiple appliqué est le PER — deux libellés
   // différents, voir valorisationLabels().
   const vl = valorisationLabels();
+  activeFcfActuel = fcfActuel;
 
   document.getElementById('voPrixActuel').textContent = prixActuel != null ? fmtEUR(prixActuel) : 'N/D';
   document.getElementById('voFcfLabel').textContent = vl.fixed + ' actuel';
-  document.getElementById('voFcfActuel').textContent = fcfActuel != null ? fmtEUR(fcfActuel) : 'N/D';
+  wireFcfActuelInput(nom, hist, prixActuel, fcfActuelAuto);
   // Libellés dynamiques FCF/OCF sur les tuiles CAGR et médiane — sans ça, rien ne
   // distinguait "CAGR (historique)" d'un CAGR FCF ou OCF une fois la valorisation
   // enregistrée/rechargée, source de doute signalée explicitement par l'utilisateur.
@@ -6481,16 +6528,68 @@ function renderValorisation(nom){
     btn.addEventListener('click', () => openScenarioZoom(btn.dataset.zoomScenario));
   });
 
-  SCENARIOS.forEach(s => wireScenarioCard(s, hist, fcfActuel, prixActuel));
+  SCENARIOS.forEach(s => wireScenarioCard(s, hist, prixActuel));
 
   renderObjectifsHistory(nom);
 }
 
-function wireScenarioCard(s, hist, fcfActuel, prixActuel){
+// Tuile "FCF/OCF/EPS actuel" éditable (voir index.html #voFcfActuelInput/#voFcfActuelReset)
+// — rempli automatiquement (fcfActuelAuto) mais modifiable librement ; la valeur saisie
+// est stockée par entreprise+métrique dans valorisationFcfOverrides et réappliquée aux 3
+// cartes de scénario sans toucher aux sliders CAGR/multiple/rachat déjà réglés. L'élément
+// est cloné à chaque rendu pour repartir sans les listeners de l'entreprise précédente
+// (fermés sur un nom/historique périmés sinon).
+function wireFcfActuelInput(nom, hist, prixActuel, fcfActuelAuto){
+  let input = document.getElementById('voFcfActuelInput');
+  let resetBtn = document.getElementById('voFcfActuelReset');
+  if (!input) return;
+  const freshInput = input.cloneNode(true);
+  input.parentNode.replaceChild(freshInput, input);
+  input = freshInput;
+  if (resetBtn){
+    const freshReset = resetBtn.cloneNode(true);
+    resetBtn.parentNode.replaceChild(freshReset, resetBtn);
+    resetBtn = freshReset;
+  }
+
+  const isOverridden = valorisationFcfOverrides[nom] && valorisationFcfOverrides[nom][valorisationMetric] != null;
+  input.value = activeFcfActuel != null ? +activeFcfActuel.toFixed(4) : '';
+  input.classList.toggle('overridden', !!isOverridden);
+  if (resetBtn) resetBtn.classList.toggle('visible', !!isOverridden);
+
+  function applyValue(newVal){
+    if (!valorisationFcfOverrides[nom]) valorisationFcfOverrides[nom] = {};
+    if (newVal == null || isNaN(newVal)){
+      delete valorisationFcfOverrides[nom][valorisationMetric];
+      activeFcfActuel = fcfActuelAuto;
+    } else {
+      valorisationFcfOverrides[nom][valorisationMetric] = newVal;
+      activeFcfActuel = newVal;
+    }
+    persistValoFcfOverrides();
+    const overridden = valorisationFcfOverrides[nom][valorisationMetric] != null;
+    input.classList.toggle('overridden', overridden);
+    if (resetBtn) resetBtn.classList.toggle('visible', overridden);
+    SCENARIOS.forEach(s => {
+      const fcfEl = document.getElementById('vo-' + s.key + '-fcf');
+      if (fcfEl) fcfEl.textContent = activeFcfActuel != null ? fmtEUR(activeFcfActuel) : 'N/D';
+      updateScenarioCard(s, hist, prixActuel);
+    });
+  }
+  input.addEventListener('change', () => applyValue(parseFloat(input.value)));
+  if (resetBtn){
+    resetBtn.addEventListener('click', () => {
+      input.value = fcfActuelAuto != null ? +fcfActuelAuto.toFixed(4) : '';
+      applyValue(null);
+    });
+  }
+}
+
+function wireScenarioCard(s, hist, prixActuel){
   const cagrInput = document.getElementById('vo-' + s.key + '-cagr');
   const multInput = document.getElementById('vo-' + s.key + '-mult');
   const rachatInput = document.getElementById('vo-' + s.key + '-rachat');
-  document.getElementById('vo-' + s.key + '-fcf').textContent = fcfActuel != null ? fmtEUR(fcfActuel) : 'N/D';
+  document.getElementById('vo-' + s.key + '-fcf').textContent = activeFcfActuel != null ? fmtEUR(activeFcfActuel) : 'N/D';
 
   cagrInput.value = scenarioValues[s.key].cagr;
   multInput.value = scenarioValues[s.key].multiple;
@@ -6508,7 +6607,7 @@ function wireScenarioCard(s, hist, fcfActuel, prixActuel){
     scenarioValues[s.key].multiple = parseFloat(multInput.value);
     scenarioValues[s.key].rachat = parseFloat(rachatInput.value) || 0;
     syncQuickButtons();
-    updateScenarioCard(s, hist, fcfActuel, prixActuel);
+    updateScenarioCard(s, hist, prixActuel);
   }
   cagrInput.addEventListener('input', update);
   multInput.addEventListener('input', update);
@@ -6524,11 +6623,12 @@ function wireScenarioCard(s, hist, fcfActuel, prixActuel){
     });
   }
 
-  updateScenarioCard(s, hist, fcfActuel, prixActuel);
+  updateScenarioCard(s, hist, prixActuel);
 }
 
-function updateScenarioCard(s, hist, fcfActuel, prixActuel){
+function updateScenarioCard(s, hist, prixActuel){
   const { cagr, multiple, rachat } = scenarioValues[s.key];
+  const fcfActuel = activeFcfActuel;
   document.getElementById('vo-' + s.key + '-cagrVal').textContent = cagr.toLocaleString('fr-FR', {minimumFractionDigits:1}) + '%';
   document.getElementById('vo-' + s.key + '-multVal').textContent = multiple.toLocaleString('fr-FR', {minimumFractionDigits:1}) + 'x';
   document.getElementById('vo-' + s.key + '-rachatVal').textContent = (rachat >= 0 ? '+' : '') + rachat.toLocaleString('fr-FR', {minimumFractionDigits:1}) + '%';
@@ -6736,8 +6836,7 @@ function applyObjectif(nom, idx){
   });
   const hist = companies[nom];
   const latest = hist[hist.length - 1];
-  const { fcfActuel } = valorisationInputs(latest, hist);
-  SCENARIOS.forEach(s => updateScenarioCard(s, hist, fcfActuel, latest.prixActuel));
+  SCENARIOS.forEach(s => updateScenarioCard(s, hist, latest.prixActuel));
 }
 
 // Connecte l'onglet Analyse à l'onglet Valorisation : affiche un résumé compact du

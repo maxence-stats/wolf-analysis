@@ -306,8 +306,9 @@
 
     <div id="pageValorisation" class="page">
       <div class="section-label" id="valorisationSectionLabel">Simulations scénarisées</div>
-      <p class="valo-intro">Le Free Cash Flow (ou l'Operating Cash Flow, au choix) est fixé selon les derniers
-        résultats. Ajuste la croissance et le multiple de chaque scénario — Prix Juste = Métrique × Médiane.</p>
+      <p class="valo-intro">Le FCF (ou l'OCF/l'EPS selon le mode choisi) est rempli automatiquement depuis les
+        derniers résultats, mais reste modifiable directement dans la tuile ci-dessous (↺ pour revenir à la valeur
+        automatique). Ajuste aussi la croissance et le multiple de chaque scénario — Prix Juste = Métrique × Médiane.</p>
 
       <div class="range-buttons" id="valoMetricToggle" style="margin-bottom:16px;">
         <button class="active" data-metric="fcf" onclick="setValorisationMetric('fcf')">Valoriser avec le FCF</button>
@@ -318,7 +319,7 @@
 
       <div class="ratio-grid valo-summary">
         <div class="ratio-card"><div class="k">Prix actuel</div><div class="v" id="voPrixActuel">—</div><div class="sub">cours au dernier exercice</div></div>
-        <div class="ratio-card"><div class="k" id="voFcfLabel">FCF actuel</div><div class="v" id="voFcfActuel">—</div><div class="sub">dernier exercice, par action</div></div>
+        <div class="ratio-card"><div class="k" id="voFcfLabel">FCF actuel</div><div class="ratio-card-editable"><input type="number" step="0.01" class="ratio-card-input" id="voFcfActuelInput" placeholder="—"><button class="ratio-card-reset" id="voFcfActuelReset" title="Revenir à la valeur automatique" aria-label="Revenir à la valeur automatique">↺</button></div><div class="sub">dernier exercice, par action — modifiable</div></div>
         <div class="ratio-card"><div class="k" id="voCagrLabel">CAGR (historique)</div><div class="v" id="voCagrHist">—</div><div class="sub">croissance sur 10 ans</div></div>
         <div class="ratio-card"><div class="k" id="voMedianeLabel">Médiane (historique)</div><div class="v" id="voMedianeHist">—</div><div class="sub">multiple médian sur 10 ans</div></div>
         <div class="ratio-card"><div class="k" id="voMediane20Label">Médiane (20 ans)</div><div class="v" id="voMediane20">—</div><div class="sub">multiple médian sur 20 ans</div></div>
