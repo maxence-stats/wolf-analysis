@@ -6394,6 +6394,10 @@ function scenarioCardHtml(s){
       </div>
       <div class="scenario-row fixe">
         <div class="scenario-row-head"><span>${vl.fixed} Actuel</span><span class="val" id="vo-${s.key}-fcf">—</span></div>
+        <div class="scenario-fcf-edit-row">
+          <input type="number" class="scenario-number" id="vo-${s.key}-fcf-input" step="0.01">
+          <button type="button" class="scenario-fcf-reset" id="vo-${s.key}-fcf-reset" title="Revenir à la valeur automatique" aria-label="Revenir à la valeur automatique">↺</button>
+        </div>
       </div>
       <div class="scenario-row">
         <div class="scenario-row-head"><span>CAGR ${vl.growth} Prévu (%)</span><span class="val" id="vo-${s.key}-cagrVal">—</span></div>
@@ -6499,7 +6503,6 @@ function renderValorisation(nom){
 
   document.getElementById('voPrixActuel').textContent = prixActuel != null ? fmtEUR(prixActuel) : 'N/D';
   document.getElementById('voFcfLabel').textContent = vl.fixed + ' actuel';
-  wireFcfActuelInput(nom, hist, prixActuel, fcfActuelAuto);
   // Libellés dynamiques FCF/OCF sur les tuiles CAGR et médiane — sans ça, rien ne
   // distinguait "CAGR (historique)" d'un CAGR FCF ou OCF une fois la valorisation
   // enregistrée/rechargée, source de doute signalée explicitement par l'utilisateur.
@@ -6529,67 +6532,82 @@ function renderValorisation(nom){
   });
 
   SCENARIOS.forEach(s => wireScenarioCard(s, hist, prixActuel));
+  wireFcfActuelControls(nom, hist, prixActuel, fcfActuelAuto);
 
   renderObjectifsHistory(nom);
 }
 
-// Tuile "FCF/OCF/EPS actuel" éditable (voir index.html #voFcfActuelInput/#voFcfActuelReset)
-// — rempli automatiquement (fcfActuelAuto) mais modifiable librement ; la valeur saisie
-// est stockée par entreprise+métrique dans valorisationFcfOverrides et réappliquée aux 3
-// cartes de scénario sans toucher aux sliders CAGR/multiple/rachat déjà réglés. L'élément
-// est cloné à chaque rendu pour repartir sans les listeners de l'entreprise précédente
-// (fermés sur un nom/historique périmés sinon).
-function wireFcfActuelInput(nom, hist, prixActuel, fcfActuelAuto){
-  let input = document.getElementById('voFcfActuelInput');
-  let resetBtn = document.getElementById('voFcfActuelReset');
-  if (!input) return;
-  const freshInput = input.cloneNode(true);
-  input.parentNode.replaceChild(freshInput, input);
-  input = freshInput;
-  if (resetBtn){
-    const freshReset = resetBtn.cloneNode(true);
-    resetBtn.parentNode.replaceChild(freshReset, resetBtn);
-    resetBtn = freshReset;
-  }
-
-  const isOverridden = valorisationFcfOverrides[nom] && valorisationFcfOverrides[nom][valorisationMetric] != null;
-  input.value = activeFcfActuel != null ? +activeFcfActuel.toFixed(4) : '';
-  input.classList.toggle('overridden', !!isOverridden);
-  if (resetBtn) resetBtn.classList.toggle('visible', !!isOverridden);
-
-  function applyValue(newVal){
-    if (!valorisationFcfOverrides[nom]) valorisationFcfOverrides[nom] = {};
-    if (newVal == null || isNaN(newVal)){
-      delete valorisationFcfOverrides[nom][valorisationMetric];
-      activeFcfActuel = fcfActuelAuto;
-    } else {
-      valorisationFcfOverrides[nom][valorisationMetric] = newVal;
-      activeFcfActuel = newVal;
+// FCF/OCF/EPS "actuel" éditable À LA FOIS depuis la tuile résumé du haut
+// (#voFcfActuelInput) ET directement dans chaque carte de scénario (#vo-{key}-fcf-input,
+// juste sous "FCF Actuel" — c'est là que l'utilisateur regarde en pratique, retour
+// explicite : "dans les scénarios, il y a marqué FCF actuel... il faut que j'aie la
+// possibilité de le changer"). Un seul et même montant pour les 3 scénarios (comme avant,
+// seuls CAGR/multiple/rachat diffèrent), donc modifier N'IMPORTE LEQUEL des 4 champs
+// (tuile + 3 cartes) met à jour tous les autres. Stocké par entreprise+métrique dans
+// valorisationFcfOverrides (localStorage) ; les éléments sont clonés à chaque rendu pour
+// repartir sans les listeners de l'entreprise précédente (fermés sur un nom périmé sinon).
+function fcfActuelEditableIds(){
+  return [{ input:'voFcfActuelInput', reset:'voFcfActuelReset' }]
+    .concat(SCENARIOS.map(s => ({ input:'vo-' + s.key + '-fcf-input', reset:'vo-' + s.key + '-fcf-reset' })));
+}
+function syncFcfActuelDisplays(nom){
+  const overridden = !!(valorisationFcfOverrides[nom] && valorisationFcfOverrides[nom][valorisationMetric] != null);
+  const displayVal = activeFcfActuel != null ? +activeFcfActuel.toFixed(4) : '';
+  fcfActuelEditableIds().forEach(({ input: inputId, reset: resetId }) => {
+    const input = document.getElementById(inputId);
+    const reset = document.getElementById(resetId);
+    if (input){
+      if (document.activeElement !== input) input.value = displayVal;
+      input.classList.toggle('overridden', overridden);
     }
-    persistValoFcfOverrides();
-    const overridden = valorisationFcfOverrides[nom][valorisationMetric] != null;
-    input.classList.toggle('overridden', overridden);
-    if (resetBtn) resetBtn.classList.toggle('visible', overridden);
-    SCENARIOS.forEach(s => {
-      const fcfEl = document.getElementById('vo-' + s.key + '-fcf');
-      if (fcfEl) fcfEl.textContent = activeFcfActuel != null ? fmtEUR(activeFcfActuel) : 'N/D';
-      updateScenarioCard(s, hist, prixActuel);
-    });
+    if (reset) reset.classList.toggle('visible', overridden);
+  });
+  SCENARIOS.forEach(s => {
+    const fcfEl = document.getElementById('vo-' + s.key + '-fcf');
+    if (fcfEl){
+      fcfEl.textContent = activeFcfActuel != null ? fmtEUR(activeFcfActuel) : 'N/D';
+      fcfEl.classList.toggle('overridden', overridden);
+    }
+  });
+}
+function applyFcfOverride(nom, hist, prixActuel, fcfActuelAuto, newVal){
+  if (!valorisationFcfOverrides[nom]) valorisationFcfOverrides[nom] = {};
+  if (newVal == null || isNaN(newVal)){
+    delete valorisationFcfOverrides[nom][valorisationMetric];
+    activeFcfActuel = fcfActuelAuto;
+  } else {
+    valorisationFcfOverrides[nom][valorisationMetric] = newVal;
+    activeFcfActuel = newVal;
   }
-  input.addEventListener('change', () => applyValue(parseFloat(input.value)));
-  if (resetBtn){
-    resetBtn.addEventListener('click', () => {
-      input.value = fcfActuelAuto != null ? +fcfActuelAuto.toFixed(4) : '';
-      applyValue(null);
-    });
-  }
+  persistValoFcfOverrides();
+  syncFcfActuelDisplays(nom);
+  SCENARIOS.forEach(s => updateScenarioCard(s, hist, prixActuel));
+}
+function wireFcfActuelControls(nom, hist, prixActuel, fcfActuelAuto){
+  fcfActuelEditableIds().forEach(({ input: inputId, reset: resetId }) => {
+    let input = document.getElementById(inputId);
+    let reset = document.getElementById(resetId);
+    if (!input) return;
+    const freshInput = input.cloneNode(true);
+    input.parentNode.replaceChild(freshInput, input);
+    input = freshInput;
+    if (reset){
+      const freshReset = reset.cloneNode(true);
+      reset.parentNode.replaceChild(freshReset, reset);
+      reset = freshReset;
+    }
+    input.addEventListener('change', () => applyFcfOverride(nom, hist, prixActuel, fcfActuelAuto, parseFloat(input.value)));
+    if (reset){
+      reset.addEventListener('click', () => applyFcfOverride(nom, hist, prixActuel, fcfActuelAuto, null));
+    }
+  });
+  syncFcfActuelDisplays(nom);
 }
 
 function wireScenarioCard(s, hist, prixActuel){
   const cagrInput = document.getElementById('vo-' + s.key + '-cagr');
   const multInput = document.getElementById('vo-' + s.key + '-mult');
   const rachatInput = document.getElementById('vo-' + s.key + '-rachat');
-  document.getElementById('vo-' + s.key + '-fcf').textContent = activeFcfActuel != null ? fmtEUR(activeFcfActuel) : 'N/D';
 
   cagrInput.value = scenarioValues[s.key].cagr;
   multInput.value = scenarioValues[s.key].multiple;
@@ -6629,6 +6647,8 @@ function wireScenarioCard(s, hist, prixActuel){
 function updateScenarioCard(s, hist, prixActuel){
   const { cagr, multiple, rachat } = scenarioValues[s.key];
   const fcfActuel = activeFcfActuel;
+  const fcfEl = document.getElementById('vo-' + s.key + '-fcf');
+  if (fcfEl) fcfEl.textContent = fcfActuel != null ? fmtEUR(fcfActuel) : 'N/D';
   document.getElementById('vo-' + s.key + '-cagrVal').textContent = cagr.toLocaleString('fr-FR', {minimumFractionDigits:1}) + '%';
   document.getElementById('vo-' + s.key + '-multVal').textContent = multiple.toLocaleString('fr-FR', {minimumFractionDigits:1}) + 'x';
   document.getElementById('vo-' + s.key + '-rachatVal').textContent = (rachat >= 0 ? '+' : '') + rachat.toLocaleString('fr-FR', {minimumFractionDigits:1}) + '%';

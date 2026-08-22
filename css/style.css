@@ -168,7 +168,12 @@
   .scenario-row{margin-bottom:16px;}
   .scenario-row-head{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--text-dim);margin-bottom:6px;}
   .scenario-row-head .val{font-family:var(--font-mono);font-weight:700;color:var(--text);font-size:13px;}
-  .scenario-row.fixe .scenario-row-head .val{color:var(--text-dim);font-weight:600;}
+  .scenario-row-head .val.overridden{color:var(--gold);}
+  .scenario-fcf-edit-row{display:flex;align-items:center;gap:6px;}
+  .scenario-fcf-edit-row .scenario-number{flex:1;}
+  .scenario-fcf-reset{display:none;flex-shrink:0;background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:15px;padding:4px;line-height:1;}
+  .scenario-fcf-reset.visible{display:inline-block;}
+  .scenario-fcf-reset:hover{color:var(--gold);}
 
   input[type=number].scenario-number{
     width:100%;background:var(--panel);border:1px solid var(--hair);border-radius:8px;
