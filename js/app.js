@@ -5193,6 +5193,15 @@ async function fetchWithRetry(targetUrl, opts, timeoutMs){
 const FRED_API_KEY = '7e3e0398804ecc27ffb313bcbf29fc27';
 const CREDIT_LS_KEY = 'wolfAnalysisCreditIndicators';
 const CREDIT_CACHE_MS = 24 * 60 * 60 * 1000;
+// Incrémenter à CHAQUE fois que la forme de CREDIT_SERIES change (nouvel indicateur,
+// clé renommée...) — bug réel constaté chez l'utilisateur : sans version, un cache
+// localStorage écrit par une version antérieure du code (avant l'ajout de Baa−Aaa/
+// Corporate Profits/Buffett Indicator) restait valide 24h et court-circuitait le fetch,
+// affichant des cartes vides sans le moindre message d'erreur — et un simple Ctrl+F5 ne
+// vide PAS localStorage (seulement le cache HTTP des fichiers), donc le symptôme
+// persistait indéfiniment malgré les rechargements. Toute incompatibilité de version
+// invalide immédiatement le cache, quel que soit son âge.
+const CREDIT_CACHE_VERSION = 2;
 // Date sentinelle très ancienne (aucune de ces séries ne remonte avant 1900) plutôt
 // qu'une date fixe arbitraire : FRED renvoie alors TOUT l'historique réellement
 // disponible pour chaque série (1947 pour BUSLOANS, 1985 pour CORBLACBS/DRALACBS, 1986
@@ -5387,7 +5396,7 @@ async function loadCreditIndicators(){
     const raw = localStorage.getItem(CREDIT_LS_KEY);
     if (raw){
       const cached = JSON.parse(raw);
-      if (cached && cached.ts && (Date.now() - cached.ts) < CREDIT_CACHE_MS && cached.data){
+      if (cached && cached.version === CREDIT_CACHE_VERSION && cached.ts && (Date.now() - cached.ts) < CREDIT_CACHE_MS && cached.data){
         creditIndicatorsData = cached.data;
         renderCreditTable();
         renderCreditChartsGrid();
@@ -5426,7 +5435,7 @@ async function loadCreditIndicators(){
   data.baaAaa = deriveDiffSeries(data.baa10y, data.aaa10y);
   data.buffettIndicator = deriveRatioPctSeries(data.mktCapRaw, data.gdpRaw, 1000);
   creditIndicatorsData = data;
-  try{ localStorage.setItem(CREDIT_LS_KEY, JSON.stringify({ ts: Date.now(), data })); }catch(e){ /* quota / navigateur privé */ }
+  try{ localStorage.setItem(CREDIT_LS_KEY, JSON.stringify({ ts: Date.now(), version: CREDIT_CACHE_VERSION, data })); }catch(e){ /* quota / navigateur privé */ }
 
   if (errors.length){
     const names = errors.map(e => e.s.shortLabel || e.s.key).join(', ');
@@ -5440,6 +5449,18 @@ async function loadCreditIndicators(){
   renderCreditOverlayChart();
 }
 
+// Relance manuelle, vide le cache local d'abord — bouton toujours visible (pas seulement
+// affiché après un échec) pour ne jamais dépendre uniquement de l'expiration naturelle
+// du cache (24h) ou d'un changement de CREDIT_CACHE_VERSION : l'utilisateur peut se
+// sortir lui-même d'un état bloqué à tout moment, sans attendre.
+function forceReloadCreditIndicators(){
+  try{ localStorage.removeItem(CREDIT_LS_KEY); }catch(e){ /* ignore */ }
+  loadCreditIndicators();
+}
+document.addEventListener('click', e => {
+  if (e.target.closest('[data-credit-reload]')) forceReloadCreditIndicators();
+});
+
 // errors : [{s, message}] — affiche PRÉCISÉMENT quelle série a échoué et pourquoi,
 // demande explicite de l'utilisateur ("que ça m'affiche le pourquoi ça ne fonctionne
 // pas") plutôt qu'un message générique qui ne dit rien de plus qu'"une erreur".
@@ -5447,8 +5468,9 @@ function renderCreditError(errors){
   const detail = (errors || []).map(e => `${escapeHtml(e.s.shortLabel || e.s.key)} : ${escapeHtml(e.message)}`).join('<br>');
   const box = document.getElementById('creditIndicatorsTable');
   if (box) box.innerHTML = `<p class="macro-fund-note">Impossible de récupérer les indicateurs crédit depuis l'API FRED pour le
-    moment — le reste du site n'est pas affecté. Nouvelle tentative au prochain chargement de la page.
-    ${detail ? '<br><br><b>Détail des échecs :</b><br>' + detail : ''}</p>`;
+    moment — le reste du site n'est pas affecté.
+    ${detail ? '<br><br><b>Détail des échecs :</b><br>' + detail : ''}
+    <br><br><button type="button" class="macro-fund-retry" data-credit-reload="1">↻ Recharger les indicateurs</button></p>`;
   const grid = document.getElementById('creditChartsGrid');
   if (grid) grid.innerHTML = '';
   const status = document.getElementById('creditOverlayStatus');
@@ -5589,15 +5611,25 @@ function creditChartStatsRowHtml(key){
   </div>`;
 }
 
+// N'affiche JAMAIS un canvas vide sans explication — bug réel constaté chez
+// l'utilisateur (cartes visibles, graphiques strictement vides, aucun message) : soit un
+// cache localStorage périmé (voir CREDIT_CACHE_VERSION), soit un échec de fetch pour
+// cette série précise. Dans les deux cas, un message clair + un bouton pour relancer
+// vaut mieux qu'un silence qui ressemble à un site cassé.
 function renderCreditIndicatorChart(key){
   const canvas = document.getElementById('creditChart-' + key);
   if (!canvas) return;
+  const holder = canvas.closest('.chart-holder');
   const range = creditIndicatorRanges[key] || '10';
   if (creditIndicatorCharts[key]){ creditIndicatorCharts[key].destroy(); delete creditIndicatorCharts[key]; }
   const config = buildCreditIndicatorChartConfig(key, range);
-  if (!config) return;
-  creditIndicatorCharts[key] = new Chart(canvas.getContext('2d'), config);
   const statsBox = document.getElementById('creditStats-' + key);
+  if (!config){
+    if (holder) holder.innerHTML = `<canvas id="creditChart-${key}"></canvas><p class="chart-hint credit-chart-empty">Donnée indisponible pour le moment — échec du dernier chargement FRED pour cet indicateur, ou cache local périmé. <button type="button" class="macro-fund-retry" data-credit-reload="1">↻ Recharger les indicateurs</button></p>`;
+    if (statsBox) statsBox.innerHTML = '';
+    return;
+  }
+  creditIndicatorCharts[key] = new Chart(canvas.getContext('2d'), config);
   if (statsBox) statsBox.innerHTML = creditChartStatsRowHtml(key);
 }
 
