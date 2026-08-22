@@ -1520,7 +1520,7 @@ function renderMacroPowerTable(){
 // donc `window['macroCycleChart']` serait toujours undefined ; un getter lit la
 // valeur actuelle de la variable à chaque appel, y compris après un destroy+recreate.
 const MACRO_CHART_GETTERS = {
-  credit: () => creditChart,
+  credit: () => creditOverlayChart,
   cycle: () => macroCycleChart,
   rotation: () => macroRotationChart,
   weight: () => macroWeightChart,
@@ -2508,7 +2508,7 @@ async function exportMacroTableAsImage(boxId, title, format){
 // Export global demandé par l'utilisateur : les 4 graphiques + les 2 tableaux de
 // l'onglet Macroéconomie dans un seul document PDF, plutôt que 6 exports séparés.
 const MACRO_EXPORT_ALL_CHARTS = [
-  ['credit', 'Crédit — HY Spread (High Yield OAS)'],
+  ['credit', 'Crédit — Superposition'],
   ['cycle', 'Cycle de Marché — Offensif vs Défensif'],
   ['rotation', 'Rotation Sectorielle GICS vs S&P 500'],
   ['weight', 'Poids relatif des secteurs'],
@@ -5152,10 +5152,11 @@ async function fetchWithRetry(targetUrl, opts, timeoutMs){
 }
 
 /* ============================================================
-   ONGLET MACRO — INDICATEURS CRÉDIT (nouveau, demande explicite de l'utilisateur) :
-   HY Spread, taux de défaut corporate (proxy), délinquance, croissance du crédit,
-   Debt Service Ratio des ménages. Chaîne demandée : prix du risque → remboursement →
-   création de crédit → capacité à supporter la dette.
+   ONGLET MACRO — INDICATEURS CRÉDIT (demande explicite de l'utilisateur) : HY Spread,
+   Baa10Y et Baa−Aaa (prix du risque), Corporate Charge-off Rate et Delinquency Rate
+   (défauts/pertes), Credit Growth (création de crédit), Debt Service Ratio des ménages
+   (endettement). Chaîne : prix du risque → défauts/pertes → remboursement → création
+   de crédit → endettement des ménages.
 
    Choix technique fait AVEC l'utilisateur après lui avoir signalé le risque : l'onglet
    Macro avait déjà abandonné le fetch direct FRED une fois (voir DASHBOARD CYCLE
@@ -5167,27 +5168,56 @@ async function fetchWithRetry(targetUrl, opts, timeoutMs){
    ailleurs), cache localStorage 24h pour ne pas dépendre d'un fetch réussi à CHAQUE
    visite, et un échec qui n'affecte JAMAIS le reste du site (le bloc Crédit affiche
    juste un message d'erreur local, tout le reste de l'app continue de fonctionner).
+
+   HY Spread (ICE BofA, BAML*) : vérifié DIRECTEMENT dans les métadonnées de 3 séries
+   ICE différentes que la restriction "3 ans d'historique depuis avril 2026" est une
+   restriction de LICENCE globale à toute la famille ICE Data Indices sur FRED, pas un
+   cas isolé — décision explicite avec l'utilisateur de ne pas la contourner. En
+   remplacement pour un historique long, ajout de Baa10Y et Baa−Aaa (Moody's, hébergées
+   directement par FRED — PAS de licence ICE, donc pas concernées) : Baa10Y remonte à
+   1986, sans restriction. Baa−Aaa est calculé côté client comme Baa10Y − Aaa10Y (deux
+   séries déjà exprimées en écart vs Trésor 10 ans, donc leur différence élimine le
+   Trésor et isole directement l'écart Baa/Aaa) — évite de fetcher les rendements bruts
+   DBAA/DAAA en plus, aaa10y n'est fetché que pour ce calcul, jamais affiché seul
+   (voir `hidden:true`).
    ============================================================ */
 const FRED_API_KEY = '7e3e0398804ecc27ffb313bcbf29fc27';
 const CREDIT_LS_KEY = 'wolfAnalysisCreditIndicators';
 const CREDIT_CACHE_MS = 24 * 60 * 60 * 1000;
-const CREDIT_START_DATE = '2005-01-01'; // ~20 ans, cohérent avec le reste du site
+// Date sentinelle très ancienne (aucune de ces séries ne remonte avant 1900) plutôt
+// qu'une date fixe arbitraire : FRED renvoie alors TOUT l'historique réellement
+// disponible pour chaque série (1947 pour BUSLOANS, 1985 pour CORBLACBS/DRALACBS, 1986
+// pour Baa10Y/Aaa10Y...) — demande explicite : "utiliser tout l'historique disponible"
+// pour Max, plutôt que de plafonner arbitrairement à ~20 ans comme le reste du site.
+const CREDIT_START_DATE = '1900-01-01';
 const CREDIT_SERIES = [
-  { key:'hySpread', label:'HY Spread (High Yield OAS)', seriesId:'BAMLH0A0HYM2', suffix:' pts', decimals:2,
-    note:"Écart de rendement entre obligations High Yield et Trésor US (ICE BofA) — prix du risque de crédit demandé par le marché." },
-  { key:'defaultProxy', label:'Taux de défaut corporate (proxy)', seriesId:'CORBLACBS', suffix:' %', decimals:2,
-    note:"Aucune série FRED gratuite ne donne le vrai taux de défaut (Moody's/S&P, payant) — proxy retenu : taux de charge-off sur prêts aux entreprises (Fed), dette effectivement passée en perte." },
-  { key:'delinquency', label:'Taux de délinquance (tous prêts bancaires)', seriesId:'DRALACBS', suffix:' %', decimals:2,
-    note:'Part des prêts bancaires dont les paiements sont en retard (Federal Reserve).' },
-  { key:'creditGrowth', label:'Croissance du crédit aux entreprises (glissement annuel)', seriesId:'BUSLOANS', suffix:' %', decimals:1, deriveYoY:true,
-    note:"Variation sur 1 an de l'encours de prêts aux entreprises (Fed) — accélère/ralentit/se contracte." },
-  { key:'dsr', label:'Debt Service Ratio des ménages', seriesId:'TDSP', suffix:' %', decimals:2,
-    note:'Part du revenu disponible des ménages consacrée au remboursement de leur dette (Fed).' }
+  { key:'hySpread', label:'HY Spread (High Yield OAS)', shortLabel:'HY Spread', seriesId:'BAMLH0A0HYM2', suffix:' pts', decimals:2, color:THEME.red,
+    note:"Écart de rendement entre obligations High Yield (junk, notation BB et en-dessous) et Trésor US (ICE BofA) — prix du risque de crédit demandé par le marché. Historique limité à ~3 ans (restriction de licence ICE Data Indices depuis avril 2026, vérifiée sur plusieurs séries ICE — pas une limite du site, non contournable gratuitement)." },
+  { key:'baa10y', label:'Spread Baa 10Y (Moody\'s Baa vs Trésor US 10 ans)', shortLabel:'Baa10Y', seriesId:'BAA10Y', suffix:' pts', decimals:2, color:THEME.gold,
+    note:"Écart entre le rendement des obligations corporate notées Baa (dernier échelon investment grade, Moody's) et le Trésor US 10 ans — référence longue durée (1986+) pour le prix du risque de crédit corporate, non soumise à la restriction ICE." },
+  // AAA10Y remonte à 1983 (3 ans de plus que BAA10Y, 1986) — inutile pour le calcul de
+  // baaAaa (qui n'existe de toute façon qu'à partir de la 1re date commune aux deux),
+  // et ces 3 années supplémentaires suffisaient à faire dépasser le payload JSON un
+  // seuil de taille du relais CORS gratuit (~1 Mo, confirmé en test direct : AAA10Y
+  // depuis 1900 pèse 1,08 Mo et échoue en HTTP 413 sur corsproxy.io, alors que depuis
+  // 1986 il pèse 1,01 Mo — comme BAA10Y, qui lui passe). startDate dédié pour rester
+  // sous ce seuil, sans aucune perte de donnée réellement utilisée.
+  { key:'aaa10y', seriesId:'AAA10Y', startDate:'1986-01-01', hidden:true }, // jamais affichée seule — sert uniquement au calcul de baaAaa ci-dessous
+  { key:'baaAaa', label:'Spread Baa − Aaa (prime de risque entre notations)', shortLabel:'Baa−Aaa', suffix:' pts', decimals:2, color:THEME.violet,
+    note:"Écart entre obligations Baa et Aaa (Moody's/FRED) — isole la prime de risque ENTRE catégories de notation, indépendamment du niveau des taux du Trésor. Calculé côté client (Baa10Y − Aaa10Y), même historique que Baa10Y." },
+  { key:'defaultProxy', label:'Corporate Charge-off Rate (taux de pertes sur prêts aux entreprises)', shortLabel:'Charge-off', seriesId:'CORBLACBS', suffix:' %', decimals:2, color:THEME.red,
+    note:"Aucune série FRED gratuite ne donne le vrai taux de défaut (Moody's/S&P, payant) — proxy retenu : taux de charge-off sur prêts aux entreprises, dette effectivement passée en perte par les banques commerciales (Federal Reserve, série CORBLACBS)." },
+  { key:'delinquency', label:'Delinquency Rate (taux de délinquance, tous prêts bancaires)', shortLabel:'Délinquance', seriesId:'DRALACBS', suffix:' %', decimals:2, color:THEME.blue,
+    note:'Part des prêts détenus par les banques commerciales dont les paiements sont en retard d\'au moins 30 jours (Federal Reserve, série DRALACBS, tous types de prêts confondus).' },
+  { key:'creditGrowth', label:'Credit Growth (croissance du crédit aux entreprises, glissement annuel)', shortLabel:'Croissance crédit', seriesId:'BUSLOANS', suffix:' %', decimals:1, deriveYoY:true, color:THEME.green,
+    note:"Variation sur 1 an de l'encours de prêts commerciaux et industriels (C&I) aux entreprises (Federal Reserve, série BUSLOANS) — accélère/ralentit/se contracte." },
+  { key:'dsr', label:'Debt Service Ratio des ménages', shortLabel:'DSR ménages', seriesId:'TDSP', suffix:' %', decimals:2, color:THEME.gold,
+    note:'Part du revenu disponible des ménages consacrée au remboursement de leur dette (Federal Reserve, série TDSP).' }
 ];
 let creditIndicatorsData = {}; // key -> { dates:[...], values:[...] }
 
-async function fetchFredSeries(seriesId){
-  const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&api_key=${FRED_API_KEY}&file_type=json&observation_start=${CREDIT_START_DATE}`;
+async function fetchFredSeries(seriesId, startDate){
+  const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&api_key=${FRED_API_KEY}&file_type=json&observation_start=${startDate || CREDIT_START_DATE}`;
   const res = await fetchWithRetry(url, { cache:'no-store' }, 15000);
   const json = await res.json();
   if (!json || !Array.isArray(json.observations)) throw new Error('réponse FRED invalide pour ' + seriesId);
@@ -5197,6 +5227,22 @@ async function fetchFredSeries(seriesId){
     if (isNaN(v)) return;
     dates.push(o.date);
     values.push(v);
+  });
+  return { dates, values };
+}
+
+// Différence de deux séries appariées PAR DATE (pas par index — Baa10Y/Aaa10Y sont
+// toutes les deux quotidiennes chez Moody's mais rien ne garantit un calendrier de
+// publication strictement identique jour pour jour). Utilisé pour dériver Baa−Aaa.
+function deriveDiffSeries(base, sub){
+  if (!base || !sub) return null;
+  const subByDate = {};
+  sub.dates.forEach((d, i) => { subByDate[d] = sub.values[i]; });
+  const dates = [], values = [];
+  base.dates.forEach((d, i) => {
+    if (subByDate[d] == null) return;
+    dates.push(d);
+    values.push(base.values[i] - subByDate[d]);
   });
   return { dates, values };
 }
@@ -5233,6 +5279,10 @@ function deriveYoYSeries(dates, values){
   return { dates: outDates, values: outValues };
 }
 
+function creditVisibleSeries(){
+  return CREDIT_SERIES.filter(s => !s.hidden);
+}
+
 async function loadCreditIndicators(){
   try{
     const raw = localStorage.getItem(CREDIT_LS_KEY);
@@ -5241,24 +5291,61 @@ async function loadCreditIndicators(){
       if (cached && cached.ts && (Date.now() - cached.ts) < CREDIT_CACHE_MS && cached.data){
         creditIndicatorsData = cached.data;
         renderCreditTable();
-        renderCreditChart();
+        renderCreditChartsGrid();
+        renderCreditOverlayToggles();
+        renderCreditOverlayChart();
         return;
       }
     }
   }catch(e){ /* cache indisponible/corrompu — on retente un fetch */ }
 
-  try{
-    const results = await Promise.all(CREDIT_SERIES.map(s => fetchFredSeries(s.seriesId)));
-    const data = {};
-    CREDIT_SERIES.forEach((s, i) => { data[s.key] = s.deriveYoY ? deriveYoYSeries(results[i].dates, results[i].values) : results[i]; });
-    creditIndicatorsData = data;
-    try{ localStorage.setItem(CREDIT_LS_KEY, JSON.stringify({ ts: Date.now(), data })); }catch(e){ /* quota / navigateur privé */ }
-    renderCreditTable();
-    renderCreditChart();
-  }catch(e){
-    console.error('Erreur de chargement des indicateurs crédit (FRED) :', e);
-    renderCreditError();
+  // Séquentiel (pas Promise.all) : 8 requêtes lancées en même temps à travers les 2
+  // mêmes relais CORS publics et gratuits (déjà documentés comme instables isolément,
+  // voir corsProxyUrls) ont provoqué des rejets HTTP 413 en test réel, probablement liés
+  // à la charge concurrente sur le proxy plutôt qu'à la taille réelle d'une réponse
+  // individuelle — un fetch à la fois est plus lent (jusqu'à ~30-40s dans le pire cas,
+  // en tâche de fond, mis en cache 24h ensuite) mais nettement plus fiable. Chaque série
+  // est aussi indépendamment tolérante à l'échec : si UNE série échoue, les autres
+  // s'affichent quand même plutôt que de tout bloquer.
+  const data = {};
+  let anySuccess = false;
+  const fetchable = CREDIT_SERIES.filter(s => s.seriesId);
+  const failed = [];
+  for (const s of fetchable){
+    try{
+      const r = await fetchFredSeries(s.seriesId, s.startDate);
+      data[s.key] = s.deriveYoY ? deriveYoYSeries(r.dates, r.values) : r;
+      anySuccess = true;
+    }catch(e){
+      console.error('Erreur de chargement FRED pour ' + s.seriesId + ' :', e);
+      failed.push(s);
+    }
   }
+  // 2e passe pour les séries en échec après la 1re — les grosses séries quotidiennes
+  // (~1 Mo, Baa10Y/Aaa10Y) sont proches du seuil de taille toléré par le relais CORS
+  // gratuit et échouent parfois de façon purement intermittente (constaté en test :
+  // pas systématiquement la même série qui échoue d'un chargement à l'autre) — une
+  // 2e tentative, une fois les autres séries déjà passées, suffit souvent à récupérer.
+  for (const s of failed){
+    try{
+      const r = await fetchFredSeries(s.seriesId, s.startDate);
+      data[s.key] = s.deriveYoY ? deriveYoYSeries(r.dates, r.values) : r;
+      anySuccess = true;
+    }catch(e){
+      console.error('Erreur de chargement FRED pour ' + s.seriesId + ' (2e tentative) :', e);
+    }
+  }
+  if (!anySuccess){
+    renderCreditError();
+    return;
+  }
+  data.baaAaa = deriveDiffSeries(data.baa10y, data.aaa10y);
+  creditIndicatorsData = data;
+  try{ localStorage.setItem(CREDIT_LS_KEY, JSON.stringify({ ts: Date.now(), data })); }catch(e){ /* quota / navigateur privé */ }
+  renderCreditTable();
+  renderCreditChartsGrid();
+  renderCreditOverlayToggles();
+  renderCreditOverlayChart();
 }
 
 function renderCreditError(){
@@ -5266,8 +5353,34 @@ function renderCreditError(){
   if (box) box.innerHTML = `<p class="macro-fund-note">Impossible de récupérer les indicateurs crédit depuis l'API FRED pour le
     moment (relais réseau instable ou API indisponible) — le reste du site n'est pas affecté. Nouvelle tentative au
     prochain chargement de la page.</p>`;
-  const status = document.getElementById('creditChartStatus');
+  const grid = document.getElementById('creditChartsGrid');
+  if (grid) grid.innerHTML = '';
+  const status = document.getElementById('creditOverlayStatus');
   if (status){ status.textContent = 'Données indisponibles pour le moment.'; status.style.display = 'block'; }
+}
+
+// Stats partagées (valeur actuelle, Δ1m, Δ3m, date) — utilisées à la fois par le
+// tableau récapitulatif et par la ligne de stats sous chaque graphique individuel, pour
+// ne jamais avoir deux calculs qui pourraient diverger.
+function creditIndicatorStats(key){
+  const d = creditIndicatorsData[key];
+  if (!d || !d.dates.length) return null;
+  const current = d.values[d.values.length - 1];
+  const date = d.dates[d.dates.length - 1];
+  // Comparé à 1/3 mois AVANT la date de la dernière donnée (pas l'horloge murale
+  // d'aujourd'hui) : une série trimestrielle publiée avec retard afficherait sinon
+  // systématiquement un delta de 0 (la valeur "il y a 1 mois en horloge murale" serait
+  // souvent la même publication que "actuelle"), masquant le vrai mouvement trimestre
+  // sur trimestre. Comparer depuis la date de la donnée elle-même retrouve
+  // naturellement le trimestre précédent pour Δ3m.
+  const dateTime = new Date(date).getTime();
+  const v1m = fredValueAtOrBefore(d.dates, d.values, dateTime - 30 * 86400000);
+  const v3m = fredValueAtOrBefore(d.dates, d.values, dateTime - 91 * 86400000);
+  return {
+    current, date,
+    d1m: (current != null && v1m != null) ? current - v1m : null,
+    d3m: (current != null && v3m != null) ? current - v3m : null
+  };
 }
 
 function renderCreditTable(){
@@ -5275,82 +5388,232 @@ function renderCreditTable(){
   if (!box) return;
   const fmtVal = (v, dec, suffix) => v != null ? v.toLocaleString('fr-FR',{minimumFractionDigits:dec,maximumFractionDigits:dec}) + suffix : 'N/D';
   const fmtDelta = (v, dec, suffix) => v != null ? (v >= 0 ? '+' : '') + v.toLocaleString('fr-FR',{minimumFractionDigits:dec,maximumFractionDigits:dec}) + suffix : 'N/D';
-  const rows = CREDIT_SERIES.map(s => {
-    const d = creditIndicatorsData[s.key];
-    if (!d || !d.dates.length) return { s, current:null, date:null, d1m:null, d3m:null };
-    const current = d.values[d.values.length - 1];
-    const date = d.dates[d.dates.length - 1];
-    // Comparé à 1/3 mois AVANT la date de la dernière donnée (pas l'horloge murale
-    // d'aujourd'hui) : une série trimestrielle publiée avec retard afficherait sinon
-    // systématiquement un delta de 0 (la valeur "il y a 1 mois en horloge murale" serait
-    // souvent la même publication que "actuelle"), masquant le vrai mouvement trimestre
-    // sur trimestre. Comparer depuis la date de la donnée elle-même retrouve
-    // naturellement le trimestre précédent pour Δ3m.
-    const dateTime = new Date(date).getTime();
-    const v1m = fredValueAtOrBefore(d.dates, d.values, dateTime - 30 * 86400000);
-    const v3m = fredValueAtOrBefore(d.dates, d.values, dateTime - 91 * 86400000);
-    return {
-      s, current, date,
-      d1m: (current != null && v1m != null) ? current - v1m : null,
-      d3m: (current != null && v3m != null) ? current - v3m : null
-    };
-  });
+  const rows = creditVisibleSeries().map(s => ({ s, stats: creditIndicatorStats(s.key) }));
   box.innerHTML = `<div style="overflow-x:auto"><table class="macro-fund-table"><thead><tr>
       <th>Indicateur</th><th>Valeur actuelle</th><th>Δ 1 mois</th><th>Δ 3 mois</th><th>Dernière donnée</th>
-    </tr></thead><tbody>${rows.map(r => `<tr>
-      <td>${r.s.label}</td>
-      <td>${fmtVal(r.current, r.s.decimals, r.s.suffix)}</td>
-      <td>${fmtDelta(r.d1m, r.s.decimals, r.s.suffix)}</td>
-      <td>${fmtDelta(r.d3m, r.s.decimals, r.s.suffix)}</td>
-      <td>${r.date || '—'}</td>
+    </tr></thead><tbody>${rows.map(({ s, stats }) => `<tr>
+      <td>${s.label}</td>
+      <td>${fmtVal(stats && stats.current, s.decimals, s.suffix)}</td>
+      <td>${fmtDelta(stats && stats.d1m, s.decimals, s.suffix)}</td>
+      <td>${fmtDelta(stats && stats.d3m, s.decimals, s.suffix)}</td>
+      <td>${(stats && stats.date) || '—'}</td>
     </tr>`).join('')}</tbody></table></div>
-    <p class="macro-fund-note" style="margin-top:10px;">Source : API FRED (Federal Reserve), en direct. ${CREDIT_SERIES.map(s => s.label + ' : ' + s.note).join(' ')}</p>`;
+    <p class="macro-fund-note" style="margin-top:10px;">Source : API FRED (Federal Reserve), en direct. ${creditVisibleSeries().map(s => s.label + ' : ' + s.note).join(' ')}</p>`;
 }
 
-let creditChartRange = '3';
-function buildCreditChartConfig(range){
-  const d = creditIndicatorsData.hySpread;
-  if (!d || !d.dates.length) return null;
-  let startIdx = 0;
-  if (range !== 'max'){
-    const years = parseInt(range, 10);
-    const cutoff = new Date();
-    cutoff.setFullYear(cutoff.getFullYear() - years);
-    const found = d.dates.findIndex(dt => new Date(dt) >= cutoff);
-    startIdx = found === -1 ? 0 : found;
-  }
+/* ---- Graphiques individuels (1 par indicateur, 3A/10A/Max chacun) ------------------- */
+const CREDIT_RANGE_OPTIONS = [['3','3a'],['10','10a'],['max','Max']];
+let creditIndicatorRanges = {}; // key -> '3'|'10'|'max', défaut '10'
+let creditIndicatorCharts = {}; // key -> instance Chart.js
+
+// Découpe une série {dates,values} sur une plage donnée — 'max' renvoie tout
+// l'historique réellement disponible (voir CREDIT_START_DATE), pas une fenêtre glissante
+// arbitraire.
+function creditSliceByRange(d, range){
+  if (!d || !d.dates.length) return { dates:[], values:[] };
+  if (range === 'max') return d;
+  const years = parseInt(range, 10);
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() - years);
+  const found = d.dates.findIndex(dt => new Date(dt) >= cutoff);
+  const startIdx = found === -1 ? 0 : found;
+  return { dates: d.dates.slice(startIdx), values: d.values.slice(startIdx) };
+}
+
+function buildCreditIndicatorChartConfig(key, range){
+  const meta = CREDIT_SERIES.find(s => s.key === key);
+  const d = creditIndicatorsData[key];
+  if (!meta || !d || !d.dates.length) return null;
+  const sliced = creditSliceByRange(d, range);
   return {
     type:'line',
-    data:{ labels: d.dates.slice(startIdx), datasets:[
-      { label:'HY Spread (pts)', data: d.values.slice(startIdx), borderColor:THEME.red, backgroundColor:'rgba(229,99,107,0.10)', fill:true, borderWidth:1.5, pointRadius:0, tension:0.1, spanGaps:true }
+    data:{ labels: sliced.dates, datasets:[
+      { label: meta.shortLabel, data: sliced.values, borderColor: meta.color, backgroundColor:'transparent', borderWidth:1.5, pointRadius:0, tension:0.1, spanGaps:true }
     ]},
     options:{ responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{ display:false } },
       scales:{
-        x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:8}, border:{color:THEME.hair} },
-        y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v.toLocaleString('fr-FR')+' pts'} }
+        x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:6}, border:{color:THEME.hair} },
+        y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v.toLocaleString('fr-FR')+meta.suffix} }
       }
     }
   };
 }
 
-let creditChart = null;
-function renderCreditChart(){
-  const canvas = document.getElementById('chartCredit');
-  if (!canvas) return;
-  const config = buildCreditChartConfig(creditChartRange);
-  if (!config) return;
-  if (creditChart) creditChart.destroy();
-  creditChart = new Chart(canvas.getContext('2d'), config);
-  const status = document.getElementById('creditChartStatus');
-  if (status) status.style.display = 'none';
+function creditChartStatsRowHtml(key){
+  const meta = CREDIT_SERIES.find(s => s.key === key);
+  const stats = creditIndicatorStats(key);
+  const fmtVal = v => v != null ? v.toLocaleString('fr-FR',{minimumFractionDigits:meta.decimals,maximumFractionDigits:meta.decimals}) + meta.suffix : 'N/D';
+  const fmtDelta = v => v != null ? (v >= 0 ? '+' : '') + fmtVal(v) : 'N/D';
+  return `<div class="credit-chart-stats">
+    <div><span>Actuel</span><b>${stats ? fmtVal(stats.current) : 'N/D'}</b></div>
+    <div><span>Δ 1 mois</span><b>${stats ? fmtDelta(stats.d1m) : 'N/D'}</b></div>
+    <div><span>Δ 3 mois</span><b>${stats ? fmtDelta(stats.d3m) : 'N/D'}</b></div>
+    <div><span>Dernière donnée</span><b>${(stats && stats.date) || '—'}</b></div>
+  </div>`;
 }
 
-function openCreditZoom(){
-  if (!creditIndicatorsData.hySpread || !creditIndicatorsData.hySpread.dates.length) return;
-  zoomCreditRange = creditChartRange;
-  openZoom('credit', 'Crédit — HY Spread (High Yield OAS)');
+function renderCreditIndicatorChart(key){
+  const canvas = document.getElementById('creditChart-' + key);
+  if (!canvas) return;
+  const range = creditIndicatorRanges[key] || '10';
+  if (creditIndicatorCharts[key]){ creditIndicatorCharts[key].destroy(); delete creditIndicatorCharts[key]; }
+  const config = buildCreditIndicatorChartConfig(key, range);
+  if (!config) return;
+  creditIndicatorCharts[key] = new Chart(canvas.getContext('2d'), config);
+  const statsBox = document.getElementById('creditStats-' + key);
+  if (statsBox) statsBox.innerHTML = creditChartStatsRowHtml(key);
 }
+
+function creditIndicatorCardHtml(s){
+  const range = creditIndicatorRanges[s.key] || '10';
+  return `<div class="chart-card">
+    <div class="chart-card-head">
+      <div><h3>${s.shortLabel}</h3><p class="chart-subtitle">${s.note}</p></div>
+    </div>
+    <div class="range-buttons" data-credit-range-for="${s.key}">
+      ${CREDIT_RANGE_OPTIONS.map(([val,label]) => `<button data-range="${val}" class="${range===val?'active':''}">${label}</button>`).join('')}
+    </div>
+    <div class="chart-holder" style="height:220px;"><canvas id="creditChart-${s.key}"></canvas></div>
+    <div id="creditStats-${s.key}"></div>
+  </div>`;
+}
+
+function renderCreditChartsGrid(){
+  const box = document.getElementById('creditChartsGrid');
+  if (!box) return;
+  Object.values(creditIndicatorCharts).forEach(ch => ch && ch.destroy());
+  creditIndicatorCharts = {};
+  const visible = creditVisibleSeries();
+  box.innerHTML = visible.map(creditIndicatorCardHtml).join('');
+  box.querySelectorAll('[data-credit-range-for]').forEach(row => {
+    const key = row.dataset.creditRangeFor;
+    row.addEventListener('click', e => {
+      const btn = e.target.closest('button[data-range]');
+      if (!btn) return;
+      creditIndicatorRanges[key] = btn.dataset.range;
+      row.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
+      renderCreditIndicatorChart(key);
+    });
+  });
+  visible.forEach(s => renderCreditIndicatorChart(s.key));
+}
+
+/* ---- Superposition (comparer plusieurs indicateurs sur un même graphique) ----------
+   Deux modes : Valeurs nominales (chaque série garde sa propre échelle — un axe Y
+   indépendant par série, masqué sauf le 1er, la vraie valeur reste lisible au survol)
+   et Base 100 (chaque série ramenée à 100 au premier point de la plage affichée, un
+   seul axe partagé — comparaison directe des évolutions en %, même principe que la
+   Comparaison multi-entreprises de l'onglet Screener). Objectif explicite de
+   l'utilisateur : voir quel indicateur se dégrade/s'améliore en premier lors d'un
+   changement de cycle. ------------------------------------------------------------ */
+let creditOverlaySelected = ['hySpread', 'baa10y', 'baaAaa']; // sélection par défaut : les 3 indicateurs "prix du risque", exemple donné par l'utilisateur
+let creditOverlayMode = 'nominal'; // 'nominal' | 'base100'
+let creditOverlayRange = '10';
+let creditOverlayChart = null;
+
+function buildCreditOverlayChartConfig(){
+  const selected = creditVisibleSeries().filter(s => creditOverlaySelected.includes(s.key) && creditIndicatorsData[s.key]);
+  if (!selected.length) return null;
+
+  const dateSet = new Set();
+  selected.forEach(s => { creditSliceByRange(creditIndicatorsData[s.key], creditOverlayRange).dates.forEach(d => dateSet.add(d)); });
+  const labels = Array.from(dateSet).sort();
+
+  const datasets = selected.map((s, i) => {
+    const d = creditIndicatorsData[s.key];
+    const byDate = {};
+    d.dates.forEach((dt, j) => { byDate[dt] = d.values[j]; });
+    const raw = labels.map(dt => byDate[dt] != null ? byDate[dt] : null);
+    let data = raw, axisId = 'y' + i;
+    if (creditOverlayMode === 'base100'){
+      const base = raw.find(v => v != null && v !== 0);
+      data = base ? raw.map(v => v == null ? null : (v / base) * 100) : raw;
+      axisId = 'yBase100';
+    }
+    return {
+      label: s.shortLabel, data,
+      borderColor: s.color, backgroundColor:'transparent', borderWidth:1.75, pointRadius:0, spanGaps:true, tension:0.1,
+      yAxisID: axisId
+    };
+  });
+
+  const scales = { x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:8}, border:{color:THEME.hair} } };
+  if (creditOverlayMode === 'base100'){
+    scales.yBase100 = { grid:baseGrid, ticks:{color:THEME.dim}, title:{display:true, text:'Base 100', color:THEME.dim} };
+  } else {
+    selected.forEach((s, i) => {
+      scales['y' + i] = { display: i === 0, position: i % 2 === 0 ? 'left' : 'right', grid: i === 0 ? baseGrid : { display:false }, ticks:{color:THEME.dim} };
+    });
+  }
+
+  return {
+    type:'line',
+    data:{ labels, datasets },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:'bottom', labels:{boxWidth:8, usePointStyle:true, font:{size:9.5}} } },
+      scales
+    }
+  };
+}
+
+function renderCreditOverlayToggles(){
+  const box = document.getElementById('creditOverlayToggles');
+  if (!box) return;
+  box.innerHTML = creditVisibleSeries().map(s =>
+    `<button type="button" data-overlay-key="${s.key}" class="${creditOverlaySelected.includes(s.key) ? 'active' : ''}">${s.shortLabel}</button>`
+  ).join('');
+}
+
+function toggleCreditOverlayIndicator(key){
+  const idx = creditOverlaySelected.indexOf(key);
+  if (idx === -1) creditOverlaySelected.push(key); else creditOverlaySelected.splice(idx, 1);
+  renderCreditOverlayToggles();
+  renderCreditOverlayChart();
+}
+
+function setCreditOverlayMode(mode){
+  creditOverlayMode = mode;
+  document.querySelectorAll('#creditOverlayModeToggle button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  renderCreditOverlayChart();
+}
+
+function renderCreditOverlayChart(){
+  const canvas = document.getElementById('chartCreditOverlay');
+  if (!canvas) return;
+  const config = buildCreditOverlayChartConfig();
+  if (creditOverlayChart){ creditOverlayChart.destroy(); creditOverlayChart = null; }
+  const status = document.getElementById('creditOverlayStatus');
+  if (!config){
+    if (status){ status.textContent = 'Sélectionne au moins un indicateur ci-dessus.'; status.style.display = 'block'; }
+    return;
+  }
+  if (status) status.style.display = 'none';
+  creditOverlayChart = new Chart(canvas.getContext('2d'), config);
+  if (zoomKey === 'credit') renderZoomChart();
+}
+
+function openCreditOverlayZoom(){
+  if (!creditOverlayChart) return;
+  zoomCreditRange = creditOverlayRange;
+  openZoom('credit', 'Crédit — Superposition');
+}
+
+document.getElementById('creditOverlayToggles').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-overlay-key]');
+  if (btn) toggleCreditOverlayIndicator(btn.dataset.overlayKey);
+});
+document.getElementById('creditOverlayModeToggle').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-mode]');
+  if (btn) setCreditOverlayMode(btn.dataset.mode);
+});
+document.getElementById('creditOverlayRangeButtons').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-range]');
+  if (!btn) return;
+  creditOverlayRange = btn.dataset.range;
+  document.querySelectorAll('#creditOverlayRangeButtons button').forEach(b => b.classList.toggle('active', b === btn));
+  renderCreditOverlayChart();
+});
 
 // Canal de régression linéaire (moyenne ± 1 et 2 écarts-types) calculé sur les
 // vingt dernières années de clôtures hebdo (ou tout l'historique dispo si plus court) —
@@ -6227,13 +6490,6 @@ function initComparisonDetail(){
   });
 }
 
-document.getElementById('creditRangeButtons').addEventListener('click', e => {
-  const btn = e.target.closest('button[data-range]');
-  if (!btn) return;
-  creditChartRange = btn.dataset.range;
-  document.querySelectorAll('#creditRangeButtons button').forEach(b => b.classList.toggle('active', b === btn));
-  renderCreditChart();
-});
 document.getElementById('macroCycleRangeButtons').addEventListener('click', e => {
   const btn = e.target.closest('button[data-range]');
   if (!btn) return;
@@ -6278,11 +6534,11 @@ let zoomRange = 'max';
 let zoomStockRange = 'max';
 let zoomMacroCycleRange = '20';
 let zoomMacroRotationRange = '3';
-let zoomCreditRange = '3';
+let zoomCreditRange = '10';
 const ZOOM_STOCK_RANGES = [['1','1a'],['2','2a'],['3','3a'],['5','5a'],['10','10a'],['20','20a'],['max','Max']];
 const ZOOM_MACRO_CYCLE_RANGES = [['5','5a'],['10','10a'],['20','20a'],['max','Max']];
 const ZOOM_MACRO_ROTATION_RANGES = [['1','1a'],['2','2a'],['3','3a'],['m1','1m'],['m2','2m'],['m3','3m']];
-const ZOOM_CREDIT_RANGES = [['1','1a'],['2','2a'],['3','3a'],['max','Max']];
+const ZOOM_CREDIT_RANGES = [['3','3a'],['10','10a'],['max','Max']];
 
 function renderZoomCagrRow(){
   const box = document.getElementById('zoomCagrRow');
@@ -6324,7 +6580,7 @@ function zoomSpecialRangeSet(val){
   else if (zoomKey === 'macroCycle') zoomMacroCycleRange = val;
   else if (zoomKey === 'macroRotation') zoomMacroRotationRange = val;
   else if (zoomKey === 'macroRanking') zoomMacroRankingRow = val;
-  else if (zoomKey === 'credit') zoomCreditRange = val;
+  else if (zoomKey === 'credit'){ zoomCreditRange = val; creditOverlayRange = val; document.querySelectorAll('#creditOverlayRangeButtons button').forEach(b => b.classList.toggle('active', b.dataset.range === val)); }
 }
 function zoomSpecialChartConfig(){
   if (zoomKey === 'stock') return buildStockChartConfig(zoomStockRange);
@@ -6332,7 +6588,7 @@ function zoomSpecialChartConfig(){
   if (zoomKey === 'macroCycle') return buildMacroCycleChartConfig(zoomMacroCycleRange);
   if (zoomKey === 'macroRotation') return buildMacroRotationChartConfig(zoomMacroRotationRange);
   if (zoomKey === 'macroRanking') return buildMacroRankingChartConfig(zoomMacroRankingRow);
-  if (zoomKey === 'credit') return buildCreditChartConfig(zoomCreditRange);
+  if (zoomKey === 'credit') return buildCreditOverlayChartConfig();
   return null;
 }
 

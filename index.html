@@ -712,26 +712,37 @@
       <div class="section-label">Macroéconomie</div>
       <div class="macro-export-all-row"><button id="macroExportAllBtn" class="macro-export-all-btn" onclick="exportMacroFullPageAsPdf()">⭳ Exporter toute la page en PDF</button></div>
 
-      <!-- Crédit — priorité n°1 (demande explicite) : prix du risque → remboursement →
-           création de crédit → capacité à supporter la dette. Données FRED en direct
-           (API), voir loadCreditIndicators()/fetchFredSeries() dans app.js. -->
+      <!-- Crédit — priorité n°1 (demande explicite) : prix du risque → défauts/pertes →
+           capacité de remboursement → création de crédit → endettement des ménages.
+           Données FRED en direct (API), voir loadCreditIndicators()/fetchFredSeries()
+           dans app.js. 7 indicateurs : HY Spread (limité ~3 ans par licence ICE, non
+           contournable), Baa10Y et Baa−Aaa (Moody's/FRED, historique complet, pas
+           soumis à cette restriction), Charge-off, Délinquance, Croissance du crédit,
+           DSR ménages. -->
       <div class="section-label">Crédit</div>
-      <p class="valo-intro">Prix du risque → remboursement → création de crédit → capacité à supporter la dette.
-        Source : API FRED (Federal Reserve), en direct.</p>
+      <p class="valo-intro">Prix du risque → défauts/pertes → capacité de remboursement → création de crédit →
+        endettement des ménages. Source : API FRED (Federal Reserve), en direct.</p>
+
       <div class="chart-card">
         <div class="chart-card-head">
-          <div><h3>HY Spread — High Yield Option-Adjusted Spread</h3><p class="chart-subtitle">Écart de rendement High Yield vs Trésor US (ICE BofA / FRED) — prix du risque de crédit demandé par le marché. Historique limité à ~3 ans (restriction de licence ICE Data Indices depuis avril 2026, pas une limite du site).</p></div>
-          <div class="chart-card-actions"><button class="zoom-btn" onclick="openCreditZoom()" aria-label="Agrandir">⤢</button></div>
+          <div><h3>Superposition des indicateurs crédit</h3><p class="chart-subtitle">Sélectionne plusieurs indicateurs pour voir lequel se dégrade ou s'améliore en premier lors d'un changement de cycle.</p></div>
+          <div class="chart-card-actions"><button class="zoom-btn" onclick="openCreditOverlayZoom()" aria-label="Agrandir">⤢</button></div>
         </div>
-        <div class="range-buttons" id="creditRangeButtons">
-          <button data-range="1">1a</button><button data-range="2">2a</button><button class="active" data-range="3">3a</button><button data-range="max">Max</button>
+        <div class="range-buttons" id="creditOverlayToggles"></div>
+        <div class="range-buttons" id="creditOverlayModeToggle">
+          <button data-mode="nominal" class="active">Valeurs nominales</button>
+          <button data-mode="base100">Base 100</button>
         </div>
-        <div class="chart-holder" style="height:300px;"><canvas id="chartCredit"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(MACRO_CHART_GETTERS.credit(), 'HY Spread — High Yield OAS', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
-        <div id="creditChartStatus" class="stock-status" style="display:none;"></div>
+        <div class="range-buttons" id="creditOverlayRangeButtons">
+          <button data-range="3">3a</button><button class="active" data-range="10">10a</button><button data-range="max">Max</button>
+        </div>
+        <p class="chart-hint">Valeurs nominales : chaque indicateur garde sa propre échelle (survole une courbe pour lire sa vraie valeur) — les unités ne sont pas directement comparables entre elles. Base 100 : chaque série est ramenée à 100 au début de la période affichée, pour comparer les évolutions en %.</p>
+        <div class="chart-holder" style="height:340px;"><canvas id="chartCreditOverlay"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(MACRO_CHART_GETTERS.credit(), 'Crédit — Superposition', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
+        <div id="creditOverlayStatus" class="stock-status" style="display:none;"></div>
         <div class="macro-export-row">
-          <button onclick="exportMacroChartAsPdf('credit','HY Spread — High Yield OAS')">PDF</button>
-          <button onclick="exportMacroChartAsImage('credit','hy-spread','png')">PNG</button>
-          <button onclick="exportMacroChartAsImage('credit','hy-spread','jpg')">JPG</button>
+          <button onclick="exportMacroChartAsPdf('credit','Crédit — Superposition')">PDF</button>
+          <button onclick="exportMacroChartAsImage('credit','credit-superposition','png')">PNG</button>
+          <button onclick="exportMacroChartAsImage('credit','credit-superposition','jpg')">JPG</button>
         </div>
       </div>
 
@@ -745,6 +756,9 @@
           <button class="export-cart-add-btn" onclick="addMacroTableToCart('creditIndicatorsTable','Indicateurs crédit', this)">🧺 Ajouter au panier</button>
         </div>
       </div>
+
+      <div class="section-label" style="margin-top:8px;">Crédit — graphiques individuels</div>
+      <div class="credit-charts-grid" id="creditChartsGrid"></div>
 
       <div class="macro-charts-row">
         <div class="chart-card macro-cycle-card">
