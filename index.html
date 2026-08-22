@@ -712,20 +712,24 @@
       <div class="section-label">Macroéconomie</div>
       <div class="macro-export-all-row"><button id="macroExportAllBtn" class="macro-export-all-btn" onclick="exportMacroFullPageAsPdf()">⭳ Exporter toute la page en PDF</button></div>
 
-      <!-- Crédit — priorité n°1 (demande explicite) : prix du risque → défauts/pertes →
-           capacité de remboursement → création de crédit → endettement des ménages.
-           Données FRED en direct (API), voir loadCreditIndicators()/fetchFredSeries()
-           dans app.js. 7 indicateurs : HY Spread (limité ~3 ans par licence ICE, non
-           contournable), Baa10Y et Baa−Aaa (Moody's/FRED, historique complet, pas
-           soumis à cette restriction), Charge-off, Délinquance, Croissance du crédit,
-           DSR ménages. -->
-      <div class="section-label">Crédit</div>
+      <!-- Crédit & Bénéfices — priorité n°1 (demande explicite) : prix du risque →
+           défauts/pertes → capacité de remboursement → création de crédit →
+           endettement des ménages, + un proxy de momentum des bénéfices. Données FRED
+           en direct (API), voir loadCreditIndicators()/fetchFredSeries() dans app.js.
+           8 indicateurs : HY Spread (limité ~3 ans par licence ICE, non contournable),
+           Baa10Y et Baa−Aaa (Moody's/FRED, historique complet, pas soumis à cette
+           restriction), Charge-off, Délinquance, Croissance du crédit, DSR ménages,
+           Corporate Profits (BEA, proxy momentum bénéfices — PAS l'EPS du S&P 500,
+           aucune source gratuite trouvée pour les vraies révisions/breadth/surprises). -->
+      <div class="section-label">Crédit &amp; Bénéfices</div>
       <p class="valo-intro">Prix du risque → défauts/pertes → capacité de remboursement → création de crédit →
-        endettement des ménages. Source : API FRED (Federal Reserve), en direct.</p>
+        endettement des ménages, + un proxy de momentum des bénéfices (Corporate Profits, pas l'EPS du S&P 500 —
+        aucune source gratuite pour les vraies révisions/breadth/surprises, voir la note sous le tableau).
+        Source : API FRED (Federal Reserve), en direct.</p>
 
       <div class="chart-card">
         <div class="chart-card-head">
-          <div><h3>Superposition des indicateurs crédit</h3><p class="chart-subtitle">Sélectionne plusieurs indicateurs pour voir lequel se dégrade ou s'améliore en premier lors d'un changement de cycle.</p></div>
+          <div><h3>Superposition des indicateurs</h3><p class="chart-subtitle">Sélectionne plusieurs indicateurs pour voir lequel se dégrade ou s'améliore en premier lors d'un changement de cycle.</p></div>
           <div class="chart-card-actions"><button class="zoom-btn" onclick="openCreditOverlayZoom()" aria-label="Agrandir">⤢</button></div>
         </div>
         <div class="range-buttons" id="creditOverlayToggles"></div>
@@ -737,10 +741,10 @@
           <button data-range="3">3a</button><button class="active" data-range="10">10a</button><button data-range="max">Max</button>
         </div>
         <p class="chart-hint">Valeurs nominales : chaque indicateur garde sa propre échelle (survole une courbe pour lire sa vraie valeur) — les unités ne sont pas directement comparables entre elles. Base 100 : chaque série est ramenée à 100 au début de la période affichée, pour comparer les évolutions en %.</p>
-        <div class="chart-holder" style="height:340px;"><canvas id="chartCreditOverlay"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(MACRO_CHART_GETTERS.credit(), 'Crédit — Superposition', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
+        <div class="chart-holder" style="height:340px;"><canvas id="chartCreditOverlay"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(MACRO_CHART_GETTERS.credit(), 'Crédit &amp; Bénéfices — Superposition', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
         <div id="creditOverlayStatus" class="stock-status" style="display:none;"></div>
         <div class="macro-export-row">
-          <button onclick="exportMacroChartAsPdf('credit','Crédit — Superposition')">PDF</button>
+          <button onclick="exportMacroChartAsPdf('credit','Crédit &amp; Bénéfices — Superposition')">PDF</button>
           <button onclick="exportMacroChartAsImage('credit','credit-superposition','png')">PNG</button>
           <button onclick="exportMacroChartAsImage('credit','credit-superposition','jpg')">JPG</button>
         </div>
@@ -749,15 +753,15 @@
       <div class="macro-power-card">
         <div id="creditIndicatorsTable"></div>
         <div class="macro-export-row">
-          <button onclick="zoomMacroTable('creditIndicatorsTable','Indicateurs crédit')">⤢ Agrandir</button>
-          <button onclick="exportMacroTableAsPdf('creditIndicatorsTable','Indicateurs crédit')">PDF</button>
-          <button onclick="exportMacroTableAsImage('creditIndicatorsTable','Indicateurs crédit','png')">PNG</button>
-          <button onclick="exportMacroTableAsImage('creditIndicatorsTable','Indicateurs crédit','jpg')">JPG</button>
-          <button class="export-cart-add-btn" onclick="addMacroTableToCart('creditIndicatorsTable','Indicateurs crédit', this)">🧺 Ajouter au panier</button>
+          <button onclick="zoomMacroTable('creditIndicatorsTable','Indicateurs crédit &amp; bénéfices')">⤢ Agrandir</button>
+          <button onclick="exportMacroTableAsPdf('creditIndicatorsTable','Indicateurs crédit &amp; bénéfices')">PDF</button>
+          <button onclick="exportMacroTableAsImage('creditIndicatorsTable','Indicateurs crédit &amp; bénéfices','png')">PNG</button>
+          <button onclick="exportMacroTableAsImage('creditIndicatorsTable','Indicateurs crédit &amp; bénéfices','jpg')">JPG</button>
+          <button class="export-cart-add-btn" onclick="addMacroTableToCart('creditIndicatorsTable','Indicateurs crédit &amp; bénéfices', this)">🧺 Ajouter au panier</button>
         </div>
       </div>
 
-      <div class="section-label" style="margin-top:8px;">Crédit — graphiques individuels</div>
+      <div class="section-label" style="margin-top:8px;">Crédit &amp; Bénéfices — graphiques individuels</div>
       <div class="credit-charts-grid" id="creditChartsGrid"></div>
 
       <div class="macro-charts-row">

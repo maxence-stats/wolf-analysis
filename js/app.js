@@ -2508,14 +2508,14 @@ async function exportMacroTableAsImage(boxId, title, format){
 // Export global demandé par l'utilisateur : les 4 graphiques + les 2 tableaux de
 // l'onglet Macroéconomie dans un seul document PDF, plutôt que 6 exports séparés.
 const MACRO_EXPORT_ALL_CHARTS = [
-  ['credit', 'Crédit — Superposition'],
+  ['credit', 'Crédit & Bénéfices — Superposition'],
   ['cycle', 'Cycle de Marché — Offensif vs Défensif'],
   ['rotation', 'Rotation Sectorielle GICS vs S&P 500'],
   ['weight', 'Poids relatif des secteurs'],
   ['ranking', 'Classement sectoriel']
 ];
 const MACRO_EXPORT_ALL_TABLES = [
-  ['creditIndicatorsTable', 'Indicateurs crédit'],
+  ['creditIndicatorsTable', 'Indicateurs crédit & bénéfices'],
   ['macroPowerTable', 'Force relative sectorielle'],
   ['macroFundamentalsTable', 'Indicateurs macroéconomiques (États-Unis)']
 ];
@@ -5212,7 +5212,18 @@ const CREDIT_SERIES = [
   { key:'creditGrowth', label:'Credit Growth (croissance du crédit aux entreprises, glissement annuel)', shortLabel:'Croissance crédit', seriesId:'BUSLOANS', suffix:' %', decimals:1, deriveYoY:true, color:THEME.green,
     note:"Variation sur 1 an de l'encours de prêts commerciaux et industriels (C&I) aux entreprises (Federal Reserve, série BUSLOANS) — accélère/ralentit/se contracte." },
   { key:'dsr', label:'Debt Service Ratio des ménages', shortLabel:'DSR ménages', seriesId:'TDSP', suffix:' %', decimals:2, color:THEME.gold,
-    note:'Part du revenu disponible des ménages consacrée au remboursement de leur dette (Federal Reserve, série TDSP).' }
+    note:'Part du revenu disponible des ménages consacrée au remboursement de leur dette (Federal Reserve, série TDSP).' },
+  // Momentum des bénéfices — proxy choisi APRÈS recherche explicite (voir échange avec
+  // l'utilisateur) : aucune source gratuite/automatisable trouvée pour les vraies
+  // révisions EPS S&P 500, la Revision Breadth, ni les surprises agrégées (FactSet/
+  // Refinitiv, toutes payantes ou disponibles seulement en page web ponctuelle, jamais
+  // en API/historique exploitable). Corporate Profits After Tax (BEA, via FRED) est le
+  // seul proxy gratuit, fiable et automatisable trouvé — mais c'est le profit agrégé de
+  // TOUTE l'économie US (comptabilité nationale), PAS l'EPS du S&P 500 spécifiquement :
+  // label volontairement explicite là-dessus pour ne jamais laisser croire à une vraie
+  // donnée S&P 500.
+  { key:'earningsProxy', label:'Corporate Profits After Tax — proxy momentum bénéfices (ensemble économie US, PAS le S&P 500)', shortLabel:'Profits corp. (US, proxy)', seriesId:'CP', suffix:' %', decimals:1, deriveYoY:true, color:THEME.green,
+    note:"Aucune source gratuite pour les vraies révisions EPS/Revision Breadth/surprises agrégées du S&P 500 (FactSet/Refinitiv, payantes) — proxy retenu : croissance sur 1 an des profits après impôts de l'ensemble des entreprises américaines (BEA, comptabilité nationale, via FRED). Économie entière, pas le S&P 500 seul." }
 ];
 let creditIndicatorsData = {}; // key -> { dates:[...], values:[...] }
 
@@ -5596,7 +5607,7 @@ function renderCreditOverlayChart(){
 function openCreditOverlayZoom(){
   if (!creditOverlayChart) return;
   zoomCreditRange = creditOverlayRange;
-  openZoom('credit', 'Crédit — Superposition');
+  openZoom('credit', 'Crédit & Bénéfices — Superposition');
 }
 
 document.getElementById('creditOverlayToggles').addEventListener('click', e => {
