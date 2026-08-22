@@ -4529,9 +4529,14 @@ const ANALYSE_GROUP_PAGES = ['pageAnalyse', 'pageValorisation'];
 // Secteur/Classement/Watchlist regroupés sous "🔍 Screener" (même pattern que
 // Portefeuille) — demande explicite pour désencombrer la nav principale.
 const SCREENER_GROUP_PAGES = ['pageSecteur', 'pageClassement', 'pageWatchlist', 'pageComparaison'];
+// Macroéconomie éclatée en 3 sous-onglets (même pattern) — demande explicite : la page
+// mélangeait Crédit, cycle sectoriel et indicateurs macro US sur un seul écran de plus
+// en plus long à mesure que le Crédit s'étoffait.
+const MACRO_GROUP_PAGES = ['pageMacroCredit', 'pageMacroSecteur', 'pageMacroEco'];
 const NAV_GROUPS = [
   { key:'portfolio', subnavId:'portfolioSubnav', pages:PORTFOLIO_GROUP_PAGES },
-  { key:'screener', subnavId:'screenerSubnav', pages:SCREENER_GROUP_PAGES }
+  { key:'screener', subnavId:'screenerSubnav', pages:SCREENER_GROUP_PAGES },
+  { key:'macro', subnavId:'macroSubnav', pages:MACRO_GROUP_PAGES }
 ];
 function switchPage(pageId){
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === pageId));
@@ -4579,7 +4584,11 @@ const MOBILE_NAV_MANIFEST = [
   { page:'pageAlertes', label:'Alertes' },
   { page:'pageIdees', label:'Idées' },
   { page:'pageRevue', label:'Revue de la semaine' },
-  { page:'pageMacro', label:'Macroéconomie' },
+  { group:'Macroéconomie', items:[
+    { page:'pageMacroCredit', label:'Crédit' },
+    { page:'pageMacroSecteur', label:'Secteur' },
+    { page:'pageMacroEco', label:'Macroéconomie' }
+  ] },
   { page:'pagePdfEditor', label:'🖊️ Éditeur PDF' }
 ];
 function mobileNavItemHtml(item){
@@ -5490,12 +5499,21 @@ function creditIndicatorCardHtml(s){
   </div>`;
 }
 
+// "earningsProxy" a sa propre fiche dédiée dans le sous-onglet Macroéconomie (voir
+// wireEarningsProxyStandaloneCard()) plutôt que dans cette grille du sous-onglet
+// Crédit — demande explicite ("créer un élément macroéconomie... on viendra le
+// compléter avec le graphique sur les bénéfices"). Reste dans creditVisibleSeries()
+// pour le tableau récapitulatif et l'outil de superposition (comparaison inter-thème
+// toujours utile), juste exclu de CETTE grille précise pour ne pas le dupliquer.
+function creditChartsGridSeries(){
+  return creditVisibleSeries().filter(s => s.key !== 'earningsProxy');
+}
 function renderCreditChartsGrid(){
   const box = document.getElementById('creditChartsGrid');
   if (!box) return;
   Object.values(creditIndicatorCharts).forEach(ch => ch && ch.destroy());
   creditIndicatorCharts = {};
-  const visible = creditVisibleSeries();
+  const visible = creditChartsGridSeries();
   box.innerHTML = visible.map(creditIndicatorCardHtml).join('');
   box.querySelectorAll('[data-credit-range-for]').forEach(row => {
     const key = row.dataset.creditRangeFor;
@@ -5508,6 +5526,7 @@ function renderCreditChartsGrid(){
     });
   });
   visible.forEach(s => renderCreditIndicatorChart(s.key));
+  renderCreditIndicatorChart('earningsProxy'); // fiche dédiée, sous-onglet Macroéconomie
 }
 
 /* ---- Superposition (comparer plusieurs indicateurs sur un même graphique) ----------
@@ -5624,6 +5643,18 @@ document.getElementById('creditOverlayRangeButtons').addEventListener('click', e
   creditOverlayRange = btn.dataset.range;
   document.querySelectorAll('#creditOverlayRangeButtons button').forEach(b => b.classList.toggle('active', b === btn));
   renderCreditOverlayChart();
+});
+// Fiche "Corporate Profits" du sous-onglet Macroéconomie : HTML statique (pas dans la
+// grille générée #creditChartsGrid, voir renderCreditChartsGrid()/creditChartsGridSeries()),
+// donc câblée une fois ici plutôt que dans la boucle de délégation de la grille dynamique.
+document.querySelectorAll('[data-credit-range-for="earningsProxy"]').forEach(row => {
+  row.addEventListener('click', e => {
+    const btn = e.target.closest('button[data-range]');
+    if (!btn) return;
+    creditIndicatorRanges.earningsProxy = btn.dataset.range;
+    row.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
+    renderCreditIndicatorChart('earningsProxy');
+  });
 });
 
 // Canal de régression linéaire (moyenne ± 1 et 2 écarts-types) calculé sur les

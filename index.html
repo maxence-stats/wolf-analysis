@@ -69,7 +69,7 @@
       <button class="page-nav-btn" data-page="pageAlertes">Alertes</button>
       <button class="page-nav-btn" data-page="pageIdees">Idées</button>
       <button class="page-nav-btn" data-page="pageRevue">Revue de la semaine</button>
-      <button class="page-nav-btn" data-page="pageMacro">Macroéconomie</button>
+      <button class="page-nav-btn" data-page="pageMacroCredit" data-group="macro">Macroéconomie</button>
       <button class="page-nav-btn" data-page="pagePdfEditor">🖊️ Éditeur PDF</button>
     </div>
 
@@ -90,6 +90,12 @@
     <div class="page-subnav" id="analyseSubnav" style="display:flex;">
       <button class="page-subnav-btn active" data-page="pageAnalyse">Vue d'ensemble</button>
       <button class="page-subnav-btn" data-page="pageValorisation">Valorisation</button>
+    </div>
+
+    <div class="page-subnav" id="macroSubnav" style="display:none;">
+      <button class="page-subnav-btn active" data-page="pageMacroCredit">Crédit</button>
+      <button class="page-subnav-btn" data-page="pageMacroSecteur">Secteur</button>
+      <button class="page-subnav-btn" data-page="pageMacroEco">Macroéconomie</button>
     </div>
 
     <div id="pageAnalyse" class="page active">
@@ -708,19 +714,28 @@
       <div id="ideesContent"></div>
     </div>
 
-    <div id="pageMacro" class="page">
-      <div class="section-label">Macroéconomie</div>
-      <div class="macro-export-all-row"><button id="macroExportAllBtn" class="macro-export-all-btn" onclick="exportMacroFullPageAsPdf()">⭳ Exporter toute la page en PDF</button></div>
-
+    <!-- Macroéconomie éclatée en 3 sous-onglets (même pattern que Portefeuille/Screener,
+         voir NAV_GROUPS dans app.js) — demande explicite : la page mélangeait Crédit,
+         cycle sectoriel et indicateurs macro US sur un seul écran, de plus en plus long
+         à mesure que le Crédit s'étoffait. "Exporter toute la page en PDF" exporte
+         toujours TOUT (les 3 sous-onglets confondus, DOM présent même masqué) — le
+         bouton est dupliqué dans chacune des 3 pages (chacune a sa propre visibilité
+         via .page.active, un bouton posé hors des 3 pages resterait affiché sur TOUS
+         les autres onglets du site, bug constaté avant ce correctif) plutôt que d'
+         ajouter une 4e mécanique de visibilité conditionnelle pour un seul bouton. -->
+    <div id="pageMacroCredit" class="page">
+      <div class="macro-export-all-row"><button class="macro-export-all-btn" onclick="exportMacroFullPageAsPdf()">⭳ Exporter toute la page en PDF</button></div>
       <!-- Crédit & Bénéfices — priorité n°1 (demande explicite) : prix du risque →
            défauts/pertes → capacité de remboursement → création de crédit →
-           endettement des ménages, + un proxy de momentum des bénéfices. Données FRED
-           en direct (API), voir loadCreditIndicators()/fetchFredSeries() dans app.js.
-           8 indicateurs : HY Spread (limité ~3 ans par licence ICE, non contournable),
-           Baa10Y et Baa−Aaa (Moody's/FRED, historique complet, pas soumis à cette
-           restriction), Charge-off, Délinquance, Croissance du crédit, DSR ménages,
-           Corporate Profits (BEA, proxy momentum bénéfices — PAS l'EPS du S&P 500,
-           aucune source gratuite trouvée pour les vraies révisions/breadth/surprises). -->
+           endettement des ménages, + un proxy de momentum des bénéfices sélectionnable
+           dans la superposition (sa fiche dédiée vit dans le sous-onglet
+           "Macroéconomie", voir pageMacroEco). Données FRED en direct (API), voir
+           loadCreditIndicators()/fetchFredSeries() dans app.js. 8 indicateurs : HY
+           Spread (limité ~3 ans par licence ICE, non contournable), Baa10Y et Baa−Aaa
+           (Moody's/FRED, historique complet, pas soumis à cette restriction),
+           Charge-off, Délinquance, Croissance du crédit, DSR ménages, Corporate
+           Profits (BEA, proxy momentum bénéfices — PAS l'EPS du S&P 500, aucune source
+           gratuite trouvée pour les vraies révisions/breadth/surprises). -->
       <div class="section-label">Crédit &amp; Bénéfices</div>
       <p class="valo-intro">Prix du risque → défauts/pertes → capacité de remboursement → création de crédit →
         endettement des ménages, + un proxy de momentum des bénéfices (Corporate Profits, pas l'EPS du S&P 500 —
@@ -763,7 +778,11 @@
 
       <div class="section-label" style="margin-top:8px;">Crédit &amp; Bénéfices — graphiques individuels</div>
       <div class="credit-charts-grid" id="creditChartsGrid"></div>
+    </div>
 
+    <div id="pageMacroSecteur" class="page">
+      <div class="macro-export-all-row"><button class="macro-export-all-btn" onclick="exportMacroFullPageAsPdf()">⭳ Exporter toute la page en PDF</button></div>
+      <div class="section-label">Secteur — cycle &amp; rotation</div>
       <div class="macro-charts-row">
         <div class="chart-card macro-cycle-card">
           <div class="chart-card-head">
@@ -848,6 +867,10 @@
         </div>
       </div>
 
+    </div>
+
+    <div id="pageMacroEco" class="page">
+      <div class="macro-export-all-row"><button class="macro-export-all-btn" onclick="exportMacroFullPageAsPdf()">⭳ Exporter toute la page en PDF</button></div>
       <div class="section-label">Indicateurs macroéconomiques (États-Unis)</div>
       <div class="macro-power-card">
         <div id="macroFundamentalsTable"></div>
@@ -857,6 +880,28 @@
           <button onclick="exportMacroTableAsImage('macroFundamentalsTable','Indicateurs macroéconomiques (États-Unis)','png')">PNG</button>
           <button onclick="exportMacroTableAsImage('macroFundamentalsTable','Indicateurs macroéconomiques (États-Unis)','jpg')">JPG</button>
           <button class="export-cart-add-btn" onclick="addMacroTableToCart('macroFundamentalsTable','Indicateurs macroéconomiques (États-Unis)', this)">🧺 Ajouter au panier</button>
+        </div>
+      </div>
+
+      <!-- Momentum des bénéfices (Corporate Profits, proxy — voir CREDIT_SERIES dans
+           app.js) : sa fiche dédiée vit ici plutôt que dans le sous-onglet Crédit,
+           demande explicite ("créer un élément macroéconomie dans lequel... on viendra
+           le compléter... avec le graphique sur les bénéfices"). Reste sélectionnable
+           dans l'outil de superposition du sous-onglet Crédit (comparaison inter-thème
+           utile : crédit vs bénéfices), seule la fiche individuelle est dupliquée ici —
+           même canvas/logique que renderCreditIndicatorChart('earningsProxy'), juste un
+           second point d'ancrage DOM. -->
+      <div class="section-label" style="margin-top:8px;">Momentum des bénéfices (proxy)</div>
+      <div class="credit-charts-grid">
+        <div class="chart-card">
+          <div class="chart-card-head">
+            <div><h3>Corporate Profits After Tax — proxy momentum bénéfices</h3><p class="chart-subtitle">Ensemble de l'économie US (BEA, comptabilité nationale) — PAS l'EPS du S&amp;P 500, aucune source gratuite trouvée pour les vraies révisions/breadth/surprises.</p></div>
+          </div>
+          <div class="range-buttons" data-credit-range-for="earningsProxy">
+            <button data-range="3">3a</button><button class="active" data-range="10">10a</button><button data-range="max">Max</button>
+          </div>
+          <div class="chart-holder" style="height:260px;"><canvas id="creditChart-earningsProxy"></canvas></div>
+          <div id="creditStats-earningsProxy"></div>
         </div>
       </div>
     </div>
