@@ -5232,7 +5232,19 @@ const CREDIT_SERIES = [
   // label volontairement explicite là-dessus pour ne jamais laisser croire à une vraie
   // donnée S&P 500.
   { key:'earningsProxy', label:'Corporate Profits After Tax — proxy momentum bénéfices (ensemble économie US, PAS le S&P 500)', shortLabel:'Profits corp. (US, proxy)', seriesId:'CP', suffix:' %', decimals:1, deriveYoY:true, color:THEME.green,
-    note:"Aucune source gratuite pour les vraies révisions EPS/Revision Breadth/surprises agrégées du S&P 500 (FactSet/Refinitiv, payantes) — proxy retenu : croissance sur 1 an des profits après impôts de l'ensemble des entreprises américaines (BEA, comptabilité nationale, via FRED). Économie entière, pas le S&P 500 seul." }
+    note:"Aucune source gratuite pour les vraies révisions EPS/Revision Breadth/surprises agrégées du S&P 500 (FactSet/Refinitiv, payantes) — proxy retenu : croissance sur 1 an des profits après impôts de l'ensemble des entreprises américaines (BEA, comptabilité nationale, via FRED). Économie entière, pas le S&P 500 seul." },
+  // Dépendances internes pour le Buffett Indicator, jamais affichées seules — capitalisation
+  // en Millions $ (Fed Z.1), PIB en Milliards $ : /1000 pour aligner les unités avant division
+  // (voir deriveRatioPctSeries()).
+  { key:'mktCapRaw', seriesId:'BOGZ1LM883164115Q', hidden:true },
+  { key:'gdpRaw', seriesId:'GDP', hidden:true },
+  // Buffett Indicator — vérifié directement avec l'utilisateur (voir échange dédié) :
+  // capitalisation boursière cotée totale US (Fed, comptes financiers Z.1) rapportée au
+  // PIB, gratuite/trimestrielle/longue durée (1945+/1947+), reprend 100% de
+  // l'infrastructure déjà en place. Calcul vérifié en test réel (~245% avec les dernières
+  // valeurs FRED — niveau plausible pour un marché jugé cher).
+  { key:'buffettIndicator', label:'Buffett Indicator (capitalisation boursière US / PIB)', shortLabel:'Buffett Indicator', suffix:' %', decimals:1, color:THEME.violet,
+    note:"Capitalisation totale des actions cotées américaines (Federal Reserve, comptes financiers Z.1) rapportée au PIB — popularisé par Warren Buffett comme jauge de valorisation globale du marché ; au-delà de ~150% généralement lu comme un marché cher." }
 ];
 let creditIndicatorsData = {}; // key -> { dates:[...], values:[...] }
 
@@ -5263,6 +5275,23 @@ function deriveDiffSeries(base, sub){
     if (subByDate[d] == null) return;
     dates.push(d);
     values.push(base.values[i] - subByDate[d]);
+  });
+  return { dates, values };
+}
+
+// Ratio de deux séries appariées PAR DATE, exprimé en % — utilisé pour le Buffett
+// Indicator (capitalisation / PIB). numeratorDivisor convertit le numérateur dans la
+// même unité que le dénominateur avant division (ex. Millions $ -> Milliards $ : /1000).
+function deriveRatioPctSeries(numerator, denominator, numeratorDivisor){
+  if (!numerator || !denominator) return null;
+  const denByDate = {};
+  denominator.dates.forEach((d, i) => { denByDate[d] = denominator.values[i]; });
+  const dates = [], values = [];
+  numerator.dates.forEach((d, i) => {
+    const den = denByDate[d];
+    if (den == null || den === 0) return;
+    dates.push(d);
+    values.push((numerator.values[i] / numeratorDivisor) / den * 100);
   });
   return { dates, values };
 }
@@ -5360,6 +5389,7 @@ async function loadCreditIndicators(){
     return;
   }
   data.baaAaa = deriveDiffSeries(data.baa10y, data.aaa10y);
+  data.buffettIndicator = deriveRatioPctSeries(data.mktCapRaw, data.gdpRaw, 1000);
   creditIndicatorsData = data;
   try{ localStorage.setItem(CREDIT_LS_KEY, JSON.stringify({ ts: Date.now(), data })); }catch(e){ /* quota / navigateur privé */ }
   renderCreditTable();
@@ -5499,14 +5529,15 @@ function creditIndicatorCardHtml(s){
   </div>`;
 }
 
-// "earningsProxy" a sa propre fiche dédiée dans le sous-onglet Macroéconomie (voir
-// wireEarningsProxyStandaloneCard()) plutôt que dans cette grille du sous-onglet
-// Crédit — demande explicite ("créer un élément macroéconomie... on viendra le
-// compléter avec le graphique sur les bénéfices"). Reste dans creditVisibleSeries()
-// pour le tableau récapitulatif et l'outil de superposition (comparaison inter-thème
-// toujours utile), juste exclu de CETTE grille précise pour ne pas le dupliquer.
+// "earningsProxy" et "buffettIndicator" ont chacun leur propre fiche dédiée dans le
+// sous-onglet Macroéconomie plutôt que dans cette grille du sous-onglet Crédit —
+// demande explicite ("créer un élément macroéconomie... on viendra le compléter avec
+// le graphique sur les bénéfices"). Restent dans creditVisibleSeries() pour le tableau
+// récapitulatif et l'outil de superposition (comparaison inter-thème toujours utile),
+// juste exclus de CETTE grille précise pour ne pas les dupliquer.
+const CREDIT_GRID_EXCLUDED_KEYS = ['earningsProxy', 'buffettIndicator'];
 function creditChartsGridSeries(){
-  return creditVisibleSeries().filter(s => s.key !== 'earningsProxy');
+  return creditVisibleSeries().filter(s => !CREDIT_GRID_EXCLUDED_KEYS.includes(s.key));
 }
 function renderCreditChartsGrid(){
   const box = document.getElementById('creditChartsGrid');
@@ -5526,7 +5557,7 @@ function renderCreditChartsGrid(){
     });
   });
   visible.forEach(s => renderCreditIndicatorChart(s.key));
-  renderCreditIndicatorChart('earningsProxy'); // fiche dédiée, sous-onglet Macroéconomie
+  CREDIT_GRID_EXCLUDED_KEYS.forEach(key => renderCreditIndicatorChart(key)); // fiches dédiées, sous-onglet Macroéconomie
 }
 
 /* ---- Superposition (comparer plusieurs indicateurs sur un même graphique) ----------
@@ -5644,16 +5675,18 @@ document.getElementById('creditOverlayRangeButtons').addEventListener('click', e
   document.querySelectorAll('#creditOverlayRangeButtons button').forEach(b => b.classList.toggle('active', b === btn));
   renderCreditOverlayChart();
 });
-// Fiche "Corporate Profits" du sous-onglet Macroéconomie : HTML statique (pas dans la
-// grille générée #creditChartsGrid, voir renderCreditChartsGrid()/creditChartsGridSeries()),
-// donc câblée une fois ici plutôt que dans la boucle de délégation de la grille dynamique.
-document.querySelectorAll('[data-credit-range-for="earningsProxy"]').forEach(row => {
+// Fiches dédiées du sous-onglet Macroéconomie (Corporate Profits, Buffett Indicator) :
+// HTML statique (pas dans la grille générée #creditChartsGrid, voir
+// renderCreditChartsGrid()/creditChartsGridSeries()), donc câblées une fois ici plutôt
+// que dans la boucle de délégation de la grille dynamique.
+document.querySelectorAll('#pageMacroEco [data-credit-range-for]').forEach(row => {
+  const key = row.dataset.creditRangeFor;
   row.addEventListener('click', e => {
     const btn = e.target.closest('button[data-range]');
     if (!btn) return;
-    creditIndicatorRanges.earningsProxy = btn.dataset.range;
+    creditIndicatorRanges[key] = btn.dataset.range;
     row.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
-    renderCreditIndicatorChart('earningsProxy');
+    renderCreditIndicatorChart(key);
   });
 });
 

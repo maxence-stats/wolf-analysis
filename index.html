@@ -883,15 +883,15 @@
         </div>
       </div>
 
-      <!-- Momentum des bénéfices (Corporate Profits, proxy — voir CREDIT_SERIES dans
-           app.js) : sa fiche dédiée vit ici plutôt que dans le sous-onglet Crédit,
-           demande explicite ("créer un élément macroéconomie dans lequel... on viendra
-           le compléter... avec le graphique sur les bénéfices"). Reste sélectionnable
-           dans l'outil de superposition du sous-onglet Crédit (comparaison inter-thème
-           utile : crédit vs bénéfices), seule la fiche individuelle est dupliquée ici —
-           même canvas/logique que renderCreditIndicatorChart('earningsProxy'), juste un
-           second point d'ancrage DOM. -->
-      <div class="section-label" style="margin-top:8px;">Momentum des bénéfices (proxy)</div>
+      <!-- Bénéfices & valorisation du marché (Corporate Profits + Buffett Indicator,
+           proxies — voir CREDIT_SERIES dans app.js) : fiches dédiées ici plutôt que
+           dans le sous-onglet Crédit, demande explicite ("créer un élément
+           macroéconomie dans lequel... on viendra le compléter... avec le graphique
+           sur les bénéfices"). Restent sélectionnables dans l'outil de superposition
+           du sous-onglet Crédit (comparaison inter-thème utile), seules les fiches
+           individuelles sont dupliquées ici — mêmes canvas/logique que
+           renderCreditIndicatorChart(), juste un second point d'ancrage DOM. -->
+      <div class="section-label" style="margin-top:8px;">Bénéfices &amp; valorisation du marché</div>
       <div class="credit-charts-grid">
         <div class="chart-card">
           <div class="chart-card-head">
@@ -902,6 +902,16 @@
           </div>
           <div class="chart-holder" style="height:260px;"><canvas id="creditChart-earningsProxy"></canvas></div>
           <div id="creditStats-earningsProxy"></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-card-head">
+            <div><h3>Buffett Indicator</h3><p class="chart-subtitle">Capitalisation boursière cotée US (Fed, comptes financiers Z.1) / PIB — jauge de valorisation globale du marché, au-delà de ~150% généralement lu comme cher.</p></div>
+          </div>
+          <div class="range-buttons" data-credit-range-for="buffettIndicator">
+            <button data-range="3">3a</button><button class="active" data-range="10">10a</button><button data-range="max">Max</button>
+          </div>
+          <div class="chart-holder" style="height:260px;"><canvas id="creditChart-buffettIndicator"></canvas></div>
+          <div id="creditStats-buffettIndicator"></div>
         </div>
       </div>
     </div>
