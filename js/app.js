@@ -5167,16 +5167,20 @@ async function fetchWithRetry(targetUrl, opts, timeoutMs){
    (endettement). Chaîne : prix du risque → défauts/pertes → remboursement → création
    de crédit → endettement des ménages.
 
-   Choix technique fait AVEC l'utilisateur après lui avoir signalé le risque : l'onglet
-   Macro avait déjà abandonné le fetch direct FRED une fois (voir DASHBOARD CYCLE
-   plus bas, citation utilisateur : "ne pas aller chercher les données macro sur le
-   site de la FRED, ça ne fonctionne pas") au profit d'une saisie manuelle sur Sheet.
-   L'utilisateur a explicitement choisi de retenter un fetch direct malgré ce risque
-   documenté — donc on maximise la résilience par rapport à la 1re tentative : même
-   relais CORS multi-proxy que Yahoo/Stooq (fetchWithRetry/corsProxyUrls, déjà éprouvé
-   ailleurs), cache localStorage 24h pour ne pas dépendre d'un fetch réussi à CHAQUE
-   visite, et un échec qui n'affecte JAMAIS le reste du site (le bloc Crédit affiche
-   juste un message d'erreur local, tout le reste de l'app continue de fonctionner).
+   Historique de la source (2 tentatives avant d'arriver à la solution actuelle) : l'onglet
+   Macro avait déjà abandonné le fetch direct FRED une fois (voir DASHBOARD CYCLE plus
+   bas, citation utilisateur : "ne pas aller chercher les données macro sur le site de
+   la FRED, ça ne fonctionne pas") au profit d'une saisie manuelle sur Sheet. Un 1er essai
+   de fetch direct côté navigateur (relais CORS multi-proxy public, même mécanisme que
+   Yahoo/Stooq) a échoué en usage réel : HTTP 403 SYSTÉMATIQUE sur les 10 séries chez
+   l'utilisateur alors que la clé FRED et le relais répondaient 200 en direct depuis un
+   serveur (vérifié) — le relais public traitait différemment son navigateur (région/
+   volume/anti-abus, hors de notre contrôle). Solution retenue : passer par l'endpoint
+   Apps Script déjà utilisé pour 100% du reste du site (voir fetchFredSeriesViaAppsScript()
+   plus bas) — UrlFetchApp côté serveur, aucun CORS/relais tiers impliqué, même fiabilité
+   que le chargement principal. Cache localStorage 24h pour ne pas refetcher à chaque
+   visite (voir CREDIT_CACHE_VERSION), et un échec qui n'affecte JAMAIS le reste du site
+   (le bloc Crédit affiche juste un message d'erreur local détaillé).
 
    HY Spread (ICE BofA, BAML*) : vérifié DIRECTEMENT dans les métadonnées de 3 séries
    ICE différentes que la restriction "3 ans d'historique depuis avril 2026" est une
@@ -5190,7 +5194,11 @@ async function fetchWithRetry(targetUrl, opts, timeoutMs){
    DBAA/DAAA en plus, aaa10y n'est fetché que pour ce calcul, jamais affiché seul
    (voir `hidden:true`).
    ============================================================ */
-const FRED_API_KEY = '7e3e0398804ecc27ffb313bcbf29fc27';
+// Plus de clé FRED côté client (FRED_API_KEY) ni de date de départ à passer — les deux
+// vivent maintenant côté Apps Script (voir fetchFredSeriesViaAppsScript() plus bas),
+// qui décide lui-même de fetcher tout l'historique disponible par série (1947 pour
+// BUSLOANS, 1985 pour CORBLACBS/DRALACBS, 1986 pour Baa10Y/Aaa10Y...) — demande
+// explicite : "utiliser tout l'historique disponible" pour Max.
 const CREDIT_LS_KEY = 'wolfAnalysisCreditIndicators';
 const CREDIT_CACHE_MS = 24 * 60 * 60 * 1000;
 // Incrémenter à CHAQUE fois que la forme de CREDIT_SERIES change (nouvel indicateur,
@@ -5201,13 +5209,7 @@ const CREDIT_CACHE_MS = 24 * 60 * 60 * 1000;
 // vide PAS localStorage (seulement le cache HTTP des fichiers), donc le symptôme
 // persistait indéfiniment malgré les rechargements. Toute incompatibilité de version
 // invalide immédiatement le cache, quel que soit son âge.
-const CREDIT_CACHE_VERSION = 2;
-// Date sentinelle très ancienne (aucune de ces séries ne remonte avant 1900) plutôt
-// qu'une date fixe arbitraire : FRED renvoie alors TOUT l'historique réellement
-// disponible pour chaque série (1947 pour BUSLOANS, 1985 pour CORBLACBS/DRALACBS, 1986
-// pour Baa10Y/Aaa10Y...) — demande explicite : "utiliser tout l'historique disponible"
-// pour Max, plutôt que de plafonner arbitrairement à ~20 ans comme le reste du site.
-const CREDIT_START_DATE = '1900-01-01';
+const CREDIT_CACHE_VERSION = 3;
 const CREDIT_SERIES = [
   { key:'hySpread', label:'HY Spread (High Yield OAS)', shortLabel:'HY Spread', seriesId:'BAMLH0A0HYM2', suffix:' pts', decimals:2, color:THEME.red,
     note:"Écart de rendement entre obligations High Yield (junk, notation BB et en-dessous) et Trésor US (ICE BofA) — prix du risque de crédit demandé par le marché. Historique limité à ~3 ans (restriction de licence ICE Data Indices depuis avril 2026, vérifiée sur plusieurs séries ICE — pas une limite du site, non contournable gratuitement)." },
@@ -5220,7 +5222,7 @@ const CREDIT_SERIES = [
   // depuis 1900 pèse 1,08 Mo et échoue en HTTP 413 sur corsproxy.io, alors que depuis
   // 1986 il pèse 1,01 Mo — comme BAA10Y, qui lui passe). startDate dédié pour rester
   // sous ce seuil, sans aucune perte de donnée réellement utilisée.
-  { key:'aaa10y', seriesId:'AAA10Y', startDate:'1986-01-01', hidden:true }, // jamais affichée seule — sert uniquement au calcul de baaAaa ci-dessous
+  { key:'aaa10y', seriesId:'AAA10Y', hidden:true }, // jamais affichée seule — sert uniquement au calcul de baaAaa ci-dessous ; départ 1986 géré côté Apps Script
   { key:'baaAaa', label:'Spread Baa − Aaa (prime de risque entre notations)', shortLabel:'Baa−Aaa', suffix:' pts', decimals:2, color:THEME.violet,
     note:"Écart entre obligations Baa et Aaa (Moody's/FRED) — isole la prime de risque ENTRE catégories de notation, indépendamment du niveau des taux du Trésor. Calculé côté client (Baa10Y − Aaa10Y), même historique que Baa10Y." },
   { key:'defaultProxy', label:'Corporate Charge-off Rate (taux de pertes sur prêts aux entreprises)', shortLabel:'Charge-off', seriesId:'CORBLACBS', suffix:' %', decimals:2, color:THEME.red,
@@ -5257,31 +5259,25 @@ const CREDIT_SERIES = [
 ];
 let creditIndicatorsData = {}; // key -> { dates:[...], values:[...] }
 
-const CREDIT_FETCH_TIMEOUT_MS = 10000;
-// Retour utilisateur explicite ("tout le reste ne charge pas... il doit y avoir un
-// souci") : rien n'affichait le moindre état de progression pendant un chargement qui
-// peut réellement prendre 1-2 minutes (10 séries, en partie séquentielles) — un
-// chargement simplement LENT était donc indiscernable d'un chargement CASSÉ. Sécurité
-// supplémentaire en plus du timeout interne de fetchWithRetry() (AbortController) : un
-// Promise.race englobant, même pattern que loadAllDataFromAppsScript() — un fetch()
-// resté bloqué sans jamais résoudre/rejeter (constaté en contexte file:// pour d'autres
-// appels réseau du site, voir CLAUDE.md) ne doit jamais geler cette série indéfiniment.
-async function fetchFredSeries(seriesId, startDate){
-  const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&api_key=${FRED_API_KEY}&file_type=json&observation_start=${startDate || CREDIT_START_DATE}`;
+// FRED via l'endpoint Apps Script (PAS de relais CORS public) — décision prise avec
+// l'utilisateur après un échec réel constaté deux fois : l'ancienne approche
+// (fetchWithRetry/corsProxyUrls, mêmes relais gratuits que Yahoo/Stooq) renvoyait un
+// HTTP 403 SYSTÉMATIQUE sur les 10 séries chez l'utilisateur, alors que la clé FRED et
+// corsproxy.io répondaient 200 en direct depuis un serveur (vérifié) — signe que le
+// relais public traitait différemment son navigateur (région/volume/anti-abus, hors de
+// notre contrôle). Apps Script sert déjà 100% du reste du site sans jamais ce problème
+// (UrlFetchApp côté serveur, aucun CORS impliqué) : même canal réutilisé ici, un seul
+// appel qui renvoie les 10 séries d'un coup (voir la fonction Apps Script à ajouter,
+// fournie séparément à l'utilisateur — ce fichier ne peut pas éditer son script Google).
+async function fetchFredSeriesViaAppsScript(){
   const res = await Promise.race([
-    fetchWithRetry(url, { cache:'no-store' }, CREDIT_FETCH_TIMEOUT_MS),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('délai dépassé (>20s, les deux relais)')), CREDIT_FETCH_TIMEOUT_MS * 2 + 2000))
+    fetch(APPS_SCRIPT_URL + '?action=fred', { cache:'no-store' }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('délai dépassé (>30s)')), 30000))
   ]);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
   const json = await res.json();
-  if (!json || !Array.isArray(json.observations)) throw new Error('réponse FRED invalide pour ' + seriesId);
-  const dates = [], values = [];
-  json.observations.forEach(o => {
-    const v = parseFloat(o.value); // FRED renvoie "." (non numérique) pour les valeurs manquantes
-    if (isNaN(v)) return;
-    dates.push(o.date);
-    values.push(v);
-  });
-  return { dates, values };
+  if (!json || typeof json !== 'object') throw new Error('réponse Apps Script invalide');
+  return json; // { SERIES_ID: [{date,value}, ...] } ou { SERIES_ID: {error:"..."} } par série en échec côté Apps Script
 }
 
 // Différence de deux séries appariées PAR DATE (pas par index — Baa10Y/Aaa10Y sont
@@ -5365,32 +5361,6 @@ function setCreditLoadingStatus(msg, isError){
   });
 }
 
-// Lot de séries en concurrence LIMITÉE (pas tout en même temps — 8-10 requêtes
-// simultanées à travers les mêmes 2 relais CORS gratuits ont provoqué des rejets HTTP
-// 413 en test réel, probablement liés à la charge concurrente sur le proxy — voir
-// CREDIT_FETCH_CONCURRENCY) mais pas non plus une par une (bien trop lent avec 10
-// séries : jusqu'à plusieurs minutes constaté en test). 3 en parallèle est un compromis
-// vérifié en pratique : nettement plus rapide qu'un fetch strictement séquentiel, sans
-// retomber sur les 413 observés à 8+.
-const CREDIT_FETCH_CONCURRENCY = 3;
-async function fetchCreditSeriesBatch(list, onItemDone){
-  const data = {}, errors = [];
-  for (let i = 0; i < list.length; i += CREDIT_FETCH_CONCURRENCY){
-    const batch = list.slice(i, i + CREDIT_FETCH_CONCURRENCY);
-    await Promise.all(batch.map(async s => {
-      try{
-        const r = await fetchFredSeries(s.seriesId, s.startDate);
-        data[s.key] = s.deriveYoY ? deriveYoYSeries(r.dates, r.values) : r;
-      }catch(e){
-        console.error('Erreur de chargement FRED pour ' + s.seriesId + ' :', e);
-        errors.push({ s, message: (e && e.message) || String(e) });
-      }
-      if (onItemDone) onItemDone();
-    }));
-  }
-  return { data, errors };
-}
-
 async function loadCreditIndicators(){
   try{
     const raw = localStorage.getItem(CREDIT_LS_KEY);
@@ -5407,25 +5377,35 @@ async function loadCreditIndicators(){
     }
   }catch(e){ /* cache indisponible/corrompu — on retente un fetch */ }
 
+  setCreditLoadingStatus('Chargement des indicateurs crédit…', false);
   const fetchable = CREDIT_SERIES.filter(s => s.seriesId);
-  let done = 0;
-  const total = fetchable.length;
-  setCreditLoadingStatus(`Chargement des indicateurs crédit… (0/${total})`, false);
-  const tick = () => { done++; setCreditLoadingStatus(`Chargement des indicateurs crédit… (${done}/${total})`, false); };
-
-  let { data, errors } = await fetchCreditSeriesBatch(fetchable, tick);
-
-  // 2e passe uniquement sur les séries en échec après la 1re — les grosses séries
-  // quotidiennes (~1 Mo, Baa10Y/Aaa10Y) sont proches du seuil de taille toléré par le
-  // relais CORS gratuit et échouent parfois de façon purement intermittente (constaté
-  // en test : pas systématiquement la même série qui échoue d'un chargement à l'autre).
-  if (errors.length){
-    const retryTargets = errors.map(e => e.s);
-    setCreditLoadingStatus(`Nouvelle tentative pour ${retryTargets.length} indicateur${retryTargets.length > 1 ? 's' : ''}…`, false);
-    const retry = await fetchCreditSeriesBatch(retryTargets, () => {});
-    Object.assign(data, retry.data);
-    errors = retry.errors; // ne garde que les échecs qui persistent après la 2e tentative
+  let raw;
+  try{
+    raw = await fetchFredSeriesViaAppsScript();
+  }catch(e){
+    console.error('Erreur de chargement des indicateurs crédit (Apps Script) :', e);
+    setCreditLoadingStatus('', false);
+    renderCreditError([{ s:{ shortLabel:'Apps Script' }, message:(e && e.message) || String(e) }]);
+    return;
   }
+
+  const data = {}, errors = [];
+  fetchable.forEach(s => {
+    const entry = raw[s.seriesId];
+    if (!entry || entry.error || !Array.isArray(entry)){
+      errors.push({ s, message: (entry && entry.error) || 'donnée manquante dans la réponse Apps Script' });
+      return;
+    }
+    const dates = [], values = [];
+    entry.forEach(o => {
+      const v = parseFloat(o.value); // FRED renvoie "." (non numérique) pour les valeurs manquantes
+      if (isNaN(v)) return;
+      dates.push(o.date);
+      values.push(v);
+    });
+    const r = { dates, values };
+    data[s.key] = s.deriveYoY ? deriveYoYSeries(r.dates, r.values) : r;
+  });
 
   if (Object.keys(data).length === 0){
     setCreditLoadingStatus('', false);
@@ -5565,8 +5545,8 @@ function wireCreditRangeRow(row, onRangeChange){
 }
 
 // Découpe une série {dates,values} sur une plage donnée — 'max' renvoie tout
-// l'historique réellement disponible (voir CREDIT_START_DATE), pas une fenêtre glissante
-// arbitraire.
+// l'historique réellement disponible (fetché en entier côté Apps Script), pas une
+// fenêtre glissante arbitraire.
 function creditSliceByRange(d, range){
   if (!d || !d.dates.length) return { dates:[], values:[] };
   if (range === 'max') return d;
