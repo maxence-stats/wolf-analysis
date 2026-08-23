@@ -6683,7 +6683,11 @@ function curveDynamicsRegime(d2, d10){
   if (d10 > d2){
     return d2 < 0
       ? { key:'bullSteepening', label:'Bull Steepening', desc:"Le taux 2 ans baisse plus vite que le taux 10 ans." }
-      : { key:'bearSteepening', label:'Bear Steepening', desc:"Le taux 10 ans monte plus vite que le taux 2 ans." };
+      // Demande explicite : ne pas classer Bear Steepening comme un signal de
+      // ralentissement — description factuelle uniquement, l'interprétation est
+      // renvoyée à l'utilisateur (à confirmer avec inflation/croissance/politique
+      // monétaire, jamais déduite automatiquement d'un seul mouvement de courbe).
+      : { key:'bearSteepening', label:'Bear Steepening', desc:"Les taux longs montent plus rapidement que les taux courts. Interprétation à confirmer avec inflation, croissance et politique monétaire." };
   }
   return d10 < 0
     ? { key:'bullFlattening', label:'Bull Flattening', desc:"Le taux 2 ans baisse, mais le taux 10 ans baisse davantage." }
@@ -6824,13 +6828,42 @@ function cycleGaugeCardHtml(g){
 // la tendance 3 mois de la croissance. Simplification volontaire d'un cadre classique
 // "cycle de croissance/crédit" (expansion / expansion tardive / ralentissement /
 // récession / reprise) — un point de départ à affiner, pas un modèle validé.
-function classifyMacroRegime(growth, credit){
-  if (!growth || !credit || growth.signal == null || credit.signal == null) return null;
-  if (growth.signal === 'warning' && credit.signal === 'warning') return 'Récession';
-  if (growth.signal === 'positif' && growth.trend3m != null && growth.trend3m < 0) return 'Expansion tardive';
-  if (growth.signal === 'positif' && credit.signal === 'positif') return 'Expansion';
+// Régime macro probable — reformulé suite à un retour explicite : ne jamais déduire un
+// "Ralentissement" d'un seul indicateur isolé, et surtout jamais depuis la dynamique de
+// courbe (Bear Steepening n'entre PAS dans ce calcul — un mouvement de courbe seul
+// n'implique aucun régime particulier, voir curveDynamicsRegime()). "Ralentissement"
+// exige donc que PLUSIEURS indicateurs de croissance (PIB, consommation, investissement
+// — BEA, comparés au trimestre précédent) se dégradent SIMULTANÉMENT (seuil : au moins
+// 2 des 3). Une situation crédit en expansion (conditions accommodantes + demande
+// forte, voir creditReadingQuadrant()) + PIB positif est lue comme une expansion,
+// nuancée en "fin de cycle à surveiller" uniquement si la liquidité se contracte ET que
+// la valorisation est élevée EN MÊME TEMPS (deux signaux d'alerte distincts, pas un
+// seul) — demande explicite.
+function classifyMacroRegime(scorecard){
+  const [growth, inflation, credit, liquidity, valorisation] = scorecard;
+  if (!growth || !credit || growth.signal == null || credit.signal == null || !macroFundamentalsData || macroFundamentalsData.length < 2) return null;
+
+  const latestQ = macroFundamentalsData[macroFundamentalsData.length - 1];
+  const prevQ = macroFundamentalsData[macroFundamentalsData.length - 2];
+  let growthDeteriorating = 0;
+  ['gdpGrowth', 'c', 'i'].forEach(f => {
+    if (latestQ[f] != null && prevQ[f] != null && latestQ[f] < prevQ[f]) growthDeteriorating++;
+  });
+  const growthWeakening = growthDeteriorating >= 2; // au moins 2 des 3 (PIB/conso/investissement) en baisse vs trimestre précédent
+
+  const quadrant = credit.quadrant;
+  const creditExpansion = quadrant && quadrant.key === 'expansion';
+  const gdpPositive = latestQ.gdpGrowth != null && latestQ.gdpGrowth > 0;
+  const liquidityContracting = liquidity.signal === 'warning';
+  const valuationHigh = valorisation.signal === 'warning';
+
+  if (creditExpansion && gdpPositive){
+    return (liquidityContracting && valuationHigh) ? 'Expansion avancée / fin de cycle à surveiller' : 'Expansion';
+  }
+  if (growthWeakening && credit.signal === 'warning') return 'Récession';
+  if (growthWeakening) return 'Ralentissement';
   if (growth.signal !== 'warning' && growth.trend3m != null && growth.trend3m > 0 && credit.signal !== 'warning') return 'Reprise';
-  return 'Ralentissement';
+  return 'Signal mixte — pas de régime dominant clair';
 }
 
 function cycleSynthesisLines(scorecard){
@@ -6892,7 +6925,7 @@ function renderMacroCycleRead(){
     <p class="chart-hint">${escapeHtml(credit.quadrant.desc)}</p>
   </div>` : '';
 
-  const regime = classifyMacroRegime(growth, credit);
+  const regime = classifyMacroRegime(scorecard);
   const lines = cycleSynthesisLines(scorecard);
 
   box.innerHTML = `
@@ -7672,7 +7705,7 @@ function setComparisonDetteMetric(metric){
 // ajouté séparément (demande explicite ultérieure) sur le même principe que "fcf" —
 // cagrOcf5/10/20 vérifiés directement sur le CSV réel avant d'être mappés (voir COL).
 function comparisonChartBadgesHtml(key, latest){
-  if (key === 'div') return cagrBadgeSpan('CAGR div. 10a', latest.cagrDiv10);
+  if (key === 'div') return cagrBadgeSpan('CAGR 5a', latest.cagrDiv5) + cagrBadgeSpan('CAGR 10a', latest.cagrDiv10) + cagrBadgeSpan('CAGR 20a', latest.cagrDiv20);
   if (key === 'ca') return cagrBadgeSpan('CAGR 5a', latest.cagrCA5) + cagrBadgeSpan('CAGR 10a', latest.cagrCA10) + cagrBadgeSpan('CAGR 20a', latest.cagrCA20);
   if (key === 'fcf') return cagrBadgeSpan('CAGR 5a', latest.cagrFcf5) + cagrBadgeSpan('CAGR 10a', latest.cagrFcf10) + cagrBadgeSpan('CAGR 20a', latest.cagrFcf20);
   if (key === 'ocf') return cagrBadgeSpan('CAGR 5a', latest.cagrOcf5) + cagrBadgeSpan('CAGR 10a', latest.cagrOcf10) + cagrBadgeSpan('CAGR 20a', latest.cagrOcf20);
