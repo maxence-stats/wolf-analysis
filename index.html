@@ -849,6 +849,7 @@
               <option value="rateSpread">Spread 10-2 ans</option><option value="realRate10y">Taux réel</option>
               <option value="cpi">Inflation (CPI)</option><option value="creditGrowth">Croissance du crédit</option>
               <option value="creditStandards">Cond. crédit (SLOOS, offre)</option><option value="creditDemand">Demande crédit (SLOOS)</option>
+              <option value="netLiquidity">Net Liquidity (Fed)</option>
             </select>
           </div>
           <div class="range-buttons" id="macroRotationRangeButtons">
@@ -1031,6 +1032,27 @@
           </div>
           <div class="chart-holder" style="height:260px;"><canvas id="creditChart-buffettIndicator"></canvas></div>
           <div id="creditStats-buffettIndicator"></div>
+        </div>
+      </div>
+
+      <!-- Net Liquidity de la Fed (demande explicite) : fiche dédiée, même pattern que
+           Corporate Profits/Buffett Indicator ci-dessus — sélectionnable aussi dans les
+           outils de superposition (RATE_OVERLAY_INDICATORS dans app.js). -->
+      <div class="section-label" style="margin-top:8px;">Liquidité</div>
+      <div class="credit-charts-grid">
+        <div class="chart-card">
+          <div class="chart-card-head">
+            <div><h3>Net Liquidity de la Fed</h3><p class="chart-subtitle">Actifs Fed − Compte du Trésor (TGA) − Reverse Repo (RRP) — liquidité effectivement disponible dans le système financier.</p></div>
+            <div class="chart-card-actions"><button class="zoom-btn" data-credit-zoom="netLiquidity" aria-label="Agrandir">⤢</button></div>
+          </div>
+          <div class="credit-range-row" data-credit-range-for="netLiquidity">
+            <div class="range-buttons">
+              <button data-range="3">3a</button><button data-range="5">5a</button><button class="active" data-range="10">10a</button><button data-range="20">20a</button><button data-range="30">30a</button><button data-range="max">Max</button>
+            </div>
+            <span class="credit-range-custom"><input type="number" min="1" max="99" step="1" class="credit-range-custom-input" placeholder="Ans libre"></span>
+          </div>
+          <div class="chart-holder" style="height:260px;"><canvas id="creditChart-netLiquidity"></canvas></div>
+          <div id="creditStats-netLiquidity"></div>
         </div>
       </div>
     </div>

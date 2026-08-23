@@ -5552,7 +5552,7 @@ const CREDIT_CACHE_MS = 24 * 60 * 60 * 1000;
 // vide PAS localStorage (seulement le cache HTTP des fichiers), donc le symptôme
 // persistait indéfiniment malgré les rechargements. Toute incompatibilité de version
 // invalide immédiatement le cache, quel que soit son âge.
-const CREDIT_CACHE_VERSION = 5;
+const CREDIT_CACHE_VERSION = 6;
 const CREDIT_SERIES = [
   { key:'hySpread', label:'HY Spread (High Yield OAS)', shortLabel:'HY Spread', seriesId:'BAMLH0A0HYM2', suffix:' pts', decimals:2, color:THEME.red,
     note:"Écart de rendement entre obligations High Yield (junk, notation BB et en-dessous) et Trésor US (ICE BofA) — prix du risque de crédit demandé par le marché. Historique limité à ~3 ans (restriction de licence ICE Data Indices depuis avril 2026, vérifiée sur plusieurs séries ICE — pas une limite du site, non contournable gratuitement)." },
@@ -5621,6 +5621,18 @@ const CREDIT_SERIES = [
   // valeurs FRED — niveau plausible pour un marché jugé cher).
   { key:'buffettIndicator', label:'Buffett Indicator (capitalisation boursière US / PIB)', shortLabel:'Buffett Indicator', suffix:' %', decimals:1, color:THEME.violet,
     note:"Capitalisation totale des actions cotées américaines (Federal Reserve, comptes financiers Z.1) rapportée au PIB — popularisé par Warren Buffett comme jauge de valorisation globale du marché ; au-delà de ~150% généralement lu comme un marché cher." },
+  // Net Liquidity de la Fed (demande explicite, "intéressant pour faire des
+  // comparaisons") : Actifs Fed − Compte du Trésor (TGA) − Reverse Repo (RRP), mesure
+  // popularisée (Michael Howell notamment) de la liquidité effectivement injectée dans
+  // le système financier — le TGA et le RRP "absorbent" de la liquidité même quand le
+  // bilan de la Fed ne bouge pas. Les 3 séries FRED vérifiées directement : WALCL et
+  // WTREGEN en Millions $ hebdo (mercredi), RRPONTSYD en Milliards $ quotidien —
+  // conversion d'unité + appariement par date dans deriveNetLiquiditySeries() plus bas.
+  { key:'fedAssets', seriesId:'WALCL', hidden:true },
+  { key:'tga', seriesId:'WTREGEN', hidden:true },
+  { key:'rrp', seriesId:'RRPONTSYD', hidden:true },
+  { key:'netLiquidity', label:'Net Liquidity de la Fed (Actifs Fed − TGA − Reverse Repo)', shortLabel:'Net Liquidity', suffix:' Md$', decimals:0, color:THEME.blue,
+    note:"Bilan total de la Fed moins le compte du Trésor (TGA) moins les prises en pension au jour le jour (RRP) — mesure de la liquidité effectivement disponible dans le système financier, popularisée par Michael Howell. Une baisse peut peser sur les actifs risqués même sans resserrement monétaire direct." },
   // Régime de taux — jamais affichées dans le tableau/la grille Crédit (hidden:true,
   // group:'taux'), servent uniquement à l'outil "Taux vs Actions/Secteurs" (voir plus
   // bas, RATE_OVERLAY_SERIES) qui superpose ces séries au prix d'une entreprise ou d'un
@@ -5684,6 +5696,28 @@ function deriveRatioPctSeries(numerator, denominator, numeratorDivisor){
     if (den == null || den === 0) return;
     dates.push(d);
     values.push((numerator.values[i] / numeratorDivisor) / den * 100);
+  });
+  return { dates, values };
+}
+
+// Net Liquidity = Actifs Fed − TGA − RRP, en Milliards $. fedAssets/tga (WALCL/WTREGEN,
+// FRED) publient tous les deux le même jour (mercredi) avec les mêmes unités (Millions
+// $), donc appariés directement par date ; rrp (RRPONTSYD) est quotidien en Milliards $,
+// interrogé "à ou avant" chaque date fedAssets/tga (fredValueAtOrBefore) plutôt
+// qu'apparié exactement — sinon toute date sans publication RRP ce jour précis (rare
+// mais possible) ferait sauter le point entier.
+function deriveNetLiquiditySeries(fedAssets, tga, rrp){
+  if (!fedAssets || !tga || !rrp) return null;
+  const tgaByDate = {};
+  tga.dates.forEach((d, i) => { tgaByDate[d] = tga.values[i]; });
+  const dates = [], values = [];
+  fedAssets.dates.forEach((d, i) => {
+    const tgaVal = tgaByDate[d];
+    if (tgaVal == null) return;
+    const rrpVal = fredValueAtOrBefore(rrp.dates, rrp.values, new Date(d).getTime());
+    if (rrpVal == null) return;
+    dates.push(d);
+    values.push((fedAssets.values[i] - tgaVal) / 1000 - rrpVal); // WALCL/WTREGEN : Millions $ -> Milliards $ ; RRP déjà en Milliards $
   });
   return { dates, values };
 }
@@ -5792,6 +5826,7 @@ async function loadCreditIndicators(){
   data.baaAaa = deriveDiffSeries(data.baa10y, data.aaa10y);
   data.buffettIndicator = deriveRatioPctSeries(data.mktCapRaw, data.gdpRaw, 1000);
   data.realRate10y = deriveDiffSeries(data.rate10y, data.cpi); // taux réel = 10 ans nominal − inflation (glissement annuel)
+  data.netLiquidity = deriveNetLiquiditySeries(data.fedAssets, data.tga, data.rrp);
   creditIndicatorsData = data;
   try{ localStorage.setItem(CREDIT_LS_KEY, JSON.stringify({ ts: Date.now(), version: CREDIT_CACHE_VERSION, data })); }catch(e){ /* quota / navigateur privé */ }
 
@@ -6024,7 +6059,7 @@ function creditIndicatorCardHtml(s){
 // le graphique sur les bénéfices"). Restent dans creditVisibleSeries() pour le tableau
 // récapitulatif et l'outil de superposition (comparaison inter-thème toujours utile),
 // juste exclus de CETTE grille précise pour ne pas les dupliquer.
-const CREDIT_GRID_EXCLUDED_KEYS = ['earningsProxy', 'buffettIndicator'];
+const CREDIT_GRID_EXCLUDED_KEYS = ['earningsProxy', 'buffettIndicator', 'netLiquidity'];
 // État du crédit (spreads, défauts, charge-offs) : groupe implicite par défaut (pas de
 // champ `group`, ou `group:'etat'`) — distinct de la Dynamique du crédit (conditions
 // d'octroi + croissance) ci-dessous, demande explicite de l'utilisateur de ne pas
@@ -6216,7 +6251,8 @@ const RATE_OVERLAY_INDICATORS = [
   { key:'cpi', label:'Inflation (CPI, glissement annuel)' },
   { key:'creditGrowth', label:'Croissance du crédit' },
   { key:'creditStandards', label:'Cond. crédit (SLOOS, offre)' },
-  { key:'creditDemand', label:'Demande crédit (SLOOS)' }
+  { key:'creditDemand', label:'Demande crédit (SLOOS)' },
+  { key:'netLiquidity', label:'Net Liquidity (Fed)' }
 ];
 let rateOverlayBaseType = 'company'; // 'company' | 'sector'
 let rateOverlayCompany = null;
