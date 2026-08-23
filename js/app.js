@@ -17,6 +17,13 @@ const COL = {
   ca:44, cagrCA5:45, cagrCA10:46, cagrCA20:47, margeOp:48, roic:49,
   cash:52, cashInvesti:53, actions:54, cagrActions:55,
   detteOCF:58, medianePFCF20:59,
+  // Dette Nette/Action — pour la bascule Dette/OCF vs Dette/FCF de l'onglet Comparaison
+  // (demande explicite). Pas de donnée EBITDA nulle part dans le Sheet (vérifié
+  // directement sur le CSV réel, aucune colonne "EBITDA" quelle que soit sa graphie) —
+  // Dette/EBITDA reste donc hors de portée tant que l'utilisateur n'ajoute pas cette
+  // donnée au Sheet, contrairement à Dette/FCF qui est calculable dès maintenant à
+  // partir de deux colonnes déjà mappées (detteNetteAction/fcfParAction).
+  detteNetteAction:50,
   // Valorisation alternative par OCF (bascule FCF/OCF, onglet Valorisation).
   // cagrOcf5/cagrOcf20 (AC/AE) : re-vérifiés directement sur le CSV réel (colonnes
   // "CAGR OCF 5/10/20 ans (%)" toutes les trois présentes, AC/AD/AE) avant d'écrire ce
@@ -466,6 +473,7 @@ function handleCsvRows(rows){
       margeOp: parseNum(c[COL.margeOp]),
       roic: parseNum(c[COL.roic]),
       detteOCF: parseNum(c[COL.detteOCF]),
+      detteNetteAction: parseNum(c[COL.detteNetteAction]),
       cash: parseNum(c[COL.cash]),
       cashInvesti: parseNum(c[COL.cashInvesti]),
       actions: parseNum(c[COL.actions]),
@@ -5236,7 +5244,7 @@ function renderCompany(nom){
 // une seule source de vérité pour le style, jamais deux implémentations à resynchroniser.
 const HISTORICAL_CHART_KEYS = ['div','ca','marges','fcf','pfcf','ocf','actions','dette','cash'];
 const HISTORICAL_CHART_CANVAS_ID = { div:'chartDiv', ca:'chartCA', marges:'chartMarges', fcf:'chartFCF', pfcf:'chartPFCF', ocf:'chartOCF', actions:'chartActions', dette:'chartDette', cash:'chartCash' };
-function buildHistoricalChartConfig(key, hist, years){
+function buildHistoricalChartConfig(key, hist, years, detteMetric){
   const series = k => hist.map(r => r[k]);
   if (key === 'div') return {
     type:'bar',
@@ -5288,11 +5296,22 @@ function buildHistoricalChartConfig(key, hist, years){
     data:{ labels:years, datasets:[{ label:'Actions en circulation (M)', data:series('actions'), borderColor:THEME.blue, backgroundColor:'rgba(74,159,224,0.12)', fill:true, tension:0.35, pointRadius:3, spanGaps:true }]},
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'M'} } } }
   };
-  if (key === 'dette') return {
-    type:'bar',
-    data:{ labels:years, datasets:[{ label:'Dette / OCF (x)', data:series('detteOCF'), backgroundColor:THEME.blue, borderRadius:4, barPercentage:0.6 }]},
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'x'} } } }
-  };
+  // Dette/EBITDA demandée mais non calculable (aucune donnée EBITDA dans le Sheet, voir
+  // COL.detteNetteAction) — seule la bascule OCF/FCF est proposée. detteMetric n'est
+  // passé QUE par l'onglet Comparaison (voir renderComparisonDetailColumns()) ; l'onglet
+  // Analyse continue d'appeler cette fonction sans ce paramètre et reste donc toujours
+  // en Dette/OCF, comportement inchangé.
+  if (key === 'dette'){
+    const metric = detteMetric === 'fcf' ? 'fcf' : 'ocf';
+    const data = metric === 'fcf'
+      ? hist.map(r => (r.detteNetteAction != null && r.fcfParAction) ? +(r.detteNetteAction / r.fcfParAction).toFixed(2) : null)
+      : series('detteOCF');
+    return {
+      type:'bar',
+      data:{ labels:years, datasets:[{ label: metric === 'fcf' ? 'Dette / FCF (x)' : 'Dette / OCF (x)', data, backgroundColor:THEME.blue, borderRadius:4, barPercentage:0.6 }]},
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'x'} } } }
+    };
+  }
   // cash
   return {
     type:'bar',
@@ -7637,6 +7656,14 @@ const COMPARISON_CHART_LABELS = {
 // ("si jamais je choisis plusieurs entreprises... jusqu'à quatre entreprises").
 const COMPARISON_DETAIL_COLS = ['A', 'B', 'C', 'D'];
 let comparisonColumnCharts = { A:{}, B:{}, C:{}, D:{} };
+// Bascule Dette/OCF vs Dette/FCF (demande explicite) — globale, s'applique aux 4
+// colonnes en même temps plutôt qu'un état par colonne (évite 4 boutons qui doivent
+// toujours rester synchronisés). Dette/EBITDA non disponible, voir COL.detteNetteAction.
+let comparisonDetteMetric = 'ocf'; // 'ocf' | 'fcf'
+function setComparisonDetteMetric(metric){
+  comparisonDetteMetric = metric;
+  renderComparisonDetailColumns();
+}
 
 // CAGR sur les graphiques qui en ont un sur l'onglet Analyse (Div/CA/FCF/Actions) —
 // demande explicite : "il faut le CAGR de croissance... pour pouvoir bien comparer les
@@ -7646,7 +7673,7 @@ let comparisonColumnCharts = { A:{}, B:{}, C:{}, D:{} };
 // cagrOcf5/10/20 vérifiés directement sur le CSV réel avant d'être mappés (voir COL).
 function comparisonChartBadgesHtml(key, latest){
   if (key === 'div') return cagrBadgeSpan('CAGR div. 10a', latest.cagrDiv10);
-  if (key === 'ca') return cagrBadgeSpan('CAGR CA 10a', latest.cagrCA10);
+  if (key === 'ca') return cagrBadgeSpan('CAGR 5a', latest.cagrCA5) + cagrBadgeSpan('CAGR 10a', latest.cagrCA10) + cagrBadgeSpan('CAGR 20a', latest.cagrCA20);
   if (key === 'fcf') return cagrBadgeSpan('CAGR 5a', latest.cagrFcf5) + cagrBadgeSpan('CAGR 10a', latest.cagrFcf10) + cagrBadgeSpan('CAGR 20a', latest.cagrFcf20);
   if (key === 'ocf') return cagrBadgeSpan('CAGR 5a', latest.cagrOcf5) + cagrBadgeSpan('CAGR 10a', latest.cagrOcf10) + cagrBadgeSpan('CAGR 20a', latest.cagrOcf20);
   if (key === 'actions') return cagrBadgeSpan('CAGR actions 20a', latest.cagrActions);
@@ -7659,6 +7686,12 @@ function comparisonChartBadgesHtml(key, latest){
 // onglet-là dans les deux colonnes... vraiment faire un match entre les deux
 // entreprises". Réutilise computeScenario()/valorisationInputs() telles quelles (mêmes
 // formules exactes que la Valorisation), jamais de recalcul divergent.
+// Priorité au DERNIER objectif enregistré par l'utilisateur pour cette entreprise
+// (objectifsStore, même source que l'historique des objectifs de Valorisation et que
+// pessimisticScenarioForCompany() plus haut) — demande explicite : "être sûr qu'au
+// niveau des icônes de valorisation... c'est bien les scénarios qui ont été déjà
+// enregistrés". Repli sur les deltas par défaut (CAGR hist. ±, médiane hist. ±) exactement
+// comme avant SI aucun objectif n'a jamais été enregistré pour cette entreprise.
 function comparisonScenariosHtml(nom){
   const hist = companies[nom];
   const latest = hist[hist.length - 1];
@@ -7667,10 +7700,17 @@ function comparisonScenariosHtml(nom){
   if (fcfActuel == null || prixActuel == null || cagrHist == null || medianeHist == null){
     return '<p class="chart-hint">Données insuffisantes pour simuler une valorisation.</p>';
   }
+  const savedList = objectifsStore[nom];
+  const saved = savedList && savedList.length ? savedList[savedList.length - 1] : null;
+  const note = saved
+    ? `<p class="chart-hint">Objectifs enregistrés le ${saved.date} (onglet Valorisation).</p>`
+    : `<p class="chart-hint">Aucun objectif enregistré pour cette entreprise — valeurs par défaut (historique ± un delta type). Enregistre un objectif dans l'onglet Valorisation pour qu'il s'affiche ici.</p>`;
   return `<div class="comparaison-scenarios-row">${SCENARIOS.map(s => {
-    const cagr = +(cagrHist + s.deltaCagr).toFixed(1);
-    const multiple = +(medianeHist + s.deltaMultiple).toFixed(1);
-    const r = computeScenario(fcfActuel, prixActuel, cagr, multiple, 0);
+    const savedS = saved && saved.scenarios && saved.scenarios[s.key];
+    const cagr = savedS ? savedS.cagr : +(cagrHist + s.deltaCagr).toFixed(1);
+    const multiple = savedS ? savedS.multiple : +(medianeHist + s.deltaMultiple).toFixed(1);
+    const rachat = savedS ? (savedS.rachat || 0) : 0;
+    const r = computeScenario(fcfActuel, prixActuel, cagr, multiple, rachat);
     return `<div class="comparaison-scenario-mini ${s.key}">
       <div class="k">${s.label}</div>
       <div class="comparaison-scenario-mini-row"><span>CAGR</span><b>${cagr >= 0 ? '+' : ''}${cagr.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</b></div>
@@ -7679,7 +7719,7 @@ function comparisonScenariosHtml(nom){
       <div class="comparaison-scenario-mini-row"><span>Prix est. (5a)</span><b>${fmtEUR(r.prixEst5A)}</b></div>
       <div class="comparaison-scenario-mini-row"><span>Rendement (5a)</span><b class="${r.rendement5A != null && r.rendement5A >= 0 ? 'pos' : 'neg'}">${r.rendement5A != null ? (r.rendement5A >= 0 ? '+' : '') + fmtPct(r.rendement5A) : 'N/D'}</b></div>
     </div>`;
-  }).join('')}</div>`;
+  }).join('')}</div>${note}`;
 }
 function comparisonColumnHtml(colId, nom){
   const hist = companies[nom];
@@ -7714,6 +7754,10 @@ function comparisonColumnHtml(colId, nom){
               <button class="zoom-btn" data-cmp-zoom-col="${colId}" data-cmp-zoom-key="${key}" data-cmp-zoom-nom="${escapeHtml(nom)}" aria-label="Agrandir">⤢</button>
             </div>
             ${badges ? `<div class="mediane-badges-row">${badges}</div>` : ''}
+            ${key === 'dette' ? `<div class="range-buttons" data-dette-metric-toggle>
+              <button type="button" data-dette-metric="ocf" class="${comparisonDetteMetric === 'ocf' ? 'active' : ''}">Dette/OCF</button>
+              <button type="button" data-dette-metric="fcf" class="${comparisonDetteMetric === 'fcf' ? 'active' : ''}">Dette/FCF</button>
+            </div>` : ''}
             <div class="chart-holder" style="height:200px;"><canvas id="cmp${colId}-${key}"></canvas><button class="chart-card-cart-btn" data-cmp-cart-col="${colId}" data-cmp-cart-key="${key}" data-cmp-cart-nom="${escapeHtml(nom)}" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
           </div>`;
         }).join('')}
@@ -7740,7 +7784,7 @@ function renderComparisonDetailColumns(){
     drawGauge(latest, 'cmp' + colId + 'Gauge', 'cmp' + colId + 'Verdict');
     HISTORICAL_CHART_KEYS.forEach(key => {
       comparisonColumnCharts[colId][key] = makeChart(
-        'cmp-' + colId + '-' + key, 'cmp' + colId + '-' + key, buildHistoricalChartConfig(key, hist, years)
+        'cmp-' + colId + '-' + key, 'cmp' + colId + '-' + key, buildHistoricalChartConfig(key, hist, years, key === 'dette' ? comparisonDetteMetric : undefined)
       );
     });
   });
@@ -7753,6 +7797,8 @@ function initComparisonDetail(){
     // redessine à la fois le grand graphique et ces colonnes.
     const rmBtn = e.target.closest('[data-remove-nom]');
     if (rmBtn){ comparaisonToggleCompany(rmBtn.dataset.removeNom); return; }
+    const detteBtn = e.target.closest('[data-dette-metric]');
+    if (detteBtn){ setComparisonDetteMetric(detteBtn.dataset.detteMetric); return; }
     const cartBtn = e.target.closest('[data-cmp-cart-col]');
     if (cartBtn){
       const { cmpCartCol: colId, cmpCartKey: key, cmpCartNom: nom } = cartBtn.dataset;
@@ -7767,6 +7813,7 @@ function initComparisonDetail(){
     const zoomBtn = e.target.closest('[data-cmp-zoom-col]');
     if (zoomBtn){
       const { cmpZoomCol: colId, cmpZoomKey: key, cmpZoomNom: nom } = zoomBtn.dataset;
+      zoomCmpNom = nom; // voir zoomHistoricalBaseKey() : sans ça, renderZoomCagrRow() affichait le CAGR de l'entreprise active de l'onglet Analyse, pas celle zoomée ici
       openZoom('cmp-' + colId + '-' + key, COMPARISON_CHART_LABELS[key] + ' — ' + nom);
     }
   });
@@ -7799,6 +7846,23 @@ document.getElementById('macroRankingRowButtons').addEventListener('click', e =>
    principale). CAGR affiché uniquement quand la période sélectionnée correspond à une
    donnée réellement présente dans le Sheet — sinon case vide (« — »), jamais inventée. */
 const ZOOM_HISTORICAL_KEYS = ['div','ca','marges','fcf','pfcf','actions','dette','cash','ocf','pfcfpocf'];
+// Les graphiques de l'onglet Comparaison utilisent une clé composite "cmp-<colonne>-<clé>"
+// (ex. "cmp-A-ca", voir renderComparisonDetailColumns()) pour que chaque colonne ait son
+// propre chart Chart.js indépendant — mais le sélecteur de plage et les puces CAGR du
+// zoom ne reconnaissaient que les clés "nues" ('ca', 'actions'...), jamais la forme
+// composite : bug remonté ("chacun des graphiques doit être zoomable... il ne se zoome
+// pas", "actions en circulation, je n'ai que sur vingt ans"). Cette fonction ramène
+// toute clé composite à sa clé de base pour que TOUT le système de zoom déjà en place
+// (range 5/10/20/Max, CAGR) s'applique aussi à l'onglet Comparaison sans dupliquer la
+// logique. zoomCmpNom retient l'entreprise de la colonne zoomée (posée au clic, voir le
+// handler data-cmp-zoom-col) : renderZoomCagrRow() lisait `activeCompany` (l'onglet
+// Analyse), donc affichait le CAGR de la MAUVAISE entreprise dès qu'elle différait de
+// celle zoomée en Comparaison.
+function zoomHistoricalBaseKey(key){
+  if (key && key.indexOf('cmp-') === 0) return key.split('-').slice(2).join('-');
+  return key;
+}
+let zoomCmpNom = null;
 // Les 3 périodes sont toujours affichées ensemble (pas liées au sélecteur de plage
 // 5/10/20/Max, qui ne change que la fenêtre du graphique) : chaque champ manquant
 // (pas encore mappé depuis le Sheet) affiche « — » plutôt qu'une valeur inventée.
@@ -7806,7 +7870,11 @@ const ZOOM_CAGR_META = {
   div: [{ years:5, field:'cagrDiv5' }, { years:10, field:'cagrDiv10' }, { years:20, field:'cagrDiv20' }],
   ca: [{ years:5, field:'cagrCA5' }, { years:10, field:'cagrCA10' }, { years:20, field:'cagrCA20' }],
   fcf: [{ years:5, field:'cagrFcf5' }, { years:10, field:'cagrFcf10' }, { years:20, field:'cagrFcf20' }],
-  actions: [{ years:5, field:'cagrActions5' }, { years:10, field:'cagrActions10' }, { years:20, field:'cagrActions' }]
+  ocf: [{ years:5, field:'cagrOcf5' }, { years:10, field:'cagrOcf10' }, { years:20, field:'cagrOcf20' }],
+  // Une seule colonne "CAGR ACTION" existe réellement dans le Sheet (pas de 5a/10a
+  // séparés, vérifié directement sur le CSV) — cagrActions5/10 précédemment référencés
+  // ici n'ont jamais existé dans COL, donc n'affichaient jamais rien (retiré).
+  actions: [{ years:20, field:'cagrActions' }]
 };
 let zoomKey = null;
 let zoomRange = 'max';
@@ -7824,9 +7892,10 @@ const ZOOM_CREDIT_RANGES = CREDIT_RANGE_OPTIONS;
 
 function renderZoomCagrRow(){
   const box = document.getElementById('zoomCagrRow');
-  const metas = ZOOM_CAGR_META[zoomKey];
-  if (!metas || !activeCompany){ box.innerHTML = ''; return; }
-  const latest = companies[activeCompany][companies[activeCompany].length - 1];
+  const metas = ZOOM_CAGR_META[zoomHistoricalBaseKey(zoomKey)];
+  const nom = (zoomKey && zoomKey.indexOf('cmp-') === 0) ? zoomCmpNom : activeCompany;
+  if (!metas || !nom || !companies[nom]){ box.innerHTML = ''; return; }
+  const latest = companies[nom][companies[nom].length - 1];
   box.innerHTML = metas.map(m => {
     const val = latest[m.field];
     const txt = val != null ? (val >= 0 ? '+' : '') + val.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%' : '—';
@@ -7927,7 +7996,7 @@ function renderZoomRangeRow(){
     row.innerHTML = options.map(([val,label]) => `<button data-zrange="${val}" class="${current===val?'active':''}">${label}</button>`).join('');
     return;
   }
-  if (!ZOOM_HISTORICAL_KEYS.includes(zoomKey)){ row.innerHTML = ''; return; }
+  if (!ZOOM_HISTORICAL_KEYS.includes(zoomHistoricalBaseKey(zoomKey))){ row.innerHTML = ''; return; }
   const ranges = [['5','5a'],['10','10a'],['20','20a'],['max','Max']];
   row.innerHTML = ranges.map(([val,label]) => `<button data-zrange="${val}" class="${zoomRange===val?'active':''}">${label}</button>`).join('');
 }
@@ -7953,7 +8022,7 @@ function renderZoomChart(){
   }
   const baseConfig = chartConfigs[zoomKey];
   if (!baseConfig) return;
-  const nYears = (!ZOOM_HISTORICAL_KEYS.includes(zoomKey) || zoomRange === 'max') ? null : parseInt(zoomRange, 10);
+  const nYears = (!ZOOM_HISTORICAL_KEYS.includes(zoomHistoricalBaseKey(zoomKey)) || zoomRange === 'max') ? null : parseInt(zoomRange, 10);
   window.__zoomChart = newChartWithOrphanCleanup(canvasEl, sliceChartConfigByYears(baseConfig, nYears));
 }
 
