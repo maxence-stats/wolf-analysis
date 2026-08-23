@@ -250,8 +250,8 @@ async function loadAllDataFromAppsScript(retried){
     }
     if (data['DASHBOARD CYCLE']){
       handleMacroPowerRows(data['DASHBOARD CYCLE']);
-      macroFundamentalsData = parseMacroFundamentalsFromDashboard(data['DASHBOARD CYCLE']);
-      if (macroFundamentalsData) renderMacroFundamentalsTable(); else renderMacroFundamentalsError();
+      dashboardCycleRawRows = data['DASHBOARD CYCLE']; // repli local si BEA/FRED échouent, voir loadMacroFundamentalsFromApi()
+      loadMacroFundamentalsFromApi();
     }
     if (data['SYNTHESE PORTEFEUILLE']) handlePersoRows(data['SYNTHESE PORTEFEUILLE']);
   }catch(e){
@@ -2770,13 +2770,23 @@ function exportMacroFullPageAsPdf(){
   exportSectionAsPdf('Macroéconomie', "Vue d'ensemble — graphiques et tableaux", chartHtml + tableHtml);
 }
 
-// Indicateurs macro US (PIB, taux, inflation) : lus depuis l'onglet Sheet "DASHBOARD
-// CYCLE" (table maintenue à la main par l'utilisateur) plutôt que les API BEA/FRED en
-// direct — décision explicite de l'utilisateur après les problèmes de fiabilité
-// réseau constatés cette session ("ne pas aller chercher les données macro sur le
-// site de la FRED, ça ne fonctionne pas"). Plus de fetch réseau séparé ici : la table
-// arrive déjà dans le même JSON que tout le reste (voir loadAllDataFromAppsScript).
+// Indicateurs macro US (PIB, taux, inflation) : automatisés via BEA + FRED, tous deux
+// via l'endpoint Apps Script (voir getBeaMacroData()/getFredCreditData() côté script —
+// UrlFetchApp serveur, aucun relais CORS public). Un PREMIER essai avait déjà été fait
+// directement depuis le navigateur (relais CORS public) puis abandonné pour la même
+// raison que les indicateurs crédit à l'origine ("ne pas aller chercher les données
+// macro sur le site de la FRED, ça ne fonctionne pas") — cette fois le fetch passe par
+// le même canal fiable que le reste du site, donc plus le même problème. dashboardCycleRawRows
+// garde les lignes brutes du Sheet "DASHBOARD CYCLE" en mémoire pour un repli local
+// (parseMacroFundamentalsFromDashboard) si jamais BEA/FRED échouent — ne jamais laisser
+// un échec réseau vider un tableau que l'utilisateur maintenait déjà lui-même avant
+// cette automatisation.
 let macroFundamentalsData = null;
+let macroFundamentalsSource = null; // 'api' | 'sheet' — affiché dans la note du tableau, pour ne jamais prétendre à une source live si c'est en réalité le repli manuel
+let dashboardCycleRawRows = null;
+const MACRO_FUND_LS_KEY = 'wolfAnalysisMacroFundamentalsApi';
+const MACRO_FUND_CACHE_MS = 24 * 60 * 60 * 1000;
+const MACRO_FUND_CACHE_VERSION = 1;
 
 // Recherche de contenu (jamais de position fixe, voir "Pièges techniques" #10) :
 // repère la ligne d'en-tête via la cellule "C (%)", en déduit la position des autres
@@ -2828,11 +2838,107 @@ function parseMacroFundamentalsFromDashboard(rows){
   return out.length ? out : null;
 }
 
+// BEA + FRED en direct via l'endpoint Apps Script — un seul appel renvoie 6 lignes NIPA
+// (T10101 : croissance PIB/C/I/G en %, T10105 : PIB niveau + exports nets, tous deux
+// vérifiés valeur par valeur contre l'API réelle avant d'écrire ce code : ligne 1 =
+// PIB, ligne 2 = Consommation, ligne 7 = Investissement, ligne 22 = Dépenses publiques
+// sur T10101 ; ligne 1 = PIB niveau, ligne 15 = exports nets (niveau, PAS la variation —
+// voir plus bas) sur T10105).
+async function fetchBeaMacroDataViaAppsScript(){
+  const res = await Promise.race([
+    fetch(APPS_SCRIPT_URL + '?action=bea', { cache:'no-store' }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('délai dépassé (>30s)')), 30000))
+  ]);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const json = await res.json();
+  if (!json || typeof json !== 'object') throw new Error('réponse Apps Script invalide');
+  return json; // { gdpGrowth:{"2025Q1":v,...}, c:{...}, i:{...}, g:{...}, gdpLevel:{...}, netExports:{...} } — ou {error:"..."} par champ en échec
+}
+function beaQuarterLabel(timePeriod){ // "2025Q1" -> "Q1 2025", même convention d'affichage que l'ancienne table Sheet
+  const m = String(timePeriod).match(/^(\d{4})Q([1-4])$/);
+  return m ? `Q${m[2]} ${m[1]}` : String(timePeriod);
+}
+function beaQuarterEndTime(timePeriod){ // "2025Q1" -> timestamp du dernier jour du trimestre (pour interroger les taux/l'inflation à date)
+  const m = String(timePeriod).match(/^(\d{4})Q([1-4])$/);
+  if (!m) return null;
+  const year = parseInt(m[1], 10), q = parseInt(m[2], 10);
+  return Date.UTC(year, q * 3, 0); // jour 0 du mois suivant le dernier mois du trimestre = dernier jour du trimestre
+}
+
+async function loadMacroFundamentalsFromApi(){
+  try{
+    const raw = localStorage.getItem(MACRO_FUND_LS_KEY);
+    if (raw){
+      const cached = JSON.parse(raw);
+      if (cached && cached.version === MACRO_FUND_CACHE_VERSION && cached.ts && (Date.now() - cached.ts) < MACRO_FUND_CACHE_MS && cached.data){
+        macroFundamentalsData = cached.data;
+        macroFundamentalsSource = 'api';
+        renderMacroFundamentalsTable();
+        return;
+      }
+    }
+  }catch(e){ /* cache indisponible/corrompu — on retente un fetch */ }
+
+  // Garantit rate10y/rate2y/cpi déjà en mémoire (creditIndicatorsData) — appel idempotent,
+  // court-circuité par son propre cache si déjà chargé par ailleurs.
+  await loadCreditIndicators();
+
+  try{
+    const bea = await fetchBeaMacroDataViaAppsScript();
+    ['gdpGrowth','c','i','g','gdpLevel','netExports'].forEach(f => {
+      if (!bea[f] || bea[f].error) throw new Error(`BEA ${f} : ${(bea[f] && bea[f].error) || 'donnée manquante'}`);
+    });
+    const quarters = Object.keys(bea.gdpGrowth).sort(); // "AAAAQn" se trie correctement en chaîne
+    const rate10y = creditIndicatorsData.rate10y, rate2y = creditIndicatorsData.rate2y, cpi = creditIndicatorsData.cpi;
+    const out = quarters.map((tp, idx) => {
+      const qEndTime = beaQuarterEndTime(tp);
+      const taux10 = (rate10y && qEndTime != null) ? fredValueAtOrBefore(rate10y.dates, rate10y.values, qEndTime) : null;
+      const taux2 = (rate2y && qEndTime != null) ? fredValueAtOrBefore(rate2y.dates, rate2y.values, qEndTime) : null;
+      const inflation = (cpi && qEndTime != null) ? fredValueAtOrBefore(cpi.dates, cpi.values, qEndTime) : null;
+      const spread = (taux10 != null && taux2 != null) ? taux10 - taux2 : null;
+      const realRate = (taux10 != null && inflation != null) ? taux10 - inflation : null;
+      const gdpLevel = bea.gdpLevel[tp] != null ? bea.gdpLevel[tp] / 1000 : null; // Millions $ -> Milliards $
+      // "trade" = variation trimestrielle des exports nets (PAS le niveau brut) — la
+      // colonne équivalente de l'ancienne table Sheet ("X-M Billions of Dollars")
+      // représentait déjà cette variation, jamais le niveau, vérifié explicitement à
+      // l'époque : un niveau positif y serait d'ailleurs impossible (déficit commercial
+      // structurel des USA).
+      const prevTp = quarters[idx - 1];
+      const netExNow = bea.netExports[tp], netExPrev = prevTp != null ? bea.netExports[prevTp] : null;
+      const trade = (netExNow != null && netExPrev != null) ? (netExNow - netExPrev) / 1000 : null;
+      return {
+        quarter: beaQuarterLabel(tp),
+        gdp: gdpLevel, gdpGrowth: bea.gdpGrowth[tp] != null ? bea.gdpGrowth[tp] : null,
+        c: bea.c[tp] != null ? bea.c[tp] : null, i: bea.i[tp] != null ? bea.i[tp] : null, g: bea.g[tp] != null ? bea.g[tp] : null,
+        trade, taux10, taux2, spread, inflation, realRate
+      };
+    });
+    macroFundamentalsData = out;
+    macroFundamentalsSource = 'api';
+    try{ localStorage.setItem(MACRO_FUND_LS_KEY, JSON.stringify({ ts: Date.now(), version: MACRO_FUND_CACHE_VERSION, data: out })); }catch(e){ /* quota / navigateur privé */ }
+    renderMacroFundamentalsTable();
+  }catch(e){
+    console.error('Erreur de chargement des indicateurs macro (BEA/FRED) :', e);
+    // Repli sur la table manuelle du Sheet plutôt que de vider l'affichage — l'utilisateur
+    // la maintenait déjà lui-même avant cette automatisation, elle reste une source valide.
+    macroFundamentalsData = dashboardCycleRawRows ? parseMacroFundamentalsFromDashboard(dashboardCycleRawRows) : null;
+    macroFundamentalsSource = macroFundamentalsData ? 'sheet' : null;
+    if (macroFundamentalsData) renderMacroFundamentalsTable();
+    else renderMacroFundamentalsError();
+  }
+}
+// Réutilise le même bouton "↻ Recharger les indicateurs" que Crédit/Macro (voir
+// forceReloadCreditIndicators()) — vide aussi ce cache-ci pour rester cohérent.
+function forceReloadMacroFundamentals(){
+  try{ localStorage.removeItem(MACRO_FUND_LS_KEY); }catch(e){ /* ignore */ }
+  loadMacroFundamentalsFromApi();
+}
+
 function renderMacroFundamentalsError(){
   const box = document.getElementById('macroFundamentalsTable');
-  if (box) box.innerHTML = `<p class="macro-fund-note">Impossible de trouver la table des indicateurs macro dans
-    l'onglet "DASHBOARD CYCLE" du Sheet (libellé "C (%)" introuvable) — vérifie que la table n'a pas été déplacée
-    ou renommée.</p>`;
+  if (box) box.innerHTML = `<p class="macro-fund-note">Impossible de récupérer les indicateurs macroéconomiques
+    (BEA/FRED) pour le moment, et aucun repli local disponible sur la table "DASHBOARD CYCLE" du Sheet — le reste
+    du site n'est pas affecté. <button type="button" class="macro-fund-retry" data-macro-fund-reload="1">↻ Recharger</button></p>`;
 }
 
 // Seuils donnés explicitement par l'utilisateur pour ce tableau (distincts de ceux du
@@ -2863,8 +2969,10 @@ function renderMacroFundamentalsTable(){
       <td>${r.trade != null ? (r.trade >= 0 ? '+' : '') + r.trade.toLocaleString('fr-FR', {maximumFractionDigits:0}) + ' Md$' : '—'}</td>
       ${pctCell(r.taux10, 2)}${pctCell(r.taux2, 2)}${pctCell(r.spread, 2)}${pctCell(r.inflation, 1)}${pctCell(r.realRate, 2)}
     </tr>`).join('')}</tbody></table></div>
-    <p class="macro-fund-note" style="margin-top:10px;">Source : table "DASHBOARD CYCLE" du Sheet, maintenue
-    manuellement — PIB (niveau/croissance) non disponible dans cette table.</p>`;
+    <p class="macro-fund-note" style="margin-top:10px;">${macroFundamentalsSource === 'sheet'
+      ? 'Source : table "DASHBOARD CYCLE" du Sheet (repli local — BEA/FRED indisponibles pour le moment, PIB niveau/croissance absents de cette table).'
+      : 'Source : BEA (comptes nationaux) + FRED (taux, inflation), en direct — PIB, consommation, investissement, dépenses publiques et balance commerciale peuvent être révisés après coup par le BEA (petits écarts normaux).'}
+    <button type="button" class="macro-fund-retry" data-macro-fund-reload="1">↻ Recharger</button></p>`;
 }
 
 // Palette or/bleu (contrainte design system : jamais de violet, réservé au décoratif —
@@ -5717,6 +5825,7 @@ function forceReloadCreditIndicators(){
 }
 document.addEventListener('click', e => {
   if (e.target.closest('[data-credit-reload]')) forceReloadCreditIndicators();
+  if (e.target.closest('[data-macro-fund-reload]')) forceReloadMacroFundamentals();
 });
 
 // errors : [{s, message}] — affiche PRÉCISÉMENT quelle série a échoué et pourquoi,
