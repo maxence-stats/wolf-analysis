@@ -208,7 +208,7 @@ const SHEET_ID = "1V4NaDx7PvnJkPMtddGgW23Hjn0jon1g0UjoC4o6FchM";
 // en-tête vide s'écrasant l'une l'autre), donc directement compatible avec les
 // parseurs par reconnaissance de contenu déjà utilisés partout ailleurs sur le site —
 // mêmes fonctions handleXxxRows(), juste une source de rows différente.
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzyM-PCKaWjBpSh4y8ATEuyInO5JTRd9HO7cWDRqo_nMKjQSaSLxLIV1HkO6DcqwNj3/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzdFIgTvpl6lGyCsdFFRnW67zCdtxal1i1ZVFJnnQNd0fNuqQJi1qO3NBEGNLb1zgqa/exec';
 
 // Le JSON combiné (~3 Mo, tous les onglets fusionnés en un seul appel) met parfois
 // plus de 20s à revenir (constaté en test : un fetch isolé a pris ~13s, et sous charge
