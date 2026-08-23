@@ -17,12 +17,14 @@ const COL = {
   ca:44, cagrCA5:45, cagrCA10:46, cagrCA20:47, margeOp:48, roic:49,
   cash:52, cashInvesti:53, actions:54, cagrActions:55,
   detteOCF:58, medianePFCF20:59,
-  // Valorisation alternative par OCF (bascule FCF/OCF, onglet Valorisation) : pas de
-  // colonne "OCF par action" directe dans le Sheet — dérivée de prixActuel/pOcf, même
-  // logique que le P/FCF existant. cagrOcf20 (AE) volontairement absent : comme
-  // cagrFcf20, non utilisé dans les formules de scénario, seulement une donnée
-  // disponible pour un futur badge éventuel.
-  pOcf:12, cagrOcf10:29, medianePOcf:31, medianePOcf20:33,
+  // Valorisation alternative par OCF (bascule FCF/OCF, onglet Valorisation).
+  // cagrOcf5/cagrOcf20 (AC/AE) : re-vérifiés directement sur le CSV réel (colonnes
+  // "CAGR OCF 5/10/20 ans (%)" toutes les trois présentes, AC/AD/AE) avant d'écrire ce
+  // mapping — l'ancien commentaire ici affirmait ces CAGR "non disponibles"/"non
+  // mappés", ce qui n'est plus vrai (ou ne l'a jamais été, non revérifié à l'époque) ;
+  // ajoutés pour le badge CAGR OCF de l'onglet Comparaison (demande explicite),
+  // symétrique au badge CAGR FCF déjà existant.
+  pOcf:12, cagrOcf5:28, cagrOcf10:29, cagrOcf20:30, medianePOcf:31, medianePOcf20:33,
   // PER/EPS : colonnes réellement présentes dans le Sheet (vérifié directement sur le
   // JSON brut de l'API Apps Script avant d'écrire ce mapping — voir CLAUDE.md "Pièges
   // techniques" point 11) mais jamais mappées jusqu'ici. Pas de "Médiane PER" fournie
@@ -444,7 +446,9 @@ function handleCsvRows(rows){
       medianePFCF: parseNum(c[COL.medianePFCF]),
       medianePFCF20: parseNum(c[COL.medianePFCF20]),
       pOcf: parseNum(c[COL.pOcf]),
+      cagrOcf5: parsePct100(c[COL.cagrOcf5]),
       cagrOcf10: parsePct100(c[COL.cagrOcf10]),
+      cagrOcf20: parsePct100(c[COL.cagrOcf20]),
       medianePOcf: parseNum(c[COL.medianePOcf]),
       medianePOcf20: parseNum(c[COL.medianePOcf20]),
       per: parseNum(c[COL.per]),
@@ -7283,14 +7287,17 @@ const COMPARISON_CHART_LABELS = {
 const COMPARISON_DETAIL_COLS = ['A', 'B', 'C', 'D'];
 let comparisonColumnCharts = { A:{}, B:{}, C:{}, D:{} };
 
-// CAGR sur les 4 graphiques qui en ont un sur l'onglet Analyse (Div/CA/FCF/Actions) —
+// CAGR sur les graphiques qui en ont un sur l'onglet Analyse (Div/CA/FCF/Actions) —
 // demande explicite : "il faut le CAGR de croissance... pour pouvoir bien comparer les
 // entreprises les unes par rapport aux autres... sur chacun des petits graphiques".
-// Mêmes champs/seuils exacts que renderCompany() (cagrBadgeSpan déjà partagée).
+// Mêmes champs/seuils exacts que renderCompany() (cagrBadgeSpan déjà partagée). "ocf"
+// ajouté séparément (demande explicite ultérieure) sur le même principe que "fcf" —
+// cagrOcf5/10/20 vérifiés directement sur le CSV réel avant d'être mappés (voir COL).
 function comparisonChartBadgesHtml(key, latest){
   if (key === 'div') return cagrBadgeSpan('CAGR div. 10a', latest.cagrDiv10);
   if (key === 'ca') return cagrBadgeSpan('CAGR CA 10a', latest.cagrCA10);
   if (key === 'fcf') return cagrBadgeSpan('CAGR 5a', latest.cagrFcf5) + cagrBadgeSpan('CAGR 10a', latest.cagrFcf10) + cagrBadgeSpan('CAGR 20a', latest.cagrFcf20);
+  if (key === 'ocf') return cagrBadgeSpan('CAGR 5a', latest.cagrOcf5) + cagrBadgeSpan('CAGR 10a', latest.cagrOcf10) + cagrBadgeSpan('CAGR 20a', latest.cagrOcf20);
   if (key === 'actions') return cagrBadgeSpan('CAGR actions 20a', latest.cagrActions);
   return '';
 }
