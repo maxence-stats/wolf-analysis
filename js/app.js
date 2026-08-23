@@ -5651,6 +5651,12 @@ async function loadCreditIndicators(){
 function forceReloadCreditIndicators(){
   try{ localStorage.removeItem(CREDIT_LS_KEY); }catch(e){ /* ignore */ }
   loadCreditIndicators();
+  // Vide aussi le cache des ETF sectoriels (même bouton "↻ Recharger les indicateurs") —
+  // sinon un cache écrit AVANT que l'endpoint Apps Script `sectoretf` réponde
+  // correctement resterait "valide" pendant 24h sans jamais se corriger tout seul, même
+  // signe latent que CREDIT_CACHE_VERSION plus haut (voir son commentaire).
+  try{ localStorage.removeItem(SECTOR_ETF_LS_KEY); }catch(e){ /* ignore */ }
+  loadSectorEtfData();
 }
 document.addEventListener('click', e => {
   if (e.target.closest('[data-credit-reload]')) forceReloadCreditIndicators();
