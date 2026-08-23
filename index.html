@@ -840,6 +840,17 @@
               <option value="telecoms">Isoler : Télécoms</option>
             </select>
           </div>
+          <!-- Superposer un indicateur en mode "Tous les secteurs" (demande explicite) —
+               un seul à la fois (pas une multi-sélection comme en mode isolé). -->
+          <div class="range-buttons" id="macroRotationAllSectorsOverlayRow" style="margin-bottom:6px;">
+            <select id="macroRotationAllSectorsOverlaySelect" class="macro-select" style="width:auto;min-width:220px;">
+              <option value="">+ Superposer un indicateur (optionnel)</option>
+              <option value="rate10y">Taux 10 ans</option><option value="rate2y">Taux 2 ans</option>
+              <option value="rateSpread">Spread 10-2 ans</option><option value="realRate10y">Taux réel</option>
+              <option value="cpi">Inflation (CPI)</option><option value="creditGrowth">Croissance du crédit</option>
+              <option value="creditStandards">Cond. crédit (SLOOS, offre)</option><option value="creditDemand">Demande crédit (SLOOS)</option>
+            </select>
+          </div>
           <div class="range-buttons" id="macroRotationRangeButtons">
             <button data-range="m1">1m</button><button data-range="m2">2m</button><button data-range="m3">3m</button>
             <button data-range="1">1a</button><button data-range="2">2a</button><button class="active" data-range="3">3a</button>
@@ -849,6 +860,11 @@
               <button data-range="3">3a</button><button data-range="5">5a</button><button class="active" data-range="10">10a</button><button data-range="20">20a</button><button data-range="30">30a</button><button data-range="max">Max</button>
             </div>
             <span class="credit-range-custom"><input type="number" min="1" max="99" step="1" class="credit-range-custom-input" placeholder="Ans libre"></span>
+          </div>
+          <div class="range-buttons" id="macroRotationIsolateModeToggle" style="display:none;">
+            <button data-mode="nominal">Valeurs nominales</button>
+            <button data-mode="base100" class="active">Base 100</button>
+            <button data-mode="log">Logarithmique</button>
           </div>
           <div class="range-buttons" id="macroRotationIsolateOverlayToggles" style="display:none;"></div>
           <div class="chart-holder" style="height:340px;"><canvas id="chartMacroRotation"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(MACRO_CHART_GETTERS.rotation(), 'Rotation Sectorielle GICS vs S&amp;P 500', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
@@ -902,6 +918,62 @@
           <button onclick="exportMacroTableAsImage('macroPowerTable','Force relative sectorielle','png')">PNG</button>
           <button onclick="exportMacroTableAsImage('macroPowerTable','Force relative sectorielle','jpg')">JPG</button>
           <button class="export-cart-add-btn" onclick="addMacroTableToCart('macroPowerTable','Force relative sectorielle', this)">🧺 Ajouter au panier</button>
+        </div>
+      </div>
+
+      <!-- Taux vs Actions/Secteurs (demande explicite) : superpose au prix d'une
+           entreprise ou d'un secteur les séries de régime de taux (2 ans, 10 ans,
+           spread 10-2, taux réel, inflation) + la Dynamique du crédit (croissance,
+           SLOOS offre/demande) pour étudier historiquement la réaction du marché à un
+           changement de régime. Placé dans "Secteur" plutôt que "Macroéconomie" (l'usage
+           principal reste sectoriel) — voir RATE_OVERLAY_INDICATORS/
+           buildRateOverlayChartConfig() dans app.js. -->
+      <div class="section-label" style="margin-top:8px;">Taux vs Actions/Secteurs</div>
+      <p class="valo-intro">Superpose le prix d'une entreprise ou d'un secteur aux séries de régime de taux et de dynamique du crédit, pour étudier historiquement sa réaction à un changement de régime.</p>
+      <div class="chart-card">
+        <div class="chart-card-head">
+          <div><h3>Taux vs Actions/Secteurs</h3><p class="chart-subtitle">Choisis une entreprise ou un secteur, puis les séries à superposer.</p></div>
+          <div class="chart-card-actions"><button class="zoom-btn" onclick="openRateOverlayZoom()" aria-label="Agrandir">⤢</button></div>
+        </div>
+        <div class="range-buttons" id="rateOverlayBaseTypeToggle">
+          <button data-base-type="company" class="active">Entreprise</button>
+          <button data-base-type="sector">Secteur</button>
+        </div>
+        <div id="rateOverlayCompanyPicker" style="margin-top:8px;">
+          <div class="search-wrap" style="max-width:none;">
+            <span class="search-icon">⌕</span>
+            <input type="text" id="rateOverlayCompanySearch" class="search-input" placeholder="Rechercher une entreprise…" autocomplete="off">
+            <div class="search-suggestions" id="rateOverlayCompanySuggestions"></div>
+          </div>
+        </div>
+        <div id="rateOverlaySectorPicker" style="margin-top:8px;display:none;">
+          <select id="rateOverlaySectorSelect" class="macro-select">
+            <option value="techno">Technologie</option><option value="sante">Santé</option>
+            <option value="consobase">Consommation de base</option><option value="consodiscr">Consommation discrétionnaire</option>
+            <option value="finance">Finance</option><option value="industrie">Industrie</option>
+            <option value="energie">Energie</option><option value="materiaux">Matériaux</option>
+            <option value="services">Services Publics</option><option value="immobilier">Immobilier</option>
+            <option value="telecoms">Télécoms</option>
+          </select>
+        </div>
+        <div class="range-buttons" id="rateOverlayToggles" style="margin-top:8px;"></div>
+        <div class="range-buttons" id="rateOverlayModeToggle">
+          <button data-mode="nominal">Valeurs nominales</button>
+          <button data-mode="base100" class="active">Base 100</button>
+          <button data-mode="log">Logarithmique</button>
+        </div>
+        <div class="credit-range-row" id="rateOverlayRangeButtons">
+          <div class="range-buttons">
+            <button data-range="3">3a</button><button data-range="5">5a</button><button class="active" data-range="10">10a</button><button data-range="20">20a</button><button data-range="30">30a</button><button data-range="max">Max</button>
+          </div>
+          <span class="credit-range-custom"><input type="number" min="1" max="99" step="1" class="credit-range-custom-input" placeholder="Ans libre"></span>
+        </div>
+        <div class="chart-holder" style="height:340px;"><canvas id="chartRateOverlay"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(MACRO_CHART_GETTERS.rateOverlay(), 'Taux vs Actions/Secteurs', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
+        <div id="rateOverlayStatus" class="stock-status" style="display:none;"></div>
+        <div class="macro-export-row">
+          <button onclick="exportMacroChartAsPdf('rateOverlay','Taux vs Actions/Secteurs')">PDF</button>
+          <button onclick="exportMacroChartAsImage('rateOverlay','taux-vs-actions','png')">PNG</button>
+          <button onclick="exportMacroChartAsImage('rateOverlay','taux-vs-actions','jpg')">JPG</button>
         </div>
       </div>
 
@@ -959,55 +1031,6 @@
           </div>
           <div class="chart-holder" style="height:260px;"><canvas id="creditChart-buffettIndicator"></canvas></div>
           <div id="creditStats-buffettIndicator"></div>
-        </div>
-      </div>
-
-      <!-- Taux vs Actions/Secteurs (demande explicite) : superpose au prix d'une
-           entreprise ou d'un secteur les séries de régime de taux (2 ans, 10 ans,
-           spread 10-2, taux réel, inflation) pour étudier historiquement la réaction du
-           marché à un changement de régime de taux. Voir RATE_OVERLAY_INDICATORS/
-           buildRateOverlayChartConfig() dans app.js. -->
-      <div class="section-label" style="margin-top:8px;">Taux vs Actions/Secteurs</div>
-      <p class="valo-intro">Superpose le prix d'une entreprise ou d'un secteur aux séries de régime de taux, pour étudier historiquement sa réaction à un changement de régime.</p>
-      <div class="chart-card">
-        <div class="chart-card-head">
-          <div><h3>Taux vs Actions/Secteurs</h3><p class="chart-subtitle">Choisis une entreprise ou un secteur, puis les séries de taux à superposer.</p></div>
-          <div class="chart-card-actions"><button class="zoom-btn" onclick="openRateOverlayZoom()" aria-label="Agrandir">⤢</button></div>
-        </div>
-        <div class="range-buttons" id="rateOverlayBaseTypeToggle">
-          <button data-base-type="company" class="active">Entreprise</button>
-          <button data-base-type="sector">Secteur</button>
-        </div>
-        <div id="rateOverlayCompanyPicker" style="margin-top:8px;">
-          <select id="rateOverlayCompanySelect" class="macro-select"><option value="">— Choisir une entreprise —</option></select>
-        </div>
-        <div id="rateOverlaySectorPicker" style="margin-top:8px;display:none;">
-          <select id="rateOverlaySectorSelect" class="macro-select">
-            <option value="techno">Technologie</option><option value="sante">Santé</option>
-            <option value="consobase">Consommation de base</option><option value="consodiscr">Consommation discrétionnaire</option>
-            <option value="finance">Finance</option><option value="industrie">Industrie</option>
-            <option value="energie">Energie</option><option value="materiaux">Matériaux</option>
-            <option value="services">Services Publics</option><option value="immobilier">Immobilier</option>
-            <option value="telecoms">Télécoms</option>
-          </select>
-        </div>
-        <div class="range-buttons" id="rateOverlayToggles" style="margin-top:8px;"></div>
-        <div class="range-buttons" id="rateOverlayModeToggle">
-          <button data-mode="nominal">Valeurs nominales</button>
-          <button data-mode="base100" class="active">Base 100</button>
-        </div>
-        <div class="credit-range-row" id="rateOverlayRangeButtons">
-          <div class="range-buttons">
-            <button data-range="3">3a</button><button data-range="5">5a</button><button class="active" data-range="10">10a</button><button data-range="20">20a</button><button data-range="30">30a</button><button data-range="max">Max</button>
-          </div>
-          <span class="credit-range-custom"><input type="number" min="1" max="99" step="1" class="credit-range-custom-input" placeholder="Ans libre"></span>
-        </div>
-        <div class="chart-holder" style="height:340px;"><canvas id="chartRateOverlay"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(MACRO_CHART_GETTERS.rateOverlay(), 'Taux vs Actions/Secteurs', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
-        <div id="rateOverlayStatus" class="stock-status" style="display:none;"></div>
-        <div class="macro-export-row">
-          <button onclick="exportMacroChartAsPdf('rateOverlay','Taux vs Actions/Secteurs')">PDF</button>
-          <button onclick="exportMacroChartAsImage('rateOverlay','taux-vs-actions','png')">PNG</button>
-          <button onclick="exportMacroChartAsImage('rateOverlay','taux-vs-actions','jpg')">JPG</button>
         </div>
       </div>
     </div>
@@ -1101,6 +1124,12 @@
       <button data-overlay="pfcf">+ P/FCF</button>
       <button data-overlay="cash">+ Trésorerie</button>
     </div>
+    <!-- Contrôles génériques (Taux vs Actions/Secteurs, isolement sectoriel) — demande
+         explicite : pouvoir changer la sélection d'indicateurs et le mode d'affichage
+         sans quitter le plein écran. Voir zoomOverlayConfigFor()/renderZoomOverlayControls()
+         dans app.js, affichés/masqués selon zoomKey. -->
+    <div class="range-buttons" id="zoomOverlayToggleRow" style="display:none;"></div>
+    <div class="range-buttons" id="zoomOverlayModeRow" style="display:none;"></div>
     <div class="stock-source" id="zoomStockScaleNote" style="display:none;"></div>
     <div class="range-buttons" id="zoomComparaisonMetricToggles" style="display:none;">
       <button data-metric="price">Prix</button>

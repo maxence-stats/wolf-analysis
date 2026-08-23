@@ -1304,6 +1304,24 @@ function sectorEtfRatioSeries(sectorKey){
 let macroRotationIsolateSector = null; // null = "Tous les secteurs" (comportement historique, Sheet) ; sinon clé d'un secteur isolé (ETF Yahoo)
 let macroRotationIsolateRange = '10';
 let macroRotationIsolateOverlay = []; // clés RATE_OVERLAY_INDICATORS (voir plus bas) sélectionnées à superposer
+let macroRotationIsolateMode = 'base100'; // 'nominal' | 'base100' | 'log' — demande explicite ("toujours avoir la possibilité de base 100 OU logarithmique, certains indicateurs ne correspondent pas")
+// "Tous les secteurs" : un seul indicateur superposable en plus (pas une multi-sélection
+// comme en mode isolé — demande explicite "mettre UN indicateur sur tous les secteurs").
+let macroRotationAllSectorsOverlay = null;
+
+// Transforme une série brute selon le mode d'affichage commun aux 3 outils de
+// superposition du site (Taux vs Actions/Secteurs, isolement sectoriel) — nominal
+// (valeurs telles quelles), base100 (rebasé à 100 au 1er point non nul de la plage) ou
+// log (échelle logarithmique, valeurs ≤ 0 mises à null — un taux réel négatif par
+// exemple n'a pas de sens en log, mieux vaut un trou visible qu'une valeur fausse).
+function applyOverlayMode(raw, mode){
+  if (mode === 'base100'){
+    const b = raw.find(v => v != null && v !== 0);
+    return b ? raw.map(v => v == null ? null : (v / b) * 100) : raw;
+  }
+  if (mode === 'log') return raw.map(v => (v != null && v > 0) ? v : null);
+  return raw;
+}
 
 function buildMacroRotationIsolateChartConfig(range){
   const meta = MACRO_ROTATION_SECTORS.find(s => s.key === macroRotationIsolateSector);
@@ -1311,6 +1329,7 @@ function buildMacroRotationIsolateChartConfig(range){
   if (!base || !base.dates.length) return null;
   const sliced = creditSliceByRange(base, range);
   const overlayIndicators = RATE_OVERLAY_INDICATORS.filter(i => macroRotationIsolateOverlay.includes(i.key) && creditIndicatorsData[i.key]);
+  const mode = macroRotationIsolateMode;
 
   const dateSet = new Set(sliced.dates);
   overlayIndicators.forEach(ind => creditSliceByRange(creditIndicatorsData[ind.key], range).dates.forEach(d => dateSet.add(d)));
@@ -1319,43 +1338,58 @@ function buildMacroRotationIsolateChartConfig(range){
   const baseByDate = {};
   sliced.dates.forEach((d, i) => { baseByDate[d] = sliced.values[i]; });
   const baseRaw = labels.map(d => baseByDate[d] != null ? baseByDate[d] : null);
-  const b0 = baseRaw.find(v => v != null && v !== 0);
-  const baseData = b0 ? baseRaw.map(v => v == null ? null : (v / b0) * 100) : baseRaw;
 
   const colors = [THEME.gold, THEME.blue, THEME.red, THEME.green, THEME.violet, THEME.yellow];
-  const datasets = [{ label: (meta ? meta.label : '') + ' vs S&P 500', data: baseData, borderColor: colors[0], backgroundColor:'transparent', borderWidth:2, pointRadius:0, spanGaps:true, tension:0.1, yAxisID:'yBase100' }];
+  const datasets = [{ label: (meta ? meta.label : '') + ' vs S&P 500', data: applyOverlayMode(baseRaw, mode), borderColor: colors[0], backgroundColor:'transparent', borderWidth:2, pointRadius:0, spanGaps:true, tension:0.1, yAxisID: mode === 'base100' ? 'yBase100' : 'y0' }];
 
   overlayIndicators.forEach((ind, i) => {
     const d = creditIndicatorsData[ind.key];
     const byDate = {};
     d.dates.forEach((dt, j) => { byDate[dt] = d.values[j]; });
     const raw = labels.map(dt => byDate[dt] != null ? byDate[dt] : null);
-    const b = raw.find(v => v != null && v !== 0);
-    const data = b ? raw.map(v => v == null ? null : (v / b) * 100) : raw;
-    datasets.push({ label: ind.label, data, borderColor: colors[(i + 1) % colors.length], backgroundColor:'transparent', borderWidth:1.5, pointRadius:0, spanGaps:true, tension:0.1, yAxisID:'yBase100' });
+    datasets.push({ label: ind.label, data: applyOverlayMode(raw, mode), borderColor: colors[(i + 1) % colors.length], backgroundColor:'transparent', borderWidth:1.5, pointRadius:0, spanGaps:true, tension:0.1, yAxisID: mode === 'base100' ? 'yBase100' : ('y' + (i + 1)) });
   });
+
+  const scales = { x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:8}, border:{color:THEME.hair} } };
+  if (mode === 'base100'){
+    scales.yBase100 = { grid:baseGrid, ticks:{color:THEME.dim}, title:{display:true, text:'Base 100', color:THEME.dim} };
+  } else {
+    datasets.forEach((ds, i) => {
+      scales[ds.yAxisID] = { display: i === 0, position: i % 2 === 0 ? 'left' : 'right', grid: i === 0 ? baseGrid : { display:false }, ticks:{color:THEME.dim}, type: mode === 'log' ? 'logarithmic' : 'linear' };
+    });
+  }
 
   return {
     type:'line',
     data:{ labels, datasets },
     options:{ responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{ position:'bottom', labels:{boxWidth:8, usePointStyle:true, font:{size:9.5}} } },
-      scales:{
-        x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:8}, border:{color:THEME.hair} },
-        yBase100:{ grid:baseGrid, ticks:{color:THEME.dim}, title:{display:true, text:'Base 100', color:THEME.dim} }
-      }
+      scales
     }
   };
+}
+function setMacroRotationIsolateMode(mode){
+  macroRotationIsolateMode = mode;
+  document.querySelectorAll('#macroRotationIsolateModeToggle button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  renderMacroRotationChart();
+}
+function setMacroRotationAllSectorsOverlay(key){
+  macroRotationAllSectorsOverlay = key || null;
+  renderMacroRotationChart();
 }
 
 function renderMacroRotationIsolateControls(){
   const isolating = !!macroRotationIsolateSector;
   const normalRow = document.getElementById('macroRotationRangeButtons');
+  const allSectorsOverlayRow = document.getElementById('macroRotationAllSectorsOverlayRow');
   const isolateRow = document.getElementById('macroRotationIsolateRangeButtons');
+  const modeToggle = document.getElementById('macroRotationIsolateModeToggle');
   const overlayBox = document.getElementById('macroRotationIsolateOverlayToggles');
   const hint = document.getElementById('macroRotationIsolateHint');
   if (normalRow) normalRow.style.display = isolating ? 'none' : '';
+  if (allSectorsOverlayRow) allSectorsOverlayRow.style.display = isolating ? 'none' : '';
   if (isolateRow) isolateRow.style.display = isolating ? '' : 'none';
+  if (modeToggle) modeToggle.style.display = isolating ? 'flex' : 'none';
   if (hint) hint.style.display = isolating ? 'none' : '';
   if (overlayBox){
     overlayBox.style.display = isolating ? 'flex' : 'none';
@@ -1415,15 +1449,31 @@ function buildMacroRotationChartConfig(range){
     borderColor: MACRO_ROTATION_COLORS[i], borderWidth:1.5, pointRadius:0, spanGaps:true, tension:0.1
   }));
   datasets.push({ label:'S&P 500 (repère)', data: labels.map(() => 1), borderColor:THEME.dim, borderWidth:1, borderDash:[3,3], pointRadius:0, spanGaps:false });
+
+  const scales = {
+    x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:8}, border:{color:THEME.hair} },
+    y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v.toLocaleString('fr-FR',{minimumFractionDigits:2})} }
+  };
+  // Un indicateur superposable en mode "Tous les secteurs" (demande explicite) — appariée
+  // PAR DATE aux dates du Sheet (mêmes chaînes 'YYYY-MM-DD' des deux côtés, voir
+  // parseFrenchSheetDate()), sur son propre axe à droite (échelle différente du ratio
+  // sectoriel ~1.00).
+  if (macroRotationAllSectorsOverlay && creditIndicatorsData[macroRotationAllSectorsOverlay]){
+    const ind = RATE_OVERLAY_INDICATORS.find(i => i.key === macroRotationAllSectorsOverlay);
+    const src = creditIndicatorsData[macroRotationAllSectorsOverlay];
+    const byDate = {};
+    src.dates.forEach((dt, j) => { byDate[dt] = src.values[j]; });
+    const overlayData = labels.map(dt => byDate[dt] != null ? byDate[dt] : null);
+    datasets.push({ label: ind ? ind.label : macroRotationAllSectorsOverlay, data: overlayData, borderColor: THEME.white, borderWidth:2, borderDash:[4,2], pointRadius:0, spanGaps:true, tension:0.1, yAxisID:'yOverlay' });
+    scales.yOverlay = { position:'right', grid:{display:false}, ticks:{color:THEME.dim} };
+  }
+
   return {
     type:'line',
     data:{ labels, datasets },
     options:{ responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true, font:{size:9.5} } } },
-      scales:{
-        x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:8}, border:{color:THEME.hair} },
-        y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v.toLocaleString('fr-FR',{minimumFractionDigits:2})} }
-      }
+      scales
     }
   };
 }
@@ -5394,7 +5444,7 @@ const CREDIT_CACHE_MS = 24 * 60 * 60 * 1000;
 // vide PAS localStorage (seulement le cache HTTP des fichiers), donc le symptôme
 // persistait indéfiniment malgré les rechargements. Toute incompatibilité de version
 // invalide immédiatement le cache, quel que soit son âge.
-const CREDIT_CACHE_VERSION = 4;
+const CREDIT_CACHE_VERSION = 5;
 const CREDIT_SERIES = [
   { key:'hySpread', label:'HY Spread (High Yield OAS)', shortLabel:'HY Spread', seriesId:'BAMLH0A0HYM2', suffix:' pts', decimals:2, color:THEME.red,
     note:"Écart de rendement entre obligations High Yield (junk, notation BB et en-dessous) et Trésor US (ICE BofA) — prix du risque de crédit demandé par le marché. Historique limité à ~3 ans (restriction de licence ICE Data Indices depuis avril 2026, vérifiée sur plusieurs séries ICE — pas une limite du site, non contournable gratuitement)." },
@@ -5431,6 +5481,13 @@ const CREDIT_SERIES = [
   // 20/30/Max, mêmes composants que le reste du site).
   { key:'creditStandards', label:'Conditions de crédit bancaire (SLOOS — resserrement net des banques, prêts C&I grandes/moyennes entreprises)', shortLabel:'Cond. crédit (SLOOS)', seriesId:'DRTSCILM', suffix:' %', decimals:1, color:THEME.red, group:'dynamique', defaultRange:'3',
     note:"Solde net des banques américaines déclarant un resserrement des conditions d'octroi de crédit (Federal Reserve, enquête trimestrielle SLOOS, prêts C&I aux grandes/moyennes entreprises). Positif = resserrement net (crédit plus dur à obtenir), négatif = assouplissement net (crédit plus facile)." },
+  // Demande de prêt (côté ENTREPRISES), distincte de creditStandards ci-dessus (côté
+  // BANQUES) — demande explicite : "on sait que les banques sont favorables à prêter,
+  // mais est-ce que les entreprises demandent ?". Même enquête SLOOS, même segment
+  // (grandes/moyennes entreprises), vérifiée directement sur FRED : trimestrielle,
+  // 1991-10-01 à aujourd'hui.
+  { key:'creditDemand', label:'Demande de crédit C&I (SLOOS — hausse nette de la demande, grandes/moyennes entreprises)', shortLabel:'Demande crédit (SLOOS)', seriesId:'DRSDCILM', suffix:' %', decimals:1, color:THEME.blue, group:'dynamique', defaultRange:'3',
+    note:"Solde net des banques américaines déclarant une hausse de la demande de prêts C&I de la part des grandes/moyennes entreprises (Federal Reserve, enquête trimestrielle SLOOS). Positif = demande en hausse, négatif = demande en baisse. À lire avec Conditions de crédit (SLOOS) ci-dessus : offre vs demande." },
   { key:'dsr', label:'Debt Service Ratio des ménages', shortLabel:'DSR ménages', seriesId:'TDSP', suffix:' %', decimals:2, color:THEME.gold,
     note:'Part du revenu disponible des ménages consacrée au remboursement de leur dette (Federal Reserve, série TDSP).' },
   // Momentum des bénéfices — proxy choisi APRÈS recherche explicite (voir échange avec
@@ -6037,12 +6094,20 @@ document.querySelectorAll('#pageMacroEco [data-credit-zoom]').forEach(btn => {
    même logique que loadStockChart()) et secteur (ratio ETF/SPY, voir
    sectorEtfRatioSeries() plus haut) n'ont pas la même unité qu'un taux en %, d'où le
    choix de base100 par défaut. ============================================================ */
+// Inclut aussi la Dynamique du crédit (croissance + SLOOS offre/demande) — demande
+// explicite : "je voudrais que tu puisses les rajouter comme données que je puisse
+// superposer aux autres graphiques". Réutilisées telles quelles (déjà dans
+// creditIndicatorsData, groupe 'dynamique' de CREDIT_SERIES), juste ajoutées à cette
+// liste de choix — aucun nouveau fetch.
 const RATE_OVERLAY_INDICATORS = [
   { key:'rate10y', label:'Taux 10 ans' },
   { key:'rate2y', label:'Taux 2 ans' },
   { key:'rateSpread', label:'Spread 10-2 ans' },
   { key:'realRate10y', label:'Taux réel (10 ans − inflation)' },
-  { key:'cpi', label:'Inflation (CPI, glissement annuel)' }
+  { key:'cpi', label:'Inflation (CPI, glissement annuel)' },
+  { key:'creditGrowth', label:'Croissance du crédit' },
+  { key:'creditStandards', label:'Cond. crédit (SLOOS, offre)' },
+  { key:'creditDemand', label:'Demande crédit (SLOOS)' }
 ];
 let rateOverlayBaseType = 'company'; // 'company' | 'sector'
 let rateOverlayCompany = null;
@@ -6110,37 +6175,28 @@ function buildRateOverlayChartConfig(){
   const colors = [THEME.blue, THEME.gold, THEME.red, THEME.green, THEME.violet, THEME.yellow];
   const datasets = [];
 
+  const mode = rateOverlayMode;
   const baseByDate = {};
   baseSliced.dates.forEach((d, i) => { baseByDate[d] = baseSliced.values[i]; });
   const baseRaw = labels.map(d => baseByDate[d] != null ? baseByDate[d] : null);
-  let baseData = baseRaw, baseAxis = 'y0';
-  if (rateOverlayMode === 'base100'){
-    const b = baseRaw.find(v => v != null && v !== 0);
-    baseData = b ? baseRaw.map(v => v == null ? null : (v / b) * 100) : baseRaw;
-    baseAxis = 'yBase100';
-  }
-  datasets.push({ label: rateOverlayBaseLabel || 'Prix', data: baseData, borderColor: colors[0], backgroundColor:'transparent', borderWidth:2, pointRadius:0, spanGaps:true, tension:0.1, yAxisID: baseAxis });
+  const baseAxis = mode === 'base100' ? 'yBase100' : 'y0';
+  datasets.push({ label: rateOverlayBaseLabel || 'Prix', data: applyOverlayMode(baseRaw, mode), borderColor: colors[0], backgroundColor:'transparent', borderWidth:2, pointRadius:0, spanGaps:true, tension:0.1, yAxisID: baseAxis });
 
   selectedIndicators.forEach((ind, i) => {
     const d = creditIndicatorsData[ind.key];
     const byDate = {};
     d.dates.forEach((dt, j) => { byDate[dt] = d.values[j]; });
     const raw = labels.map(dt => byDate[dt] != null ? byDate[dt] : null);
-    let data = raw, axisId = 'y' + (i + 1);
-    if (rateOverlayMode === 'base100'){
-      const b = raw.find(v => v != null && v !== 0);
-      data = b ? raw.map(v => v == null ? null : (v / b) * 100) : raw;
-      axisId = 'yBase100';
-    }
-    datasets.push({ label: ind.label, data, borderColor: colors[(i + 1) % colors.length], backgroundColor:'transparent', borderWidth:1.5, pointRadius:0, spanGaps:true, tension:0.1, yAxisID: axisId });
+    const axisId = mode === 'base100' ? 'yBase100' : ('y' + (i + 1));
+    datasets.push({ label: ind.label, data: applyOverlayMode(raw, mode), borderColor: colors[(i + 1) % colors.length], backgroundColor:'transparent', borderWidth:1.5, pointRadius:0, spanGaps:true, tension:0.1, yAxisID: axisId });
   });
 
   const scales = { x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:8}, border:{color:THEME.hair} } };
-  if (rateOverlayMode === 'base100'){
+  if (mode === 'base100'){
     scales.yBase100 = { grid:baseGrid, ticks:{color:THEME.dim}, title:{display:true, text:'Base 100', color:THEME.dim} };
   } else {
     datasets.forEach((ds, i) => {
-      scales[ds.yAxisID] = { display: i === 0, position: i % 2 === 0 ? 'left' : 'right', grid: i === 0 ? baseGrid : { display:false }, ticks:{color:THEME.dim} };
+      scales[ds.yAxisID] = { display: i === 0, position: i % 2 === 0 ? 'left' : 'right', grid: i === 0 ? baseGrid : { display:false }, ticks:{color:THEME.dim}, type: mode === 'log' ? 'logarithmic' : 'linear' };
     });
   }
 
@@ -6154,13 +6210,49 @@ function buildRateOverlayChartConfig(){
   };
 }
 
-function populateRateOverlayCompanySelect(){
-  const sel = document.getElementById('rateOverlayCompanySelect');
-  if (!sel || sel.dataset.populated === '1') return;
-  const names = Object.keys(companies || {}).sort((a, b) => a.localeCompare(b, 'fr'));
-  if (!names.length) return;
-  sel.innerHTML = '<option value="">— Choisir une entreprise —</option>' + names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
-  sel.dataset.populated = '1';
+// Autocomplétion (même pattern que la barre de recherche principale, #companySearch/
+// initSearch() — demande explicite : "le même sélecteur qu'il y a dans analyse").
+// Ne dépend d'aucun ordre de chargement : reconstruit la liste à CHAQUE frappe
+// directement depuis `companies`, donc fonctionne dès que les données principales sont
+// là, peu importe si ce module a été rendu avant ou après (contrairement à l'ancien
+// <select> peuplé une seule fois, qui restait vide si `companies` n'était pas encore
+// prêt au tout premier rendu — bug remonté par l'utilisateur : "le sélecteur d'action
+// ne fonctionne pas").
+function selectRateOverlayCompany(nom){
+  rateOverlayCompany = nom;
+  const input = document.getElementById('rateOverlayCompanySearch');
+  if (input) input.value = nom;
+  const box = document.getElementById('rateOverlayCompanySuggestions');
+  if (box){ box.classList.remove('open'); box.innerHTML = ''; }
+  loadRateOverlayBaseSeries();
+}
+function initRateOverlaySearch(){
+  const input = document.getElementById('rateOverlayCompanySearch');
+  const box = document.getElementById('rateOverlayCompanySuggestions');
+  if (!input || !box) return;
+  input.addEventListener('input', () => {
+    const q = input.value.trim().toLowerCase();
+    if (!q){ box.classList.remove('open'); box.innerHTML = ''; return; }
+    const matches = Object.keys(companies || {}).filter(n => n.toLowerCase().includes(q)).slice(0, 8);
+    box.innerHTML = matches.length
+      ? matches.map(n => `<div class="search-suggestion" data-name="${n.replace(/"/g,'&quot;')}">${n}</div>`).join('')
+      : '<div class="search-suggestion" style="color:var(--text-faint);cursor:default;">Aucun résultat</div>';
+    box.classList.add('open');
+  });
+  box.addEventListener('click', e => {
+    const item = e.target.closest('.search-suggestion[data-name]');
+    if (item) selectRateOverlayCompany(item.dataset.name);
+  });
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#rateOverlayCompanyPicker')) box.classList.remove('open');
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Escape'){ box.classList.remove('open'); input.blur(); }
+    if (e.key === 'Enter'){
+      const first = box.querySelector('.search-suggestion[data-name]');
+      if (first) selectRateOverlayCompany(first.dataset.name);
+    }
+  });
 }
 
 function setRateOverlayBaseType(type){
@@ -6189,7 +6281,6 @@ function renderRateOverlayToggles(){
   ).join('');
 }
 function renderRateOverlayChart(){
-  populateRateOverlayCompanySelect();
   const canvas = document.getElementById('chartRateOverlay');
   if (!canvas) return;
   const config = buildRateOverlayChartConfig();
@@ -6217,10 +6308,7 @@ document.getElementById('rateOverlayBaseTypeToggle').addEventListener('click', e
   const btn = e.target.closest('button[data-base-type]');
   if (btn) setRateOverlayBaseType(btn.dataset.baseType);
 });
-document.getElementById('rateOverlayCompanySelect').addEventListener('change', e => {
-  rateOverlayCompany = e.target.value || null;
-  loadRateOverlayBaseSeries();
-});
+initRateOverlaySearch();
 document.getElementById('rateOverlaySectorSelect').addEventListener('change', e => {
   rateOverlaySector = e.target.value;
   loadRateOverlayBaseSeries();
@@ -6238,15 +6326,73 @@ wireCreditRangeRow(document.getElementById('rateOverlayRangeButtons'), range => 
   renderRateOverlayChart();
 });
 document.getElementById('macroRotationSectorSelect').addEventListener('change', e => setMacroRotationIsolateSector(e.target.value));
+document.getElementById('macroRotationAllSectorsOverlaySelect').addEventListener('change', e => setMacroRotationAllSectorsOverlay(e.target.value));
 wireCreditRangeRow(document.getElementById('macroRotationIsolateRangeButtons'), range => {
   macroRotationIsolateRange = range;
   renderMacroRotationChart();
+});
+document.getElementById('macroRotationIsolateModeToggle').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-mode]');
+  if (btn) setMacroRotationIsolateMode(btn.dataset.mode);
 });
 document.getElementById('macroRotationIsolateOverlayToggles').addEventListener('click', e => {
   const btn = e.target.closest('button[data-rotoverlay-key]');
   if (btn) toggleMacroRotationIsolateOverlay(btn.dataset.rotoverlayKey);
 });
 renderRateOverlayToggles();
+
+// Contrôles génériques dans la modale de zoom pour les outils de superposition custom
+// (Taux vs Actions/Secteurs, isolement sectoriel) — demande explicite : "pouvoir
+// manipuler les données lorsqu'on est zoomé". zoomOverlayConfigFor() abstrait les deux
+// outils derrière la même interface (indicateurs disponibles/sélectionnés/toggle,
+// mode courant/setter) pour ne pas dupliquer le HTML/les handlers deux fois.
+function zoomOverlayConfigFor(key){
+  if (key === 'rateOverlay') return {
+    indicators: RATE_OVERLAY_INDICATORS,
+    selected: () => rateOverlaySelected,
+    toggle: k => toggleRateOverlayIndicator(k),
+    modeGet: () => rateOverlayMode,
+    modeSet: m => setRateOverlayMode(m)
+  };
+  if (key === 'macroRotation' && macroRotationIsolateSector) return {
+    indicators: RATE_OVERLAY_INDICATORS,
+    selected: () => macroRotationIsolateOverlay,
+    toggle: k => toggleMacroRotationIsolateOverlay(k),
+    modeGet: () => macroRotationIsolateMode,
+    modeSet: m => setMacroRotationIsolateMode(m)
+  };
+  return null;
+}
+const ZOOM_OVERLAY_MODES = [['nominal','Valeurs nominales'],['base100','Base 100'],['log','Logarithmique']];
+function renderZoomOverlayControls(){
+  const cfg = zoomOverlayConfigFor(zoomKey);
+  const toggleRow = document.getElementById('zoomOverlayToggleRow');
+  const modeRow = document.getElementById('zoomOverlayModeRow');
+  if (!toggleRow || !modeRow) return;
+  if (!cfg){ toggleRow.style.display = 'none'; modeRow.style.display = 'none'; return; }
+  toggleRow.style.display = 'flex';
+  toggleRow.innerHTML = cfg.indicators.map(ind => `<button type="button" data-zoom-overlay-key="${ind.key}" class="${cfg.selected().includes(ind.key) ? 'active' : ''}">${ind.label}</button>`).join('');
+  modeRow.style.display = 'flex';
+  modeRow.innerHTML = ZOOM_OVERLAY_MODES.map(([val,label]) => `<button type="button" data-zoom-overlay-mode="${val}" class="${cfg.modeGet() === val ? 'active' : ''}">${label}</button>`).join('');
+}
+document.getElementById('zoomOverlayToggleRow').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-zoom-overlay-key]');
+  if (!btn) return;
+  const cfg = zoomOverlayConfigFor(zoomKey);
+  if (!cfg) return;
+  cfg.toggle(btn.dataset.zoomOverlayKey);
+  renderZoomOverlayControls();
+  renderZoomChart();
+});
+document.getElementById('zoomOverlayModeRow').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-zoom-overlay-mode]');
+  if (!btn) return;
+  const cfg = zoomOverlayConfigFor(zoomKey);
+  if (!cfg) return;
+  cfg.modeSet(btn.dataset.zoomOverlayMode);
+  renderZoomOverlayControls();
+  renderZoomChart();
+});
 
 // Canal de régression linéaire (moyenne ± 1 et 2 écarts-types) calculé sur les
 // vingt dernières années de clôtures hebdo (ou tout l'historique dispo si plus court) —
@@ -7322,6 +7468,7 @@ function openZoom(key, title){
   document.getElementById('zoomModal').style.display = 'flex';
   renderZoomRangeRow();
   renderZoomCagrRow();
+  renderZoomOverlayControls();
   renderZoomChart();
   const indicatorRow = document.getElementById('zoomStockIndicatorRow');
   indicatorRow.style.display = key === 'stock' ? 'flex' : 'none';
