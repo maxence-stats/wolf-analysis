@@ -783,6 +783,17 @@
 
       <div class="section-label" style="margin-top:8px;">Crédit &amp; Bénéfices — graphiques individuels</div>
       <div class="credit-charts-grid" id="creditChartsGrid"></div>
+
+      <!-- Dynamique du crédit (demande explicite) : distincte de l'État du crédit ci-dessus
+           (spreads/défauts/charge-offs = "combien ça coûte/combien ça casse") — ici
+           "les banques prêtent-elles plus ou moins facilement" : conditions d'octroi
+           (SLOOS, Fed) + croissance du crédit (déjà présente dans l'État du crédit avant
+           cette demande, déplacée ici). Plage par défaut 3 ans sur la fiche SLOOS
+           (creditIndicatorRanges/defaultRange dans CREDIT_SERIES) pour repérer les
+           changements récents, historique complet toujours à un clic. -->
+      <div class="section-label" style="margin-top:8px;">Dynamique du crédit</div>
+      <p class="valo-intro">Les banques prêtent-elles plus ou moins facilement ? Conditions d'octroi de crédit bancaire (SLOOS, enquête trimestrielle de la Fed) et croissance du crédit — distinct de l'état du crédit ci-dessus (spreads, défauts, charge-offs).</p>
+      <div class="credit-charts-grid" id="creditDynamicsGrid"></div>
     </div>
 
     <div id="pageMacroSecteur" class="page">
@@ -811,15 +822,37 @@
 
         <div class="chart-card">
           <div class="chart-card-head">
-            <div><h3>Rotation Sectorielle GICS vs S&amp;P 500</h3><p class="chart-subtitle">Base 1.00 — historique disponible sur la feuille (~3 ans)</p></div>
+            <div><h3>Rotation Sectorielle GICS vs S&amp;P 500</h3><p class="chart-subtitle">Base 1.00 — historique disponible sur la feuille (~3 ans). Isoler un secteur bascule sur son historique ETF long (Yahoo).</p></div>
             <div class="chart-card-actions"><button class="zoom-btn" onclick="openMacroRotationZoom()" aria-label="Agrandir">⤢</button></div>
+          </div>
+          <!-- Isoler un secteur (demande explicite) : bascule le graphique sur le ratio
+               ETF/SPY long-historique (voir sectorEtfRatioSeries()/loadSectorEtfData()
+               dans app.js) au lieu du Sheet (~3 ans) — permet aussi de superposer les
+               séries de régime de taux sur ce secteur précis. -->
+          <div class="range-buttons" style="margin-bottom:6px;">
+            <select id="macroRotationSectorSelect" class="macro-select" style="width:auto;min-width:220px;">
+              <option value="">Tous les secteurs</option>
+              <option value="techno">Isoler : Technologie</option><option value="sante">Isoler : Santé</option>
+              <option value="consobase">Isoler : Consommation de base</option><option value="consodiscr">Isoler : Consommation discrétionnaire</option>
+              <option value="finance">Isoler : Finance</option><option value="industrie">Isoler : Industrie</option>
+              <option value="energie">Isoler : Energie</option><option value="materiaux">Isoler : Matériaux</option>
+              <option value="services">Isoler : Services Publics</option><option value="immobilier">Isoler : Immobilier</option>
+              <option value="telecoms">Isoler : Télécoms</option>
+            </select>
           </div>
           <div class="range-buttons" id="macroRotationRangeButtons">
             <button data-range="m1">1m</button><button data-range="m2">2m</button><button data-range="m3">3m</button>
             <button data-range="1">1a</button><button data-range="2">2a</button><button class="active" data-range="3">3a</button>
           </div>
+          <div class="credit-range-row" id="macroRotationIsolateRangeButtons" style="display:none;">
+            <div class="range-buttons">
+              <button data-range="3">3a</button><button data-range="5">5a</button><button class="active" data-range="10">10a</button><button data-range="20">20a</button><button data-range="30">30a</button><button data-range="max">Max</button>
+            </div>
+            <span class="credit-range-custom"><input type="number" min="1" max="99" step="1" class="credit-range-custom-input" placeholder="Ans libre"></span>
+          </div>
+          <div class="range-buttons" id="macroRotationIsolateOverlayToggles" style="display:none;"></div>
           <div class="chart-holder" style="height:340px;"><canvas id="chartMacroRotation"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(MACRO_CHART_GETTERS.rotation(), 'Rotation Sectorielle GICS vs S&amp;P 500', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
-          <p class="chart-hint">Clique sur un secteur dans la légende ci-dessus pour l'afficher/le masquer (11 secteurs, ça peut vite surcharger).</p>
+          <p class="chart-hint" id="macroRotationIsolateHint">Clique sur un secteur dans la légende ci-dessus pour l'afficher/le masquer (11 secteurs, ça peut vite surcharger).</p>
           <div id="macroRotationStatus" class="stock-status" style="display:none;"></div>
           <div class="macro-export-row">
             <button onclick="exportMacroChartAsPdf('rotation','Rotation Sectorielle GICS vs S&P 500')">PDF</button>
@@ -926,6 +959,55 @@
           </div>
           <div class="chart-holder" style="height:260px;"><canvas id="creditChart-buffettIndicator"></canvas></div>
           <div id="creditStats-buffettIndicator"></div>
+        </div>
+      </div>
+
+      <!-- Taux vs Actions/Secteurs (demande explicite) : superpose au prix d'une
+           entreprise ou d'un secteur les séries de régime de taux (2 ans, 10 ans,
+           spread 10-2, taux réel, inflation) pour étudier historiquement la réaction du
+           marché à un changement de régime de taux. Voir RATE_OVERLAY_INDICATORS/
+           buildRateOverlayChartConfig() dans app.js. -->
+      <div class="section-label" style="margin-top:8px;">Taux vs Actions/Secteurs</div>
+      <p class="valo-intro">Superpose le prix d'une entreprise ou d'un secteur aux séries de régime de taux, pour étudier historiquement sa réaction à un changement de régime.</p>
+      <div class="chart-card">
+        <div class="chart-card-head">
+          <div><h3>Taux vs Actions/Secteurs</h3><p class="chart-subtitle">Choisis une entreprise ou un secteur, puis les séries de taux à superposer.</p></div>
+          <div class="chart-card-actions"><button class="zoom-btn" onclick="openRateOverlayZoom()" aria-label="Agrandir">⤢</button></div>
+        </div>
+        <div class="range-buttons" id="rateOverlayBaseTypeToggle">
+          <button data-base-type="company" class="active">Entreprise</button>
+          <button data-base-type="sector">Secteur</button>
+        </div>
+        <div id="rateOverlayCompanyPicker" style="margin-top:8px;">
+          <select id="rateOverlayCompanySelect" class="macro-select"><option value="">— Choisir une entreprise —</option></select>
+        </div>
+        <div id="rateOverlaySectorPicker" style="margin-top:8px;display:none;">
+          <select id="rateOverlaySectorSelect" class="macro-select">
+            <option value="techno">Technologie</option><option value="sante">Santé</option>
+            <option value="consobase">Consommation de base</option><option value="consodiscr">Consommation discrétionnaire</option>
+            <option value="finance">Finance</option><option value="industrie">Industrie</option>
+            <option value="energie">Energie</option><option value="materiaux">Matériaux</option>
+            <option value="services">Services Publics</option><option value="immobilier">Immobilier</option>
+            <option value="telecoms">Télécoms</option>
+          </select>
+        </div>
+        <div class="range-buttons" id="rateOverlayToggles" style="margin-top:8px;"></div>
+        <div class="range-buttons" id="rateOverlayModeToggle">
+          <button data-mode="nominal">Valeurs nominales</button>
+          <button data-mode="base100" class="active">Base 100</button>
+        </div>
+        <div class="credit-range-row" id="rateOverlayRangeButtons">
+          <div class="range-buttons">
+            <button data-range="3">3a</button><button data-range="5">5a</button><button class="active" data-range="10">10a</button><button data-range="20">20a</button><button data-range="30">30a</button><button data-range="max">Max</button>
+          </div>
+          <span class="credit-range-custom"><input type="number" min="1" max="99" step="1" class="credit-range-custom-input" placeholder="Ans libre"></span>
+        </div>
+        <div class="chart-holder" style="height:340px;"><canvas id="chartRateOverlay"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(MACRO_CHART_GETTERS.rateOverlay(), 'Taux vs Actions/Secteurs', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
+        <div id="rateOverlayStatus" class="stock-status" style="display:none;"></div>
+        <div class="macro-export-row">
+          <button onclick="exportMacroChartAsPdf('rateOverlay','Taux vs Actions/Secteurs')">PDF</button>
+          <button onclick="exportMacroChartAsImage('rateOverlay','taux-vs-actions','png')">PNG</button>
+          <button onclick="exportMacroChartAsImage('rateOverlay','taux-vs-actions','jpg')">JPG</button>
         </div>
       </div>
     </div>

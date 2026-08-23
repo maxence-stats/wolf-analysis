@@ -1191,24 +1191,189 @@ function openMacroCycleZoom(){
    ligne horizontale à 1.00 sert de repère (confirmé : pas de série S&P 500 dans la
    légende de la capture de référence fournie par l'utilisateur). */
 const MACRO_ROTATION_GID = '1706659327';
+// ticker : ETF SPDR sectoriel correspondant (même 11 secteurs GICS que le Sheet Rotation
+// Sectorielle) — utilisé pour isoler un secteur avec un historique long (voir
+// loadSectorEtfData()/getSectorEtfData() côté Apps Script), au lieu des ~3 ans du Sheet.
 const MACRO_ROTATION_SECTORS = [
-  { key:'techno', label:'Technologie', col:'O' },
-  { key:'sante', label:'Santé', col:'U' },
-  { key:'consobase', label:'Consommation de base', col:'AA' },
-  { key:'consodiscr', label:'Consommation discrétionnaire', col:'AG' },
-  { key:'finance', label:'Finance', col:'AM' },
-  { key:'industrie', label:'Industrie', col:'AS' },
-  { key:'energie', label:'Energie', col:'AY' },
-  { key:'materiaux', label:'Matériaux', col:'BE' },
-  { key:'services', label:'Services Publics', col:'BK' },
-  { key:'immobilier', label:'Immobilier', col:'BQ' },
-  { key:'telecoms', label:'Télécoms', col:'BW' }
+  { key:'techno', label:'Technologie', col:'O', ticker:'XLK' },
+  { key:'sante', label:'Santé', col:'U', ticker:'XLV' },
+  { key:'consobase', label:'Consommation de base', col:'AA', ticker:'XLP' },
+  { key:'consodiscr', label:'Consommation discrétionnaire', col:'AG', ticker:'XLY' },
+  { key:'finance', label:'Finance', col:'AM', ticker:'XLF' },
+  { key:'industrie', label:'Industrie', col:'AS', ticker:'XLI' },
+  { key:'energie', label:'Energie', col:'AY', ticker:'XLE' },
+  { key:'materiaux', label:'Matériaux', col:'BE', ticker:'XLB' },
+  { key:'services', label:'Services Publics', col:'BK', ticker:'XLU' },
+  { key:'immobilier', label:'Immobilier', col:'BQ', ticker:'XLRE' },
+  { key:'telecoms', label:'Télécoms', col:'BW', ticker:'XLC' }
 ];
 const MACRO_ROTATION_COLORS = ['#4A9FE0','#E5636B','#F0D63D','#4FD1A5','#D9A441','#8B7FE8','#F0C877','#7DBEEA','#E88AB0','#6FCF97','#B8842E'];
 let macroRotationData = null; // { dates, series: { key: [valeurs] } }
 
 function loadMacroRotationData(){
   loadSheetDual(MACRO_ROTATION_GID, '__handleMacroRotationGviz', handleMacroRotationRows);
+}
+
+/* ---- Isoler un secteur avec un historique long (demande explicite) --------------------
+   Le Sheet Rotation Sectorielle n'a que ~3 ans d'historique (voir MACRO_ROTATION_GID plus
+   haut) — insuffisant pour étudier la réaction d'UN secteur sur plusieurs cycles de taux.
+   Source retenue à la place, uniquement quand un secteur est isolé : prix de l'ETF
+   sectoriel SPDR correspondant (ex. XLK pour Technologie) rapporté au prix de SPY (S&P
+   500), récupéré via Yahoo Finance côté Apps Script (voir getSectorEtfData(), même
+   principe que getFredCreditData() — UrlFetchApp côté serveur, aucun relais CORS public).
+   Historique disponible depuis la création de chaque ETF (1998 pour la plupart, 2015 pour
+   XLRE, 2018 pour XLC). Le mode "Tous les secteurs" (par défaut) reste inchangé, basé sur
+   le Sheet comme avant. ------------------------------------------------------------- */
+const SECTOR_ETF_LS_KEY = 'wolfAnalysisSectorEtfData';
+const SECTOR_ETF_CACHE_MS = 24 * 60 * 60 * 1000;
+const SECTOR_ETF_CACHE_VERSION = 1;
+let sectorEtfData = {}; // TICKER -> { dates, values } — inclut aussi 'SPY'
+let sectorEtfLoadError = null;
+
+async function fetchSectorEtfViaAppsScript(){
+  const res = await Promise.race([
+    fetch(APPS_SCRIPT_URL + '?action=sectoretf', { cache:'no-store' }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('délai dépassé (>30s)')), 30000))
+  ]);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const json = await res.json();
+  if (!json || typeof json !== 'object') throw new Error('réponse Apps Script invalide');
+  return json; // { TICKER: [{date, close}, ...], ... } ou { TICKER: {error:"..."} } par ticker en échec
+}
+
+async function loadSectorEtfData(){
+  try{
+    const raw = localStorage.getItem(SECTOR_ETF_LS_KEY);
+    if (raw){
+      const cached = JSON.parse(raw);
+      if (cached && cached.version === SECTOR_ETF_CACHE_VERSION && cached.ts && (Date.now() - cached.ts) < SECTOR_ETF_CACHE_MS && cached.data){
+        sectorEtfData = cached.data;
+        sectorEtfLoadError = null;
+        renderMacroRotationChart();
+        renderRateOverlayChart();
+        return;
+      }
+    }
+  }catch(e){ /* cache indisponible/corrompu — on retente un fetch */ }
+
+  try{
+    const raw = await fetchSectorEtfViaAppsScript();
+    const data = {};
+    MACRO_ROTATION_SECTORS.map(s => s.ticker).concat(['SPY']).forEach(t => {
+      const entry = raw[t];
+      if (!entry || entry.error || !Array.isArray(entry)) return;
+      const dates = [], values = [];
+      entry.forEach(o => {
+        const v = parseFloat(o.close);
+        if (isNaN(v)) return;
+        dates.push(o.date);
+        values.push(v);
+      });
+      data[t] = { dates, values };
+    });
+    sectorEtfData = data;
+    sectorEtfLoadError = null;
+    try{ localStorage.setItem(SECTOR_ETF_LS_KEY, JSON.stringify({ ts: Date.now(), version: SECTOR_ETF_CACHE_VERSION, data })); }catch(e){ /* quota / navigateur privé */ }
+  }catch(e){
+    console.error('Erreur de chargement des ETF sectoriels (Apps Script) :', e);
+    sectorEtfLoadError = (e && e.message) || String(e);
+  }
+  renderMacroRotationChart();
+  renderRateOverlayChart();
+}
+
+// Ratio ETF sectoriel / SPY, apparié PAR DATE — sert de "prix" long-historique pour un
+// secteur isolé (voir plus bas) ET pour l'outil "Taux vs Actions/Secteurs".
+function sectorEtfRatioSeries(sectorKey){
+  const meta = MACRO_ROTATION_SECTORS.find(s => s.key === sectorKey);
+  const etf = meta && sectorEtfData[meta.ticker];
+  const spy = sectorEtfData.SPY;
+  if (!etf || !spy || !etf.dates.length || !spy.dates.length) return null;
+  const spyByDate = {};
+  spy.dates.forEach((d, i) => { spyByDate[d] = spy.values[i]; });
+  const dates = [], values = [];
+  etf.dates.forEach((d, i) => {
+    const sp = spyByDate[d];
+    if (sp == null || sp === 0) return;
+    dates.push(d);
+    values.push(etf.values[i] / sp);
+  });
+  return { dates, values };
+}
+
+let macroRotationIsolateSector = null; // null = "Tous les secteurs" (comportement historique, Sheet) ; sinon clé d'un secteur isolé (ETF Yahoo)
+let macroRotationIsolateRange = '10';
+let macroRotationIsolateOverlay = []; // clés RATE_OVERLAY_INDICATORS (voir plus bas) sélectionnées à superposer
+
+function buildMacroRotationIsolateChartConfig(range){
+  const meta = MACRO_ROTATION_SECTORS.find(s => s.key === macroRotationIsolateSector);
+  const base = meta && sectorEtfRatioSeries(meta.key);
+  if (!base || !base.dates.length) return null;
+  const sliced = creditSliceByRange(base, range);
+  const overlayIndicators = RATE_OVERLAY_INDICATORS.filter(i => macroRotationIsolateOverlay.includes(i.key) && creditIndicatorsData[i.key]);
+
+  const dateSet = new Set(sliced.dates);
+  overlayIndicators.forEach(ind => creditSliceByRange(creditIndicatorsData[ind.key], range).dates.forEach(d => dateSet.add(d)));
+  const labels = Array.from(dateSet).sort();
+
+  const baseByDate = {};
+  sliced.dates.forEach((d, i) => { baseByDate[d] = sliced.values[i]; });
+  const baseRaw = labels.map(d => baseByDate[d] != null ? baseByDate[d] : null);
+  const b0 = baseRaw.find(v => v != null && v !== 0);
+  const baseData = b0 ? baseRaw.map(v => v == null ? null : (v / b0) * 100) : baseRaw;
+
+  const colors = [THEME.gold, THEME.blue, THEME.red, THEME.green, THEME.violet, THEME.yellow];
+  const datasets = [{ label: (meta ? meta.label : '') + ' vs S&P 500', data: baseData, borderColor: colors[0], backgroundColor:'transparent', borderWidth:2, pointRadius:0, spanGaps:true, tension:0.1, yAxisID:'yBase100' }];
+
+  overlayIndicators.forEach((ind, i) => {
+    const d = creditIndicatorsData[ind.key];
+    const byDate = {};
+    d.dates.forEach((dt, j) => { byDate[dt] = d.values[j]; });
+    const raw = labels.map(dt => byDate[dt] != null ? byDate[dt] : null);
+    const b = raw.find(v => v != null && v !== 0);
+    const data = b ? raw.map(v => v == null ? null : (v / b) * 100) : raw;
+    datasets.push({ label: ind.label, data, borderColor: colors[(i + 1) % colors.length], backgroundColor:'transparent', borderWidth:1.5, pointRadius:0, spanGaps:true, tension:0.1, yAxisID:'yBase100' });
+  });
+
+  return {
+    type:'line',
+    data:{ labels, datasets },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:'bottom', labels:{boxWidth:8, usePointStyle:true, font:{size:9.5}} } },
+      scales:{
+        x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:8}, border:{color:THEME.hair} },
+        yBase100:{ grid:baseGrid, ticks:{color:THEME.dim}, title:{display:true, text:'Base 100', color:THEME.dim} }
+      }
+    }
+  };
+}
+
+function renderMacroRotationIsolateControls(){
+  const isolating = !!macroRotationIsolateSector;
+  const normalRow = document.getElementById('macroRotationRangeButtons');
+  const isolateRow = document.getElementById('macroRotationIsolateRangeButtons');
+  const overlayBox = document.getElementById('macroRotationIsolateOverlayToggles');
+  const hint = document.getElementById('macroRotationIsolateHint');
+  if (normalRow) normalRow.style.display = isolating ? 'none' : '';
+  if (isolateRow) isolateRow.style.display = isolating ? '' : 'none';
+  if (hint) hint.style.display = isolating ? 'none' : '';
+  if (overlayBox){
+    overlayBox.style.display = isolating ? 'flex' : 'none';
+    overlayBox.innerHTML = RATE_OVERLAY_INDICATORS.map(ind =>
+      `<button type="button" data-rotoverlay-key="${ind.key}" class="${macroRotationIsolateOverlay.includes(ind.key) ? 'active' : ''}">${ind.label}</button>`
+    ).join('');
+  }
+}
+function setMacroRotationIsolateSector(key){
+  macroRotationIsolateSector = key || null;
+  renderMacroRotationIsolateControls();
+  renderMacroRotationChart();
+}
+function toggleMacroRotationIsolateOverlay(key){
+  const idx = macroRotationIsolateOverlay.indexOf(key);
+  if (idx === -1) macroRotationIsolateOverlay.push(key); else macroRotationIsolateOverlay.splice(idx, 1);
+  renderMacroRotationIsolateControls();
+  renderMacroRotationChart();
 }
 
 function handleMacroRotationRows(rows){
@@ -1265,14 +1430,32 @@ function buildMacroRotationChartConfig(range){
 
 let macroRotationChart = null;
 function renderMacroRotationChart(){
-  if (!macroRotationData || !macroRotationData.dates.length) return;
   const canvas = document.getElementById('chartMacroRotation');
   if (!canvas) return;
+  if (macroRotationIsolateSector){
+    if (macroRotationChart) macroRotationChart.destroy();
+    const config = buildMacroRotationIsolateChartConfig(macroRotationIsolateRange);
+    const status = document.getElementById('macroRotationStatus');
+    if (!config){
+      if (status){ status.textContent = sectorEtfLoadError ? `Historique ETF indisponible : ${sectorEtfLoadError}` : 'Chargement de l\'historique sectoriel…'; status.style.display = 'block'; }
+      return;
+    }
+    if (status) status.style.display = 'none';
+    macroRotationChart = new Chart(canvas.getContext('2d'), config);
+    return;
+  }
+  if (!macroRotationData || !macroRotationData.dates.length) return;
   if (macroRotationChart) macroRotationChart.destroy();
   macroRotationChart = new Chart(canvas.getContext('2d'), buildMacroRotationChartConfig(macroRotationRange));
 }
 
 function openMacroRotationZoom(){
+  if (macroRotationIsolateSector){
+    if (!macroRotationChart) return;
+    const meta = MACRO_ROTATION_SECTORS.find(s => s.key === macroRotationIsolateSector);
+    openZoom('macroRotation', (meta ? meta.label : 'Secteur') + ' vs S&P 500 — Taux');
+    return;
+  }
   if (!macroRotationData || !macroRotationData.dates.length) return;
   zoomMacroRotationRange = macroRotationRange;
   openZoom('macroRotation', 'Rotation Sectorielle GICS vs S&P 500');
@@ -1524,7 +1707,8 @@ const MACRO_CHART_GETTERS = {
   cycle: () => macroCycleChart,
   rotation: () => macroRotationChart,
   weight: () => macroWeightChart,
-  ranking: () => macroRankingChart
+  ranking: () => macroRankingChart,
+  rateOverlay: () => rateOverlayChart
 };
 // Capture un graphique Chart.js en image haute résolution : Chart.js utilise par défaut
 // window.devicePixelRatio pour la résolution interne du canvas, donc sur un écran non-Retina
@@ -2512,7 +2696,8 @@ const MACRO_EXPORT_ALL_CHARTS = [
   ['cycle', 'Cycle de Marché — Offensif vs Défensif'],
   ['rotation', 'Rotation Sectorielle GICS vs S&P 500'],
   ['weight', 'Poids relatif des secteurs'],
-  ['ranking', 'Classement sectoriel']
+  ['ranking', 'Classement sectoriel'],
+  ['rateOverlay', 'Taux vs Actions/Secteurs']
 ];
 const MACRO_EXPORT_ALL_TABLES = [
   ['creditIndicatorsTable', 'Indicateurs crédit & bénéfices'],
@@ -5209,7 +5394,7 @@ const CREDIT_CACHE_MS = 24 * 60 * 60 * 1000;
 // vide PAS localStorage (seulement le cache HTTP des fichiers), donc le symptôme
 // persistait indéfiniment malgré les rechargements. Toute incompatibilité de version
 // invalide immédiatement le cache, quel que soit son âge.
-const CREDIT_CACHE_VERSION = 3;
+const CREDIT_CACHE_VERSION = 4;
 const CREDIT_SERIES = [
   { key:'hySpread', label:'HY Spread (High Yield OAS)', shortLabel:'HY Spread', seriesId:'BAMLH0A0HYM2', suffix:' pts', decimals:2, color:THEME.red,
     note:"Écart de rendement entre obligations High Yield (junk, notation BB et en-dessous) et Trésor US (ICE BofA) — prix du risque de crédit demandé par le marché. Historique limité à ~3 ans (restriction de licence ICE Data Indices depuis avril 2026, vérifiée sur plusieurs séries ICE — pas une limite du site, non contournable gratuitement)." },
@@ -5229,8 +5414,23 @@ const CREDIT_SERIES = [
     note:"Aucune série FRED gratuite ne donne le vrai taux de défaut (Moody's/S&P, payant) — proxy retenu : taux de charge-off sur prêts aux entreprises, dette effectivement passée en perte par les banques commerciales (Federal Reserve, série CORBLACBS)." },
   { key:'delinquency', label:'Delinquency Rate (taux de délinquance, tous prêts bancaires)', shortLabel:'Délinquance', seriesId:'DRALACBS', suffix:' %', decimals:2, color:THEME.blue,
     note:'Part des prêts détenus par les banques commerciales dont les paiements sont en retard d\'au moins 30 jours (Federal Reserve, série DRALACBS, tous types de prêts confondus).' },
-  { key:'creditGrowth', label:'Credit Growth (croissance du crédit aux entreprises, glissement annuel)', shortLabel:'Croissance crédit', seriesId:'BUSLOANS', suffix:' %', decimals:1, deriveYoY:true, color:THEME.green,
+  { key:'creditGrowth', label:'Credit Growth (croissance du crédit aux entreprises, glissement annuel)', shortLabel:'Croissance crédit', seriesId:'BUSLOANS', suffix:' %', decimals:1, deriveYoY:true, color:THEME.green, group:'dynamique',
     note:"Variation sur 1 an de l'encours de prêts commerciaux et industriels (C&I) aux entreprises (Federal Reserve, série BUSLOANS) — accélère/ralentit/se contracte." },
+  // Dynamique du crédit (distincte de l'état du crédit ci-dessus, demande explicite de
+  // l'utilisateur) : pas "combien ça coûte/combien ça casse" (spreads, défauts,
+  // charge-offs) mais "les banques prêtent-elles plus ou moins facilement". Série
+  // retenue après recherche : SLOOS (Senior Loan Officer Opinion Survey, Fed), enquête
+  // trimestrielle directement auprès des banques américaines — DRTSCILM = solde net de
+  // banques déclarant un RESSERREMENT des conditions d'octroi pour les prêts C&I aux
+  // grandes/moyennes entreprises (la série SLOOS la plus suivie par les économistes pour
+  // ce signal). Vérifiée directement sur FRED : trimestrielle, 1990-04-01 à aujourd'hui,
+  // 146 observations — fréquence et historique demandés par l'utilisateur ("trimestrielle,
+  // suffisamment d'historique"). defaultRange:'3' répond à la demande explicite
+  // ("regarder cette donnée sur 2-3 ans pour détecter les changements récents, tout en
+  // conservant l'historique long") — l'historique complet reste à un clic (boutons 5/10/
+  // 20/30/Max, mêmes composants que le reste du site).
+  { key:'creditStandards', label:'Conditions de crédit bancaire (SLOOS — resserrement net des banques, prêts C&I grandes/moyennes entreprises)', shortLabel:'Cond. crédit (SLOOS)', seriesId:'DRTSCILM', suffix:' %', decimals:1, color:THEME.red, group:'dynamique', defaultRange:'3',
+    note:"Solde net des banques américaines déclarant un resserrement des conditions d'octroi de crédit (Federal Reserve, enquête trimestrielle SLOOS, prêts C&I aux grandes/moyennes entreprises). Positif = resserrement net (crédit plus dur à obtenir), négatif = assouplissement net (crédit plus facile)." },
   { key:'dsr', label:'Debt Service Ratio des ménages', shortLabel:'DSR ménages', seriesId:'TDSP', suffix:' %', decimals:2, color:THEME.gold,
     note:'Part du revenu disponible des ménages consacrée au remboursement de leur dette (Federal Reserve, série TDSP).' },
   // Momentum des bénéfices — proxy choisi APRÈS recherche explicite (voir échange avec
@@ -5255,7 +5455,17 @@ const CREDIT_SERIES = [
   // l'infrastructure déjà en place. Calcul vérifié en test réel (~245% avec les dernières
   // valeurs FRED — niveau plausible pour un marché jugé cher).
   { key:'buffettIndicator', label:'Buffett Indicator (capitalisation boursière US / PIB)', shortLabel:'Buffett Indicator', suffix:' %', decimals:1, color:THEME.violet,
-    note:"Capitalisation totale des actions cotées américaines (Federal Reserve, comptes financiers Z.1) rapportée au PIB — popularisé par Warren Buffett comme jauge de valorisation globale du marché ; au-delà de ~150% généralement lu comme un marché cher." }
+    note:"Capitalisation totale des actions cotées américaines (Federal Reserve, comptes financiers Z.1) rapportée au PIB — popularisé par Warren Buffett comme jauge de valorisation globale du marché ; au-delà de ~150% généralement lu comme un marché cher." },
+  // Régime de taux — jamais affichées dans le tableau/la grille Crédit (hidden:true,
+  // group:'taux'), servent uniquement à l'outil "Taux vs Actions/Secteurs" (voir plus
+  // bas, RATE_OVERLAY_SERIES) qui superpose ces séries au prix d'une entreprise ou d'un
+  // secteur pour étudier sa réaction aux changements de régime de taux. Réutilisent
+  // exactement la même infrastructure de fetch/cache Apps Script que le reste de
+  // CREDIT_SERIES (un seul appel réseau pour tout).
+  { key:'rate2y', shortLabel:'Taux 2 ans', seriesId:'DGS2', hidden:true, group:'taux' },
+  { key:'rate10y', shortLabel:'Taux 10 ans', seriesId:'DGS10', hidden:true, group:'taux' },
+  { key:'rateSpread', shortLabel:'Spread 10-2 ans', seriesId:'T10Y2Y', hidden:true, group:'taux' },
+  { key:'cpi', shortLabel:'Inflation (CPI, GA)', seriesId:'CPIAUCSL', deriveYoY:true, hidden:true, group:'taux' } // inflation en glissement annuel
 ];
 let creditIndicatorsData = {}; // key -> { dates:[...], values:[...] }
 
@@ -5370,8 +5580,10 @@ async function loadCreditIndicators(){
         creditIndicatorsData = cached.data;
         renderCreditTable();
         renderCreditChartsGrid();
+        renderCreditDynamicsGrid();
         renderCreditOverlayToggles();
         renderCreditOverlayChart();
+        renderRateOverlayChart();
         return;
       }
     }
@@ -5414,6 +5626,7 @@ async function loadCreditIndicators(){
   }
   data.baaAaa = deriveDiffSeries(data.baa10y, data.aaa10y);
   data.buffettIndicator = deriveRatioPctSeries(data.mktCapRaw, data.gdpRaw, 1000);
+  data.realRate10y = deriveDiffSeries(data.rate10y, data.cpi); // taux réel = 10 ans nominal − inflation (glissement annuel)
   creditIndicatorsData = data;
   try{ localStorage.setItem(CREDIT_LS_KEY, JSON.stringify({ ts: Date.now(), version: CREDIT_CACHE_VERSION, data })); }catch(e){ /* quota / navigateur privé */ }
 
@@ -5425,8 +5638,10 @@ async function loadCreditIndicators(){
   }
   renderCreditTable();
   renderCreditChartsGrid();
+  renderCreditDynamicsGrid();
   renderCreditOverlayToggles();
   renderCreditOverlayChart();
+  renderRateOverlayChart();
 }
 
 // Relance manuelle, vide le cache local d'abord — bouton toujours visible (pas seulement
@@ -5453,8 +5668,12 @@ function renderCreditError(errors){
     <br><br><button type="button" class="macro-fund-retry" data-credit-reload="1">↻ Recharger les indicateurs</button></p>`;
   const grid = document.getElementById('creditChartsGrid');
   if (grid) grid.innerHTML = '';
+  const dynGrid = document.getElementById('creditDynamicsGrid');
+  if (dynGrid) dynGrid.innerHTML = '';
   const status = document.getElementById('creditOverlayStatus');
   if (status){ status.textContent = 'Données indisponibles pour le moment.'; status.style.display = 'block'; }
+  const rateStatus = document.getElementById('rateOverlayStatus');
+  if (rateStatus){ rateStatus.textContent = 'Données indisponibles pour le moment.'; rateStatus.style.display = 'block'; }
 }
 
 // Stats partagées (valeur actuelle, Δ1m, Δ3m, date) — utilisées à la fois par le
@@ -5600,7 +5819,8 @@ function renderCreditIndicatorChart(key){
   const canvas = document.getElementById('creditChart-' + key);
   if (!canvas) return;
   const holder = canvas.closest('.chart-holder');
-  const range = creditIndicatorRanges[key] || '10';
+  const meta0 = CREDIT_SERIES.find(s => s.key === key);
+  const range = creditIndicatorRanges[key] || (meta0 && meta0.defaultRange) || '10';
   if (creditIndicatorCharts[key]){ creditIndicatorCharts[key].destroy(); delete creditIndicatorCharts[key]; }
   const config = buildCreditIndicatorChartConfig(key, range);
   const statsBox = document.getElementById('creditStats-' + key);
@@ -5614,7 +5834,7 @@ function renderCreditIndicatorChart(key){
 }
 
 function creditIndicatorCardHtml(s){
-  const range = creditIndicatorRanges[s.key] || '10';
+  const range = creditIndicatorRanges[s.key] || s.defaultRange || '10';
   return `<div class="chart-card">
     <div class="chart-card-head">
       <div><h3>${s.shortLabel}</h3><p class="chart-subtitle">${s.note}</p></div>
@@ -5633,15 +5853,24 @@ function creditIndicatorCardHtml(s){
 // récapitulatif et l'outil de superposition (comparaison inter-thème toujours utile),
 // juste exclus de CETTE grille précise pour ne pas les dupliquer.
 const CREDIT_GRID_EXCLUDED_KEYS = ['earningsProxy', 'buffettIndicator'];
+// État du crédit (spreads, défauts, charge-offs) : groupe implicite par défaut (pas de
+// champ `group`, ou `group:'etat'`) — distinct de la Dynamique du crédit (conditions
+// d'octroi + croissance) ci-dessous, demande explicite de l'utilisateur de ne pas
+// mélanger les deux notions.
 function creditChartsGridSeries(){
-  return creditVisibleSeries().filter(s => !CREDIT_GRID_EXCLUDED_KEYS.includes(s.key));
+  return creditVisibleSeries().filter(s => (!s.group || s.group === 'etat') && !CREDIT_GRID_EXCLUDED_KEYS.includes(s.key));
 }
-function renderCreditChartsGrid(){
-  const box = document.getElementById('creditChartsGrid');
+function creditDynamicsSeries(){
+  return creditVisibleSeries().filter(s => s.group === 'dynamique');
+}
+// Partagée par la grille "État du crédit" et la grille "Dynamique du crédit" (même
+// structure de carte, juste une liste de séries et un conteneur DOM différents) — ne
+// détruit que les charts des clés concernées, jamais tout `creditIndicatorCharts`
+// d'un coup (les deux grilles sont rendues indépendamment mais partagent ce même objet).
+function renderCreditGridInto(containerId, visible){
+  const box = document.getElementById(containerId);
   if (!box) return;
-  Object.values(creditIndicatorCharts).forEach(ch => ch && ch.destroy());
-  creditIndicatorCharts = {};
-  const visible = creditChartsGridSeries();
+  visible.forEach(s => { if (creditIndicatorCharts[s.key]){ creditIndicatorCharts[s.key].destroy(); delete creditIndicatorCharts[s.key]; } });
   box.innerHTML = visible.map(creditIndicatorCardHtml).join('');
   box.querySelectorAll('[data-credit-range-for]').forEach(row => {
     const key = row.dataset.creditRangeFor;
@@ -5655,7 +5884,13 @@ function renderCreditChartsGrid(){
     });
   });
   visible.forEach(s => renderCreditIndicatorChart(s.key));
+}
+function renderCreditChartsGrid(){
+  renderCreditGridInto('creditChartsGrid', creditChartsGridSeries());
   CREDIT_GRID_EXCLUDED_KEYS.forEach(key => renderCreditIndicatorChart(key)); // fiches dédiées, sous-onglet Macroéconomie
+}
+function renderCreditDynamicsGrid(){
+  renderCreditGridInto('creditDynamicsGrid', creditDynamicsSeries());
 }
 
 /* ---- Superposition (comparer plusieurs indicateurs sur un même graphique) ----------
@@ -5785,6 +6020,227 @@ document.querySelectorAll('#pageMacroEco [data-credit-zoom]').forEach(btn => {
     openZoom('creditind-' + key, meta ? meta.label : key);
   });
 });
+
+/* ============================================================
+   OUTIL "TAUX VS ACTIONS/SECTEURS" (demande explicite) — superpose au prix d'une
+   entreprise OU d'un secteur les séries de régime de taux (2 ans, 10 ans, spread 10-2,
+   taux réel, inflation) pour étudier historiquement la réaction du marché aux
+   changements de régime de taux. Même moteur nominal/base100 que la superposition
+   Crédit & Bénéfices ci-dessus, généralisé à une "série de base" (prix) au lieu d'un
+   indicateur crédit — prix (une entreprise, source Sheet dédié ou repli Yahoo/Stooq,
+   même logique que loadStockChart()) et secteur (ratio ETF/SPY, voir
+   sectorEtfRatioSeries() plus haut) n'ont pas la même unité qu'un taux en %, d'où le
+   choix de base100 par défaut. ============================================================ */
+const RATE_OVERLAY_INDICATORS = [
+  { key:'rate10y', label:'Taux 10 ans' },
+  { key:'rate2y', label:'Taux 2 ans' },
+  { key:'rateSpread', label:'Spread 10-2 ans' },
+  { key:'realRate10y', label:'Taux réel (10 ans − inflation)' },
+  { key:'cpi', label:'Inflation (CPI, glissement annuel)' }
+];
+let rateOverlayBaseType = 'company'; // 'company' | 'sector'
+let rateOverlayCompany = null;
+let rateOverlaySector = MACRO_ROTATION_SECTORS[0].key;
+let rateOverlaySelected = ['rate10y', 'rate2y'];
+let rateOverlayMode = 'base100'; // 'nominal' | 'base100'
+let rateOverlayRange = '10';
+let rateOverlayChart = null;
+let rateOverlayBaseSeries = null; // {dates, values} — prix (entreprise) ou ratio secteur/SPY
+let rateOverlayBaseLabel = '';
+let rateOverlayLoadToken = 0; // invalide un fetch Yahoo/Stooq encore en vol si la sélection change entre-temps
+
+async function loadRateOverlayBaseSeries(){
+  const myToken = ++rateOverlayLoadToken;
+  rateOverlayBaseSeries = null;
+  if (rateOverlayBaseType === 'sector'){
+    const meta = MACRO_ROTATION_SECTORS.find(s => s.key === rateOverlaySector);
+    rateOverlayBaseLabel = meta ? meta.label + ' (vs S&P 500)' : '';
+    rateOverlayBaseSeries = sectorEtfRatioSeries(rateOverlaySector);
+    renderRateOverlayChart();
+    return;
+  }
+  // Entreprise : même logique de source que loadStockChart() — Sheet historique dédié en
+  // priorité (fiable, pas de CORS), repli Yahoo puis Stooq pour les entreprises hors de
+  // ce Sheet.
+  const nom = rateOverlayCompany;
+  rateOverlayBaseLabel = nom || '';
+  if (!nom){ renderRateOverlayChart(); return; }
+  const sheetSeries = fetchPriceHistorySeries(nom);
+  if (sheetSeries){
+    rateOverlayBaseSeries = { dates: sheetSeries.dates, values: sheetSeries.closes };
+    renderRateOverlayChart();
+    return;
+  }
+  const rows = companies[nom];
+  const ticker = rows && rows.length ? rows[rows.length - 1].ticker : null;
+  if (!ticker){ renderRateOverlayChart(); return; }
+  try{
+    const r = await fetchYahooWeekly(mapTickerToYahoo(ticker));
+    if (myToken !== rateOverlayLoadToken) return; // sélection changée entre-temps
+    rateOverlayBaseSeries = { dates: r.dates, values: r.closes };
+  }catch(e){
+    try{
+      const r2 = await fetchStooqWeekly(mapTickerToStooq(ticker));
+      if (myToken !== rateOverlayLoadToken) return;
+      rateOverlayBaseSeries = { dates: r2.dates, values: r2.closes };
+    }catch(e2){
+      if (myToken !== rateOverlayLoadToken) return;
+      rateOverlayBaseSeries = null;
+    }
+  }
+  renderRateOverlayChart();
+}
+
+function buildRateOverlayChartConfig(){
+  if (!rateOverlayBaseSeries || !rateOverlayBaseSeries.dates.length) return null;
+  const selectedIndicators = RATE_OVERLAY_INDICATORS.filter(i => rateOverlaySelected.includes(i.key) && creditIndicatorsData[i.key]);
+
+  const baseSliced = creditSliceByRange(rateOverlayBaseSeries, rateOverlayRange);
+  if (!baseSliced.dates.length) return null;
+  const dateSet = new Set(baseSliced.dates);
+  selectedIndicators.forEach(ind => creditSliceByRange(creditIndicatorsData[ind.key], rateOverlayRange).dates.forEach(d => dateSet.add(d)));
+  const labels = Array.from(dateSet).sort();
+
+  const colors = [THEME.blue, THEME.gold, THEME.red, THEME.green, THEME.violet, THEME.yellow];
+  const datasets = [];
+
+  const baseByDate = {};
+  baseSliced.dates.forEach((d, i) => { baseByDate[d] = baseSliced.values[i]; });
+  const baseRaw = labels.map(d => baseByDate[d] != null ? baseByDate[d] : null);
+  let baseData = baseRaw, baseAxis = 'y0';
+  if (rateOverlayMode === 'base100'){
+    const b = baseRaw.find(v => v != null && v !== 0);
+    baseData = b ? baseRaw.map(v => v == null ? null : (v / b) * 100) : baseRaw;
+    baseAxis = 'yBase100';
+  }
+  datasets.push({ label: rateOverlayBaseLabel || 'Prix', data: baseData, borderColor: colors[0], backgroundColor:'transparent', borderWidth:2, pointRadius:0, spanGaps:true, tension:0.1, yAxisID: baseAxis });
+
+  selectedIndicators.forEach((ind, i) => {
+    const d = creditIndicatorsData[ind.key];
+    const byDate = {};
+    d.dates.forEach((dt, j) => { byDate[dt] = d.values[j]; });
+    const raw = labels.map(dt => byDate[dt] != null ? byDate[dt] : null);
+    let data = raw, axisId = 'y' + (i + 1);
+    if (rateOverlayMode === 'base100'){
+      const b = raw.find(v => v != null && v !== 0);
+      data = b ? raw.map(v => v == null ? null : (v / b) * 100) : raw;
+      axisId = 'yBase100';
+    }
+    datasets.push({ label: ind.label, data, borderColor: colors[(i + 1) % colors.length], backgroundColor:'transparent', borderWidth:1.5, pointRadius:0, spanGaps:true, tension:0.1, yAxisID: axisId });
+  });
+
+  const scales = { x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:8}, border:{color:THEME.hair} } };
+  if (rateOverlayMode === 'base100'){
+    scales.yBase100 = { grid:baseGrid, ticks:{color:THEME.dim}, title:{display:true, text:'Base 100', color:THEME.dim} };
+  } else {
+    datasets.forEach((ds, i) => {
+      scales[ds.yAxisID] = { display: i === 0, position: i % 2 === 0 ? 'left' : 'right', grid: i === 0 ? baseGrid : { display:false }, ticks:{color:THEME.dim} };
+    });
+  }
+
+  return {
+    type:'line',
+    data:{ labels, datasets },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:'bottom', labels:{boxWidth:8, usePointStyle:true, font:{size:9.5}} } },
+      scales
+    }
+  };
+}
+
+function populateRateOverlayCompanySelect(){
+  const sel = document.getElementById('rateOverlayCompanySelect');
+  if (!sel || sel.dataset.populated === '1') return;
+  const names = Object.keys(companies || {}).sort((a, b) => a.localeCompare(b, 'fr'));
+  if (!names.length) return;
+  sel.innerHTML = '<option value="">— Choisir une entreprise —</option>' + names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+  sel.dataset.populated = '1';
+}
+
+function setRateOverlayBaseType(type){
+  rateOverlayBaseType = type;
+  document.querySelectorAll('#rateOverlayBaseTypeToggle button').forEach(b => b.classList.toggle('active', b.dataset.baseType === type));
+  document.getElementById('rateOverlayCompanyPicker').style.display = type === 'company' ? '' : 'none';
+  document.getElementById('rateOverlaySectorPicker').style.display = type === 'sector' ? '' : 'none';
+  loadRateOverlayBaseSeries();
+}
+function setRateOverlayMode(mode){
+  rateOverlayMode = mode;
+  document.querySelectorAll('#rateOverlayModeToggle button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  renderRateOverlayChart();
+}
+function toggleRateOverlayIndicator(key){
+  const idx = rateOverlaySelected.indexOf(key);
+  if (idx === -1) rateOverlaySelected.push(key); else rateOverlaySelected.splice(idx, 1);
+  renderRateOverlayToggles();
+  renderRateOverlayChart();
+}
+function renderRateOverlayToggles(){
+  const box = document.getElementById('rateOverlayToggles');
+  if (!box) return;
+  box.innerHTML = RATE_OVERLAY_INDICATORS.map(ind =>
+    `<button type="button" data-rate-overlay-key="${ind.key}" class="${rateOverlaySelected.includes(ind.key) ? 'active' : ''}">${ind.label}</button>`
+  ).join('');
+}
+function renderRateOverlayChart(){
+  populateRateOverlayCompanySelect();
+  const canvas = document.getElementById('chartRateOverlay');
+  if (!canvas) return;
+  const config = buildRateOverlayChartConfig();
+  if (rateOverlayChart){ rateOverlayChart.destroy(); rateOverlayChart = null; }
+  const status = document.getElementById('rateOverlayStatus');
+  if (!config){
+    if (status){
+      status.textContent = rateOverlayBaseType === 'company'
+        ? (rateOverlayCompany ? 'Chargement du cours…' : 'Choisis une entreprise ci-dessus.')
+        : 'Chargement de l\'historique sectoriel…';
+      status.style.display = 'block';
+    }
+    return;
+  }
+  if (status) status.style.display = 'none';
+  rateOverlayChart = new Chart(canvas.getContext('2d'), config);
+  if (zoomKey === 'rateOverlay') renderZoomChart();
+}
+function openRateOverlayZoom(){
+  if (!rateOverlayChart) return;
+  openZoom('rateOverlay', 'Taux vs Actions/Secteurs — ' + (rateOverlayBaseLabel || ''));
+}
+
+document.getElementById('rateOverlayBaseTypeToggle').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-base-type]');
+  if (btn) setRateOverlayBaseType(btn.dataset.baseType);
+});
+document.getElementById('rateOverlayCompanySelect').addEventListener('change', e => {
+  rateOverlayCompany = e.target.value || null;
+  loadRateOverlayBaseSeries();
+});
+document.getElementById('rateOverlaySectorSelect').addEventListener('change', e => {
+  rateOverlaySector = e.target.value;
+  loadRateOverlayBaseSeries();
+});
+document.getElementById('rateOverlayToggles').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-rate-overlay-key]');
+  if (btn) toggleRateOverlayIndicator(btn.dataset.rateOverlayKey);
+});
+document.getElementById('rateOverlayModeToggle').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-mode]');
+  if (btn) setRateOverlayMode(btn.dataset.mode);
+});
+wireCreditRangeRow(document.getElementById('rateOverlayRangeButtons'), range => {
+  rateOverlayRange = range;
+  renderRateOverlayChart();
+});
+document.getElementById('macroRotationSectorSelect').addEventListener('change', e => setMacroRotationIsolateSector(e.target.value));
+wireCreditRangeRow(document.getElementById('macroRotationIsolateRangeButtons'), range => {
+  macroRotationIsolateRange = range;
+  renderMacroRotationChart();
+});
+document.getElementById('macroRotationIsolateOverlayToggles').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-rotoverlay-key]');
+  if (btn) toggleMacroRotationIsolateOverlay(btn.dataset.rotoverlayKey);
+});
+renderRateOverlayToggles();
 
 // Canal de régression linéaire (moyenne ± 1 et 2 écarts-types) calculé sur les
 // vingt dernières années de clôtures hebdo (ou tout l'historique dispo si plus court) —
@@ -6738,14 +7194,16 @@ const ZOOM_SPECIAL_RANGES = {
   macroCycle: ZOOM_MACRO_CYCLE_RANGES,
   macroRotation: ZOOM_MACRO_ROTATION_RANGES,
   macroRanking: MACRO_RANKING_OPTIONS,
-  credit: ZOOM_CREDIT_RANGES
+  credit: ZOOM_CREDIT_RANGES,
+  rateOverlay: CREDIT_RANGE_OPTIONS
 };
 creditVisibleSeries().forEach(s => { ZOOM_SPECIAL_RANGES['creditind-' + s.key] = CREDIT_RANGE_OPTIONS; });
 function zoomSpecialRangeGet(){
   if (zoomKey === 'stock') return zoomStockRange;
   if (zoomKey === 'comparaison') return zoomComparaisonRange;
   if (zoomKey === 'macroCycle') return zoomMacroCycleRange;
-  if (zoomKey === 'macroRotation') return zoomMacroRotationRange;
+  if (zoomKey === 'macroRotation') return macroRotationIsolateSector ? macroRotationIsolateRange : zoomMacroRotationRange;
+  if (zoomKey === 'rateOverlay') return rateOverlayRange;
   if (zoomKey === 'macroRanking') return zoomMacroRankingRow;
   if (zoomKey === 'credit') return zoomCreditRange;
   if (zoomKey && zoomKey.indexOf('creditind-') === 0) return creditIndicatorRanges[zoomKey.slice(10)] || '10';
@@ -6755,7 +7213,22 @@ function zoomSpecialRangeSet(val){
   if (zoomKey === 'stock') zoomStockRange = val;
   else if (zoomKey === 'comparaison'){ zoomComparaisonRange = val; comparaisonRange = val; document.querySelectorAll('#comparaisonRangeButtons button').forEach(b => b.classList.toggle('active', b.dataset.range === val)); }
   else if (zoomKey === 'macroCycle') zoomMacroCycleRange = val;
-  else if (zoomKey === 'macroRotation') zoomMacroRotationRange = val;
+  else if (zoomKey === 'macroRotation'){
+    if (macroRotationIsolateSector){
+      macroRotationIsolateRange = val;
+      document.querySelectorAll('#macroRotationIsolateRangeButtons .range-buttons button').forEach(b => b.classList.toggle('active', b.dataset.range === val));
+      const input = document.querySelector('#macroRotationIsolateRangeButtons .credit-range-custom-input');
+      if (input) input.value = '';
+    } else {
+      zoomMacroRotationRange = val;
+    }
+  }
+  else if (zoomKey === 'rateOverlay'){
+    rateOverlayRange = val;
+    document.querySelectorAll('#rateOverlayRangeButtons .range-buttons button').forEach(b => b.classList.toggle('active', b.dataset.range === val));
+    const input = document.querySelector('#rateOverlayRangeButtons .credit-range-custom-input');
+    if (input) input.value = '';
+  }
   else if (zoomKey === 'macroRanking') zoomMacroRankingRow = val;
   else if (zoomKey === 'credit'){
     zoomCreditRange = val; creditOverlayRange = val;
@@ -6776,7 +7249,8 @@ function zoomSpecialChartConfig(){
   if (zoomKey === 'stock') return buildStockChartConfig(zoomStockRange);
   if (zoomKey === 'comparaison') return buildComparaisonChartConfig(zoomComparaisonRange);
   if (zoomKey === 'macroCycle') return buildMacroCycleChartConfig(zoomMacroCycleRange);
-  if (zoomKey === 'macroRotation') return buildMacroRotationChartConfig(zoomMacroRotationRange);
+  if (zoomKey === 'macroRotation') return macroRotationIsolateSector ? buildMacroRotationIsolateChartConfig(macroRotationIsolateRange) : buildMacroRotationChartConfig(zoomMacroRotationRange);
+  if (zoomKey === 'rateOverlay') return buildRateOverlayChartConfig();
   if (zoomKey === 'macroRanking') return buildMacroRankingChartConfig(zoomMacroRankingRow);
   if (zoomKey === 'credit') return buildCreditOverlayChartConfig();
   if (zoomKey && zoomKey.indexOf('creditind-') === 0){
@@ -6788,9 +7262,14 @@ function zoomSpecialChartConfig(){
 
 function renderZoomRangeRow(){
   const row = document.getElementById('zoomRangeRow');
-  if (ZOOM_SPECIAL_RANGES[zoomKey]){
+  // "macroRotation" a deux jeux de plages selon le mode (1m/2m/.../3a normalement, ou
+  // 3a/5a/.../Max quand un secteur est isolé sur son historique ETF long) — seul cas où
+  // ZOOM_SPECIAL_RANGES[zoomKey] ne suffit pas seul, d'où ce cas particulier avant le
+  // chemin générique.
+  const options = (zoomKey === 'macroRotation' && macroRotationIsolateSector) ? CREDIT_RANGE_OPTIONS : ZOOM_SPECIAL_RANGES[zoomKey];
+  if (options){
     const current = zoomSpecialRangeGet();
-    row.innerHTML = ZOOM_SPECIAL_RANGES[zoomKey].map(([val,label]) => `<button data-zrange="${val}" class="${current===val?'active':''}">${label}</button>`).join('');
+    row.innerHTML = options.map(([val,label]) => `<button data-zrange="${val}" class="${current===val?'active':''}">${label}</button>`).join('');
     return;
   }
   if (!ZOOM_HISTORICAL_KEYS.includes(zoomKey)){ row.innerHTML = ''; return; }
@@ -9886,5 +10365,6 @@ document.getElementById('persoBlurToggleBtn').addEventListener('click', function
   loadConstructionBaseline();
   loadAllDataFromAppsScript();
   loadCreditIndicators();
+  loadSectorEtfData();
 })();
 
