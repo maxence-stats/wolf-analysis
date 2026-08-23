@@ -96,6 +96,7 @@
       <button class="page-subnav-btn active" data-page="pageMacroCredit">Crédit</button>
       <button class="page-subnav-btn" data-page="pageMacroSecteur">Secteur</button>
       <button class="page-subnav-btn" data-page="pageMacroEco">Macroéconomie</button>
+      <button class="page-subnav-btn" data-page="pageMacroCycleRead">Lecture du Cycle</button>
     </div>
 
     <div id="pageAnalyse" class="page active">
@@ -753,6 +754,8 @@
         <div class="range-buttons" id="creditOverlayModeToggle">
           <button data-mode="nominal" class="active">Valeurs nominales</button>
           <button data-mode="base100">Base 100</button>
+          <button data-mode="log">Logarithmique</button>
+          <button data-mode="zscore">Z-score</button>
         </div>
         <div class="credit-range-row" id="creditOverlayRangeButtons">
           <div class="range-buttons">
@@ -760,7 +763,7 @@
           </div>
           <span class="credit-range-custom"><input type="number" min="1" max="99" step="1" class="credit-range-custom-input" placeholder="Ans libre"></span>
         </div>
-        <p class="chart-hint">Valeurs nominales : chaque indicateur garde sa propre échelle (survole une courbe pour lire sa vraie valeur) — les unités ne sont pas directement comparables entre elles. Base 100 : chaque série est ramenée à 100 au début de la période affichée, pour comparer les évolutions en %.</p>
+        <p class="chart-hint">Valeurs nominales : chaque indicateur garde sa propre échelle (survole une courbe pour lire sa vraie valeur). Base 100 : rebasé à 100 au début de la période — compare des DIRECTIONS/performances relatives, pas un niveau de valorisation. Logarithmique : utile quand les échelles diffèrent trop. Z-score : écart à la moyenne de la période en écarts-types — repère un niveau anormalement haut/bas, à ne pas confondre avec Base 100.</p>
         <div class="chart-holder" style="height:340px;"><canvas id="chartCreditOverlay"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(MACRO_CHART_GETTERS.credit(), 'Crédit &amp; Bénéfices — Superposition', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
         <div id="creditOverlayStatus" class="stock-status" style="display:none;"></div>
         <div class="macro-export-row">
@@ -866,6 +869,7 @@
             <button data-mode="nominal">Valeurs nominales</button>
             <button data-mode="base100" class="active">Base 100</button>
             <button data-mode="log">Logarithmique</button>
+            <button data-mode="zscore">Z-score</button>
           </div>
           <div class="range-buttons" id="macroRotationIsolateOverlayToggles" style="display:none;"></div>
           <div class="chart-holder" style="height:340px;"><canvas id="chartMacroRotation"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(MACRO_CHART_GETTERS.rotation(), 'Rotation Sectorielle GICS vs S&amp;P 500', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
@@ -962,7 +966,9 @@
           <button data-mode="nominal">Valeurs nominales</button>
           <button data-mode="base100" class="active">Base 100</button>
           <button data-mode="log">Logarithmique</button>
+          <button data-mode="zscore">Z-score</button>
         </div>
+        <p class="chart-hint">Base 100 : compare des directions/performances relatives, jamais un niveau de valorisation. Z-score : écart à la moyenne de la période affichée en écarts-types, pour repérer un niveau anormal — change avec la plage choisie ci-dessous. Maximum 5 séries superposées à la fois.</p>
         <div class="credit-range-row" id="rateOverlayRangeButtons">
           <div class="range-buttons">
             <button data-range="3">3a</button><button data-range="5">5a</button><button class="active" data-range="10">10a</button><button data-range="20">20a</button><button data-range="30">30a</button><button data-range="max">Max</button>
@@ -971,6 +977,7 @@
         </div>
         <div class="chart-holder" style="height:340px;"><canvas id="chartRateOverlay"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(MACRO_CHART_GETTERS.rateOverlay(), 'Taux vs Actions/Secteurs', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
         <div id="rateOverlayStatus" class="stock-status" style="display:none;"></div>
+        <div id="rateOverlayCorrelation"></div>
         <div class="macro-export-row">
           <button onclick="exportMacroChartAsPdf('rateOverlay','Taux vs Actions/Secteurs')">PDF</button>
           <button onclick="exportMacroChartAsImage('rateOverlay','taux-vs-actions','png')">PNG</button>
@@ -1055,6 +1062,21 @@
           <div id="creditStats-netLiquidity"></div>
         </div>
       </div>
+    </div>
+
+    <!-- Lecture du Cycle (demande explicite, spec détaillée) : synthèse automatique des
+         indicateurs déjà présents ailleurs sur le site — spread 10Y-2Y + label courbe,
+         dynamique de courbe, lecture du crédit, Cycle Scorecard (5 jauges), synthèse
+         texte + régime macro probable. Voir renderMacroCycleRead() dans app.js — aucune
+         donnée brute modifiée, uniquement de la lecture/classification. -->
+    <div id="pageMacroCycleRead" class="page">
+      <div class="macro-export-all-row">
+        <button class="macro-export-all-btn" onclick="exportMacroFullPageAsPdf()">⭳ Exporter toute la page en PDF</button>
+        <button type="button" class="macro-fund-retry" data-cycle-reload="1">↻ Recharger</button>
+      </div>
+      <div class="section-label">Lecture du Cycle</div>
+      <p class="valo-intro">Dans quel régime macro sommes-nous, et quelles classes d'actifs/secteurs ont historiquement tendance à en bénéficier ? Synthèse automatique à partir des indicateurs Crédit, Taux et Macroéconomie déjà présents sur les autres sous-onglets — rien n'est recalculé dans une autre unité, chaque indicateur garde sa forme d'origine.</p>
+      <div id="macroCycleReadContent"></div>
     </div>
 
     <!-- Éditeur PDF : composition libre (glisser-déposer, texte) d'un document

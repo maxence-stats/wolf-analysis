@@ -1313,17 +1313,30 @@ let macroRotationIsolateMode = 'base100'; // 'nominal' | 'base100' | 'log' — d
 // comme en mode isolé — demande explicite "mettre UN indicateur sur tous les secteurs").
 let macroRotationAllSectorsOverlay = null;
 
-// Transforme une série brute selon le mode d'affichage commun aux 3 outils de
-// superposition du site (Taux vs Actions/Secteurs, isolement sectoriel) — nominal
-// (valeurs telles quelles), base100 (rebasé à 100 au 1er point non nul de la plage) ou
-// log (échelle logarithmique, valeurs ≤ 0 mises à null — un taux réel négatif par
-// exemple n'a pas de sens en log, mieux vaut un trou visible qu'une valeur fausse).
+// Transforme une série brute selon le mode d'affichage commun aux outils de
+// superposition du site (Crédit &amp; Bénéfices, Taux vs Actions/Secteurs, isolement
+// sectoriel) — nominal (valeurs telles quelles), base100 (rebasé à 100 au 1er point non
+// nul de la plage — sert à comparer des DIRECTIONS/performances relatives, jamais à
+// lire un niveau de valorisation), log (échelle logarithmique, valeurs ≤ 0 mises à null)
+// ou z-score (écart à la moyenne en écarts-types, calculé sur la plage affichée
+// elle-même — donc "la période" se choisit via les mêmes boutons 3a/5a/10a/20a/Max déjà
+// en place, demande explicite : "permettre de choisir la période"). Sert à repérer un
+// niveau anormalement haut/bas, PAS une comparaison de performance (rôle du base100).
 function applyOverlayMode(raw, mode){
   if (mode === 'base100'){
     const b = raw.find(v => v != null && v !== 0);
     return b ? raw.map(v => v == null ? null : (v / b) * 100) : raw;
   }
   if (mode === 'log') return raw.map(v => (v != null && v > 0) ? v : null);
+  if (mode === 'zscore'){
+    const vals = raw.filter(v => v != null);
+    if (vals.length < 2) return raw.map(() => null);
+    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const variance = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length;
+    const stdDev = Math.sqrt(variance);
+    if (!stdDev) return raw.map(() => 0);
+    return raw.map(v => v == null ? null : (v - mean) / stdDev);
+  }
   return raw;
 }
 
@@ -1344,19 +1357,20 @@ function buildMacroRotationIsolateChartConfig(range){
   const baseRaw = labels.map(d => baseByDate[d] != null ? baseByDate[d] : null);
 
   const colors = [THEME.gold, THEME.blue, THEME.red, THEME.green, THEME.violet, THEME.yellow];
-  const datasets = [{ label: (meta ? meta.label : '') + ' vs S&P 500', data: applyOverlayMode(baseRaw, mode), borderColor: colors[0], backgroundColor:'transparent', borderWidth:2, pointRadius:0, spanGaps:true, tension:0.1, yAxisID: mode === 'base100' ? 'yBase100' : 'y0' }];
+  const shared = overlaySharesAxis(mode);
+  const datasets = [{ label: (meta ? meta.label : '') + ' vs S&P 500', data: applyOverlayMode(baseRaw, mode), borderColor: colors[0], backgroundColor:'transparent', borderWidth:2, pointRadius:0, spanGaps:true, tension:0.1, yAxisID: shared ? 'yShared' : 'y0' }];
 
   overlayIndicators.forEach((ind, i) => {
     const d = creditIndicatorsData[ind.key];
     const byDate = {};
     d.dates.forEach((dt, j) => { byDate[dt] = d.values[j]; });
     const raw = labels.map(dt => byDate[dt] != null ? byDate[dt] : null);
-    datasets.push({ label: ind.label, data: applyOverlayMode(raw, mode), borderColor: colors[(i + 1) % colors.length], backgroundColor:'transparent', borderWidth:1.5, pointRadius:0, spanGaps:true, tension:0.1, yAxisID: mode === 'base100' ? 'yBase100' : ('y' + (i + 1)) });
+    datasets.push({ label: ind.label, data: applyOverlayMode(raw, mode), borderColor: colors[(i + 1) % colors.length], backgroundColor:'transparent', borderWidth:1.5, pointRadius:0, spanGaps:true, tension:0.1, yAxisID: shared ? 'yShared' : ('y' + (i + 1)) });
   });
 
   const scales = { x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:8}, border:{color:THEME.hair} } };
-  if (mode === 'base100'){
-    scales.yBase100 = { grid:baseGrid, ticks:{color:THEME.dim}, title:{display:true, text:'Base 100', color:THEME.dim} };
+  if (shared){
+    scales.yShared = { grid:baseGrid, ticks:{color:THEME.dim}, title:{display:true, text:OVERLAY_SHARED_AXIS_LABEL[mode], color:THEME.dim} };
   } else {
     datasets.forEach((ds, i) => {
       scales[ds.yAxisID] = { display: i === 0, position: i % 2 === 0 ? 'left' : 'right', grid: i === 0 ? baseGrid : { display:false }, ticks:{color:THEME.dim}, type: mode === 'log' ? 'logarithmic' : 'linear' };
@@ -2878,6 +2892,7 @@ async function loadMacroFundamentalsFromApi(){
         macroFundamentalsData = cached.data;
         macroFundamentalsSource = 'api';
         renderMacroFundamentalsTable();
+        renderMacroCycleRead();
         return;
       }
     }
@@ -2930,6 +2945,7 @@ async function loadMacroFundamentalsFromApi(){
     if (macroFundamentalsData) renderMacroFundamentalsTable();
     else renderMacroFundamentalsError();
   }
+  renderMacroCycleRead(); // couvre les 2 branches (succès BEA/FRED ET repli Sheet) — la Lecture du Cycle a besoin de macroFundamentalsData quelle que soit sa source
 }
 // Réutilise le même bouton "↻ Recharger les indicateurs" que Crédit/Macro (voir
 // forceReloadCreditIndicators()) — vide aussi ce cache-ci pour rester cohérent.
@@ -4879,7 +4895,7 @@ const SCREENER_GROUP_PAGES = ['pageSecteur', 'pageClassement', 'pageWatchlist', 
 // Macroéconomie éclatée en 3 sous-onglets (même pattern) — demande explicite : la page
 // mélangeait Crédit, cycle sectoriel et indicateurs macro US sur un seul écran de plus
 // en plus long à mesure que le Crédit s'étoffait.
-const MACRO_GROUP_PAGES = ['pageMacroCredit', 'pageMacroSecteur', 'pageMacroEco'];
+const MACRO_GROUP_PAGES = ['pageMacroCredit', 'pageMacroSecteur', 'pageMacroEco', 'pageMacroCycleRead'];
 const NAV_GROUPS = [
   { key:'portfolio', subnavId:'portfolioSubnav', pages:PORTFOLIO_GROUP_PAGES },
   { key:'screener', subnavId:'screenerSubnav', pages:SCREENER_GROUP_PAGES },
@@ -4934,7 +4950,8 @@ const MOBILE_NAV_MANIFEST = [
   { group:'Macroéconomie', items:[
     { page:'pageMacroCredit', label:'Crédit' },
     { page:'pageMacroSecteur', label:'Secteur' },
-    { page:'pageMacroEco', label:'Macroéconomie' }
+    { page:'pageMacroEco', label:'Macroéconomie' },
+    { page:'pageMacroCycleRead', label:'Lecture du Cycle' }
   ] },
   { page:'pagePdfEditor', label:'🖊️ Éditeur PDF' }
 ];
@@ -5787,6 +5804,7 @@ async function loadCreditIndicators(){
         renderCreditOverlayToggles();
         renderCreditOverlayChart();
         renderRateOverlayChart();
+        renderMacroCycleRead();
         return;
       }
     }
@@ -5846,6 +5864,7 @@ async function loadCreditIndicators(){
   renderCreditOverlayToggles();
   renderCreditOverlayChart();
   renderRateOverlayChart();
+  renderMacroCycleRead();
 }
 
 // Relance manuelle, vide le cache local d'abord — bouton toujours visible (pas seulement
@@ -5904,10 +5923,12 @@ function creditIndicatorStats(key){
   const dateTime = new Date(date).getTime();
   const v1m = fredValueAtOrBefore(d.dates, d.values, dateTime - 30 * 86400000);
   const v3m = fredValueAtOrBefore(d.dates, d.values, dateTime - 91 * 86400000);
+  const v12m = fredValueAtOrBefore(d.dates, d.values, dateTime - 365 * 86400000); // ajouté pour "Lecture du Cycle" (tendances 3m/12m)
   return {
     current, date,
     d1m: (current != null && v1m != null) ? current - v1m : null,
-    d3m: (current != null && v3m != null) ? current - v3m : null
+    d3m: (current != null && v3m != null) ? current - v3m : null,
+    d12m: (current != null && v12m != null) ? current - v12m : null
   };
 }
 
@@ -6113,13 +6134,21 @@ function renderCreditDynamicsGrid(){
    l'utilisateur : voir quel indicateur se dégrade/s'améliore en premier lors d'un
    changement de cycle. ------------------------------------------------------------ */
 let creditOverlaySelected = ['hySpread', 'baa10y', 'baaAaa']; // sélection par défaut : les 3 indicateurs "prix du risque", exemple donné par l'utilisateur
-let creditOverlayMode = 'nominal'; // 'nominal' | 'base100'
+let creditOverlayMode = 'nominal'; // 'nominal' | 'base100' | 'log' | 'zscore'
 let creditOverlayRange = '10';
 let creditOverlayChart = null;
+
+// true pour base100 ET zscore : deux modes sans dimension physique, partagent donc un
+// SEUL axe commun (contrairement à nominal/log où chaque série garde son échelle
+// propre) — voir applyOverlayMode() pour la distinction de sens entre les deux (base100
+// = comparer des directions/performances, zscore = repérer un niveau anormal).
+function overlaySharesAxis(mode){ return mode === 'base100' || mode === 'zscore'; }
+const OVERLAY_SHARED_AXIS_LABEL = { base100:'Base 100', zscore:'Z-score' };
 
 function buildCreditOverlayChartConfig(){
   const selected = creditVisibleSeries().filter(s => creditOverlaySelected.includes(s.key) && creditIndicatorsData[s.key]);
   if (!selected.length) return null;
+  const mode = creditOverlayMode;
 
   const dateSet = new Set();
   selected.forEach(s => { creditSliceByRange(creditIndicatorsData[s.key], creditOverlayRange).dates.forEach(d => dateSet.add(d)); });
@@ -6130,25 +6159,19 @@ function buildCreditOverlayChartConfig(){
     const byDate = {};
     d.dates.forEach((dt, j) => { byDate[dt] = d.values[j]; });
     const raw = labels.map(dt => byDate[dt] != null ? byDate[dt] : null);
-    let data = raw, axisId = 'y' + i;
-    if (creditOverlayMode === 'base100'){
-      const base = raw.find(v => v != null && v !== 0);
-      data = base ? raw.map(v => v == null ? null : (v / base) * 100) : raw;
-      axisId = 'yBase100';
-    }
     return {
-      label: s.shortLabel, data,
+      label: s.shortLabel, data: applyOverlayMode(raw, mode),
       borderColor: s.color, backgroundColor:'transparent', borderWidth:1.75, pointRadius:0, spanGaps:true, tension:0.1,
-      yAxisID: axisId
+      yAxisID: overlaySharesAxis(mode) ? 'yShared' : ('y' + i)
     };
   });
 
   const scales = { x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:8}, border:{color:THEME.hair} } };
-  if (creditOverlayMode === 'base100'){
-    scales.yBase100 = { grid:baseGrid, ticks:{color:THEME.dim}, title:{display:true, text:'Base 100', color:THEME.dim} };
+  if (overlaySharesAxis(mode)){
+    scales.yShared = { grid:baseGrid, ticks:{color:THEME.dim}, title:{display:true, text:OVERLAY_SHARED_AXIS_LABEL[mode], color:THEME.dim} };
   } else {
     selected.forEach((s, i) => {
-      scales['y' + i] = { display: i === 0, position: i % 2 === 0 ? 'left' : 'right', grid: i === 0 ? baseGrid : { display:false }, ticks:{color:THEME.dim} };
+      scales['y' + i] = { display: i === 0, position: i % 2 === 0 ? 'left' : 'right', grid: i === 0 ? baseGrid : { display:false }, ticks:{color:THEME.dim}, type: mode === 'log' ? 'logarithmic' : 'linear' };
     });
   }
 
@@ -6325,10 +6348,11 @@ function buildRateOverlayChartConfig(){
   const datasets = [];
 
   const mode = rateOverlayMode;
+  const shared = overlaySharesAxis(mode);
   const baseByDate = {};
   baseSliced.dates.forEach((d, i) => { baseByDate[d] = baseSliced.values[i]; });
   const baseRaw = labels.map(d => baseByDate[d] != null ? baseByDate[d] : null);
-  const baseAxis = mode === 'base100' ? 'yBase100' : 'y0';
+  const baseAxis = shared ? 'yShared' : 'y0';
   datasets.push({ label: rateOverlayBaseLabel || 'Prix', data: applyOverlayMode(baseRaw, mode), borderColor: colors[0], backgroundColor:'transparent', borderWidth:2, pointRadius:0, spanGaps:true, tension:0.1, yAxisID: baseAxis });
 
   selectedIndicators.forEach((ind, i) => {
@@ -6336,13 +6360,13 @@ function buildRateOverlayChartConfig(){
     const byDate = {};
     d.dates.forEach((dt, j) => { byDate[dt] = d.values[j]; });
     const raw = labels.map(dt => byDate[dt] != null ? byDate[dt] : null);
-    const axisId = mode === 'base100' ? 'yBase100' : ('y' + (i + 1));
+    const axisId = shared ? 'yShared' : ('y' + (i + 1));
     datasets.push({ label: ind.label, data: applyOverlayMode(raw, mode), borderColor: colors[(i + 1) % colors.length], backgroundColor:'transparent', borderWidth:1.5, pointRadius:0, spanGaps:true, tension:0.1, yAxisID: axisId });
   });
 
   const scales = { x:{ grid:{display:false}, ticks:{color:THEME.dim, maxTicksLimit:8}, border:{color:THEME.hair} } };
-  if (mode === 'base100'){
-    scales.yBase100 = { grid:baseGrid, ticks:{color:THEME.dim}, title:{display:true, text:'Base 100', color:THEME.dim} };
+  if (shared){
+    scales.yShared = { grid:baseGrid, ticks:{color:THEME.dim}, title:{display:true, text:OVERLAY_SHARED_AXIS_LABEL[mode], color:THEME.dim} };
   } else {
     datasets.forEach((ds, i) => {
       scales[ds.yAxisID] = { display: i === 0, position: i % 2 === 0 ? 'left' : 'right', grid: i === 0 ? baseGrid : { display:false }, ticks:{color:THEME.dim}, type: mode === 'log' ? 'logarithmic' : 'linear' };
@@ -6416,25 +6440,75 @@ function setRateOverlayMode(mode){
   document.querySelectorAll('#rateOverlayModeToggle button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
   renderRateOverlayChart();
 }
+// Plafond à 5 séries simultanées (demande explicite : "limiter à 3-5 séries pour éviter
+// un graphique illisible") — le retrait reste toujours possible, seul l'ajout au-delà
+// de 5 est bloqué (silencieux : le bouton reste cliquable mais sans effet, cohérent
+// avec le style toggle des autres boutons de ce site plutôt qu'une alerte bloquante).
+const RATE_OVERLAY_MAX_SELECTED = 5;
 function toggleRateOverlayIndicator(key){
   const idx = rateOverlaySelected.indexOf(key);
-  if (idx === -1) rateOverlaySelected.push(key); else rateOverlaySelected.splice(idx, 1);
+  if (idx === -1){
+    if (rateOverlaySelected.length >= RATE_OVERLAY_MAX_SELECTED) return;
+    rateOverlaySelected.push(key);
+  } else {
+    rateOverlaySelected.splice(idx, 1);
+  }
   renderRateOverlayToggles();
   renderRateOverlayChart();
 }
 function renderRateOverlayToggles(){
   const box = document.getElementById('rateOverlayToggles');
   if (!box) return;
-  box.innerHTML = RATE_OVERLAY_INDICATORS.map(ind =>
-    `<button type="button" data-rate-overlay-key="${ind.key}" class="${rateOverlaySelected.includes(ind.key) ? 'active' : ''}">${ind.label}</button>`
-  ).join('');
+  const atCap = rateOverlaySelected.length >= RATE_OVERLAY_MAX_SELECTED;
+  box.innerHTML = RATE_OVERLAY_INDICATORS.map(ind => {
+    const active = rateOverlaySelected.includes(ind.key);
+    return `<button type="button" data-rate-overlay-key="${ind.key}" class="${active ? 'active' : ''}" ${(!active && atCap) ? 'disabled title="Maximum 5 séries — désélectionne-en une d\'abord"' : ''}>${ind.label}</button>`;
+  }).join('');
 }
+// Corrélation de Pearson entre deux séries appariées PAR DATE — "indicative", jamais
+// présentée comme causale (demande explicite). Moins de 10 points communs = coefficient
+// jugé pas assez fiable pour être affiché (évite un r trompeur sur 2-3 points).
+function pearsonCorrelation(datesA, valuesA, datesB, valuesB){
+  const byDateB = {};
+  datesB.forEach((d, i) => { byDateB[d] = valuesB[i]; });
+  const pairs = [];
+  datesA.forEach((d, i) => {
+    const b = byDateB[d];
+    if (valuesA[i] != null && b != null) pairs.push([valuesA[i], b]);
+  });
+  if (pairs.length < 10) return null;
+  const n = pairs.length;
+  const meanA = pairs.reduce((s, p) => s + p[0], 0) / n;
+  const meanB = pairs.reduce((s, p) => s + p[1], 0) / n;
+  let cov = 0, varA = 0, varB = 0;
+  pairs.forEach(([a, b]) => { cov += (a - meanA) * (b - meanB); varA += (a - meanA) ** 2; varB += (b - meanB) ** 2; });
+  if (varA === 0 || varB === 0) return null;
+  return cov / Math.sqrt(varA * varB);
+}
+// Un r par indicateur sélectionné, sur la même plage que le graphique (donc "comparer
+// plusieurs périodes" se fait avec les mêmes boutons 3a/5a/10a/20a/Max déjà en place).
+function rateOverlayCorrelationHtml(){
+  if (!rateOverlayBaseSeries || !rateOverlayBaseSeries.dates.length) return '';
+  const baseSliced = creditSliceByRange(rateOverlayBaseSeries, rateOverlayRange);
+  const selectedIndicators = RATE_OVERLAY_INDICATORS.filter(i => rateOverlaySelected.includes(i.key) && creditIndicatorsData[i.key]);
+  if (!selectedIndicators.length) return '';
+  const chips = selectedIndicators.map(ind => {
+    const sliced = creditSliceByRange(creditIndicatorsData[ind.key], rateOverlayRange);
+    const r = pearsonCorrelation(baseSliced.dates, baseSliced.values, sliced.dates, sliced.values);
+    if (r == null) return '';
+    const txt = (r >= 0 ? '+' : '') + r.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2});
+    return `<span class="chart-badge mediane-badge">${escapeHtml(ind.label)} · r <b>${txt}</b></span>`;
+  }).join('');
+  return chips ? `<div class="mediane-badges-row">${chips}</div><p class="chart-hint">Corrélation indicative sur la période sélectionnée (coefficient de Pearson) — une corrélation historique ne signifie pas causalité.</p>` : '';
+}
+
 function renderRateOverlayChart(){
   const canvas = document.getElementById('chartRateOverlay');
   if (!canvas) return;
   const config = buildRateOverlayChartConfig();
   if (rateOverlayChart){ rateOverlayChart.destroy(); rateOverlayChart = null; }
   const status = document.getElementById('rateOverlayStatus');
+  const corrBox = document.getElementById('rateOverlayCorrelation');
   if (!config){
     if (status){
       status.textContent = rateOverlayBaseType === 'company'
@@ -6442,10 +6516,12 @@ function renderRateOverlayChart(){
         : 'Chargement de l\'historique sectoriel…';
       status.style.display = 'block';
     }
+    if (corrBox) corrBox.innerHTML = '';
     return;
   }
   if (status) status.style.display = 'none';
   rateOverlayChart = new Chart(canvas.getContext('2d'), config);
+  if (corrBox) corrBox.innerHTML = rateOverlayCorrelationHtml();
   if (zoomKey === 'rateOverlay') renderZoomChart();
 }
 function openRateOverlayZoom(){
@@ -6496,6 +6572,13 @@ renderRateOverlayToggles();
 // outils derrière la même interface (indicateurs disponibles/sélectionnés/toggle,
 // mode courant/setter) pour ne pas dupliquer le HTML/les handlers deux fois.
 function zoomOverlayConfigFor(key){
+  if (key === 'credit') return {
+    indicators: creditVisibleSeries().map(s => ({ key: s.key, label: s.shortLabel })),
+    selected: () => creditOverlaySelected,
+    toggle: k => toggleCreditOverlayIndicator(k),
+    modeGet: () => creditOverlayMode,
+    modeSet: m => setCreditOverlayMode(m)
+  };
   if (key === 'rateOverlay') return {
     indicators: RATE_OVERLAY_INDICATORS,
     selected: () => rateOverlaySelected,
@@ -6512,7 +6595,7 @@ function zoomOverlayConfigFor(key){
   };
   return null;
 }
-const ZOOM_OVERLAY_MODES = [['nominal','Valeurs nominales'],['base100','Base 100'],['log','Logarithmique']];
+const ZOOM_OVERLAY_MODES = [['nominal','Valeurs nominales'],['base100','Base 100'],['log','Logarithmique'],['zscore','Z-score']];
 function renderZoomOverlayControls(){
   const cfg = zoomOverlayConfigFor(zoomKey);
   const toggleRow = document.getElementById('zoomOverlayToggleRow');
@@ -6541,6 +6624,274 @@ document.getElementById('zoomOverlayModeRow').addEventListener('click', e => {
   cfg.modeSet(btn.dataset.zoomOverlayMode);
   renderZoomOverlayControls();
   renderZoomChart();
+});
+
+/* ============================================================
+   LECTURE DU CYCLE (demande explicite, spec détaillée) — synthèse automatique de tous
+   les indicateurs déjà présents ailleurs sur le site (rien de nouveau côté données,
+   uniquement de la lecture/classification) pour répondre à "dans quel régime macro
+   sommes-nous, et quelles classes d'actifs en bénéficient historiquement". Aucune
+   donnée brute n'est modifiée ni recalculée dans une autre unité — chaque indicateur
+   garde son unité d'origine (voir demande explicite point 1), cette section ne fait que
+   les LIRE et les CLASSER selon des règles explicites, documentées ci-dessous.
+
+   Seuils de signal (positif/neutre/warning) : PAS de source officielle unique pour "à
+   partir de quel niveau la croissance/l'inflation/la valorisation est-elle haute" — ce
+   sont des repères usuels (ex. cible d'inflation Fed ~2%, lecture Buffett Indicator déjà
+   documentée ailleurs sur le site ">150% = cher") choisis pour donner un premier
+   classement raisonnable, PAS une vérité arrêtée. Documentés en commentaire à chaque
+   seuil pour rester ajustables facilement si besoin.
+   ============================================================ */
+
+// Spread 10Y-2Y : le calcul lui-même existe déjà (rateSpread = T10Y2Y, fetché
+// directement depuis FRED plutôt que recalculé côté client — même valeur). Label
+// automatique sur les seuils donnés explicitement par l'utilisateur.
+function curveLabelFor(spread){
+  if (spread == null) return null;
+  if (spread < 0) return { label:'COURBE INVERSÉE', cls:'warning' };
+  if (spread < 0.5) return { label:'COURBE PLATE', cls:'neutre' };
+  return { label:'COURBE NORMALE', cls:'positif' };
+}
+
+// Dynamique de courbe (bull/bear steepening/flattening) — classification EXHAUSTIVE sur
+// 2 axes : direction du spread (d10 > d2 => le spread 10-2 s'écarte => "steepening" ;
+// sinon "flattening") puis bull/bear selon le sens du taux qui a le plus bougé, au sens
+// littéral des 4 définitions données par l'utilisateur. Fenêtre : variation à 3 mois
+// (même fenêtre que les Δ3m déjà affichés ailleurs sur le site) — choix par défaut,
+// ajustable si besoin.
+function curveDynamicsRegime(d2, d10){
+  if (d2 == null || d10 == null) return null;
+  if (d10 > d2){
+    return d2 < 0
+      ? { key:'bullSteepening', label:'Bull Steepening', desc:"Le taux 2 ans baisse plus vite que le taux 10 ans." }
+      : { key:'bearSteepening', label:'Bear Steepening', desc:"Le taux 10 ans monte plus vite que le taux 2 ans." };
+  }
+  return d10 < 0
+    ? { key:'bullFlattening', label:'Bull Flattening', desc:"Le taux 2 ans baisse, mais le taux 10 ans baisse davantage." }
+    : { key:'bearFlattening', label:'Bear Flattening', desc:"Le taux 2 ans monte plus vite que le taux 10 ans." };
+}
+
+// Lecture du crédit : conditions d'octroi (creditStandards, positif=resserrement) ×
+// demande (creditDemand, positif=en hausse) — matrice 2×2 TOUJOURS classable dans l'un
+// des 4 cas donnés explicitement (la croissance du crédit est affichée en contexte,
+// mais ne conditionne pas le classement pour garder les 4 quadrants mutuellement
+// exclusifs et couvrant tous les cas).
+function creditReadingQuadrant(){
+  const cond = creditIndicatorsData.creditStandards, dem = creditIndicatorsData.creditDemand, gro = creditIndicatorsData.creditGrowth;
+  if (!cond || !dem || !cond.values.length || !dem.values.length) return null;
+  const condVal = cond.values[cond.values.length - 1];
+  const demVal = dem.values[dem.values.length - 1];
+  const groVal = gro && gro.values.length ? gro.values[gro.values.length - 1] : null;
+  // <= 0 (pas seulement < 0) pour "conditions faciles" : cohérent avec le texte de la
+  // synthèse (cycleSynthesisLines) qui lit "assouplissement" dès que la valeur n'est pas
+  // strictement positive — un resserrement net exactement nul (0%) est classé comme
+  // neutre-à-facile des deux côtés, jamais l'un vs l'autre selon la fonction.
+  const easing = condVal <= 0, strongDemand = demVal > 0;
+  const groTxt = groVal != null ? `Croissance du crédit ${groVal >= 0 ? '+' : ''}${groVal.toLocaleString('fr-FR',{maximumFractionDigits:1})}%.` : '';
+  if (easing && strongDemand) return { key:'expansion', label:'Expansion du crédit', signal:'positif', desc:`Conditions d'octroi faciles et demande forte. ${groTxt}` };
+  if (!easing && strongDemand) return { key:'supplyClosing', label:"L'offre commence à se fermer", signal:'warning', desc:`Les conditions se resserrent alors que la demande reste forte — la demande existe mais l'offre de crédit devient plus restrictive. ${groTxt}` };
+  if (easing && !strongDemand) return { key:'weakDemand', label:'Demande atone malgré des conditions faciles', signal:'warning', desc:`Les banques peuvent prêter facilement mais les entreprises empruntent peu — signal de prudence des entreprises. ${groTxt}` };
+  return { key:'contraction', label:'Contraction du crédit', signal:'warning', desc:`Conditions resserrées et demande faible — risque de ralentissement. ${groTxt}` };
+}
+
+const CYCLE_SIGNAL_LABELS = { positif:'Positif', neutre:'Neutre', warning:'Warning' };
+function trendArrow(delta){
+  if (delta == null) return '→';
+  if (delta > 0) return '↗';
+  if (delta < 0) return '↘';
+  return '→';
+}
+function fmtSignedPct(v, dec){
+  if (v == null) return '—';
+  return (v >= 0 ? '+' : '') + v.toLocaleString('fr-FR', {minimumFractionDigits:dec||1, maximumFractionDigits:dec||1}) + '%';
+}
+
+// Les 5 jauges du Cycle Scorecard — chacune : situation actuelle, tendance 3 mois,
+// tendance 12 mois, signal positif/neutre/warning. Retourne null tant que les données
+// nécessaires (crédit/taux OU BEA) ne sont pas encore chargées, plutôt qu'un calcul sur
+// des données manquantes.
+function cycleScorecardData(){
+  if (!macroFundamentalsData || !macroFundamentalsData.length || Object.keys(creditIndicatorsData).length === 0) return null;
+  const latestQ = macroFundamentalsData[macroFundamentalsData.length - 1];
+  const prevQ = macroFundamentalsData[macroFundamentalsData.length - 2];
+  const yearAgoQ = macroFundamentalsData[macroFundamentalsData.length - 5];
+
+  // A. CROISSANCE — PIB réel (BEA, % annualisé). Seuils par défaut (ajustables) :
+  // >2% positif, [0,2] neutre, <0 warning (signal de récession).
+  const gdpG = latestQ.gdpGrowth;
+  let growthSignal = 'neutre';
+  if (gdpG != null){ growthSignal = gdpG > 2 ? 'positif' : (gdpG < 0 ? 'warning' : 'neutre'); }
+  const growth = {
+    key:'croissance', label:'Croissance', unit:'% (PIB réel, annualisé)',
+    situation: gdpG, signal: gdpG == null ? null : growthSignal,
+    trend3m: (gdpG != null && prevQ && prevQ.gdpGrowth != null) ? gdpG - prevQ.gdpGrowth : null,
+    trend12m: (gdpG != null && yearAgoQ && yearAgoQ.gdpGrowth != null) ? gdpG - yearAgoQ.gdpGrowth : null
+  };
+
+  // B. INFLATION — CPI glissement annuel. Cible Fed ~2% : [1,3] positif, ]0,1[∪]3,4]
+  // neutre, sinon (>4 ou <0) warning.
+  const cpiStats = creditIndicatorStats('cpi');
+  const cpiVal = cpiStats && cpiStats.current;
+  let inflSignal = 'neutre';
+  if (cpiVal != null){ inflSignal = (cpiVal >= 1 && cpiVal <= 3) ? 'positif' : ((cpiVal > 4 || cpiVal < 0) ? 'warning' : 'neutre'); }
+  const inflation = {
+    key:'inflation', label:'Inflation', unit:'% (CPI, glissement annuel)',
+    situation: cpiVal, signal: cpiVal == null ? null : inflSignal,
+    trend3m: cpiStats ? cpiStats.d3m : null, trend12m: cpiStats ? cpiStats.d12m : null
+  };
+
+  // C. CRÉDIT — matrice conditions×demande (voir creditReadingQuadrant()). Tendance
+  // affichée = celle de la croissance du crédit elle-même (série la plus directement
+  // interprétable en delta simple).
+  const quadrant = creditReadingQuadrant();
+  const groStats = creditIndicatorStats('creditGrowth');
+  const credit = {
+    key:'credit', label:'Crédit', unit:'% (croissance du crédit)',
+    situation: groStats ? groStats.current : null, signal: quadrant ? quadrant.signal : null,
+    trend3m: groStats ? groStats.d3m : null, trend12m: groStats ? groStats.d12m : null,
+    quadrant
+  };
+
+  // D. LIQUIDITÉ — Net Liquidity Fed, tendance en %. 3m > 0 positif, < 0 warning, sinon
+  // neutre (bande morte ±1% pour ne pas sur-réagir au bruit hebdomadaire).
+  const nl = creditIndicatorsData.netLiquidity;
+  let liquidity = { key:'liquidite', label:'Liquidité', unit:'Md$ (Net Liquidity Fed)', situation:null, signal:null, trend3m:null, trend12m:null };
+  if (nl && nl.values.length){
+    const current = nl.values[nl.values.length - 1];
+    const date = nl.dates[nl.dates.length - 1];
+    const t = new Date(date).getTime();
+    const v3m = fredValueAtOrBefore(nl.dates, nl.values, t - 91 * 86400000);
+    const v12m = fredValueAtOrBefore(nl.dates, nl.values, t - 365 * 86400000);
+    const pct3m = (v3m != null && v3m !== 0) ? (current - v3m) / Math.abs(v3m) * 100 : null;
+    const pct12m = (v12m != null && v12m !== 0) ? (current - v12m) / Math.abs(v12m) * 100 : null;
+    let liqSignal = 'neutre';
+    if (pct3m != null){ liqSignal = pct3m > 1 ? 'positif' : (pct3m < -1 ? 'warning' : 'neutre'); }
+    liquidity = { key:'liquidite', label:'Liquidité', unit:'Md$ (Net Liquidity Fed)', situation:current, signal: pct3m == null ? null : liqSignal, trend3m: pct3m, trend12m: pct12m, isPctTrend:true };
+  }
+
+  // E. VALORISATION — Buffett Indicator, seuils déjà documentés ailleurs sur le site
+  // (">150% généralement lu comme cher") : <100 positif, [100,150] neutre, >150 warning.
+  const bi = creditIndicatorStats('buffettIndicator');
+  let valSignal = 'neutre';
+  if (bi && bi.current != null){ valSignal = bi.current < 100 ? 'positif' : (bi.current > 150 ? 'warning' : 'neutre'); }
+  const valorisation = {
+    key:'valorisation', label:'Valorisation', unit:'% (Buffett Indicator)',
+    situation: bi ? bi.current : null, signal: (bi && bi.current != null) ? valSignal : null,
+    trend3m: bi ? bi.d3m : null, trend12m: bi ? bi.d12m : null
+  };
+
+  return [growth, inflation, credit, liquidity, valorisation];
+}
+
+function cycleGaugeCardHtml(g){
+  const sig = g.signal || null;
+  const sigHtml = sig ? `<span class="cycle-signal ${sig}">${CYCLE_SIGNAL_LABELS[sig]}</span>` : `<span class="cycle-signal">N/D</span>`;
+  const fmtSituation = v => v == null ? 'N/D' : v.toLocaleString('fr-FR', {minimumFractionDigits:1, maximumFractionDigits:1}) + (g.key === 'liquidite' ? ' Md$' : '%');
+  const fmtTrend = v => g.isPctTrend ? fmtSignedPct(v, 1) : (v == null ? '—' : (v >= 0 ? '+' : '') + v.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + (g.key === 'liquidite' ? ' Md$' : ' pts'));
+  return `<div class="cycle-gauge-card">
+    <div class="cycle-gauge-head"><h4>${g.label}</h4>${sigHtml}</div>
+    <div class="cycle-gauge-value">${fmtSituation(g.situation)}</div>
+    <div class="cycle-gauge-unit">${g.unit}</div>
+    <div class="cycle-gauge-trends">
+      <div><span>3 mois</span><b>${trendArrow(g.trend3m)} ${fmtTrend(g.trend3m)}</b></div>
+      <div><span>12 mois</span><b>${trendArrow(g.trend12m)} ${fmtTrend(g.trend12m)}</b></div>
+    </div>
+    ${g.quadrant ? `<p class="chart-hint">${escapeHtml(g.quadrant.label)} — ${escapeHtml(g.quadrant.desc)}</p>` : ''}
+  </div>`;
+}
+
+// Régime macro probable — classification INDICATIVE (jamais présentée comme une
+// prédiction, demande explicite point 8) à partir des signaux Croissance/Crédit et de
+// la tendance 3 mois de la croissance. Simplification volontaire d'un cadre classique
+// "cycle de croissance/crédit" (expansion / expansion tardive / ralentissement /
+// récession / reprise) — un point de départ à affiner, pas un modèle validé.
+function classifyMacroRegime(growth, credit){
+  if (!growth || !credit || growth.signal == null || credit.signal == null) return null;
+  if (growth.signal === 'warning' && credit.signal === 'warning') return 'Récession';
+  if (growth.signal === 'positif' && growth.trend3m != null && growth.trend3m < 0) return 'Expansion tardive';
+  if (growth.signal === 'positif' && credit.signal === 'positif') return 'Expansion';
+  if (growth.signal !== 'warning' && growth.trend3m != null && growth.trend3m > 0 && credit.signal !== 'warning') return 'Reprise';
+  return 'Ralentissement';
+}
+
+function cycleSynthesisLines(scorecard){
+  const [growth, inflation, credit, liquidity, valorisation] = scorecard;
+  const trendWord = v => v == null ? 'stable' : (v > 0 ? 'en hausse' : (v < 0 ? 'en baisse' : 'stable'));
+  const lines = [];
+  if (growth.situation != null) lines.push(`Croissance : ${growth.signal === 'positif' ? 'positive' : (growth.signal === 'warning' ? 'négative' : 'modérée')}, ${trendWord(growth.trend3m)} sur 3 mois.`);
+  if (inflation.situation != null) lines.push(`Inflation : ${trendWord(inflation.trend3m) === 'en hausse' ? 'en accélération' : (trendWord(inflation.trend3m) === 'en baisse' ? 'en ralentissement' : 'stable')} (${fmtSignedPct(inflation.situation, 1)} sur un an).`);
+  if (credit.quadrant) lines.push(`Crédit : ${credit.quadrant.label.toLowerCase()}.`);
+  const cond = creditIndicatorsData.creditStandards, dem = creditIndicatorsData.creditDemand;
+  if (cond && cond.values.length) lines.push(`Conditions bancaires : ${cond.values[cond.values.length-1] > 0 ? 'resserrement' : 'assouplissement'}.`);
+  if (dem && dem.values.length) lines.push(`Demande de crédit : ${dem.values[dem.values.length-1] > 0 ? 'en hausse' : 'en baisse'}.`);
+  if (liquidity.situation != null) lines.push(`Liquidité : ${liquidity.signal === 'positif' ? 'en expansion' : (liquidity.signal === 'warning' ? 'en contraction' : 'stable')}.`);
+  const spreadStats = creditIndicatorStats('rateSpread');
+  if (spreadStats && spreadStats.current != null){
+    const dyn = curveDynamicsRegime(creditIndicatorStats('rate2y') && creditIndicatorStats('rate2y').d3m, spreadStats.d3m != null && creditIndicatorStats('rate10y') ? creditIndicatorStats('rate10y').d3m : null);
+    if (dyn) lines.push(`Courbe : ${dyn.label.toLowerCase()}.`);
+  }
+  if (valorisation.situation != null) lines.push(`Valorisation : ${valorisation.signal === 'warning' ? 'élevée' : (valorisation.signal === 'positif' ? 'raisonnable' : 'modérée')}.`);
+  return lines;
+}
+
+function renderMacroCycleRead(){
+  const scorecard = cycleScorecardData();
+  const box = document.getElementById('macroCycleReadContent');
+  if (!box) return;
+  if (!scorecard){
+    box.innerHTML = `<p class="macro-fund-note">Chargement des données crédit/taux/BEA nécessaires à la lecture du cycle… si ce message persiste, vérifie que les indicateurs Crédit &amp; Macroéconomie se chargent correctement plus haut.</p>`;
+    return;
+  }
+  const [growth, , credit] = scorecard;
+
+  // Spread + label courbe
+  const spreadStats = creditIndicatorStats('rateSpread');
+  const curveLbl = spreadStats ? curveLabelFor(spreadStats.current) : null;
+  const spreadHtml = spreadStats ? `<div class="cycle-gauge-card">
+    <div class="cycle-gauge-head"><h4>Spread 10Y-2Y</h4>${curveLbl ? `<span class="cycle-signal ${curveLbl.cls}">${curveLbl.label}</span>` : ''}</div>
+    <div class="cycle-gauge-value">${spreadStats.current != null ? spreadStats.current.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' pts' : 'N/D'}</div>
+    <div class="cycle-gauge-trends">
+      <div><span>1 mois</span><b>${trendArrow(spreadStats.d1m)} ${fmtSignedPct(spreadStats.d1m,2).replace('%',' pts')}</b></div>
+      <div><span>3 mois</span><b>${trendArrow(spreadStats.d3m)} ${fmtSignedPct(spreadStats.d3m,2).replace('%',' pts')}</b></div>
+      <div><span>12 mois</span><b>${trendArrow(spreadStats.d12m)} ${fmtSignedPct(spreadStats.d12m,2).replace('%',' pts')}</b></div>
+    </div>
+    <p class="chart-hint">Le spread reflète notamment les anticipations de taux futurs, de croissance, d'inflation et la prime de terme.</p>
+  </div>` : '';
+
+  // Dynamique de courbe
+  const s2 = creditIndicatorStats('rate2y'), s10 = creditIndicatorStats('rate10y');
+  const dyn = (s2 && s10) ? curveDynamicsRegime(s2.d3m, s10.d3m) : null;
+  const dynHtml = dyn ? `<div class="cycle-gauge-card">
+    <div class="cycle-gauge-head"><h4>Dynamique de courbe</h4><span class="cycle-signal neutre">${dyn.label}</span></div>
+    <p class="chart-hint">${escapeHtml(dyn.desc)} (variation à 3 mois : 2 ans ${fmtSignedPct(s2.d3m,2)}, 10 ans ${fmtSignedPct(s10.d3m,2)}).</p>
+  </div>` : '';
+
+  // Lecture du crédit
+  const creditHtml = credit.quadrant ? `<div class="cycle-gauge-card">
+    <div class="cycle-gauge-head"><h4>Lecture du crédit</h4><span class="cycle-signal ${credit.quadrant.signal}">${CYCLE_SIGNAL_LABELS[credit.quadrant.signal]}</span></div>
+    <div class="cycle-gauge-value" style="font-size:15px;">${escapeHtml(credit.quadrant.label)}</div>
+    <p class="chart-hint">${escapeHtml(credit.quadrant.desc)}</p>
+  </div>` : '';
+
+  const regime = classifyMacroRegime(growth, credit);
+  const lines = cycleSynthesisLines(scorecard);
+
+  box.innerHTML = `
+    <div class="section-label">Régime de taux &amp; crédit</div>
+    <div class="cycle-gauge-grid">${spreadHtml}${dynHtml}${creditHtml}</div>
+
+    <div class="section-label" style="margin-top:14px;">Cycle Scorecard</div>
+    <div class="cycle-gauge-grid">${scorecard.map(cycleGaugeCardHtml).join('')}</div>
+
+    <div class="section-label" style="margin-top:14px;">Synthèse automatique</div>
+    <div class="cycle-synthesis">
+      <ul>${lines.map(l => `<li>${escapeHtml(l)}</li>`).join('')}</ul>
+      ${regime ? `<div class="cycle-regime-banner">RÉGIME MACRO PROBABLE : <b>${escapeHtml(regime)}</b></div>` : ''}
+      <p class="chart-hint">Synthèse indicative générée à partir des indicateurs ci-dessus — pas une prédiction, ni un conseil d'investissement. Une corrélation historique entre un régime et une classe d'actifs ne garantit pas sa répétition.</p>
+    </div>`;
+}
+document.addEventListener('click', e => {
+  if (e.target.closest('[data-cycle-reload]')){ loadCreditIndicators(); loadMacroFundamentalsFromApi(); }
 });
 
 // Canal de régression linéaire (moyenne ± 1 et 2 écarts-types) calculé sur les

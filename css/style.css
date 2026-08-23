@@ -827,6 +827,8 @@
   .range-buttons button{font-family:var(--font-mono);font-size:11px;font-weight:600;padding:5px 11px;border-radius:14px;border:1px solid var(--hair);background:var(--panel-2);color:var(--text-dim);cursor:pointer;}
   .range-buttons button:hover{border-color:var(--gold);color:var(--text);}
   .range-buttons button.active{background:linear-gradient(135deg, var(--gold-2) 0%, var(--gold) 100%);color:#1a1305;border-color:var(--gold);box-shadow:0 4px 14px -6px rgba(217,164,65,0.55);}
+  .range-buttons button:disabled{opacity:0.35;cursor:not-allowed;}
+  .range-buttons button:disabled:hover{border-color:var(--hair);color:var(--text-dim);}
   .chart-hint{font-size:11px;color:var(--text-faint);margin:6px 0 0;}
   .mediane-badges-row{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px;}
   .mediane-badge b{color:var(--text);font-weight:700;}
@@ -1078,6 +1080,27 @@
   .macro-cycle-badge{font-family:var(--font-mono);font-size:11px;padding:4px 10px;border-radius:20px;border:1px solid var(--hair);color:var(--text-dim);}
   .macro-cycle-badge.euphorie{border-color:var(--red);color:var(--red);background:rgba(229,99,107,0.1);}
   .macro-cycle-badge.panique{border-color:var(--blue);color:var(--blue);background:rgba(74,159,224,0.1);}
+
+  /* ---------- LECTURE DU CYCLE ---------- */
+  .cycle-signal{font-family:var(--font-mono);font-size:10.5px;font-weight:700;padding:3px 10px;border-radius:20px;border:1px solid var(--hair);color:var(--text-dim);white-space:nowrap;}
+  .cycle-signal.positif{border-color:var(--green);color:var(--green);background:rgba(79,209,165,0.1);}
+  .cycle-signal.neutre{border-color:var(--gold);color:var(--gold);background:rgba(217,164,65,0.1);}
+  .cycle-signal.warning{border-color:var(--red);color:var(--red);background:rgba(229,99,107,0.1);}
+  .cycle-gauge-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:8px;}
+  .cycle-gauge-card{background:var(--card-bg);border:var(--card-border);border-radius:14px;padding:16px 18px;box-shadow:var(--shadow-card);}
+  .cycle-gauge-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;}
+  .cycle-gauge-head h4{font-size:13px;font-weight:600;color:var(--text);margin:0;}
+  .cycle-gauge-value{font-family:var(--font-mono);font-size:22px;font-weight:700;color:var(--text);}
+  .cycle-gauge-unit{font-size:10.5px;color:var(--text-faint);margin-bottom:10px;}
+  .cycle-gauge-trends{display:flex;gap:16px;margin-bottom:6px;}
+  .cycle-gauge-trends div{display:flex;flex-direction:column;gap:2px;}
+  .cycle-gauge-trends span{font-size:10px;color:var(--text-faint);}
+  .cycle-gauge-trends b{font-family:var(--font-mono);font-size:12.5px;color:var(--text);}
+  .cycle-synthesis{background:var(--card-bg);border:var(--card-border);border-radius:14px;padding:18px 20px;box-shadow:var(--shadow-card);}
+  .cycle-synthesis ul{margin:0 0 12px;padding-left:18px;}
+  .cycle-synthesis li{font-size:13px;color:var(--text-dim);line-height:1.7;}
+  .cycle-regime-banner{font-family:var(--font-mono);font-size:13.5px;color:var(--text);background:rgba(217,164,65,0.1);border:1px solid rgba(217,164,65,0.35);border-radius:10px;padding:10px 14px;margin-bottom:10px;}
+  .cycle-regime-banner b{color:var(--gold);}
   .macro-power-card{background:var(--card-bg);border:var(--card-border);border-radius:14px;padding:18px 20px;box-shadow:var(--shadow-card);margin-bottom:24px;}
   .macro-power-table-wrap{overflow-x:auto;}
   .macro-power-table{width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap;}
