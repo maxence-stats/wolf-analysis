@@ -14,3 +14,12 @@ npm-debug.log*
 
 # Fichiers locaux/temporaires
 *.local
+
+# fmp-database : données sous licence FMP + éventuelle clé API locale — jamais sur
+# le dépôt public. Le code (scripts .py, README, schema.sql) reste suivi normalement.
+fmp-database/data/
+fmp-database/**/*.env
+fmp-database/.env
+fmp-database/__pycache__/
+__pycache__/
+*.pyc
