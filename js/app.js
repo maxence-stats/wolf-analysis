@@ -11198,20 +11198,31 @@ let wolfLaboBandPrimitive = null; // remplissage semi-transparent entre les born
 const WOLF_LABO_PRESETS_LS_KEY = 'wolfAnalysisLaboStylePresets';
 let wolfLaboStylePresets = [];
 let wolfLaboSavingPresetFor = null; // id du tracé en cours de nommage d'un nouveau préréglage (formulaire inline, jamais prompt())
+let wolfLaboExpandedStyleFor = null; // id du canal dont le panneau de style (couleurs/pointillés/étendre) est ouvert
 function loadWolfLaboStylePresets(){
   try{ wolfLaboStylePresets = JSON.parse(localStorage.getItem(WOLF_LABO_PRESETS_LS_KEY) || '[]') || []; }catch(e){ wolfLaboStylePresets = []; }
 }
 function persistWolfLaboStylePresets(){
   try{ localStorage.setItem(WOLF_LABO_PRESETS_LS_KEY, JSON.stringify(wolfLaboStylePresets)); }catch(e){ /* quota / navigateur privé */ }
 }
-function saveWolfLaboStylePreset(name, color, fillOpacity){
-  wolfLaboStylePresets.push({ id: 'p' + Date.now() + Math.random().toString(36).slice(2, 6), name, color, fillOpacity });
+// style = sous-ensemble de {color, upperColor, lowerColor, medianColor, upperDashed,
+// lowerDashed, fillOpacity} — un préréglage capture tout le style du tracé au moment de
+// l'enregistrement (couleurs par bande + pointillé), pas juste une couleur unique,
+// demande explicite ("que j'ai la possibilité d'enregistrer un petit peu tout ça").
+function saveWolfLaboStylePreset(name, style){
+  wolfLaboStylePresets.push({ id: 'p' + Date.now() + Math.random().toString(36).slice(2, 6), name, style });
   persistWolfLaboStylePresets();
 }
 function applyWolfLaboStylePreset(drawingId, presetId){
   const preset = wolfLaboStylePresets.find(p => p.id === presetId);
   if (!preset) return;
-  updateWolfLaboDrawingStyle(drawingId, { color: preset.color, fillOpacity: preset.fillOpacity });
+  updateWolfLaboDrawingStyle(drawingId, preset.style);
+}
+function wolfLaboStyleOf(d){
+  if (d.type === 'channel'){
+    return { upperColor: d.upperColor, lowerColor: d.lowerColor, medianColor: d.medianColor, upperDashed: d.upperDashed, lowerDashed: d.lowerDashed, fillOpacity: d.fillOpacity };
+  }
+  return { color: d.color, fillOpacity: d.fillOpacity };
 }
 
 // Convertit un Time lightweight-charts (string 'YYYY-MM-DD' normalement, mais parfois un
@@ -11329,6 +11340,18 @@ function migrateWolfLaboChannel(d){
       d.offset = d.width != null ? d.width : 1;
     }
   }
+  // v4 : couleur/style RÉGLABLES INDÉPENDAMMENT par bande (haute/basse/médiane) + rendu
+  // pointillé optionnel par bande + extension du tracé au bord du graphique — demande
+  // explicite ("canal haussier ou baissier... pas la même couleur... bande basse, bande
+  // haute, je ne le mets pas forcément au pointillé"). Avant : une seule d.color pour
+  // les 3 lignes. Migration : la couleur unique devient le point de départ des 3.
+  if (d.upperColor == null) d.upperColor = d.color || THEME.green;
+  if (d.lowerColor == null) d.lowerColor = d.color || THEME.green;
+  if (d.medianColor == null) d.medianColor = d.color || THEME.dim;
+  if (d.upperDashed == null) d.upperDashed = true;
+  if (d.lowerDashed == null) d.lowerDashed = true;
+  if (d.extendLeft == null) d.extendLeft = false;
+  if (d.extendRight == null) d.extendRight = false;
   delete d.width; delete d.widthUp; delete d.widthDown;
   return d;
 }
@@ -11380,7 +11403,9 @@ function commitWolfLaboChannel(points3){
   const drawing = {
     id: 'd' + Date.now() + Math.random().toString(36).slice(2, 7), type:'channel',
     base: [p0, p1], offset,
-    color: THEME.gold, fillOpacity: 0.12
+    upperColor: THEME.gold, lowerColor: THEME.gold, medianColor: THEME.dim,
+    upperDashed: true, lowerDashed: true, extendLeft: false, extendRight: false,
+    fillOpacity: 0.12
   };
   wolfLaboDrawings[symbol].push(drawing);
   persistWolfLaboDrawings();
@@ -11442,6 +11467,30 @@ function wolfLaboChannelMidBase(d){
   const frac = t1 === t0 ? 0.5 : (tm - t0) / (t1 - t0);
   return { time: midTime, price: b0.price + frac * (b1.price - b0.price) };
 }
+// Prolonge une ligne de canal (2 points {time,value}, déjà triée) jusqu'au bord gauche/
+// droit du graphique en suivant sa pente — bouton "Étendre à gauche/droite" dans le
+// panneau de style, demande explicite (équivalent du "extend line" de TradingView).
+// pts partage la même pente sur les 3 bandes (haute/basse/médiane, offsets constants du
+// même segment de base), donc appelé identiquement pour chacune.
+function wolfLaboExtendChannelPts(pts, d, candles){
+  if ((!d.extendLeft && !d.extendRight) || pts.length < 2 || !candles.length) return pts;
+  const [p0, p1] = pts;
+  const t0 = new Date(p0.time).getTime(), t1 = new Date(p1.time).getTime();
+  if (t1 === t0) return pts;
+  const slope = (p1.value - p0.value) / (t1 - t0);
+  const extended = pts.slice();
+  if (d.extendLeft){
+    const first = candles[0];
+    const tf = new Date(first.time).getTime();
+    if (tf < t0) extended.unshift({ time: first.time, value: p0.value + slope * (tf - t0) });
+  }
+  if (d.extendRight){
+    const last = candles[candles.length - 1];
+    const tl = new Date(last.time).getTime();
+    if (tl > t1) extended.push({ time: last.time, value: p1.value + slope * (tl - t1) });
+  }
+  return extended;
+}
 function deleteWolfLaboDrawing(id){
   const symbol = currentWolfLaboSymbol();
   if (!symbol || !wolfLaboDrawings[symbol]) return;
@@ -11452,12 +11501,13 @@ function deleteWolfLaboDrawing(id){
   renderWolfLaboDrawingsList();
   renderWolfLaboHandles();
 }
-function updateWolfLaboDrawingStyle(id, { color, fillOpacity } = {}){
+// patch : n'importe quel sous-ensemble de {color (regression), upperColor, lowerColor,
+// medianColor, upperDashed, lowerDashed, extendLeft, extendRight, fillOpacity}.
+function updateWolfLaboDrawingStyle(id, patch = {}){
   const symbol = currentWolfLaboSymbol();
   const d = symbol && (wolfLaboDrawings[symbol] || []).find(x => x.id === id);
   if (!d) return;
-  if (color != null) d.color = color;
-  if (fillOpacity != null) d.fillOpacity = fillOpacity;
+  Object.keys(patch).forEach(k => { if (patch[k] != null) d[k] = patch[k]; });
   persistWolfLaboDrawings();
   renderWolfLaboDrawings();
 }
@@ -11532,21 +11582,26 @@ function renderWolfLaboDrawings(){
       series.push(s);
     } else if (d.type === 'channel'){
       const baseSorted = sortPts(d.base);
-      const basePts = baseSorted.map(p => ({ time:p.time, value:p.price }));
-      const secPts = baseSorted.map(p => ({ time:p.time, value:p.price + d.offset }));
-      const medianPts = baseSorted.map(p => ({ time:p.time, value:p.price + d.offset / 2 }));
+      const candles = wolfLaboFilteredCandles();
+      const basePts = wolfLaboExtendChannelPts(baseSorted.map(p => ({ time:p.time, value:p.price })), d, candles);
+      const secPts = wolfLaboExtendChannelPts(baseSorted.map(p => ({ time:p.time, value:p.price + d.offset })), d, candles);
+      const medianPts = wolfLaboExtendChannelPts(baseSorted.map(p => ({ time:p.time, value:p.price + d.offset / 2 })), d, candles);
+      // upperPts/lowerPts sont déjà résolus selon le signe de l'offset (peu importe
+      // laquelle des 2 bornes cliquées est physiquement au-dessus) — d.upperColor/
+      // d.lowerColor s'appliquent donc directement, sans re-tester le signe.
       const upperPts = d.offset >= 0 ? secPts : basePts;
       const lowerPts = d.offset >= 0 ? basePts : secPts;
-      const upper = wolfLaboChart.addLineSeries({ color: d.color || THEME.green, lineWidth: selected ? 2.5 : 1.5, lineStyle:2, priceLineVisible:false, lastValueVisible:false });
-      const lower = wolfLaboChart.addLineSeries({ color: d.color || THEME.green, lineWidth: selected ? 2.5 : 1.5, lineStyle:2, priceLineVisible:false, lastValueVisible:false });
-      const median = wolfLaboChart.addLineSeries({ color: d.color || THEME.dim, lineWidth: selected ? 2 : 1, lineStyle:1, priceLineVisible:false, lastValueVisible:false });
+      const upperColor = d.upperColor || THEME.green;
+      const lowerColor = d.lowerColor || THEME.green;
+      const upper = wolfLaboChart.addLineSeries({ color: upperColor, lineWidth: selected ? 2.5 : 1.5, lineStyle: d.upperDashed ? 2 : 0, priceLineVisible:false, lastValueVisible:false });
+      const lower = wolfLaboChart.addLineSeries({ color: lowerColor, lineWidth: selected ? 2.5 : 1.5, lineStyle: d.lowerDashed ? 2 : 0, priceLineVisible:false, lastValueVisible:false });
+      const median = wolfLaboChart.addLineSeries({ color: d.medianColor || THEME.dim, lineWidth: selected ? 2 : 1, lineStyle:1, priceLineVisible:false, lastValueVisible:false });
       median.setData(medianPts); upper.setData(upperPts); lower.setData(lowerPts);
       series.push(upper, lower, median);
       const opacity = d.fillOpacity != null ? d.fillOpacity : 0.12;
       if (opacity > 0){
-        const fillColor = wolfLaboColorWithAlpha(d.color || THEME.green, opacity);
-        bands.push({ upper: upperPts, lower: medianPts, color: fillColor });
-        bands.push({ upper: medianPts, lower: lowerPts, color: fillColor });
+        bands.push({ upper: upperPts, lower: medianPts, color: wolfLaboColorWithAlpha(upperColor, opacity) });
+        bands.push({ upper: medianPts, lower: lowerPts, color: wolfLaboColorWithAlpha(lowerColor, opacity) });
       }
     } else if (d.type === 'regression'){
       const color = d.color || THEME.blue;
@@ -11578,7 +11633,8 @@ function renderWolfLaboDrawingsList(){
   const symbol = currentWolfLaboSymbol();
   const list = symbol ? (wolfLaboDrawings[symbol] || []) : [];
   box.innerHTML = list.map(d => {
-    const hasFill = d.type === 'channel' || d.type === 'regression';
+    if (d.type === 'channel') return wolfLaboChannelChipHtml(d);
+    const hasFill = d.type === 'regression';
     return `<span class="labo-drawing-chip${d.id === wolfLaboSelectedDrawingId ? ' selected' : ''}" data-select-drawing="${d.id}" title="Clique pour afficher/masquer les poignées d'édition sur le graphique">
     ${escapeHtml(wolfLaboDrawingLabel(d))}
     ${hasFill ? `<input type="color" value="${d.color || THEME.gold}" data-drawing-color="${d.id}" title="Couleur">` : ''}
@@ -11588,7 +11644,46 @@ function renderWolfLaboDrawingsList(){
   </span>`;
   }).join('') || '<span class="chart-hint">Aucun tracé pour cette entreprise pour l\'instant.</span>';
 }
-// Préréglages nommés (couleur + opacité) applicables à un canal/canal auto — formulaire
+// Canal : chip compacte (label + ⚙️ + ✕) qui déplie un panneau complet en dessous plutôt
+// que de tout entasser sur une seule ligne — couleurs de bande haute/basse/médiane
+// réglables indépendamment, pointillé optionnel par bande, étendre à gauche/droite,
+// raccourcis haussier/baissier, préréglages — demande explicite après retour
+// utilisateur ("canal haussier ou baissier, pas la même couleur... bande basse, bande
+// haute, pas forcément au pointillé... enregistrer un petit peu tout ça").
+function wolfLaboChannelChipHtml(d){
+  const selected = d.id === wolfLaboSelectedDrawingId;
+  const expanded = wolfLaboExpandedStyleFor === d.id;
+  const chip = `<span class="labo-drawing-chip${selected ? ' selected' : ''}" data-select-drawing="${d.id}" title="Clique pour afficher/masquer les poignées d'édition sur le graphique">
+    Canal
+    <button type="button" class="labo-style-toggle${expanded ? ' active' : ''}" data-style-toggle="${d.id}" title="Style du canal (couleurs, pointillés, étendre)">⚙️</button>
+    <button type="button" data-delete-drawing="${d.id}" title="Supprimer ce tracé">✕</button>
+  </span>`;
+  if (!expanded) return chip;
+  return chip + `<div class="labo-style-panel" data-style-panel="${d.id}">
+    <div class="labo-style-panel-row">
+      <button type="button" data-quick-bias="bull" data-id="${d.id}">📈 Haussier</button>
+      <button type="button" data-quick-bias="bear" data-id="${d.id}">📉 Baissier</button>
+    </div>
+    <div class="labo-style-panel-row">
+      <label>Bande haute <input type="color" value="${d.upperColor || THEME.green}" data-band-color="upperColor" data-id="${d.id}"></label>
+      <button type="button" class="labo-dash-toggle${d.upperDashed ? ' active' : ''}" data-band-dash="upperDashed" data-id="${d.id}" title="Pointillé sur la bande haute">┅</button>
+    </div>
+    <div class="labo-style-panel-row">
+      <label>Bande basse <input type="color" value="${d.lowerColor || THEME.green}" data-band-color="lowerColor" data-id="${d.id}"></label>
+      <button type="button" class="labo-dash-toggle${d.lowerDashed ? ' active' : ''}" data-band-dash="lowerDashed" data-id="${d.id}" title="Pointillé sur la bande basse">┅</button>
+    </div>
+    <div class="labo-style-panel-row">
+      <label>Médiane <input type="color" value="${d.medianColor || THEME.dim}" data-band-color="medianColor" data-id="${d.id}"></label>
+      <label>Opacité <input type="range" class="op" min="0" max="0.4" step="0.02" value="${d.fillOpacity != null ? d.fillOpacity : 0.12}" data-drawing-opacity="${d.id}"></label>
+    </div>
+    <div class="labo-style-panel-row">
+      <button type="button" class="${d.extendLeft ? 'active' : ''}" data-extend="extendLeft" data-id="${d.id}" title="Prolonger le canal jusqu'au bord gauche visible">⟵ Étendre</button>
+      <button type="button" class="${d.extendRight ? 'active' : ''}" data-extend="extendRight" data-id="${d.id}" title="Prolonger le canal jusqu'au bord droit visible">Étendre ⟶</button>
+    </div>
+    <div class="labo-style-panel-row">${wolfLaboPresetControlsHtml(d)}</div>
+  </div>`;
+}
+// Préréglages nommés (style complet) applicables à un canal/canal auto — formulaire
 // inline pour nommer un nouveau préréglage (jamais prompt(), voir CLAUDE.md piège #7).
 function wolfLaboPresetControlsHtml(d){
   if (wolfLaboSavingPresetFor === d.id){
@@ -11600,7 +11695,7 @@ function wolfLaboPresetControlsHtml(d){
   }
   const options = wolfLaboStylePresets.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
   return `<select data-preset-apply="${d.id}" title="Appliquer un préréglage enregistré"><option value="">Préréglage…</option>${options}</select>
-    <button type="button" data-preset-save-open="${d.id}" title="Enregistrer ce style (couleur + opacité) comme préréglage nommé">💾</button>`;
+    <button type="button" data-preset-save-open="${d.id}" title="Enregistrer ce style complet (couleurs, pointillés, opacité) comme préréglage nommé">💾</button>`;
 }
 
 function setWolfLaboDrawMode(mode){
@@ -11799,17 +11894,20 @@ function wolfLaboProcessDrag(){
   } else if (kind === 'baseMid'){
     const mid = wolfLaboChannelMidBase(d);
     if (mid){
-      const delta = price - mid.price;
+      const snapped = wolfLaboSnapPrice(mid.time, price);
+      const delta = snapped - mid.price;
       d.base[0] = { time: d.base[0].time, price: d.base[0].price + delta };
       d.base[1] = { time: d.base[1].time, price: d.base[1].price + delta };
     }
   } else if (kind === 'secLeft'){
-    d.offset = +(price - d.base[0].price).toFixed(4);
+    // Aimant appliqué ici aussi (manquait — la borne "secondaire", ex. la résistance,
+    // ne s'accrochait pas aux mèches comme la borne de base, retour explicite).
+    d.offset = +(wolfLaboSnapPrice(d.base[0].time, price) - d.base[0].price).toFixed(4);
   } else if (kind === 'secRight'){
-    d.offset = +(price - d.base[1].price).toFixed(4);
+    d.offset = +(wolfLaboSnapPrice(d.base[1].time, price) - d.base[1].price).toFixed(4);
   } else if (kind === 'secMid'){
     const mid = wolfLaboChannelMidBase(d);
-    if (mid) d.offset = +(price - mid.price).toFixed(4);
+    if (mid) d.offset = +(wolfLaboSnapPrice(mid.time, price) - mid.price).toFixed(4);
   }
   renderWolfLaboDrawings();
   renderWolfLaboHandles();
@@ -12230,6 +12328,42 @@ document.getElementById('wolfLaboPenClear').addEventListener('click', clearWolfL
 document.getElementById('wolfLaboDrawingsList').addEventListener('click', e => {
   const delBtn = e.target.closest('[data-delete-drawing]');
   if (delBtn){ deleteWolfLaboDrawing(delBtn.dataset.deleteDrawing); return; }
+  const styleToggle = e.target.closest('[data-style-toggle]');
+  if (styleToggle){
+    const id = styleToggle.dataset.styleToggle;
+    wolfLaboExpandedStyleFor = (wolfLaboExpandedStyleFor === id) ? null : id;
+    renderWolfLaboDrawingsList();
+    return;
+  }
+  const bias = e.target.closest('[data-quick-bias]');
+  if (bias){
+    const bull = bias.dataset.quickBias === 'bull';
+    updateWolfLaboDrawingStyle(bias.dataset.id, { upperColor: bull ? THEME.green : THEME.red, lowerColor: bull ? THEME.green : THEME.red, medianColor: THEME.dim });
+    renderWolfLaboDrawingsList();
+    return;
+  }
+  const dashToggle = e.target.closest('[data-band-dash]');
+  if (dashToggle){
+    const symbol = currentWolfLaboSymbol();
+    const d = symbol && (wolfLaboDrawings[symbol] || []).find(x => x.id === dashToggle.dataset.id);
+    if (d){
+      const field = dashToggle.dataset.bandDash;
+      updateWolfLaboDrawingStyle(d.id, { [field]: !d[field] });
+      renderWolfLaboDrawingsList();
+    }
+    return;
+  }
+  const extendBtn = e.target.closest('[data-extend]');
+  if (extendBtn){
+    const symbol = currentWolfLaboSymbol();
+    const d = symbol && (wolfLaboDrawings[symbol] || []).find(x => x.id === extendBtn.dataset.id);
+    if (d){
+      const field = extendBtn.dataset.extend;
+      updateWolfLaboDrawingStyle(d.id, { [field]: !d[field] });
+      renderWolfLaboDrawingsList();
+    }
+    return;
+  }
   const presetSaveOpen = e.target.closest('[data-preset-save-open]');
   if (presetSaveOpen){ wolfLaboSavingPresetFor = presetSaveOpen.dataset.presetSaveOpen; renderWolfLaboDrawingsList(); return; }
   const presetConfirm = e.target.closest('[data-preset-name-confirm]');
@@ -12240,7 +12374,7 @@ document.getElementById('wolfLaboDrawingsList').addEventListener('click', e => {
     if (name){
       const symbol = currentWolfLaboSymbol();
       const d = symbol && (wolfLaboDrawings[symbol] || []).find(x => x.id === id);
-      if (d) saveWolfLaboStylePreset(name, d.color || THEME.gold, d.fillOpacity != null ? d.fillOpacity : 0.12);
+      if (d) saveWolfLaboStylePreset(name, wolfLaboStyleOf(d));
     }
     wolfLaboSavingPresetFor = null;
     renderWolfLaboDrawingsList();
@@ -12255,6 +12389,7 @@ document.getElementById('wolfLaboDrawingsList').addEventListener('click', e => {
 document.getElementById('wolfLaboDrawingsList').addEventListener('input', e => {
   if (e.target.matches('[data-drawing-color]')) updateWolfLaboDrawingStyle(e.target.dataset.drawingColor, { color: e.target.value });
   if (e.target.matches('[data-drawing-opacity]')) updateWolfLaboDrawingStyle(e.target.dataset.drawingOpacity, { fillOpacity: parseFloat(e.target.value) });
+  if (e.target.matches('[data-band-color]')) updateWolfLaboDrawingStyle(e.target.dataset.id, { [e.target.dataset.bandColor]: e.target.value });
 });
 document.getElementById('wolfLaboDrawingsList').addEventListener('change', e => {
   if (e.target.matches('[data-preset-apply]') && e.target.value){

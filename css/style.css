@@ -875,9 +875,15 @@
 
   /* Poignées d'édition des tracés — petits ronds glissables superposés au graphique,
      visibles uniquement quand un tracé est sélectionné dans la liste ci-dessous. */
-  .labo-handle{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:var(--gold);border:2px solid #fff;cursor:grab;pointer-events:auto;box-shadow:0 0 0 2px rgba(0,0,0,0.35);}
+  /* Zone de clic élargie (22x22, invisible) autour du point visible (12x12) — la cible
+     réelle de 12px était trop petite pour viser précisément à la souris, retour
+     explicite ("pas facile de prendre les poignées du premier coup"). */
+  .labo-handle{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;cursor:grab;pointer-events:auto;background:transparent;}
+  .labo-handle::after{content:'';position:absolute;left:50%;top:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:var(--gold);border:2px solid #fff;box-shadow:0 0 0 2px rgba(0,0,0,0.35);}
+  .labo-handle:hover::after{width:14px;height:14px;margin:-7px 0 0 -7px;}
   .labo-handle:active{cursor:grabbing;}
-  .labo-handle.labo-handle-width{border-radius:3px;background:var(--blue);cursor:ns-resize;}
+  .labo-handle.labo-handle-width{cursor:ns-resize;}
+  .labo-handle.labo-handle-width::after{border-radius:3px;background:var(--blue);}
   .labo-handle.labo-handle-width:active{cursor:ns-resize;}
 
   .labo-drawings-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
@@ -891,6 +897,24 @@
   .labo-drawing-chip select:hover{border-color:var(--gold);}
   .labo-drawing-chip button[data-preset-save-open]{background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:12px;padding:2px 4px;}
   .labo-drawing-chip button[data-preset-save-open]:hover{color:var(--gold);}
+  .labo-drawing-chip button[data-style-toggle]{background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:12px;padding:2px 4px;border-radius:6px;}
+  .labo-drawing-chip button[data-style-toggle]:hover, .labo-drawing-chip button[data-style-toggle].active{color:var(--gold);background:rgba(217,164,65,0.14);}
+
+  /* Panneau de style déplié d'un canal (couleurs par bande, pointillé, étendre,
+     préréglages) — width:100% pour forcer son propre retour à la ligne dans la liste de
+     tracés (flex-wrap), juste sous la chip compacte qui l'a ouvert. */
+  .labo-style-panel{width:100%;background:var(--panel);border:1px solid var(--hair);border-radius:10px;padding:8px 10px;margin-top:-2px;display:flex;flex-direction:column;gap:6px;}
+  .labo-style-panel-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .labo-style-panel-row label{display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--text-dim);}
+  .labo-style-panel-row input[type="color"]{width:20px;height:20px;padding:0;border:1px solid var(--hair);border-radius:6px;background:none;cursor:pointer;}
+  .labo-style-panel-row input[type="range"]{width:70px;accent-color:var(--gold);}
+  .labo-style-panel-row button{font-family:var(--font-mono);font-size:10.5px;font-weight:600;padding:4px 9px;border-radius:8px;border:1px solid var(--hair);background:var(--panel-2);color:var(--text-dim);cursor:pointer;}
+  .labo-style-panel-row button:hover{border-color:var(--gold);color:var(--text);}
+  .labo-style-panel-row button.active{background:linear-gradient(135deg, var(--gold-2) 0%, var(--gold) 100%);color:#1a1305;border-color:var(--gold);}
+  .labo-style-panel-row button.labo-dash-toggle{padding:4px 7px;}
+  .labo-style-panel-row select{background:var(--panel-2);border:1px solid var(--hair);border-radius:8px;color:var(--text-dim);font-family:var(--font-mono);font-size:10.5px;padding:4px 6px;}
+  .labo-style-panel-row select:hover{border-color:var(--gold);}
+  .labo-style-panel-row .labo-preset-save-form input{width:110px;background:var(--panel-2);border:1px solid var(--gold);border-radius:8px;color:var(--text);font-size:10.5px;padding:4px 8px;}
   .labo-preset-save-form{display:inline-flex;align-items:center;gap:3px;}
   .labo-preset-save-form input{width:90px;background:var(--panel);border:1px solid var(--gold);border-radius:8px;color:var(--text);font-size:10.5px;padding:2px 6px;}
   .labo-preset-save-form button{background:none;border:none;cursor:pointer;font-size:12px;padding:1px 3px;color:var(--text-faint);}
