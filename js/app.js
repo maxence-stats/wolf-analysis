@@ -11776,7 +11776,7 @@ function wireWolfLaboChartClicks(){
       return;
     }
     if (param.time == null || !wolfLaboCandleSeries) return;
-    const price0 = wolfLaboCandleSeries.coordinateToPrice(param.point.y);
+    const price0 = wolfLaboPriceFromY(param.point.y);
     if (price0 == null) return;
     const time = wolfLaboTimeToStr(param.time);
     if (wolfLaboDrawMode === 'trendline'){
@@ -11800,28 +11800,32 @@ function wireWolfLaboChartClicks(){
       }
     }
   });
-  wolfLaboChart.subscribeCrosshairMove(param => {
-    if (wolfLaboDrawMode !== 'channel' || wolfLaboDrawPending.length !== 2 || !param.point || param.time == null){
-      wolfLaboLastPreviewParam = null;
-      if (wolfLaboChannelPreviewSeries) wolfLaboClearChannelPreview();
-      return;
-    }
-    wolfLaboLastPreviewParam = param;
+  // Aperçu en direct du 3e clic (canal) : suivi au niveau du DOCUMENT plutôt que
+  // subscribeCrosshairMove() du graphique — celui-ci arrête de reporter une position dès
+  // que la souris sort de la zone de tracé (en haut/en bas), ce qui bloquait net
+  // l'aperçu pile quand on essayait d'atteindre un prix pas encore visible à l'écran
+  // (retour explicite : "il se bloque, je n'arrive pas à régler le haut"). Le document
+  // continue de recevoir mousemove partout, et wolfLaboPriceFromY() extrapole au-delà du
+  // graphique — plus de plafond.
+  document.addEventListener('mousemove', e => {
+    if (wolfLaboDrawMode !== 'channel' || wolfLaboDrawPending.length !== 2) return;
+    wolfLaboLastPreviewEvent = e;
     if (!wolfLaboPreviewRafScheduled){
       wolfLaboPreviewRafScheduled = true;
       requestAnimationFrame(wolfLaboProcessChannelPreview);
     }
   });
 }
-let wolfLaboLastPreviewParam = null;
+let wolfLaboLastPreviewEvent = null;
 let wolfLaboPreviewRafScheduled = false;
 function wolfLaboProcessChannelPreview(){
   wolfLaboPreviewRafScheduled = false;
-  const param = wolfLaboLastPreviewParam;
-  if (!param || wolfLaboDrawMode !== 'channel' || wolfLaboDrawPending.length !== 2 || !wolfLaboCandleSeries) return;
-  const price = wolfLaboCandleSeries.coordinateToPrice(param.point.y);
-  if (price == null) return;
-  renderWolfLaboChannelPreview(wolfLaboDrawPending[0], wolfLaboDrawPending[1], { time: wolfLaboTimeToStr(param.time), price });
+  if (wolfLaboDrawMode !== 'channel' || wolfLaboDrawPending.length !== 2 || !wolfLaboLastPreviewEvent || !wolfLaboCandleSeries) return;
+  const p = wolfLaboContainerPoint(wolfLaboLastPreviewEvent);
+  const rawTime = wolfLaboTimeFromX(p.x);
+  const price = wolfLaboPriceFromY(p.y);
+  if (rawTime == null || price == null) return;
+  renderWolfLaboChannelPreview(wolfLaboDrawPending[0], wolfLaboDrawPending[1], { time: wolfLaboTimeToStr(rawTime), price });
 }
 
 // ---- Poignées d'édition (glisser un point d'un tracé sélectionné) ------------------
@@ -11875,6 +11879,36 @@ function wolfLaboContainerPoint(e){
   const rect = holder.getBoundingClientRect();
   return { x: e.clientX - rect.left, y: e.clientY - rect.top };
 }
+// coordinateToPrice()/coordinateToTime() de lightweight-charts renvoient null dès que la
+// coordonnée sort de la zone de tracé (souris au-dessus/en-dessous du graphique) — sans
+// ça, glisser une poignée (ou l'aperçu du 3e clic d'un canal) vers un prix pas encore
+// visible à l'écran se bloquait net au bord du graphique, retour explicite ("il se
+// bloque, je n'arrive pas à régler le haut"). wolfLaboPriceFromY() calcule le ratio
+// prix/pixel à partir de 2 points toujours dans le graphique puis extrapole
+// linéairement — fonctionne quelle que soit la position de la souris, dedans ou dehors.
+function wolfLaboPriceFromY(y){
+  if (!wolfLaboCandleSeries) return null;
+  const direct = wolfLaboCandleSeries.coordinateToPrice(y);
+  if (direct != null) return direct;
+  const yA = 10, yB = 100;
+  const pA = wolfLaboCandleSeries.coordinateToPrice(yA);
+  const pB = wolfLaboCandleSeries.coordinateToPrice(yB);
+  if (pA == null || pB == null || yB === yA) return null;
+  const slope = (pB - pA) / (yB - yA);
+  return pA + slope * (y - yA);
+}
+// Même principe pour l'axe des temps, en repli seulement (clampé aux bords visibles —
+// contrairement au prix, il n'y a pas de sens à "extrapoler" un temps au-delà de
+// l'historique chargé, on se cale juste sur le bord visible le plus proche).
+function wolfLaboTimeFromX(x){
+  if (!wolfLaboChart) return null;
+  const direct = wolfLaboChart.timeScale().coordinateToTime(x);
+  if (direct != null) return direct;
+  const holder = document.getElementById('wolfLaboChartHolder');
+  const w = holder ? holder.clientWidth : 0;
+  const clamped = Math.max(2, Math.min(w - 2, x));
+  return wolfLaboChart.timeScale().coordinateToTime(clamped);
+}
 function wolfLaboProcessDrag(){
   wolfLaboDragRafScheduled = false;
   if (!wolfLaboDraggingHandle || !wolfLaboLastDragEvent || !wolfLaboChart || !wolfLaboCandleSeries) return;
@@ -11882,15 +11916,22 @@ function wolfLaboProcessDrag(){
   const d = symbol && (wolfLaboDrawings[symbol] || []).find(x => x.id === wolfLaboDraggingHandle.id);
   if (!d) return;
   const p = wolfLaboContainerPoint(wolfLaboLastDragEvent);
-  const rawTime = wolfLaboChart.timeScale().coordinateToTime(p.x);
-  let price = wolfLaboCandleSeries.coordinateToPrice(p.y);
-  if (rawTime == null || price == null) return;
-  const time = wolfLaboTimeToStr(rawTime);
+  const price = wolfLaboPriceFromY(p.y);
+  if (price == null) return;
   const kind = wolfLaboDraggingHandle.kind;
-  if (kind === 'trend0' || kind === 'trend1'){
-    d.points[kind === 'trend0' ? 0 : 1] = { time, price: wolfLaboSnapPrice(time, price) };
-  } else if (kind === 'base0' || kind === 'base1'){
-    d.base[kind === 'base0' ? 0 : 1] = { time, price: wolfLaboSnapPrice(time, price) };
+  // base0/base1/trend0/trend1 ont besoin du temps ET du prix (poignées d'extrémité,
+  // libres dans les 2 axes) ; les autres (baseMid/secLeft/secRight/secMid) ne bougent
+  // QUE le prix — ne pas les bloquer si le calcul du temps échoue en bout de course
+  // (souris qui dérive un peu horizontalement pendant un glisser vertical).
+  if (kind === 'trend0' || kind === 'trend1' || kind === 'base0' || kind === 'base1'){
+    const rawTime = wolfLaboTimeFromX(p.x);
+    if (rawTime == null) return;
+    const time = wolfLaboTimeToStr(rawTime);
+    if (kind === 'trend0' || kind === 'trend1'){
+      d.points[kind === 'trend0' ? 0 : 1] = { time, price: wolfLaboSnapPrice(time, price) };
+    } else {
+      d.base[kind === 'base0' ? 0 : 1] = { time, price: wolfLaboSnapPrice(time, price) };
+    }
   } else if (kind === 'baseMid'){
     const mid = wolfLaboChannelMidBase(d);
     if (mid){
