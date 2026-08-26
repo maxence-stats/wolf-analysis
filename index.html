@@ -1094,22 +1094,65 @@
       <p class="valo-intro">Laboratoire d'expérimentation financière — dashboard graphique et, à terme, un moteur de backtest par règles (motifs de prix, seuils macro) pour tester des hypothèses sur plusieurs décennies et formaliser les résultats en PDF. En construction : pour l'instant, seul le dashboard graphique est fonctionnel, avec un échantillon de test (Coca-Cola, données FMP plan gratuit).</p>
 
       <div class="section-label" style="margin-top:8px;">Dashboard graphique</div>
-      <div class="chart-card">
-        <div class="chart-card-head">
-          <div><h3 id="wolfLaboChartTitle">Coca-Cola (KO) — échantillon de test</h3><p class="chart-subtitle">Chandeliers quotidiens + moyenne mobile — lightweight-charts (librairie open-source TradingView, pas le widget public). Une seule entreprise disponible pour l'instant ; le sélecteur s'ouvrira à toute la base dès l'import FMP complet.</p></div>
+      <div class="labo-layout" id="woflLaboLayout">
+        <div class="chart-card labo-chart-card" id="wolfLaboChartCard">
+          <div class="chart-card-head">
+            <div><h3 id="wolfLaboChartTitle">Coca-Cola (KO) — échantillon de test</h3><p class="chart-subtitle">lightweight-charts (librairie open-source TradingView, pas le widget public). Une seule entreprise a de vraies données pour l'instant ; le reste s'ouvrira dès l'import FMP complet.</p></div>
+            <div class="chart-card-actions">
+              <button class="zoom-btn" id="wolfLaboFullscreenBtn" aria-label="Plein écran" title="Plein écran">⤢</button>
+            </div>
+          </div>
+
+          <div class="labo-toolbar-row">
+            <div class="range-buttons" id="wolfLaboTimeframeButtons">
+              <button data-tf="D" class="active">Daily</button>
+              <button data-tf="W">Weekly</button>
+              <button data-tf="M">Monthly</button>
+            </div>
+            <div class="range-buttons" id="wolfLaboRangeButtons">
+              <button data-range="1">1a</button><button data-range="3">3a</button><button data-range="5">5a</button>
+              <button data-range="10">10a</button><button class="active" data-range="max">Max</button>
+            </div>
+          </div>
+
+          <!-- Couleurs des moyennes mobiles : demande explicite (20 vert, 30 orange/gold,
+               50 rouge, 200 violet — le "cœur" que l'utilisateur utilise déjà ; 80 bleu et
+               100 jaune en options activables au cas par cas selon l'entreprise). -->
+          <div class="range-buttons" id="wolfLaboMaToggle">
+            <button type="button" data-ma="20" class="active labo-ma-20">MM 20</button>
+            <button type="button" data-ma="30" class="active labo-ma-30">MM 30</button>
+            <button type="button" data-ma="50" class="active labo-ma-50">MM 50</button>
+            <button type="button" data-ma="80" class="labo-ma-80">MM 80</button>
+            <button type="button" data-ma="100" class="labo-ma-100">MM 100</button>
+            <button type="button" data-ma="200" class="active labo-ma-200">MM 200</button>
+          </div>
+
+          <div class="range-buttons" id="wolfLaboDrawToolbar">
+            <button type="button" data-draw="trendline">📈 Ligne de tendance</button>
+            <button type="button" data-draw="channel">📐 Canal (2 clics + largeur réglable)</button>
+            <button type="button" id="wolfLaboAutoChannelBtn">🤖 Canal auto (régression)</button>
+            <button type="button" id="wolfLaboPenToggle">✏️ Dessiner</button>
+            <span id="wolfLaboDrawHint" class="chart-hint" style="margin:0 0 0 6px;display:none;"></span>
+          </div>
+          <div id="wolfLaboPenControls" class="range-buttons" style="display:none;">
+            <input type="color" id="wolfLaboPenColor" value="#f0c877" title="Couleur du crayon">
+            <button type="button" id="wolfLaboPenClear">Effacer le croquis</button>
+          </div>
+
+          <div id="wolfLaboChartHolder" style="height:440px;position:relative;">
+            <canvas id="wolfLaboPenCanvas" style="position:absolute;inset:0;z-index:5;display:none;cursor:crosshair;"></canvas>
+          </div>
+          <div id="wolfLaboStatus" class="stock-status" style="display:none;"></div>
+
+          <div id="wolfLaboDrawingsList" class="labo-drawings-list"></div>
+          <p class="chart-hint">Les tracés (lignes, canaux) et le croquis sont sauvegardés automatiquement par entreprise — rien n'est jamais supprimé sans un clic explicite sur "✕" à côté du tracé concerné.</p>
         </div>
-        <div class="range-buttons" id="wolfLaboRangeButtons">
-          <button data-range="1">1a</button><button data-range="3">3a</button><button data-range="5">5a</button>
-          <button data-range="10">10a</button><button class="active" data-range="max">Max</button>
-        </div>
-        <div class="range-buttons" id="wolfLaboSmaToggle">
-          <button type="button" data-sma="20" class="active">SMA 20</button>
-          <button type="button" data-sma="50" class="active">SMA 50</button>
-          <button type="button" data-sma="200">SMA 200</button>
-        </div>
-        <div id="wolfLaboChartHolder" style="height:440px;position:relative;"></div>
-        <div id="wolfLaboStatus" class="stock-status" style="display:none;"></div>
-        <p class="chart-hint">Prototype : chandeliers + moyennes mobiles fonctionnels. Les outils de tracé (lignes de tendance, Fibonacci, annotations sauvegardées façon TradingView) ne sont pas encore branchés — prochaine étape une fois le dashboard validé.</p>
+
+        <!-- Panneau de listes (propre à Wolf Labo, distinct de l'onglet Watchlist/
+             Portefeuille Perso — demande explicite, juste un raccourci de navigation
+             pendant qu'on regarde des graphiques). Une liste par secteur GICS pré-créée
+             + Watchlist + Portefeuille, l'utilisateur remplit lui-même. -->
+        <div class="labo-watchlist-panel" id="wolfLaboWatchlistPanel"></div>
       </div>
 
       <div class="section-label" style="margin-top:14px;">Backtest — moteur de règles</div>

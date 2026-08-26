@@ -11041,11 +11041,24 @@ async function ensureLightweightCharts(){
 
 let wolfLaboChart = null;
 let wolfLaboCandleSeries = null;
-let wolfLaboSmaSeries = {}; // période -> série Chart lightweight-charts
-let wolfLaboSampleData = null; // { symbol, name, source, candles:[{time,open,high,low,close,volume}] }
+let wolfLaboSmaSeries = {}; // période -> série lightweight-charts
+let wolfLaboSampleData = null; // { symbol, name, source, candles:[{time,open,high,low,close,volume}] } — seul KO a de vraies données pour l'instant
 let wolfLaboRange = 'max';
-let wolfLaboSmaVisible = { 20:true, 50:true, 200:false };
+let wolfLaboTimeframe = 'D'; // 'D' | 'W' | 'M'
+// Couleurs par moyenne mobile : demande explicite (20 vert / 30 orange-gold / 50 rouge /
+// 200 violet = le "cœur" déjà utilisé par l'utilisateur, activées par défaut ; 80 bleu et
+// 100 jaune en options désactivées par défaut, "à activer suivant les entreprises").
+const WOLF_LABO_MA_CONFIG = {
+  20:  { color: THEME.green, default: true },
+  30:  { color: THEME.gold,  default: true },
+  50:  { color: THEME.red,   default: true },
+  80:  { color: THEME.blue,  default: false },
+  100: { color: '#F0D63D',   default: false },
+  200: { color: THEME.violet, default: true }
+};
+let wolfLaboSmaVisible = Object.fromEntries(Object.entries(WOLF_LABO_MA_CONFIG).map(([p, c]) => [p, c.default]));
 let wolfLaboLoaded = false;
+let wolfLaboFullscreen = false;
 
 function wolfLaboSma(candles, period){
   const out = [];
@@ -11057,10 +11070,47 @@ function wolfLaboSma(candles, period){
   return out;
 }
 
-function wolfLaboFilteredCandles(){
+// Agrégation OHLCV générique par clé de regroupement — jamais de nom en collision avec
+// resampleWeekly() (déjà utilisée ailleurs sur le site pour les prix Yahoo/Stooq, forme
+// différente de données) : préfixées wolfLabo* pour rester sans ambiguïté.
+function wolfLaboResampleOHLC(candles, groupKeyFn){
+  const groups = [];
+  let currentKey = null, current = null;
+  candles.forEach(c => {
+    const key = groupKeyFn(c.time);
+    if (key !== currentKey){
+      currentKey = key;
+      current = { time: c.time, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume || 0 };
+      groups.push(current);
+    } else {
+      current.high = Math.max(current.high, c.high);
+      current.low = Math.min(current.low, c.low);
+      current.close = c.close;
+      current.volume += (c.volume || 0);
+    }
+  });
+  return groups;
+}
+function wolfLaboWeekKey(dateStr){
+  const d = new Date(dateStr + 'T00:00:00Z');
+  const day = d.getUTCDay() || 7; // lundi=1 ... dimanche=7
+  d.setUTCDate(d.getUTCDate() - day + 1);
+  return d.toISOString().slice(0, 10);
+}
+function wolfLaboMonthKey(dateStr){ return dateStr.slice(0, 7); }
+function wolfLaboResampleWeekly(candles){ return wolfLaboResampleOHLC(candles, c => wolfLaboWeekKey(c)); }
+function wolfLaboResampleMonthly(candles){ return wolfLaboResampleOHLC(candles, c => wolfLaboMonthKey(c)); }
+
+function wolfLaboTimeframedCandles(){
   if (!wolfLaboSampleData) return [];
-  const candles = wolfLaboSampleData.candles;
-  if (wolfLaboRange === 'max') return candles;
+  const daily = wolfLaboSampleData.candles;
+  if (wolfLaboTimeframe === 'W') return wolfLaboResampleWeekly(daily);
+  if (wolfLaboTimeframe === 'M') return wolfLaboResampleMonthly(daily);
+  return daily;
+}
+function wolfLaboFilteredCandles(){
+  const candles = wolfLaboTimeframedCandles();
+  if (!candles.length || wolfLaboRange === 'max') return candles;
   const years = parseInt(wolfLaboRange, 10);
   const cutoff = new Date();
   cutoff.setFullYear(cutoff.getFullYear() - years);
@@ -11069,6 +11119,352 @@ function wolfLaboFilteredCandles(){
   return idx === -1 ? candles : candles.slice(idx);
 }
 
+/* ---- Tracés (lignes de tendance, canaux manuels, canal auto par régression) --------
+   Persistés par symbole dans localStorage, jamais supprimés sans un clic explicite sur
+   le "✕" du tracé concerné (demande explicite : "à aucun moment je veux que ça
+   supprime quoi que ce soit"). lightweight-charts n'a pas d'outil de tracé intégré —
+   chaque tracé est modélisé comme 1 à 3 LineSeries (le système de coordonnées
+   temps/prix de la librairie gère alors le pan/zoom tout seul, pas de canvas custom à
+   synchroniser à la main). ---------------------------------------------------------- */
+const WOLF_LABO_DRAWINGS_LS_KEY = 'wolfAnalysisLaboDrawings';
+let wolfLaboDrawings = {}; // { [symbol]: [ {id, type:'trendline'|'channel'|'regression', points:[{time,price}], width?, color}, ... ] }
+let wolfLaboDrawMode = null; // null | 'trendline' | 'channel'
+let wolfLaboDrawPending = [];
+let wolfLaboDrawingSeries = {}; // { [drawingId]: [série lightweight-charts, ...] } — vivant, détruit/reconstruit à chaque rendu
+
+function loadWolfLaboDrawings(){
+  try{
+    const raw = localStorage.getItem(WOLF_LABO_DRAWINGS_LS_KEY);
+    if (raw) wolfLaboDrawings = JSON.parse(raw) || {};
+  }catch(e){ wolfLaboDrawings = {}; }
+}
+function persistWolfLaboDrawings(){
+  try{ localStorage.setItem(WOLF_LABO_DRAWINGS_LS_KEY, JSON.stringify(wolfLaboDrawings)); }catch(e){ /* quota / navigateur privé */ }
+}
+function currentWolfLaboSymbol(){ return wolfLaboSampleData ? wolfLaboSampleData.symbol : null; }
+
+function commitWolfLaboDrawing(type, points){
+  const symbol = currentWolfLaboSymbol();
+  if (!symbol) return;
+  if (!wolfLaboDrawings[symbol]) wolfLaboDrawings[symbol] = [];
+  const sorted = points.slice().sort((a, b) => a.time < b.time ? -1 : 1);
+  const drawing = { id: 'd' + Date.now() + Math.random().toString(36).slice(2, 7), type, points: sorted, color: THEME.gold };
+  if (type === 'channel'){
+    // Largeur par défaut = écart-type des clôtures visibles, un point de départ
+    // raisonnable — ajustable ensuite via le curseur dans la liste des tracés.
+    const candles = wolfLaboFilteredCandles();
+    const closes = candles.map(c => c.close);
+    const mean = closes.reduce((a, b) => a + b, 0) / (closes.length || 1);
+    const variance = closes.reduce((a, b) => a + (b - mean) ** 2, 0) / (closes.length || 1);
+    drawing.width = +Math.sqrt(variance).toFixed(4) || 1;
+  }
+  wolfLaboDrawings[symbol].push(drawing);
+  persistWolfLaboDrawings();
+  renderWolfLaboDrawings();
+  renderWolfLaboDrawingsList();
+}
+function deleteWolfLaboDrawing(id){
+  const symbol = currentWolfLaboSymbol();
+  if (!symbol || !wolfLaboDrawings[symbol]) return;
+  wolfLaboDrawings[symbol] = wolfLaboDrawings[symbol].filter(d => d.id !== id);
+  persistWolfLaboDrawings();
+  renderWolfLaboDrawings();
+  renderWolfLaboDrawingsList();
+}
+function updateWolfLaboChannelWidth(id, width){
+  const symbol = currentWolfLaboSymbol();
+  const d = symbol && (wolfLaboDrawings[symbol] || []).find(x => x.id === id);
+  if (!d) return;
+  d.width = width;
+  persistWolfLaboDrawings();
+  renderWolfLaboDrawings();
+}
+
+// Même principe que computeRegressionChannel() (cours de bourse, onglet Analyse) —
+// moyenne ± écarts-types sur la plage actuellement affichée, réutilisé ici comme
+// "canal automatique" en un clic (demande explicite, équivalent de l'outil "tendance
+// régressive" de TradingView).
+function wolfLaboAutoRegressionChannel(){
+  const symbol = currentWolfLaboSymbol();
+  const candles = wolfLaboFilteredCandles();
+  if (!symbol || candles.length < 10) return;
+  const closes = candles.map(c => c.close);
+  const n = closes.length;
+  const xMean = (n - 1) / 2;
+  const yMean = closes.reduce((a, b) => a + b, 0) / n;
+  let num = 0, den = 0;
+  for (let i = 0; i < n; i++){ num += (i - xMean) * (closes[i] - yMean); den += (i - xMean) ** 2; }
+  const slope = den === 0 ? 0 : num / den;
+  const intercept = yMean - slope * xMean;
+  let sumSqResid = 0;
+  for (let i = 0; i < n; i++){ sumSqResid += (closes[i] - (slope * i + intercept)) ** 2; }
+  const stdDev = Math.sqrt(sumSqResid / n);
+  const mean = candles.map((c, i) => ({ time: c.time, value: +(slope * i + intercept).toFixed(4) }));
+  const upper = candles.map((c, i) => ({ time: c.time, value: +(slope * i + intercept + 2 * stdDev).toFixed(4) }));
+  const lower = candles.map((c, i) => ({ time: c.time, value: +(slope * i + intercept - 2 * stdDev).toFixed(4) }));
+  if (!wolfLaboDrawings[symbol]) wolfLaboDrawings[symbol] = [];
+  wolfLaboDrawings[symbol].push({ id: 'd' + Date.now() + Math.random().toString(36).slice(2, 7), type:'regression', mean, upper, lower });
+  persistWolfLaboDrawings();
+  renderWolfLaboDrawings();
+  renderWolfLaboDrawingsList();
+}
+
+function renderWolfLaboDrawings(){
+  if (!wolfLaboChart) return;
+  Object.values(wolfLaboDrawingSeries).flat().forEach(s => { try{ wolfLaboChart.removeSeries(s); }catch(e){ /* déjà retirée */ } });
+  wolfLaboDrawingSeries = {};
+  const symbol = currentWolfLaboSymbol();
+  const list = symbol ? (wolfLaboDrawings[symbol] || []) : [];
+  list.forEach(d => {
+    const series = [];
+    if (d.type === 'trendline'){
+      const s = wolfLaboChart.addLineSeries({ color: d.color || THEME.gold, lineWidth:2, priceLineVisible:false, lastValueVisible:false });
+      s.setData(d.points.map(p => ({ time:p.time, value:p.price })));
+      series.push(s);
+    } else if (d.type === 'channel'){
+      const [p1, p2] = d.points;
+      const upper = wolfLaboChart.addLineSeries({ color: d.color || THEME.green, lineWidth:1.5, lineStyle:2, priceLineVisible:false, lastValueVisible:false });
+      const lower = wolfLaboChart.addLineSeries({ color: d.color || THEME.green, lineWidth:1.5, lineStyle:2, priceLineVisible:false, lastValueVisible:false });
+      const median = wolfLaboChart.addLineSeries({ color: d.color || THEME.dim, lineWidth:1, lineStyle:1, priceLineVisible:false, lastValueVisible:false });
+      median.setData([p1, p2].map(p => ({ time:p.time, value:p.price })));
+      upper.setData([p1, p2].map(p => ({ time:p.time, value:p.price + d.width })));
+      lower.setData([p1, p2].map(p => ({ time:p.time, value:p.price - d.width })));
+      series.push(upper, lower, median);
+    } else if (d.type === 'regression'){
+      const mean = wolfLaboChart.addLineSeries({ color: THEME.dim, lineWidth:1.5, priceLineVisible:false, lastValueVisible:false });
+      const upper = wolfLaboChart.addLineSeries({ color: THEME.red, lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false });
+      const lower = wolfLaboChart.addLineSeries({ color: THEME.red, lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false });
+      mean.setData(d.mean); upper.setData(d.upper); lower.setData(d.lower);
+      series.push(mean, upper, lower);
+    }
+    wolfLaboDrawingSeries[d.id] = series;
+  });
+}
+
+function wolfLaboDrawingLabel(d){
+  if (d.type === 'trendline') return 'Ligne de tendance';
+  if (d.type === 'channel') return 'Canal';
+  return 'Canal auto (régression)';
+}
+function renderWolfLaboDrawingsList(){
+  const box = document.getElementById('wolfLaboDrawingsList');
+  if (!box) return;
+  const symbol = currentWolfLaboSymbol();
+  const list = symbol ? (wolfLaboDrawings[symbol] || []) : [];
+  box.innerHTML = list.map(d => `<span class="labo-drawing-chip">
+    ${escapeHtml(wolfLaboDrawingLabel(d))}
+    ${d.type === 'channel' ? `<input type="range" class="w" min="0.1" max="${(d.width * 5).toFixed(2)}" step="0.05" value="${d.width}" data-channel-width="${d.id}">` : ''}
+    <button type="button" data-delete-drawing="${d.id}" title="Supprimer ce tracé">✕</button>
+  </span>`).join('') || '<span class="chart-hint">Aucun tracé pour cette entreprise pour l\'instant.</span>';
+}
+
+function setWolfLaboDrawMode(mode){
+  wolfLaboDrawMode = mode;
+  wolfLaboDrawPending = [];
+  document.querySelectorAll('#wolfLaboDrawToolbar button[data-draw]').forEach(b => b.classList.toggle('active', b.dataset.draw === mode));
+  const hint = document.getElementById('wolfLaboDrawHint');
+  if (hint){
+    if (mode === 'trendline'){ hint.textContent = 'Clique 2 points sur le graphique pour tracer la ligne.'; hint.style.display = ''; }
+    else if (mode === 'channel'){ hint.textContent = 'Clique 2 points pour la ligne médiane du canal, la largeur se règle ensuite.'; hint.style.display = ''; }
+    else hint.style.display = 'none';
+  }
+}
+function wireWolfLaboChartClicks(){
+  wolfLaboChart.subscribeClick(param => {
+    if (!wolfLaboDrawMode || !param.point || param.time == null || !wolfLaboCandleSeries) return;
+    const price = wolfLaboCandleSeries.coordinateToPrice(param.point.y);
+    if (price == null) return;
+    wolfLaboDrawPending.push({ time: param.time, price });
+    if (wolfLaboDrawPending.length >= 2){
+      commitWolfLaboDrawing(wolfLaboDrawMode, wolfLaboDrawPending);
+      setWolfLaboDrawMode(null);
+    }
+  });
+}
+
+/* ---- Crayon à main levée (schémas pédagogiques) — même principe que le croquis du
+   Cerveau numérique (mousedown/mousemove/mouseup, couleur au choix), mais superposé en
+   transparence sur le graphique plutôt qu'un canvas blanc autonome. Aplati en une seule
+   image PNG par entreprise (comme le Cerveau), pas des traits éditables individuellement
+   — suffisant pour "expliquer des choses aux gens", pas un outil vectoriel. ---------- */
+const WOLF_LABO_SKETCH_LS_KEY = 'wolfAnalysisLaboSketches';
+let wolfLaboSketches = {}; // { [symbol]: dataURL }
+let wolfLaboPenActive = false;
+let wolfLaboPenDrawing = false;
+
+function loadWolfLaboSketches(){
+  try{
+    const raw = localStorage.getItem(WOLF_LABO_SKETCH_LS_KEY);
+    if (raw) wolfLaboSketches = JSON.parse(raw) || {};
+  }catch(e){ wolfLaboSketches = {}; }
+}
+function persistWolfLaboSketches(){
+  try{ localStorage.setItem(WOLF_LABO_SKETCH_LS_KEY, JSON.stringify(wolfLaboSketches)); }catch(e){ /* quota / navigateur privé */ }
+}
+function wolfLaboPenCanvasEl(){ return document.getElementById('wolfLaboPenCanvas'); }
+function resizeWolfLaboPenCanvas(){
+  const canvas = wolfLaboPenCanvasEl();
+  const holder = document.getElementById('wolfLaboChartHolder');
+  if (!canvas || !holder) return;
+  canvas.width = holder.clientWidth;
+  canvas.height = holder.clientHeight;
+  redrawWolfLaboSketch();
+}
+function redrawWolfLaboSketch(){
+  const canvas = wolfLaboPenCanvasEl();
+  const symbol = currentWolfLaboSymbol();
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const src = symbol && wolfLaboSketches[symbol];
+  if (!src) return;
+  const img = new Image();
+  img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  img.src = src;
+}
+function saveWolfLaboSketch(){
+  const canvas = wolfLaboPenCanvasEl();
+  const symbol = currentWolfLaboSymbol();
+  if (!canvas || !symbol) return;
+  wolfLaboSketches[symbol] = canvas.toDataURL('image/png');
+  persistWolfLaboSketches();
+}
+function clearWolfLaboSketch(){
+  const symbol = currentWolfLaboSymbol();
+  if (symbol) delete wolfLaboSketches[symbol];
+  persistWolfLaboSketches();
+  const canvas = wolfLaboPenCanvasEl();
+  if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+}
+function setWolfLaboPenActive(active){
+  wolfLaboPenActive = active;
+  const canvas = wolfLaboPenCanvasEl();
+  const controls = document.getElementById('wolfLaboPenControls');
+  const btn = document.getElementById('wolfLaboPenToggle');
+  if (canvas) canvas.style.display = active ? 'block' : 'none';
+  if (controls) controls.style.display = active ? 'flex' : 'none';
+  if (btn) btn.classList.toggle('active', active);
+  if (active) resizeWolfLaboPenCanvas();
+}
+function initWolfLaboPen(){
+  const canvas = wolfLaboPenCanvasEl();
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  function pos(e){
+    const rect = canvas.getBoundingClientRect();
+    const cx = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    const cy = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+    return { x: cx, y: cy };
+  }
+  function start(e){ wolfLaboPenDrawing = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); }
+  function move(e){
+    if (!wolfLaboPenDrawing) return;
+    e.preventDefault();
+    const p = pos(e);
+    ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    ctx.strokeStyle = document.getElementById('wolfLaboPenColor').value;
+    ctx.lineTo(p.x, p.y); ctx.stroke();
+  }
+  function end(){ if (wolfLaboPenDrawing){ wolfLaboPenDrawing = false; saveWolfLaboSketch(); } }
+  canvas.addEventListener('mousedown', start);
+  canvas.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', end);
+  canvas.addEventListener('touchstart', start, { passive:false });
+  canvas.addEventListener('touchmove', move, { passive:false });
+  canvas.addEventListener('touchend', end);
+}
+
+/* ---- Listes (watchlist propre à Wolf Labo) — une par secteur GICS pré-créée + Watchlist
+   + Portefeuille, remplies librement par l'utilisateur. Distincte des onglets
+   Watchlist/Portefeuille Perso existants (décision explicite — juste un raccourci de
+   navigation pendant qu'on regarde des graphiques, pas une 2e source de vérité). ------ */
+const WOLF_LABO_LISTS_LS_KEY = 'wolfAnalysisLaboLists';
+const WOLF_LABO_LIST_CATEGORIES = [
+  { key:'watchlist', label:'⭐ Watchlist' },
+  { key:'portefeuille', label:'💼 Portefeuille' },
+  ...GICS_SECTORS.map(s => ({ key:'sector-' + s.key, label:s.label }))
+];
+let wolfLaboLists = {};
+let wolfLaboOpenGroups = { watchlist:true };
+
+function loadWolfLaboLists(){
+  try{
+    const raw = localStorage.getItem(WOLF_LABO_LISTS_LS_KEY);
+    if (raw) wolfLaboLists = JSON.parse(raw) || {};
+  }catch(e){ wolfLaboLists = {}; }
+}
+function persistWolfLaboLists(){
+  try{ localStorage.setItem(WOLF_LABO_LISTS_LS_KEY, JSON.stringify(wolfLaboLists)); }catch(e){ /* quota / navigateur privé */ }
+}
+function addWolfLaboListEntry(catKey, symbol, name){
+  if (!symbol) return;
+  if (!wolfLaboLists[catKey]) wolfLaboLists[catKey] = [];
+  const sym = symbol.trim().toUpperCase();
+  if (wolfLaboLists[catKey].some(e => e.symbol === sym)) return;
+  wolfLaboLists[catKey].push({ symbol: sym, name: (name || sym).trim() });
+  persistWolfLaboLists();
+  renderWolfLaboWatchlistPanel();
+}
+function removeWolfLaboListEntry(catKey, symbol){
+  if (!wolfLaboLists[catKey]) return;
+  wolfLaboLists[catKey] = wolfLaboLists[catKey].filter(e => e.symbol !== symbol);
+  persistWolfLaboLists();
+  renderWolfLaboWatchlistPanel();
+}
+function selectWolfLaboSymbol(symbol, name){
+  if (symbol === 'KO'){ loadWolfLaboSample(); return; }
+  const status = document.getElementById('wolfLaboStatus');
+  document.getElementById('wolfLaboChartTitle').textContent = `${name || symbol} (${symbol})`;
+  if (status){ status.textContent = `Pas encore de données pour ${name || symbol} — disponible après l'import FMP complet. Affichage de l'échantillon Coca-Cola en attendant.`; status.style.display = 'block'; }
+}
+function renderWolfLaboWatchlistPanel(){
+  const box = document.getElementById('wolfLaboWatchlistPanel');
+  if (!box) return;
+  const activeSymbol = currentWolfLaboSymbol();
+  box.innerHTML = WOLF_LABO_LIST_CATEGORIES.map(cat => {
+    const entries = wolfLaboLists[cat.key] || [];
+    const open = !!wolfLaboOpenGroups[cat.key];
+    return `<div class="labo-list-group ${open ? 'open' : ''}" data-list-group="${cat.key}">
+      <div class="labo-list-header" data-toggle-group="${cat.key}"><span>${escapeHtml(cat.label)}</span><span class="count">${entries.length}</span></div>
+      <div class="labo-list-body">
+        ${entries.map(e => `<div class="labo-list-row ${e.symbol === activeSymbol ? 'active' : ''}" data-select-symbol="${escapeHtml(e.symbol)}" data-select-name="${escapeHtml(e.name)}">
+          <span>${escapeHtml(e.name)} <span style="color:var(--text-faint)">${escapeHtml(e.symbol)}</span></span>
+          <button type="button" data-remove-entry="${escapeHtml(e.symbol)}" data-remove-cat="${cat.key}" title="Retirer">✕</button>
+        </div>`).join('') || '<p class="chart-hint" style="margin:2px 0 6px;">Vide.</p>'}
+        <div class="labo-list-add">
+          <input type="text" placeholder="Ticker (ex. AAPL)" data-add-symbol-input="${cat.key}">
+          <button type="button" data-add-symbol-btn="${cat.key}">+ Ajouter</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+function initWolfLaboWatchlistPanel(){
+  const box = document.getElementById('wolfLaboWatchlistPanel');
+  if (!box) return;
+  box.addEventListener('click', e => {
+    const toggleBtn = e.target.closest('[data-toggle-group]');
+    if (toggleBtn){ const k = toggleBtn.dataset.toggleGroup; wolfLaboOpenGroups[k] = !wolfLaboOpenGroups[k]; renderWolfLaboWatchlistPanel(); return; }
+    const selectRow = e.target.closest('[data-select-symbol]');
+    if (selectRow && !e.target.closest('[data-remove-entry]')){ selectWolfLaboSymbol(selectRow.dataset.selectSymbol, selectRow.dataset.selectName); renderWolfLaboWatchlistPanel(); return; }
+    const removeBtn = e.target.closest('[data-remove-entry]');
+    if (removeBtn){ removeWolfLaboListEntry(removeBtn.dataset.removeCat, removeBtn.dataset.removeEntry); return; }
+    const addBtn = e.target.closest('[data-add-symbol-btn]');
+    if (addBtn){
+      const catKey = addBtn.dataset.addSymbolBtn;
+      const input = box.querySelector(`[data-add-symbol-input="${catKey}"]`);
+      if (input && input.value.trim()){ addWolfLaboListEntry(catKey, input.value, input.value); input.value = ''; }
+    }
+  });
+  box.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.target.matches('[data-add-symbol-input]')){
+      const catKey = e.target.dataset.addSymbolInput;
+      if (e.target.value.trim()){ addWolfLaboListEntry(catKey, e.target.value, e.target.value); e.target.value = ''; }
+    }
+  });
+}
+
+/* ---- Rendu principal + entrée du module ---------------------------------------- */
 function renderWolfLaboChart(){
   const holder = document.getElementById('wolfLaboChartHolder');
   const status = document.getElementById('wolfLaboStatus');
@@ -11095,25 +11491,32 @@ function renderWolfLaboChart(){
       upColor: THEME.green, downColor: THEME.red, borderVisible:false,
       wickUpColor: THEME.green, wickDownColor: THEME.red
     });
-    const smaColors = { 20: THEME.gold, 50: THEME.blue, 200: THEME.white };
-    [20, 50, 200].forEach(period => {
-      wolfLaboSmaSeries[period] = wolfLaboChart.addLineSeries({ color: smaColors[period], lineWidth:1.5, priceLineVisible:false, lastValueVisible:false });
+    Object.keys(WOLF_LABO_MA_CONFIG).forEach(period => {
+      wolfLaboSmaSeries[period] = wolfLaboChart.addLineSeries({ color: WOLF_LABO_MA_CONFIG[period].color, lineWidth:1.5, priceLineVisible:false, lastValueVisible:false });
     });
+    wireWolfLaboChartClicks();
   }
 
   const candles = wolfLaboFilteredCandles();
   wolfLaboCandleSeries.setData(candles);
-  [20, 50, 200].forEach(period => {
-    wolfLaboSmaSeries[period].setData(wolfLaboSmaVisible[period] ? wolfLaboSma(candles, period) : []);
+  Object.keys(WOLF_LABO_MA_CONFIG).forEach(period => {
+    wolfLaboSmaSeries[period].setData(wolfLaboSmaVisible[period] ? wolfLaboSma(candles, parseInt(period, 10)) : []);
   });
   wolfLaboChart.timeScale().fitContent();
+  renderWolfLaboDrawings();
+  renderWolfLaboDrawingsList();
+  redrawWolfLaboSketch();
+  renderWolfLaboWatchlistPanel();
 }
 
 async function loadWolfLaboSample(){
+  document.getElementById('wolfLaboChartTitle').textContent = 'Coca-Cola (KO) — échantillon de test';
   try{
-    const res = await fetch('data/labo-sample-ko.json', { cache:'no-store' });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    wolfLaboSampleData = await res.json();
+    if (!wolfLaboSampleData){
+      const res = await fetch('data/labo-sample-ko.json', { cache:'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      wolfLaboSampleData = await res.json();
+    }
     renderWolfLaboChart();
   }catch(e){
     console.error("Erreur de chargement de l'échantillon Wolf Labo :", e);
@@ -11125,6 +11528,11 @@ async function loadWolfLaboSample(){
 async function ensureWolfLaboChart(){
   if (wolfLaboLoaded){ renderWolfLaboChart(); return; }
   wolfLaboLoaded = true;
+  loadWolfLaboDrawings();
+  loadWolfLaboSketches();
+  loadWolfLaboLists();
+  initWolfLaboPen();
+  initWolfLaboWatchlistPanel();
   const status = document.getElementById('wolfLaboStatus');
   if (status){ status.textContent = 'Chargement du dashboard graphique…'; status.style.display = 'block'; }
   const ok = await ensureLightweightCharts();
@@ -11142,14 +11550,42 @@ document.getElementById('wolfLaboRangeButtons').addEventListener('click', e => {
   document.querySelectorAll('#wolfLaboRangeButtons button').forEach(b => b.classList.toggle('active', b === btn));
   renderWolfLaboChart();
 });
-document.getElementById('wolfLaboSmaToggle').addEventListener('click', e => {
-  const btn = e.target.closest('button[data-sma]');
+document.getElementById('wolfLaboTimeframeButtons').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-tf]');
   if (!btn) return;
-  const period = parseInt(btn.dataset.sma, 10);
+  wolfLaboTimeframe = btn.dataset.tf;
+  document.querySelectorAll('#wolfLaboTimeframeButtons button').forEach(b => b.classList.toggle('active', b === btn));
+  renderWolfLaboChart();
+});
+document.getElementById('wolfLaboMaToggle').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-ma]');
+  if (!btn) return;
+  const period = btn.dataset.ma;
   wolfLaboSmaVisible[period] = !wolfLaboSmaVisible[period];
   btn.classList.toggle('active', wolfLaboSmaVisible[period]);
   renderWolfLaboChart();
 });
+document.getElementById('wolfLaboDrawToolbar').addEventListener('click', e => {
+  const drawBtn = e.target.closest('button[data-draw]');
+  if (drawBtn){ setWolfLaboDrawMode(wolfLaboDrawMode === drawBtn.dataset.draw ? null : drawBtn.dataset.draw); return; }
+  if (e.target.closest('#wolfLaboAutoChannelBtn')){ wolfLaboAutoRegressionChannel(); return; }
+  if (e.target.closest('#wolfLaboPenToggle')){ setWolfLaboPenActive(!wolfLaboPenActive); return; }
+});
+document.getElementById('wolfLaboPenClear').addEventListener('click', clearWolfLaboSketch);
+document.getElementById('wolfLaboDrawingsList').addEventListener('click', e => {
+  const delBtn = e.target.closest('[data-delete-drawing]');
+  if (delBtn) deleteWolfLaboDrawing(delBtn.dataset.deleteDrawing);
+});
+document.getElementById('wolfLaboDrawingsList').addEventListener('input', e => {
+  if (e.target.matches('[data-channel-width]')) updateWolfLaboChannelWidth(e.target.dataset.channelWidth, parseFloat(e.target.value));
+});
+document.getElementById('wolfLaboFullscreenBtn').addEventListener('click', () => {
+  wolfLaboFullscreen = !wolfLaboFullscreen;
+  document.getElementById('wolfLaboChartCard').classList.toggle('labo-fullscreen', wolfLaboFullscreen);
+  document.getElementById('wolfLaboFullscreenBtn').textContent = wolfLaboFullscreen ? '✕' : '⤢';
+  setTimeout(() => { if (wolfLaboChart) wolfLaboChart.timeScale().fitContent(); resizeWolfLaboPenCanvas(); }, 50);
+});
+window.addEventListener('resize', () => { if (wolfLaboPenActive) resizeWolfLaboPenCanvas(); });
 
 document.getElementById('refreshBtn').addEventListener('click', loadAllDataFromAppsScript);
 document.querySelectorAll('.page-nav-btn').forEach(btn => {
