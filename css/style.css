@@ -846,11 +846,33 @@
   #wolfLaboMaToggle button.labo-ma-100.active{background:#F0D63D;border-color:#F0D63D;color:#2a2405;box-shadow:none;}
   #wolfLaboMaToggle button.labo-ma-200.active{background:var(--violet);border-color:var(--violet);color:#170f2e;box-shadow:none;}
   #wolfLaboDrawToolbar button.active{background:linear-gradient(135deg, var(--gold-2) 0%, var(--gold) 100%);color:#1a1305;border-color:var(--gold);}
+  /* Menus déroulants compacts (unité de temps / période / moyennes mobiles) — un seul
+     bouton visible chacun, le contenu ne s'affiche qu'au clic. */
+  .labo-dropdown{position:relative;}
+  .labo-dropdown-btn{font-family:var(--font-mono);font-size:11px;font-weight:600;padding:6px 12px;border-radius:14px;border:1px solid var(--hair);background:var(--panel-2);color:var(--text-dim);cursor:pointer;white-space:nowrap;}
+  .labo-dropdown-btn:hover{border-color:var(--gold);color:var(--text);}
+  .labo-dropdown.open .labo-dropdown-btn{border-color:var(--gold);color:var(--text);}
+  .labo-dropdown-menu{position:absolute;top:calc(100% + 6px);left:0;z-index:30;background:var(--panel-2);border:1px solid var(--hair);border-radius:12px;padding:8px;box-shadow:var(--shadow-card-hover);display:none;flex-direction:column;gap:4px;min-width:160px;margin:0;}
+  .labo-dropdown.open .labo-dropdown-menu{display:flex;}
+  .labo-dropdown-menu button{width:100%;text-align:left;font-family:var(--font-mono);font-size:11px;font-weight:600;padding:6px 10px;border-radius:9px;border:1px solid var(--hair);background:var(--panel);color:var(--text-dim);cursor:pointer;}
+  .labo-dropdown-menu button:hover{border-color:var(--gold);color:var(--text);}
+  .labo-dropdown-menu button.active{background:linear-gradient(135deg, var(--gold-2) 0%, var(--gold) 100%);color:#1a1305;border-color:var(--gold);box-shadow:none;}
+  .labo-toggle-btn{font-family:var(--font-mono);font-size:11px;font-weight:600;padding:6px 12px;border-radius:14px;border:1px solid var(--hair);background:var(--panel-2);color:var(--text-dim);cursor:pointer;white-space:nowrap;}
+  .labo-toggle-btn:hover{border-color:var(--gold);color:var(--text);}
+  .labo-toggle-btn.active{background:linear-gradient(135deg, var(--gold-2) 0%, var(--gold) 100%);color:#1a1305;border-color:var(--gold);box-shadow:0 4px 14px -6px rgba(217,164,65,0.55);}
+
+  /* Poignées d'édition des tracés — petits ronds glissables superposés au graphique,
+     visibles uniquement quand un tracé est sélectionné dans la liste ci-dessous. */
+  .labo-handle{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:var(--gold);border:2px solid #fff;cursor:grab;pointer-events:auto;box-shadow:0 0 0 2px rgba(0,0,0,0.35);}
+  .labo-handle:active{cursor:grabbing;}
+
   .labo-drawings-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
-  .labo-drawing-chip{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:10.5px;padding:3px 4px 3px 10px;border-radius:12px;border:1px solid var(--hair);background:var(--panel-2);color:var(--text-dim);}
+  .labo-drawing-chip{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:10.5px;padding:3px 4px 3px 10px;border-radius:12px;border:1px solid var(--hair);background:var(--panel-2);color:var(--text-dim);cursor:pointer;}
+  .labo-drawing-chip.selected{border-color:var(--gold);background:rgba(217,164,65,0.14);color:var(--text);}
   .labo-drawing-chip button{background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:12px;padding:2px 6px;border-radius:50%;}
   .labo-drawing-chip button:hover{color:var(--red);background:rgba(229,99,107,0.12);}
-  .labo-drawing-chip .w{width:80px;accent-color:var(--gold);}
+  .labo-drawing-chip .w, .labo-drawing-chip .op{width:70px;accent-color:var(--gold);}
+  .labo-drawing-chip input[type="color"]{width:20px;height:20px;padding:0;border:1px solid var(--hair);border-radius:6px;background:none;cursor:pointer;}
 
   .labo-watchlist-panel{background:var(--card-bg);border:var(--card-border);border-radius:14px;padding:14px 14px 16px;box-shadow:var(--shadow-card);max-height:820px;overflow-y:auto;}
   .labo-list-group{margin-bottom:4px;}

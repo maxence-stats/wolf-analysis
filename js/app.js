@@ -11059,6 +11059,12 @@ const WOLF_LABO_MA_CONFIG = {
 let wolfLaboSmaVisible = Object.fromEntries(Object.entries(WOLF_LABO_MA_CONFIG).map(([p, c]) => [p, c.default]));
 let wolfLaboLoaded = false;
 let wolfLaboFullscreen = false;
+// Aimant (accroche les tracés aux prix réels O/H/L/C de la bougie plutôt qu'à un prix
+// interpolé au pixel près) et fond clair/sombre du graphique — demandes explicites après
+// un premier retour utilisateur ("ce n'est pas précis, ce n'est pas aimanté").
+let wolfLaboMagnetOn = true;
+let wolfLaboLightBg = false;
+try{ wolfLaboLightBg = localStorage.getItem('wolfAnalysisLaboLightBg') === '1'; }catch(e){ /* navigateur privé */ }
 
 function wolfLaboSma(candles, period){
   const out = [];
@@ -11127,10 +11133,110 @@ function wolfLaboFilteredCandles(){
    temps/prix de la librairie gère alors le pan/zoom tout seul, pas de canvas custom à
    synchroniser à la main). ---------------------------------------------------------- */
 const WOLF_LABO_DRAWINGS_LS_KEY = 'wolfAnalysisLaboDrawings';
-let wolfLaboDrawings = {}; // { [symbol]: [ {id, type:'trendline'|'channel'|'regression', points:[{time,price}], width?, color}, ... ] }
+let wolfLaboDrawings = {}; // { [symbol]: [ {id, type:'trendline'|'channel'|'regression', points:[{time,price}], width?, color, fillOpacity}, ... ] }
 let wolfLaboDrawMode = null; // null | 'trendline' | 'channel'
 let wolfLaboDrawPending = [];
 let wolfLaboDrawingSeries = {}; // { [drawingId]: [série lightweight-charts, ...] } — vivant, détruit/reconstruit à chaque rendu
+let wolfLaboSelectedDrawingId = null; // tracé sélectionné dans la liste -> poignées affichées sur le graphique
+let wolfLaboDraggingHandle = null; // {id, pointIndex} pendant un glisser de poignée
+let wolfLaboLastDragEvent = null;
+let wolfLaboDragRafScheduled = false;
+let wolfLaboBandPrimitive = null; // remplissage semi-transparent entre les bornes d'un canal/régression
+
+// Convertit un Time lightweight-charts (string 'YYYY-MM-DD' normalement, mais parfois un
+// objet {year,month,day} selon la version) en string comparable/stockable — évite de
+// stocker un objet non sérialisable tel quel dans localStorage.
+function wolfLaboTimeToStr(t){
+  if (typeof t === 'string' || typeof t === 'number') return t;
+  if (t && typeof t === 'object' && 'year' in t) return `${t.year}-${String(t.month).padStart(2,'0')}-${String(t.day).padStart(2,'0')}`;
+  return t;
+}
+
+// Hex/rgb -> rgba(...) pour le remplissage translucide des canaux — mêmes couleurs
+// THEME.* que les lignes, juste une opacité réglable par-dessus.
+function wolfLaboColorWithAlpha(color, alpha){
+  if (!color) return `rgba(217,164,65,${alpha})`;
+  if (color.startsWith('#')){
+    let hex = color.slice(1);
+    if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+    const r = parseInt(hex.slice(0, 2), 16), g = parseInt(hex.slice(2, 4), 16), b = parseInt(hex.slice(4, 6), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+  if (color.startsWith('rgb')){
+    const nums = color.match(/[\d.]+/g) || [217, 164, 65];
+    return `rgba(${nums[0]},${nums[1]},${nums[2]},${alpha})`;
+  }
+  return color;
+}
+
+// Accroche un prix cliqué/glissé au O/H/L/C réel de la bougie la plus proche en temps —
+// TradingView appelle ça le "magnet mode". Sans ça, un tracé se pose n'importe où entre
+// deux prix réels (juste l'interpolation pixel -> prix de coordinateToPrice()), ce que
+// l'utilisateur a signalé comme "pas précis, pas aimanté".
+function wolfLaboSnapPrice(time, price){
+  if (!wolfLaboMagnetOn) return price;
+  const t = wolfLaboTimeToStr(time);
+  const candle = wolfLaboFilteredCandles().find(c => c.time === t);
+  if (!candle) return price;
+  const candidates = [candle.open, candle.high, candle.low, candle.close];
+  let best = candidates[0], bestDist = Math.abs(candidates[0] - price);
+  candidates.forEach(v => { const dist = Math.abs(v - price); if (dist < bestDist){ best = v; bestDist = dist; } });
+  return best;
+}
+
+// ---- Primitive de remplissage entre bornes (canal / canal auto) --------------------
+// lightweight-charts n'a pas de "fill entre deux lignes arbitraires" natif (l'Area
+// series ne remplit qu'entre UNE ligne et une valeur de base constante, inutilisable
+// dès que la ligne est en pente comme un canal ou une régression). On utilise donc
+// l'API Primitives (v4) : un seul objet attaché à la série de bougies dessine, à chaque
+// frame, un polygone entre la borne haute et la médiane, puis entre la médiane et la
+// borne basse, pour chaque tracé actif — recalculé à chaque pan/zoom via
+// timeToCoordinate()/priceToCoordinate(), donc toujours synchronisé sans code de resize
+// à maintenir à la main.
+class WolfLaboBandPaneView {
+  constructor(source){ this._source = source; }
+  renderer(){
+    const source = this._source;
+    return {
+      draw: target => {
+        target.useMediaCoordinateSpace(scope => {
+          const ctx = scope.context;
+          const chart = source._chart, series = source._series;
+          if (!chart || !series) return;
+          (source.bands || []).forEach(band => {
+            if (!band.upper || !band.upper.length) return;
+            ctx.save();
+            ctx.beginPath();
+            let started = false;
+            band.upper.forEach(p => {
+              const x = chart.timeScale().timeToCoordinate(p.time);
+              const y = series.priceToCoordinate(p.value);
+              if (x == null || y == null) return;
+              if (!started){ ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+            });
+            for (let i = band.lower.length - 1; i >= 0; i--){
+              const p = band.lower[i];
+              const x = chart.timeScale().timeToCoordinate(p.time);
+              const y = series.priceToCoordinate(p.value);
+              if (x == null || y == null) continue;
+              ctx.lineTo(x, y);
+            }
+            if (started){ ctx.closePath(); ctx.fillStyle = band.color; ctx.fill(); }
+            ctx.restore();
+          });
+        });
+      }
+    };
+  }
+}
+class WolfLaboBandPrimitive {
+  constructor(){ this.bands = []; this._paneViews = [new WolfLaboBandPaneView(this)]; }
+  attached(param){ this._chart = param.chart; this._series = param.series; this._requestUpdate = param.requestUpdate; }
+  detached(){ this._chart = null; this._series = null; }
+  updateAllViews(){}
+  paneViews(){ return this._paneViews; }
+  setBands(bands){ this.bands = bands; if (this._requestUpdate) this._requestUpdate(); }
+}
 
 function loadWolfLaboDrawings(){
   try{
@@ -11147,8 +11253,12 @@ function commitWolfLaboDrawing(type, points){
   const symbol = currentWolfLaboSymbol();
   if (!symbol) return;
   if (!wolfLaboDrawings[symbol]) wolfLaboDrawings[symbol] = [];
-  const sorted = points.slice().sort((a, b) => a.time < b.time ? -1 : 1);
-  const drawing = { id: 'd' + Date.now() + Math.random().toString(36).slice(2, 7), type, points: sorted, color: THEME.gold };
+  // Pas de tri ici : l'ordre de clic (1er point, 2e point) est conservé tel quel pour
+  // que les poignées d'édition gardent un index stable même si l'utilisateur fait
+  // ensuite glisser un point au-delà de l'autre en temps — le tri chronologique est
+  // recalculé uniquement au moment du rendu (voir renderWolfLaboDrawings()).
+  const pts = points.map(p => ({ time: wolfLaboTimeToStr(p.time), price: p.price }));
+  const drawing = { id: 'd' + Date.now() + Math.random().toString(36).slice(2, 7), type, points: pts, color: THEME.gold, fillOpacity: 0.12 };
   if (type === 'channel'){
     // Largeur par défaut = écart-type des clôtures visibles, un point de départ
     // raisonnable — ajustable ensuite via le curseur dans la liste des tracés.
@@ -11160,16 +11270,20 @@ function commitWolfLaboDrawing(type, points){
   }
   wolfLaboDrawings[symbol].push(drawing);
   persistWolfLaboDrawings();
+  wolfLaboSelectedDrawingId = drawing.id; // sélectionné direct : poignées visibles tout de suite pour ajuster
   renderWolfLaboDrawings();
   renderWolfLaboDrawingsList();
+  renderWolfLaboHandles();
 }
 function deleteWolfLaboDrawing(id){
   const symbol = currentWolfLaboSymbol();
   if (!symbol || !wolfLaboDrawings[symbol]) return;
   wolfLaboDrawings[symbol] = wolfLaboDrawings[symbol].filter(d => d.id !== id);
+  if (wolfLaboSelectedDrawingId === id) wolfLaboSelectedDrawingId = null;
   persistWolfLaboDrawings();
   renderWolfLaboDrawings();
   renderWolfLaboDrawingsList();
+  renderWolfLaboHandles();
 }
 function updateWolfLaboChannelWidth(id, width){
   const symbol = currentWolfLaboSymbol();
@@ -11179,15 +11293,49 @@ function updateWolfLaboChannelWidth(id, width){
   persistWolfLaboDrawings();
   renderWolfLaboDrawings();
 }
+function updateWolfLaboDrawingStyle(id, { color, fillOpacity } = {}){
+  const symbol = currentWolfLaboSymbol();
+  const d = symbol && (wolfLaboDrawings[symbol] || []).find(x => x.id === id);
+  if (!d) return;
+  if (color != null) d.color = color;
+  if (fillOpacity != null) d.fillOpacity = fillOpacity;
+  persistWolfLaboDrawings();
+  renderWolfLaboDrawings();
+}
+// Déplace un point existant (poignée glissée à la souris) — voir wireWolfLaboHandleDrag().
+function updateWolfLaboDrawingPoint(id, pointIndex, point){
+  const symbol = currentWolfLaboSymbol();
+  const d = symbol && (wolfLaboDrawings[symbol] || []).find(x => x.id === id);
+  if (!d || !d.points || !d.points[pointIndex]) return;
+  d.points[pointIndex] = point;
+}
+function selectWolfLaboDrawing(id){
+  wolfLaboSelectedDrawingId = (wolfLaboSelectedDrawingId === id) ? null : id;
+  renderWolfLaboDrawingsList();
+  renderWolfLaboHandles();
+}
 
 // Même principe que computeRegressionChannel() (cours de bourse, onglet Analyse) —
-// moyenne ± écarts-types sur la plage actuellement affichée, réutilisé ici comme
-// "canal automatique" en un clic (demande explicite, équivalent de l'outil "tendance
-// régressive" de TradingView).
+// moyenne ± 2 écarts-types, réutilisé ici comme "canal automatique" en un clic
+// (équivalent de l'outil "tendance régressive" de TradingView). Calculé sur la
+// PÉRIODE ACTUELLEMENT VISIBLE à l'écran (zoom/déplacement du graphique), pas sur tout
+// l'historique chargé — demande explicite ("je veux pouvoir en retracer un que sur une
+// période... qui ne prennent pas beaucoup de ce qui s'est passé avant"). Il suffit donc
+// de zoomer/te déplacer sur la fenêtre voulue (ex. 2025-2026) avant de cliquer.
 function wolfLaboAutoRegressionChannel(){
   const symbol = currentWolfLaboSymbol();
-  const candles = wolfLaboFilteredCandles();
-  if (!symbol || candles.length < 10) return;
+  if (!symbol || !wolfLaboChart) return;
+  const all = wolfLaboFilteredCandles();
+  if (all.length < 10) return;
+  let candles = all;
+  try{
+    const visible = wolfLaboChart.timeScale().getVisibleRange();
+    if (visible && visible.from != null && visible.to != null){
+      const from = wolfLaboTimeToStr(visible.from), to = wolfLaboTimeToStr(visible.to);
+      const sub = all.filter(c => c.time >= from && c.time <= to);
+      if (sub.length >= 5) candles = sub;
+    }
+  }catch(e){ /* getVisibleRange indisponible avant le premier rendu — repli sur tout l'historique */ }
   const closes = candles.map(c => c.close);
   const n = closes.length;
   const xMean = (n - 1) / 2;
@@ -11203,7 +11351,8 @@ function wolfLaboAutoRegressionChannel(){
   const upper = candles.map((c, i) => ({ time: c.time, value: +(slope * i + intercept + 2 * stdDev).toFixed(4) }));
   const lower = candles.map((c, i) => ({ time: c.time, value: +(slope * i + intercept - 2 * stdDev).toFixed(4) }));
   if (!wolfLaboDrawings[symbol]) wolfLaboDrawings[symbol] = [];
-  wolfLaboDrawings[symbol].push({ id: 'd' + Date.now() + Math.random().toString(36).slice(2, 7), type:'regression', mean, upper, lower });
+  const drawing = { id: 'd' + Date.now() + Math.random().toString(36).slice(2, 7), type:'regression', mean, upper, lower, color: THEME.blue, fillOpacity: 0.12 };
+  wolfLaboDrawings[symbol].push(drawing);
   persistWolfLaboDrawings();
   renderWolfLaboDrawings();
   renderWolfLaboDrawingsList();
@@ -11215,30 +11364,53 @@ function renderWolfLaboDrawings(){
   wolfLaboDrawingSeries = {};
   const symbol = currentWolfLaboSymbol();
   const list = symbol ? (wolfLaboDrawings[symbol] || []) : [];
+  if (wolfLaboSelectedDrawingId && !list.some(d => d.id === wolfLaboSelectedDrawingId)) wolfLaboSelectedDrawingId = null;
+  const bands = [];
+  // Tri chronologique appliqué seulement ici (au rendu), jamais sur wolfLaboDrawings lui-
+  // même — sinon glisser un point au-delà de l'autre en cours d'édition changerait son
+  // index dans le tableau et ferait "sauter" la poignée qu'on est en train de tenir.
+  const sortPts = pts => pts.slice().sort((a, b) => a.time < b.time ? -1 : (a.time > b.time ? 1 : 0));
   list.forEach(d => {
     const series = [];
+    const selected = d.id === wolfLaboSelectedDrawingId;
     if (d.type === 'trendline'){
-      const s = wolfLaboChart.addLineSeries({ color: d.color || THEME.gold, lineWidth:2, priceLineVisible:false, lastValueVisible:false });
-      s.setData(d.points.map(p => ({ time:p.time, value:p.price })));
+      const pts = sortPts(d.points);
+      const s = wolfLaboChart.addLineSeries({ color: d.color || THEME.gold, lineWidth: selected ? 3 : 2, priceLineVisible:false, lastValueVisible:false });
+      s.setData(pts.map(p => ({ time:p.time, value:p.price })));
       series.push(s);
     } else if (d.type === 'channel'){
-      const [p1, p2] = d.points;
-      const upper = wolfLaboChart.addLineSeries({ color: d.color || THEME.green, lineWidth:1.5, lineStyle:2, priceLineVisible:false, lastValueVisible:false });
-      const lower = wolfLaboChart.addLineSeries({ color: d.color || THEME.green, lineWidth:1.5, lineStyle:2, priceLineVisible:false, lastValueVisible:false });
-      const median = wolfLaboChart.addLineSeries({ color: d.color || THEME.dim, lineWidth:1, lineStyle:1, priceLineVisible:false, lastValueVisible:false });
-      median.setData([p1, p2].map(p => ({ time:p.time, value:p.price })));
-      upper.setData([p1, p2].map(p => ({ time:p.time, value:p.price + d.width })));
-      lower.setData([p1, p2].map(p => ({ time:p.time, value:p.price - d.width })));
+      const [p1, p2] = sortPts(d.points);
+      const medianPts = [p1, p2].map(p => ({ time:p.time, value:p.price }));
+      const upperPts = [p1, p2].map(p => ({ time:p.time, value:p.price + d.width }));
+      const lowerPts = [p1, p2].map(p => ({ time:p.time, value:p.price - d.width }));
+      const upper = wolfLaboChart.addLineSeries({ color: d.color || THEME.green, lineWidth: selected ? 2.5 : 1.5, lineStyle:2, priceLineVisible:false, lastValueVisible:false });
+      const lower = wolfLaboChart.addLineSeries({ color: d.color || THEME.green, lineWidth: selected ? 2.5 : 1.5, lineStyle:2, priceLineVisible:false, lastValueVisible:false });
+      const median = wolfLaboChart.addLineSeries({ color: d.color || THEME.dim, lineWidth: selected ? 2 : 1, lineStyle:1, priceLineVisible:false, lastValueVisible:false });
+      median.setData(medianPts); upper.setData(upperPts); lower.setData(lowerPts);
       series.push(upper, lower, median);
+      const opacity = d.fillOpacity != null ? d.fillOpacity : 0.12;
+      if (opacity > 0){
+        const fillColor = wolfLaboColorWithAlpha(d.color || THEME.green, opacity);
+        bands.push({ upper: upperPts, lower: medianPts, color: fillColor });
+        bands.push({ upper: medianPts, lower: lowerPts, color: fillColor });
+      }
     } else if (d.type === 'regression'){
-      const mean = wolfLaboChart.addLineSeries({ color: THEME.dim, lineWidth:1.5, priceLineVisible:false, lastValueVisible:false });
-      const upper = wolfLaboChart.addLineSeries({ color: THEME.red, lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false });
-      const lower = wolfLaboChart.addLineSeries({ color: THEME.red, lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false });
+      const color = d.color || THEME.blue;
+      const mean = wolfLaboChart.addLineSeries({ color: THEME.dim, lineWidth: selected ? 2.5 : 1.5, priceLineVisible:false, lastValueVisible:false });
+      const upper = wolfLaboChart.addLineSeries({ color, lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false });
+      const lower = wolfLaboChart.addLineSeries({ color, lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false });
       mean.setData(d.mean); upper.setData(d.upper); lower.setData(d.lower);
       series.push(mean, upper, lower);
+      const opacity = d.fillOpacity != null ? d.fillOpacity : 0.12;
+      if (opacity > 0){
+        const fillColor = wolfLaboColorWithAlpha(color, opacity);
+        bands.push({ upper: d.upper, lower: d.mean, color: fillColor });
+        bands.push({ upper: d.mean, lower: d.lower, color: fillColor });
+      }
     }
     wolfLaboDrawingSeries[d.id] = series;
   });
+  if (wolfLaboBandPrimitive) wolfLaboBandPrimitive.setBands(bands);
 }
 
 function wolfLaboDrawingLabel(d){
@@ -11251,11 +11423,16 @@ function renderWolfLaboDrawingsList(){
   if (!box) return;
   const symbol = currentWolfLaboSymbol();
   const list = symbol ? (wolfLaboDrawings[symbol] || []) : [];
-  box.innerHTML = list.map(d => `<span class="labo-drawing-chip">
+  box.innerHTML = list.map(d => {
+    const hasFill = d.type === 'channel' || d.type === 'regression';
+    return `<span class="labo-drawing-chip${d.id === wolfLaboSelectedDrawingId ? ' selected' : ''}" data-select-drawing="${d.id}" title="Clique pour afficher/masquer les poignées d'édition sur le graphique">
     ${escapeHtml(wolfLaboDrawingLabel(d))}
-    ${d.type === 'channel' ? `<input type="range" class="w" min="0.1" max="${(d.width * 5).toFixed(2)}" step="0.05" value="${d.width}" data-channel-width="${d.id}">` : ''}
+    ${d.type === 'channel' ? `<input type="range" class="w" min="0.1" max="${(d.width * 5).toFixed(2)}" step="0.05" value="${d.width}" data-channel-width="${d.id}" title="Largeur du canal">` : ''}
+    ${hasFill ? `<input type="color" value="${d.color || THEME.gold}" data-drawing-color="${d.id}" title="Couleur">` : ''}
+    ${hasFill ? `<input type="range" class="op" min="0" max="0.4" step="0.02" value="${d.fillOpacity != null ? d.fillOpacity : 0.12}" data-drawing-opacity="${d.id}" title="Opacité du remplissage">` : ''}
     <button type="button" data-delete-drawing="${d.id}" title="Supprimer ce tracé">✕</button>
-  </span>`).join('') || '<span class="chart-hint">Aucun tracé pour cette entreprise pour l\'instant.</span>';
+  </span>`;
+  }).join('') || '<span class="chart-hint">Aucun tracé pour cette entreprise pour l\'instant.</span>';
 }
 
 function setWolfLaboDrawMode(mode){
@@ -11264,21 +11441,86 @@ function setWolfLaboDrawMode(mode){
   document.querySelectorAll('#wolfLaboDrawToolbar button[data-draw]').forEach(b => b.classList.toggle('active', b.dataset.draw === mode));
   const hint = document.getElementById('wolfLaboDrawHint');
   if (hint){
-    if (mode === 'trendline'){ hint.textContent = 'Clique 2 points sur le graphique pour tracer la ligne.'; hint.style.display = ''; }
-    else if (mode === 'channel'){ hint.textContent = 'Clique 2 points pour la ligne médiane du canal, la largeur se règle ensuite.'; hint.style.display = ''; }
+    if (mode === 'trendline'){ hint.textContent = 'Clique 2 points sur le graphique pour tracer la ligne (Échap pour annuler).'; hint.style.display = ''; }
+    else if (mode === 'channel'){ hint.textContent = 'Clique 2 points pour la ligne médiane du canal — largeur, couleur et opacité se règlent juste après dans la liste ci-dessous, et les points restent ajustables à la souris tant que le tracé est sélectionné (Échap pour annuler).'; hint.style.display = ''; }
     else hint.style.display = 'none';
   }
 }
 function wireWolfLaboChartClicks(){
   wolfLaboChart.subscribeClick(param => {
     if (!wolfLaboDrawMode || !param.point || param.time == null || !wolfLaboCandleSeries) return;
-    const price = wolfLaboCandleSeries.coordinateToPrice(param.point.y);
+    let price = wolfLaboCandleSeries.coordinateToPrice(param.point.y);
     if (price == null) return;
-    wolfLaboDrawPending.push({ time: param.time, price });
+    const time = wolfLaboTimeToStr(param.time);
+    price = wolfLaboSnapPrice(time, price);
+    wolfLaboDrawPending.push({ time, price });
     if (wolfLaboDrawPending.length >= 2){
       commitWolfLaboDrawing(wolfLaboDrawMode, wolfLaboDrawPending);
       setWolfLaboDrawMode(null);
     }
+  });
+}
+
+// ---- Poignées d'édition (glisser un point d'un tracé sélectionné) ------------------
+function wolfLaboHandlesEl(){ return document.getElementById('wolfLaboHandles'); }
+function renderWolfLaboHandles(){
+  const box = wolfLaboHandlesEl();
+  if (!box) return;
+  if (!wolfLaboChart || !wolfLaboCandleSeries){ box.innerHTML = ''; return; }
+  const symbol = currentWolfLaboSymbol();
+  const d = wolfLaboSelectedDrawingId && symbol ? (wolfLaboDrawings[symbol] || []).find(x => x.id === wolfLaboSelectedDrawingId) : null;
+  if (!d || !d.points){ box.innerHTML = ''; return; }
+  box.innerHTML = d.points.map((p, i) => {
+    const x = wolfLaboChart.timeScale().timeToCoordinate(p.time);
+    const y = wolfLaboCandleSeries.priceToCoordinate(p.price);
+    if (x == null || y == null) return '';
+    return `<div class="labo-handle" data-handle-index="${i}" style="left:${x}px;top:${y}px;"></div>`;
+  }).join('');
+}
+function wolfLaboContainerPoint(e){
+  const holder = document.getElementById('wolfLaboChartHolder');
+  const rect = holder.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+function wolfLaboProcessDrag(){
+  wolfLaboDragRafScheduled = false;
+  if (!wolfLaboDraggingHandle || !wolfLaboLastDragEvent || !wolfLaboChart || !wolfLaboCandleSeries) return;
+  const p = wolfLaboContainerPoint(wolfLaboLastDragEvent);
+  const rawTime = wolfLaboChart.timeScale().coordinateToTime(p.x);
+  let price = wolfLaboCandleSeries.coordinateToPrice(p.y);
+  if (rawTime == null || price == null) return;
+  const time = wolfLaboTimeToStr(rawTime);
+  price = wolfLaboSnapPrice(time, price);
+  updateWolfLaboDrawingPoint(wolfLaboDraggingHandle.id, wolfLaboDraggingHandle.pointIndex, { time, price });
+  renderWolfLaboDrawings();
+  renderWolfLaboHandles();
+}
+function wireWolfLaboHandleDrag(){
+  const box = wolfLaboHandlesEl();
+  if (!box) return;
+  box.addEventListener('mousedown', e => {
+    const handle = e.target.closest('.labo-handle');
+    if (!handle || !wolfLaboSelectedDrawingId) return;
+    e.preventDefault();
+    wolfLaboDraggingHandle = { id: wolfLaboSelectedDrawingId, pointIndex: parseInt(handle.dataset.handleIndex, 10) };
+    document.body.style.userSelect = 'none';
+  });
+  document.addEventListener('mousemove', e => {
+    if (!wolfLaboDraggingHandle) return;
+    wolfLaboLastDragEvent = e;
+    if (!wolfLaboDragRafScheduled){ wolfLaboDragRafScheduled = true; requestAnimationFrame(wolfLaboProcessDrag); }
+  });
+  document.addEventListener('mouseup', () => {
+    if (!wolfLaboDraggingHandle) return;
+    wolfLaboDraggingHandle = null;
+    document.body.style.userSelect = '';
+    persistWolfLaboDrawings();
+    renderWolfLaboDrawingsList();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (wolfLaboDrawMode){ setWolfLaboDrawMode(null); return; }
+    if (wolfLaboSelectedDrawingId){ wolfLaboSelectedDrawingId = null; renderWolfLaboDrawingsList(); renderWolfLaboHandles(); renderWolfLaboDrawings(); }
   });
 }
 
@@ -11494,7 +11736,14 @@ function renderWolfLaboChart(){
     Object.keys(WOLF_LABO_MA_CONFIG).forEach(period => {
       wolfLaboSmaSeries[period] = wolfLaboChart.addLineSeries({ color: WOLF_LABO_MA_CONFIG[period].color, lineWidth:1.5, priceLineVisible:false, lastValueVisible:false });
     });
+    if (typeof wolfLaboCandleSeries.attachPrimitive === 'function'){
+      wolfLaboBandPrimitive = new WolfLaboBandPrimitive();
+      wolfLaboCandleSeries.attachPrimitive(wolfLaboBandPrimitive);
+    }
+    wolfLaboChart.timeScale().subscribeVisibleTimeRangeChange(() => renderWolfLaboHandles());
     wireWolfLaboChartClicks();
+    wireWolfLaboHandleDrag();
+    applyWolfLaboTheme();
   }
 
   const candles = wolfLaboFilteredCandles();
@@ -11505,8 +11754,29 @@ function renderWolfLaboChart(){
   wolfLaboChart.timeScale().fitContent();
   renderWolfLaboDrawings();
   renderWolfLaboDrawingsList();
+  renderWolfLaboHandles();
   redrawWolfLaboSketch();
   renderWolfLaboWatchlistPanel();
+}
+
+// Fond clair/sombre du graphique uniquement (le reste du site reste inchangé) — demande
+// explicite après retour utilisateur. Choix mémorisé par navigateur (localStorage).
+function applyWolfLaboTheme(){
+  const btn = document.getElementById('wolfLaboBgBtn');
+  if (btn) btn.textContent = wolfLaboLightBg ? '☀️ Fond clair' : '🌙 Fond sombre';
+  if (!wolfLaboChart) return;
+  wolfLaboChart.applyOptions({
+    layout:{
+      background:{ type:'solid', color: wolfLaboLightBg ? '#ffffff' : '#0D1013' },
+      textColor: wolfLaboLightBg ? '#1a1a1a' : THEME.dim
+    },
+    grid:{
+      vertLines:{ color: wolfLaboLightBg ? 'rgba(0,0,0,0.07)' : THEME.hair },
+      horzLines:{ color: wolfLaboLightBg ? 'rgba(0,0,0,0.09)' : THEME.hair }
+    },
+    rightPriceScale:{ borderColor: wolfLaboLightBg ? 'rgba(0,0,0,0.15)' : THEME.hair },
+    timeScale:{ borderColor: wolfLaboLightBg ? 'rgba(0,0,0,0.15)' : THEME.hair }
+  });
 }
 
 async function loadWolfLaboSample(){
@@ -11533,6 +11803,13 @@ async function ensureWolfLaboChart(){
   loadWolfLaboLists();
   initWolfLaboPen();
   initWolfLaboWatchlistPanel();
+  const magnetBtn = document.getElementById('wolfLaboMagnetBtn');
+  if (magnetBtn) magnetBtn.classList.toggle('active', wolfLaboMagnetOn);
+  const bgBtn = document.getElementById('wolfLaboBgBtn');
+  if (bgBtn) bgBtn.textContent = wolfLaboLightBg ? '☀️ Fond clair' : '🌙 Fond sombre';
+  const maCount = Object.values(wolfLaboSmaVisible).filter(Boolean).length;
+  const maBtn = document.getElementById('wolfLaboMaBtn');
+  if (maBtn) maBtn.textContent = `📊 Moyennes mobiles (${maCount}) ▾`;
   const status = document.getElementById('wolfLaboStatus');
   if (status){ status.textContent = 'Chargement du dashboard graphique…'; status.style.display = 'block'; }
   const ok = await ensureLightweightCharts();
@@ -11543,11 +11820,28 @@ async function ensureWolfLaboChart(){
   await loadWolfLaboSample();
 }
 
+// Les 3 menus déroulants (unité de temps, période, moyennes mobiles) partagent le même
+// mécanisme d'ouverture/fermeture — un seul bouton visible chacun au lieu d'une rangée
+// de boutons, demande explicite ("essaye de les structurer... pas trop envahissants").
+document.querySelectorAll('.labo-dropdown-btn').forEach(btn => {
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const dd = btn.closest('.labo-dropdown');
+    const wasOpen = dd.classList.contains('open');
+    document.querySelectorAll('.labo-dropdown.open').forEach(o => o.classList.remove('open'));
+    if (!wasOpen) dd.classList.add('open');
+  });
+});
+document.addEventListener('click', () => {
+  document.querySelectorAll('.labo-dropdown.open').forEach(o => o.classList.remove('open'));
+});
 document.getElementById('wolfLaboRangeButtons').addEventListener('click', e => {
   const btn = e.target.closest('button[data-range]');
   if (!btn) return;
   wolfLaboRange = btn.dataset.range;
   document.querySelectorAll('#wolfLaboRangeButtons button').forEach(b => b.classList.toggle('active', b === btn));
+  document.getElementById('wolfLaboRangeBtn').textContent = `📅 ${btn.textContent} ▾`;
+  btn.closest('.labo-dropdown').classList.remove('open');
   renderWolfLaboChart();
 });
 document.getElementById('wolfLaboTimeframeButtons').addEventListener('click', e => {
@@ -11555,14 +11849,19 @@ document.getElementById('wolfLaboTimeframeButtons').addEventListener('click', e 
   if (!btn) return;
   wolfLaboTimeframe = btn.dataset.tf;
   document.querySelectorAll('#wolfLaboTimeframeButtons button').forEach(b => b.classList.toggle('active', b === btn));
+  document.getElementById('wolfLaboTimeframeBtn').textContent = `🕐 ${btn.textContent} ▾`;
+  btn.closest('.labo-dropdown').classList.remove('open');
   renderWolfLaboChart();
 });
 document.getElementById('wolfLaboMaToggle').addEventListener('click', e => {
   const btn = e.target.closest('button[data-ma]');
   if (!btn) return;
+  e.stopPropagation(); // le menu reste ouvert pour activer/désactiver plusieurs MM d'affilée
   const period = btn.dataset.ma;
   wolfLaboSmaVisible[period] = !wolfLaboSmaVisible[period];
   btn.classList.toggle('active', wolfLaboSmaVisible[period]);
+  const count = Object.values(wolfLaboSmaVisible).filter(Boolean).length;
+  document.getElementById('wolfLaboMaBtn').textContent = `📊 Moyennes mobiles (${count}) ▾`;
   renderWolfLaboChart();
 });
 document.getElementById('wolfLaboDrawToolbar').addEventListener('click', e => {
@@ -11571,21 +11870,35 @@ document.getElementById('wolfLaboDrawToolbar').addEventListener('click', e => {
   if (e.target.closest('#wolfLaboAutoChannelBtn')){ wolfLaboAutoRegressionChannel(); return; }
   if (e.target.closest('#wolfLaboPenToggle')){ setWolfLaboPenActive(!wolfLaboPenActive); return; }
 });
+document.getElementById('wolfLaboMagnetBtn').addEventListener('click', () => {
+  wolfLaboMagnetOn = !wolfLaboMagnetOn;
+  document.getElementById('wolfLaboMagnetBtn').classList.toggle('active', wolfLaboMagnetOn);
+});
+document.getElementById('wolfLaboBgBtn').addEventListener('click', () => {
+  wolfLaboLightBg = !wolfLaboLightBg;
+  try{ localStorage.setItem('wolfAnalysisLaboLightBg', wolfLaboLightBg ? '1' : '0'); }catch(e){ /* navigateur privé */ }
+  applyWolfLaboTheme();
+});
 document.getElementById('wolfLaboPenClear').addEventListener('click', clearWolfLaboSketch);
 document.getElementById('wolfLaboDrawingsList').addEventListener('click', e => {
   const delBtn = e.target.closest('[data-delete-drawing]');
-  if (delBtn) deleteWolfLaboDrawing(delBtn.dataset.deleteDrawing);
+  if (delBtn){ deleteWolfLaboDrawing(delBtn.dataset.deleteDrawing); return; }
+  if (e.target.closest('input')) return;
+  const chip = e.target.closest('[data-select-drawing]');
+  if (chip) selectWolfLaboDrawing(chip.dataset.selectDrawing);
 });
 document.getElementById('wolfLaboDrawingsList').addEventListener('input', e => {
   if (e.target.matches('[data-channel-width]')) updateWolfLaboChannelWidth(e.target.dataset.channelWidth, parseFloat(e.target.value));
+  if (e.target.matches('[data-drawing-color]')) updateWolfLaboDrawingStyle(e.target.dataset.drawingColor, { color: e.target.value });
+  if (e.target.matches('[data-drawing-opacity]')) updateWolfLaboDrawingStyle(e.target.dataset.drawingOpacity, { fillOpacity: parseFloat(e.target.value) });
 });
 document.getElementById('wolfLaboFullscreenBtn').addEventListener('click', () => {
   wolfLaboFullscreen = !wolfLaboFullscreen;
   document.getElementById('wolfLaboChartCard').classList.toggle('labo-fullscreen', wolfLaboFullscreen);
   document.getElementById('wolfLaboFullscreenBtn').textContent = wolfLaboFullscreen ? '✕' : '⤢';
-  setTimeout(() => { if (wolfLaboChart) wolfLaboChart.timeScale().fitContent(); resizeWolfLaboPenCanvas(); }, 50);
+  setTimeout(() => { if (wolfLaboChart) wolfLaboChart.timeScale().fitContent(); resizeWolfLaboPenCanvas(); renderWolfLaboHandles(); }, 50);
 });
-window.addEventListener('resize', () => { if (wolfLaboPenActive) resizeWolfLaboPenCanvas(); });
+window.addEventListener('resize', () => { if (wolfLaboPenActive) resizeWolfLaboPenCanvas(); renderWolfLaboHandles(); });
 
 document.getElementById('refreshBtn').addEventListener('click', loadAllDataFromAppsScript);
 document.querySelectorAll('.page-nav-btn').forEach(btn => {

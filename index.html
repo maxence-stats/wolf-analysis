@@ -1103,34 +1103,47 @@
             </div>
           </div>
 
+          <!-- Menus déroulants (1 bouton chacun) plutôt que 3 rangées de boutons — demande
+               explicite pour ne pas envahir l'écran ("essaye de ne pas les rendre
+               envahissants... au lieu de trois boutons, j'en ai un"). -->
           <div class="labo-toolbar-row">
-            <div class="range-buttons" id="wolfLaboTimeframeButtons">
-              <button data-tf="D" class="active">Daily</button>
-              <button data-tf="W">Weekly</button>
-              <button data-tf="M">Monthly</button>
+            <div class="labo-dropdown" data-dropdown="timeframe">
+              <button type="button" class="labo-dropdown-btn" id="wolfLaboTimeframeBtn">🕐 Daily ▾</button>
+              <div class="labo-dropdown-menu" id="wolfLaboTimeframeButtons">
+                <button data-tf="D" class="active">Daily</button>
+                <button data-tf="W">Weekly</button>
+                <button data-tf="M">Monthly</button>
+              </div>
             </div>
-            <div class="range-buttons" id="wolfLaboRangeButtons">
-              <button data-range="1">1a</button><button data-range="3">3a</button><button data-range="5">5a</button>
-              <button data-range="10">10a</button><button class="active" data-range="max">Max</button>
+            <div class="labo-dropdown" data-dropdown="range">
+              <button type="button" class="labo-dropdown-btn" id="wolfLaboRangeBtn">📅 Max ▾</button>
+              <div class="labo-dropdown-menu" id="wolfLaboRangeButtons">
+                <button data-range="1">1a</button><button data-range="3">3a</button><button data-range="5">5a</button>
+                <button data-range="10">10a</button><button class="active" data-range="max">Max</button>
+              </div>
             </div>
-          </div>
-
-          <!-- Couleurs des moyennes mobiles : demande explicite (20 vert, 30 orange/gold,
-               50 rouge, 200 violet — le "cœur" que l'utilisateur utilise déjà ; 80 bleu et
-               100 jaune en options activables au cas par cas selon l'entreprise). -->
-          <div class="range-buttons" id="wolfLaboMaToggle">
-            <button type="button" data-ma="20" class="active labo-ma-20">MM 20</button>
-            <button type="button" data-ma="30" class="active labo-ma-30">MM 30</button>
-            <button type="button" data-ma="50" class="active labo-ma-50">MM 50</button>
-            <button type="button" data-ma="80" class="labo-ma-80">MM 80</button>
-            <button type="button" data-ma="100" class="labo-ma-100">MM 100</button>
-            <button type="button" data-ma="200" class="active labo-ma-200">MM 200</button>
+            <!-- Couleurs des moyennes mobiles : demande explicite (20 vert, 30 orange/gold,
+                 50 rouge, 200 violet — le "cœur" que l'utilisateur utilise déjà ; 80 bleu et
+                 100 jaune en options activables au cas par cas selon l'entreprise). -->
+            <div class="labo-dropdown" data-dropdown="ma">
+              <button type="button" class="labo-dropdown-btn" id="wolfLaboMaBtn">📊 Moyennes mobiles ▾</button>
+              <div class="labo-dropdown-menu" id="wolfLaboMaToggle">
+                <button type="button" data-ma="20" class="active labo-ma-20">MM 20</button>
+                <button type="button" data-ma="30" class="active labo-ma-30">MM 30</button>
+                <button type="button" data-ma="50" class="active labo-ma-50">MM 50</button>
+                <button type="button" data-ma="80" class="labo-ma-80">MM 80</button>
+                <button type="button" data-ma="100" class="labo-ma-100">MM 100</button>
+                <button type="button" data-ma="200" class="active labo-ma-200">MM 200</button>
+              </div>
+            </div>
+            <button type="button" class="labo-toggle-btn active" id="wolfLaboMagnetBtn" title="Aimant : accroche les tracés aux prix réels (O/H/L/C) de la bougie la plus proche">🧲 Aimant</button>
+            <button type="button" class="labo-toggle-btn" id="wolfLaboBgBtn" title="Basculer le fond du graphique">🌙 Fond sombre</button>
           </div>
 
           <div class="range-buttons" id="wolfLaboDrawToolbar">
             <button type="button" data-draw="trendline">📈 Ligne de tendance</button>
-            <button type="button" data-draw="channel">📐 Canal (2 clics + largeur réglable)</button>
-            <button type="button" id="wolfLaboAutoChannelBtn">🤖 Canal auto (régression)</button>
+            <button type="button" data-draw="channel">📐 Canal (2 clics)</button>
+            <button type="button" id="wolfLaboAutoChannelBtn" title="Zoome/déplace-toi sur la période voulue avant de cliquer — calculé uniquement sur ce qui est visible à l'écran">🤖 Canal auto (période visible)</button>
             <button type="button" id="wolfLaboPenToggle">✏️ Dessiner</button>
             <span id="wolfLaboDrawHint" class="chart-hint" style="margin:0 0 0 6px;display:none;"></span>
           </div>
@@ -1141,11 +1154,12 @@
 
           <div id="wolfLaboChartHolder" style="height:440px;position:relative;">
             <canvas id="wolfLaboPenCanvas" style="position:absolute;inset:0;z-index:5;display:none;cursor:crosshair;"></canvas>
+            <div id="wolfLaboHandles" style="position:absolute;inset:0;z-index:6;pointer-events:none;"></div>
           </div>
           <div id="wolfLaboStatus" class="stock-status" style="display:none;"></div>
 
           <div id="wolfLaboDrawingsList" class="labo-drawings-list"></div>
-          <p class="chart-hint">Les tracés (lignes, canaux) et le croquis sont sauvegardés automatiquement par entreprise — rien n'est jamais supprimé sans un clic explicite sur "✕" à côté du tracé concerné.</p>
+          <p class="chart-hint">Les tracés (lignes, canaux) et le croquis sont sauvegardés automatiquement par entreprise — rien n'est jamais supprimé sans un clic explicite sur "✕" à côté du tracé concerné. Clique un tracé dans la liste pour afficher ses points sur le graphique et les régler à la souris.</p>
         </div>
 
         <!-- Panneau de listes (propre à Wolf Labo, distinct de l'onglet Watchlist/
