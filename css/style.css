@@ -861,10 +861,24 @@
   .labo-toggle-btn:hover{border-color:var(--gold);color:var(--text);}
   .labo-toggle-btn.active{background:linear-gradient(135deg, var(--gold-2) 0%, var(--gold) 100%);color:#1a1305;border-color:var(--gold);box-shadow:0 4px 14px -6px rgba(217,164,65,0.55);}
 
+  /* Recherche d'entreprise du dashboard graphique — réutilise .search-wrap/.search-input/
+     .search-suggestions (barre de recherche principale du site), juste plus étroite pour
+     tenir dans l'en-tête de la carte à côté du bouton plein écran. */
+  .labo-symbol-search{min-width:170px;max-width:230px;}
+
+  /* Panneau de style du graphique (fond, bougies, contours, mèches) — façon TradingView. */
+  .labo-style-menu{min-width:200px;}
+  .labo-style-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:3px 4px;font-size:11.5px;color:var(--text-dim);}
+  .labo-style-row input[type="color"]{width:26px;height:20px;padding:0;border:1px solid var(--hair);border-radius:6px;background:none;cursor:pointer;}
+  .labo-style-presets{display:flex;gap:6px;margin-top:4px;padding-top:6px;border-top:1px solid var(--hair);}
+  .labo-style-presets button{flex:1;}
+
   /* Poignées d'édition des tracés — petits ronds glissables superposés au graphique,
      visibles uniquement quand un tracé est sélectionné dans la liste ci-dessous. */
   .labo-handle{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:var(--gold);border:2px solid #fff;cursor:grab;pointer-events:auto;box-shadow:0 0 0 2px rgba(0,0,0,0.35);}
   .labo-handle:active{cursor:grabbing;}
+  .labo-handle.labo-handle-width{border-radius:3px;background:var(--blue);cursor:ns-resize;}
+  .labo-handle.labo-handle-width:active{cursor:ns-resize;}
 
   .labo-drawings-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
   .labo-drawing-chip{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:10.5px;padding:3px 4px 3px 10px;border-radius:12px;border:1px solid var(--hair);background:var(--panel-2);color:var(--text-dim);cursor:pointer;}

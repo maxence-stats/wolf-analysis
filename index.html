@@ -1097,8 +1097,13 @@
       <div class="labo-layout" id="woflLaboLayout">
         <div class="chart-card labo-chart-card" id="wolfLaboChartCard">
           <div class="chart-card-head">
-            <div><h3 id="wolfLaboChartTitle">Coca-Cola (KO) — échantillon de test</h3><p class="chart-subtitle">lightweight-charts (librairie open-source TradingView, pas le widget public). Une seule entreprise a de vraies données pour l'instant ; le reste s'ouvrira dès l'import FMP complet.</p></div>
+            <div><h3 id="wolfLaboChartTitle">Coca-Cola (KO) — échantillon de test</h3><p class="chart-subtitle">lightweight-charts (librairie open-source TradingView, pas le widget public). Une seule entreprise a de vraies données pour l'instant ; le reste s'affiche "pas encore de données" jusqu'à l'import FMP complet.</p></div>
             <div class="chart-card-actions">
+              <div class="search-wrap labo-symbol-search">
+                <span class="search-icon">⌕</span>
+                <input type="text" id="wolfLaboSymbolSearch" class="search-input" placeholder="Rechercher une entreprise…" autocomplete="off">
+                <div class="search-suggestions" id="wolfLaboSymbolSuggestions"></div>
+              </div>
               <button class="zoom-btn" id="wolfLaboFullscreenBtn" aria-label="Plein écran" title="Plein écran">⤢</button>
             </div>
           </div>
@@ -1137,12 +1142,29 @@
               </div>
             </div>
             <button type="button" class="labo-toggle-btn active" id="wolfLaboMagnetBtn" title="Aimant : accroche les tracés aux prix réels (O/H/L/C) de la bougie la plus proche">🧲 Aimant</button>
-            <button type="button" class="labo-toggle-btn" id="wolfLaboBgBtn" title="Basculer le fond du graphique">🌙 Fond sombre</button>
+            <!-- Style entièrement personnalisable (fond, bougies, contours, mèches) — demande
+                 explicite, façon TradingView. Remplace l'ancien bouton fond clair/sombre. -->
+            <div class="labo-dropdown" data-dropdown="style">
+              <button type="button" class="labo-dropdown-btn" id="wolfLaboStyleBtn">🎨 Style ▾</button>
+              <div class="labo-dropdown-menu labo-style-menu" id="wolfLaboStyleMenu">
+                <div class="labo-style-row"><span>Fond</span><input type="color" data-style-field="bg" title="Couleur du fond"></div>
+                <div class="labo-style-row"><span>Bougie hausse</span><input type="color" data-style-field="upColor" title="Couleur de bougie, hausse"></div>
+                <div class="labo-style-row"><span>Bougie baisse</span><input type="color" data-style-field="downColor" title="Couleur de bougie, baisse"></div>
+                <div class="labo-style-row"><span>Contour hausse</span><input type="color" data-style-field="borderUpColor" title="Couleur de contour, hausse"></div>
+                <div class="labo-style-row"><span>Contour baisse</span><input type="color" data-style-field="borderDownColor" title="Couleur de contour, baisse"></div>
+                <div class="labo-style-row"><span>Mèche hausse</span><input type="color" data-style-field="wickUpColor" title="Couleur de mèche, hausse"></div>
+                <div class="labo-style-row"><span>Mèche baisse</span><input type="color" data-style-field="wickDownColor" title="Couleur de mèche, baisse"></div>
+                <div class="labo-style-presets">
+                  <button type="button" data-style-preset="dark">Sombre</button>
+                  <button type="button" data-style-preset="light">Clair</button>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="range-buttons" id="wolfLaboDrawToolbar">
             <button type="button" data-draw="trendline">📈 Ligne de tendance</button>
-            <button type="button" data-draw="channel">📐 Canal (2 clics)</button>
+            <button type="button" data-draw="channel" title="Comme sur TradingView : 2 clics pour la médiane, 3e clic pour la largeur">📐 Canal (3 clics)</button>
             <button type="button" id="wolfLaboAutoChannelBtn" title="Zoome/déplace-toi sur la période voulue avant de cliquer — calculé uniquement sur ce qui est visible à l'écran">🤖 Canal auto (période visible)</button>
             <button type="button" id="wolfLaboPenToggle">✏️ Dessiner</button>
             <span id="wolfLaboDrawHint" class="chart-hint" style="margin:0 0 0 6px;display:none;"></span>
