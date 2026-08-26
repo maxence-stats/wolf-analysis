@@ -11263,6 +11263,18 @@ function wolfLaboSnapPrice(time, price){
   const candidates = [candle.open, candle.high, candle.low, candle.close];
   let best = candidates[0], bestDist = Math.abs(candidates[0] - price);
   candidates.forEach(v => { const dist = Math.abs(v - price); if (dist < bestDist){ best = v; bestDist = dist; } });
+  // Tolérance en PIXELS (pas en unité de prix brute) : sans seuil, "le plus proche des
+  // 4 OHLC" reste TOUJOURS le plus haut (ou le plus bas) de la bougie une fois qu'on l'a
+  // dépassé — un glissement qui vise plus haut restait alors aimanté indéfiniment sur ce
+  // même plus haut, impossible d'aller plus loin (poignée figée net). Repéré en test sur
+  // les poignées "milieu" (baseMid/secMid), coincées sur UNE SEULE bougie de référence —
+  // retour explicite ("je reste bloqué, il se recroqueville sur lui-même"). Au-delà de
+  // ~14px de tout O/H/L/C, on laisse passer le prix brut plutôt que de forcer l'accroche.
+  if (wolfLaboCandleSeries){
+    const py = wolfLaboCandleSeries.priceToCoordinate(price);
+    const by = wolfLaboCandleSeries.priceToCoordinate(best);
+    if (py != null && by != null && Math.abs(py - by) > 14) return price;
+  }
   return best;
 }
 
