@@ -4927,6 +4927,10 @@ function switchPage(pageId){
     analyseSubnav.style.display = ANALYSE_GROUP_PAGES.includes(pageId) ? 'flex' : 'none';
     analyseSubnav.querySelectorAll('.page-subnav-btn').forEach(b => b.classList.toggle('active', b.dataset.page === pageId));
   }
+  // Wolf Labo : lightweight-charts chargée à la demande (pas au chargement de la page,
+  // même principe que ensureChartJs() — jamais de lib de graphique statique/bloquante,
+  // voir CLAUDE.md piège #1), seulement quand l'onglet est réellement ouvert.
+  if (pageId === 'pageWolfLabo') ensureWolfLaboChart();
 }
 
 // Menu mobile (☰) : liste à plat TOUTES les pages, y compris les sous-onglets
@@ -4961,6 +4965,7 @@ const MOBILE_NAV_MANIFEST = [
     { page:'pageMacroEco', label:'Macroéconomie' },
     { page:'pageMacroCycleRead', label:'Lecture du Cycle' }
   ] },
+  { page:'pageWolfLabo', label:'🧪 Wolf Labo' },
   { page:'pagePdfEditor', label:'🖊️ Éditeur PDF' }
 ];
 function mobileNavItemHtml(item){
@@ -11007,6 +11012,144 @@ async function ensureChartJs(){
   }
   return false;
 }
+
+/* ============================================================
+   WOLF LABO — dashboard graphique (test), demande explicite. lightweight-charts
+   (librairie open-source de TradingView, PAS le widget embarqué public déjà essayé et
+   abandonné pour les valeurs européennes — voir CLAUDE.md piège #8) chargée
+   dynamiquement avec repli multi-CDN, même principe que ensureChartJs() ci-dessus
+   (jamais de lib de graphique chargée de façon statique/bloquante, voir piège #1).
+   Un seul échantillon disponible pour l'instant (Coca-Cola, data/labo-sample-ko.json,
+   extrait du plan gratuit FMP via fmp-database/, ~5000 séances 2006-2026) — le
+   sélecteur s'ouvrira à toute la base une fois l'import FMP complet fait. Le moteur de
+   backtest lui-même reste un squelette (décision explicite) : seul ce dashboard est
+   fonctionnel pour l'instant. Outils de tracé façon TradingView (lignes de tendance,
+   Fibonacci, annotations sauvegardées) pas encore branchés — prochaine étape.
+   ============================================================ */
+async function ensureLightweightCharts(){
+  if (window.LightweightCharts) return true;
+  const sources = [
+    'https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js',
+    'https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js',
+    'https://cdn.jsdelivr.net/npm/lightweight-charts/dist/lightweight-charts.standalone.production.js'
+  ];
+  for (const src of sources){
+    try{ await loadScriptOnce(src); if (window.LightweightCharts) return true; }catch(e){ /* CDN suivant */ }
+  }
+  return false;
+}
+
+let wolfLaboChart = null;
+let wolfLaboCandleSeries = null;
+let wolfLaboSmaSeries = {}; // période -> série Chart lightweight-charts
+let wolfLaboSampleData = null; // { symbol, name, source, candles:[{time,open,high,low,close,volume}] }
+let wolfLaboRange = 'max';
+let wolfLaboSmaVisible = { 20:true, 50:true, 200:false };
+let wolfLaboLoaded = false;
+
+function wolfLaboSma(candles, period){
+  const out = [];
+  for (let i = period - 1; i < candles.length; i++){
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) sum += candles[j].close;
+    out.push({ time: candles[i].time, value: +(sum / period).toFixed(4) });
+  }
+  return out;
+}
+
+function wolfLaboFilteredCandles(){
+  if (!wolfLaboSampleData) return [];
+  const candles = wolfLaboSampleData.candles;
+  if (wolfLaboRange === 'max') return candles;
+  const years = parseInt(wolfLaboRange, 10);
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() - years);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const idx = candles.findIndex(c => c.time >= cutoffStr);
+  return idx === -1 ? candles : candles.slice(idx);
+}
+
+function renderWolfLaboChart(){
+  const holder = document.getElementById('wolfLaboChartHolder');
+  const status = document.getElementById('wolfLaboStatus');
+  if (!holder) return;
+  if (!window.LightweightCharts){
+    if (status){ status.textContent = 'Impossible de charger la librairie de graphiques — vérifie ta connexion et recharge la page.'; status.style.display = 'block'; }
+    return;
+  }
+  if (!wolfLaboSampleData){
+    if (status){ status.textContent = "Chargement de l'échantillon Coca-Cola…"; status.style.display = 'block'; }
+    return;
+  }
+  if (status) status.style.display = 'none';
+
+  if (!wolfLaboChart){
+    wolfLaboChart = window.LightweightCharts.createChart(holder, {
+      layout:{ background:{ color:'transparent' }, textColor: THEME.dim },
+      grid:{ vertLines:{ color: THEME.hair }, horzLines:{ color: THEME.hair } },
+      rightPriceScale:{ borderColor: THEME.hair },
+      timeScale:{ borderColor: THEME.hair },
+      autoSize: true
+    });
+    wolfLaboCandleSeries = wolfLaboChart.addCandlestickSeries({
+      upColor: THEME.green, downColor: THEME.red, borderVisible:false,
+      wickUpColor: THEME.green, wickDownColor: THEME.red
+    });
+    const smaColors = { 20: THEME.gold, 50: THEME.blue, 200: THEME.white };
+    [20, 50, 200].forEach(period => {
+      wolfLaboSmaSeries[period] = wolfLaboChart.addLineSeries({ color: smaColors[period], lineWidth:1.5, priceLineVisible:false, lastValueVisible:false });
+    });
+  }
+
+  const candles = wolfLaboFilteredCandles();
+  wolfLaboCandleSeries.setData(candles);
+  [20, 50, 200].forEach(period => {
+    wolfLaboSmaSeries[period].setData(wolfLaboSmaVisible[period] ? wolfLaboSma(candles, period) : []);
+  });
+  wolfLaboChart.timeScale().fitContent();
+}
+
+async function loadWolfLaboSample(){
+  try{
+    const res = await fetch('data/labo-sample-ko.json', { cache:'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    wolfLaboSampleData = await res.json();
+    renderWolfLaboChart();
+  }catch(e){
+    console.error("Erreur de chargement de l'échantillon Wolf Labo :", e);
+    const status = document.getElementById('wolfLaboStatus');
+    if (status){ status.textContent = 'Échantillon de test indisponible pour le moment.'; status.style.display = 'block'; }
+  }
+}
+
+async function ensureWolfLaboChart(){
+  if (wolfLaboLoaded){ renderWolfLaboChart(); return; }
+  wolfLaboLoaded = true;
+  const status = document.getElementById('wolfLaboStatus');
+  if (status){ status.textContent = 'Chargement du dashboard graphique…'; status.style.display = 'block'; }
+  const ok = await ensureLightweightCharts();
+  if (!ok){
+    if (status){ status.textContent = 'Impossible de charger la librairie de graphiques — vérifie ta connexion et recharge la page.'; status.style.display = 'block'; }
+    return;
+  }
+  await loadWolfLaboSample();
+}
+
+document.getElementById('wolfLaboRangeButtons').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-range]');
+  if (!btn) return;
+  wolfLaboRange = btn.dataset.range;
+  document.querySelectorAll('#wolfLaboRangeButtons button').forEach(b => b.classList.toggle('active', b === btn));
+  renderWolfLaboChart();
+});
+document.getElementById('wolfLaboSmaToggle').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-sma]');
+  if (!btn) return;
+  const period = parseInt(btn.dataset.sma, 10);
+  wolfLaboSmaVisible[period] = !wolfLaboSmaVisible[period];
+  btn.classList.toggle('active', wolfLaboSmaVisible[period]);
+  renderWolfLaboChart();
+});
 
 document.getElementById('refreshBtn').addEventListener('click', loadAllDataFromAppsScript);
 document.querySelectorAll('.page-nav-btn').forEach(btn => {

@@ -70,6 +70,7 @@
       <button class="page-nav-btn" data-page="pageIdees">Idées</button>
       <button class="page-nav-btn" data-page="pageRevue">Revue de la semaine</button>
       <button class="page-nav-btn" data-page="pageMacroCredit" data-group="macro">Macroéconomie</button>
+      <button class="page-nav-btn" data-page="pageWolfLabo">🧪 Wolf Labo</button>
       <button class="page-nav-btn" data-page="pagePdfEditor">🖊️ Éditeur PDF</button>
     </div>
 
@@ -1077,6 +1078,52 @@
       <div class="section-label">Lecture du Cycle</div>
       <p class="valo-intro">Dans quel régime macro sommes-nous, et quelles classes d'actifs/secteurs ont historiquement tendance à en bénéficier ? Synthèse automatique à partir des indicateurs Crédit, Taux et Macroéconomie déjà présents sur les autres sous-onglets — rien n'est recalculé dans une autre unité, chaque indicateur garde sa forme d'origine.</p>
       <div id="macroCycleReadContent"></div>
+    </div>
+
+    <!-- Wolf Labo (demande explicite) : laboratoire d'expérimentation financière —
+         dashboard graphique type TradingView (lightweight-charts, PAS le widget public
+         déjà abandonné pour les valeurs européennes, voir CLAUDE.md piège #8) et,
+         plus tard, un moteur de backtest par règles (motifs de prix ET seuils macro,
+         décision explicite de construire les deux ensemble). Squelette minimal pour le
+         moteur de backtest pour l'instant (décision explicite) — seul le dashboard
+         graphique est fonctionnel aujourd'hui, testé avec l'échantillon Coca-Cola
+         (data/labo-sample-ko.json, extrait de fmp-database/). Voir renderWolfLaboChart()
+         dans app.js. -->
+    <div id="pageWolfLabo" class="page">
+      <div class="section-label">🧪 Wolf Labo</div>
+      <p class="valo-intro">Laboratoire d'expérimentation financière — dashboard graphique et, à terme, un moteur de backtest par règles (motifs de prix, seuils macro) pour tester des hypothèses sur plusieurs décennies et formaliser les résultats en PDF. En construction : pour l'instant, seul le dashboard graphique est fonctionnel, avec un échantillon de test (Coca-Cola, données FMP plan gratuit).</p>
+
+      <div class="section-label" style="margin-top:8px;">Dashboard graphique</div>
+      <div class="chart-card">
+        <div class="chart-card-head">
+          <div><h3 id="wolfLaboChartTitle">Coca-Cola (KO) — échantillon de test</h3><p class="chart-subtitle">Chandeliers quotidiens + moyenne mobile — lightweight-charts (librairie open-source TradingView, pas le widget public). Une seule entreprise disponible pour l'instant ; le sélecteur s'ouvrira à toute la base dès l'import FMP complet.</p></div>
+        </div>
+        <div class="range-buttons" id="wolfLaboRangeButtons">
+          <button data-range="1">1a</button><button data-range="3">3a</button><button data-range="5">5a</button>
+          <button data-range="10">10a</button><button class="active" data-range="max">Max</button>
+        </div>
+        <div class="range-buttons" id="wolfLaboSmaToggle">
+          <button type="button" data-sma="20" class="active">SMA 20</button>
+          <button type="button" data-sma="50" class="active">SMA 50</button>
+          <button type="button" data-sma="200">SMA 200</button>
+        </div>
+        <div id="wolfLaboChartHolder" style="height:440px;position:relative;"></div>
+        <div id="wolfLaboStatus" class="stock-status" style="display:none;"></div>
+        <p class="chart-hint">Prototype : chandeliers + moyennes mobiles fonctionnels. Les outils de tracé (lignes de tendance, Fibonacci, annotations sauvegardées façon TradingView) ne sont pas encore branchés — prochaine étape une fois le dashboard validé.</p>
+      </div>
+
+      <div class="section-label" style="margin-top:14px;">Backtest — moteur de règles</div>
+      <div class="chart-card" style="opacity:0.7;">
+        <div class="chart-card-head">
+          <div><h3>Bientôt disponible</h3><p class="chart-subtitle">Définir une condition (motif de prix ou seuil macro), voir combien de fois elle s'est produite et ce qui a statistiquement suivi.</p></div>
+        </div>
+        <p class="chart-hint">Exemples visés : "quand une action/un secteur monte de X% sur une semaine" (motif de prix) ou "quand le taux 10 ans dépasse X%" (seuil macro) — un seul moteur pour les deux, pas construit séparément. Les règles basées sur les fondamentaux (ex. "entreprises à dividendes pendant une hausse de taux") s'activeront une fois l'import FMP complet fait — squelette pour l'instant, en attendant.</p>
+      </div>
+
+      <div class="section-label" style="margin-top:14px;">Expérimentations sauvegardées</div>
+      <div class="chart-card" style="opacity:0.7;">
+        <p class="chart-hint">Bibliothèque à venir : classer, sauvegarder et exporter tes recherches en PDF (paysage pour vidéo/présentation, portrait pour newsletter) — réutilise le système d'export déjà en place sur le site (voir Éditeur PDF).</p>
+      </div>
     </div>
 
     <!-- Éditeur PDF : composition libre (glisser-déposer, texte) d'un document
