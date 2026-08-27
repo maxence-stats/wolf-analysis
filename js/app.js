@@ -9058,6 +9058,9 @@ const TIER_LIST_TIERS = [
   { key:'D', color: THEME.blue },
   { key:'F', color: css.getPropertyValue('--text-faint').trim() }
 ];
+// Pseudo-tier "Sélection du jour" : les picks du jour, déposés là avant d'être
+// vraiment classés — état à part du pool ET des vrais tiers S-F.
+const TIER_LIST_SELECTION_KEY = 'SEL';
 let tierListStore = {}; // { [nomEntreprise]: 'S'|'A'|'B'|'C'|'D'|'F' } — absent du dico = pool
 
 function mergeTierList(extra){
@@ -9091,17 +9094,23 @@ function exportTierList(){
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+function tierListPrintTableHtml(noms){
+  return noms.length
+    ? `<table class="print-table"><thead><tr><th>Entreprise</th></tr></thead><tbody>${noms.map(n => {
+        const logo = companyLogoUrl(n);
+        const logoImg = logo ? `<img class="print-inline-logo" src="${logo}" alt="">` : '';
+        return `<tr><td>${logoImg}${n.replace(/</g,'&lt;')}</td></tr>`;
+      }).join('')}</tbody></table>`
+    : '<p style="color:#999">Aucune entreprise dans ce tier.</p>';
+}
 function exportTierListAsPdf(){
-  const body = TIER_LIST_TIERS.map(t => {
+  const selNoms = Object.keys(tierListStore).filter(n => tierListStore[n] === TIER_LIST_SELECTION_KEY && companies[n]);
+  const selSection = selNoms.length
+    ? `<div class="print-section"><h3>🎬 Sélection du jour (${selNoms.length})</h3>${tierListPrintTableHtml(selNoms)}</div>`
+    : '';
+  const body = selSection + TIER_LIST_TIERS.map(t => {
     const noms = Object.keys(tierListStore).filter(n => tierListStore[n] === t.key && companies[n]);
-    const rows = noms.length
-      ? `<table class="print-table"><thead><tr><th>Entreprise</th></tr></thead><tbody>${noms.map(n => {
-          const logo = companyLogoUrl(n);
-          const logoImg = logo ? `<img class="print-inline-logo" src="${logo}" alt="">` : '';
-          return `<tr><td>${logoImg}${n.replace(/</g,'&lt;')}</td></tr>`;
-        }).join('')}</tbody></table>`
-      : '<p style="color:#999">Aucune entreprise dans ce tier.</p>';
-    return `<div class="print-section"><h3 style="color:${t.color}">Tier ${t.key} (${noms.length})</h3>${rows}</div>`;
+    return `<div class="print-section"><h3 style="color:${t.color}">Tier ${t.key} (${noms.length})</h3>${tierListPrintTableHtml(noms)}</div>`;
   }).join('');
   exportSectionAsPdf('Tier List', null, body);
 }
@@ -9134,6 +9143,7 @@ function tierListCardHtml(nom){
 function renderTierList(){
   const board = document.getElementById('tierListBoard');
   const pool = document.getElementById('tierListPool');
+  const selection = document.getElementById('tierListSelection');
   if (!board || !pool) return;
 
   board.innerHTML = TIER_LIST_TIERS.map(t => {
@@ -9143,6 +9153,15 @@ function renderTierList(){
       <div class="tierlist-dropzone" data-tier="${t.key}">${noms.map(tierListCardHtml).join('')}</div>
     </div>`;
   }).join('');
+
+  // "Sélection du jour" : case tampon distincte du pool ET des tiers — les picks du
+  // jour, déposés là AVANT d'être vraiment classés au fil de la vidéo (demande
+  // explicite). Un simple pseudo-tier de plus dans le même dictionnaire (clé 'SEL'),
+  // pas une notion à part — reste donc dans l'export JSON tel quel.
+  if (selection){
+    const selNoms = Object.keys(companies).filter(nom => tierListLocationOf(nom) === TIER_LIST_SELECTION_KEY);
+    selection.innerHTML = selNoms.map(tierListCardHtml).join('');
+  }
 
   const unassigned = Object.keys(companies).filter(nom => !tierListLocationOf(nom));
   pool.innerHTML = unassigned.length

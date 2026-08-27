@@ -688,7 +688,7 @@
 
     <div id="pageTierList" class="page">
       <div class="section-label">🏆 Tier List</div>
-      <p class="valo-intro">Glisse une entreprise depuis le pool (ou d'une case à l'autre) pour construire ton classement — pratique pour les vidéos "tier list". Contrairement à la Watchlist, la carte suit directement ta souris pendant le glisser.</p>
+      <p class="valo-intro">Glisse une entreprise depuis le pool (ou d'une case à l'autre) pour construire ton classement — pratique pour les vidéos "tier list". Dépose d'abord tes picks du jour dans la case "Sélection du jour" à droite, puis classe-les dans le tableau au fil de la vidéo. La carte suit directement ta souris pendant le glisser.</p>
 
       <div class="tierlist-toprow">
         <div class="search-wrap tierlist-search-wrap">
@@ -700,7 +700,14 @@
         <button class="zoom-btn" id="tierListResetBtn" title="Remet toutes les entreprises classées dans le pool">↺ Réinitialiser</button>
       </div>
 
-      <div class="tierlist-board" id="tierListBoard"></div>
+      <div class="tierlist-layout">
+        <div class="tierlist-board" id="tierListBoard"></div>
+        <div class="tierlist-selection-panel">
+          <h3>🎬 Sélection du jour</h3>
+          <p class="chart-hint" style="margin:0 0 10px;">Les entreprises à traiter dans la vidéo — dépose-les ici depuis le pool avant de les classer.</p>
+          <div class="tierlist-selection tierlist-dropzone" id="tierListSelection" data-tier="SEL"></div>
+        </div>
+      </div>
 
       <div class="section-label" style="margin-top:16px;">Pool — entreprises non classées</div>
       <div class="tierlist-pool tierlist-dropzone" id="tierListPool" data-tier=""></div>

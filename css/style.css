@@ -415,12 +415,23 @@
      title). */
   .tierlist-toprow{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;}
   .tierlist-search-wrap{max-width:320px;margin-bottom:0;flex:1;}
-  .tierlist-board{display:flex;flex-direction:column;gap:6px;margin-bottom:6px;}
+  /* Tableau + "Sélection du jour" côte à côte — case tampon pour les picks du jour
+     avant de vraiment les classer, demande explicite ("une première case... juste à
+     droite de la tier list"). */
+  .tierlist-layout{display:grid;grid-template-columns:1fr 240px;gap:16px;align-items:start;margin-bottom:6px;}
+  .tierlist-board{display:flex;flex-direction:column;gap:6px;}
+  .tierlist-selection-panel{background:var(--card-bg);border:var(--card-border);border-radius:14px;padding:14px;box-shadow:var(--shadow-card);}
+  .tierlist-selection-panel h3{font-family:var(--font-display);font-weight:700;font-size:13px;margin:0 0 6px;color:var(--gold);}
   .tierlist-row{display:flex;align-items:stretch;border-radius:12px;overflow:hidden;border:var(--card-border);background:var(--card-bg);box-shadow:var(--shadow-card);}
   .tierlist-row-label{width:56px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:22px;color:#14100a;}
   .tierlist-dropzone{flex:1;display:flex;flex-wrap:wrap;align-content:flex-start;gap:10px;padding:10px;min-height:68px;border-radius:10px;transition:background .12s ease;}
   .tierlist-dropzone.dragover{background:rgba(217,164,65,0.12);}
   #tierListPool.tierlist-dropzone{padding:16px;background:var(--card-bg);border:var(--card-border);border-radius:14px;box-shadow:var(--shadow-card);min-height:80px;}
+  /* Déclarée APRÈS la règle générale .tierlist-dropzone (même spécificité, sinon min-
+     height:68px l'emporterait en cascade et la case "Sélection du jour" resterait
+     minuscule malgré le CSS ci-dessous — bug trouvé en test live). */
+  .tierlist-selection{min-height:420px;align-content:flex-start;}
+  @media (max-width:900px){ .tierlist-layout{grid-template-columns:1fr;} .tierlist-selection{min-height:100px;} }
   /* Bulle logo seul (même gabarit que .watchlist-chip) — plus de nom en texte à côté,
      demande explicite ("juste les logos dans les bulles"). */
   .tierlist-card{width:44px;height:44px;background:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;padding:6px;cursor:grab;border:1px solid var(--hair);touch-action:none;overflow:hidden;flex-shrink:0;}
