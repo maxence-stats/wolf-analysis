@@ -86,6 +86,7 @@
       <button class="page-subnav-btn" data-page="pageClassement">Classement</button>
       <button class="page-subnav-btn" data-page="pageWatchlist">Watchlist</button>
       <button class="page-subnav-btn" data-page="pageComparaison">Comparaison</button>
+      <button class="page-subnav-btn" data-page="pageTierList">Tier List</button>
     </div>
 
     <div class="page-subnav" id="analyseSubnav" style="display:flex;">
@@ -683,6 +684,26 @@
       <div class="section-label">Comparaison détaillée côte à côte</div>
       <p class="valo-intro">Reprend directement les entreprises sélectionnées ci-dessus (jusqu'à 4) pour afficher leurs fiches complètes (jauge, ratios, graphiques historiques) côte à côte — retirer une entreprise ici la retire aussi du graphique du dessus.</p>
       <div class="comparaison-detail-columns" id="comparaisonDetailColumns"></div>
+    </div>
+
+    <div id="pageTierList" class="page">
+      <div class="section-label">🏆 Tier List</div>
+      <p class="valo-intro">Glisse une entreprise depuis le pool (ou d'une case à l'autre) pour construire ton classement — pratique pour les vidéos "tier list". Contrairement à la Watchlist, la carte suit directement ta souris pendant le glisser.</p>
+
+      <div class="tierlist-toprow">
+        <div class="search-wrap tierlist-search-wrap">
+          <span class="search-icon">⌕</span>
+          <input type="text" id="tierListSearch" class="search-input" placeholder="Chercher une entreprise dans le pool…" autocomplete="off">
+        </div>
+        <button class="zoom-btn objectifs-export" id="tierListExportBtn">⭳ Exporter</button>
+        <button class="zoom-btn objectifs-export" id="tierListExportPdfBtn">🖨 Exporter PDF</button>
+        <button class="zoom-btn" id="tierListResetBtn" title="Remet toutes les entreprises classées dans le pool">↺ Réinitialiser</button>
+      </div>
+
+      <div class="tierlist-board" id="tierListBoard"></div>
+
+      <div class="section-label" style="margin-top:16px;">Pool — entreprises non classées</div>
+      <div class="tierlist-pool tierlist-dropzone" id="tierListPool" data-tier=""></div>
     </div>
 
     <div id="pageCerveau" class="page">

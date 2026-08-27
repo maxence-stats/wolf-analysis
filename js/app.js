@@ -497,6 +497,7 @@ function handleCsvRows(rows){
   renderSectorView();
   renderClassement();
   renderWatchlist();
+  renderTierList();
   renderAlertesTab();
   renderDividendPortfolio();
   renderConstructionPortfolio();
@@ -4899,7 +4900,7 @@ const PORTFOLIO_GROUP_PAGES = ['pagePortfolio', 'pageDividende', 'pagePerso', 'p
 const ANALYSE_GROUP_PAGES = ['pageAnalyse', 'pageValorisation'];
 // Secteur/Classement/Watchlist regroupés sous "🔍 Screener" (même pattern que
 // Portefeuille) — demande explicite pour désencombrer la nav principale.
-const SCREENER_GROUP_PAGES = ['pageSecteur', 'pageClassement', 'pageWatchlist', 'pageComparaison'];
+const SCREENER_GROUP_PAGES = ['pageSecteur', 'pageClassement', 'pageWatchlist', 'pageComparaison', 'pageTierList'];
 // Macroéconomie éclatée en 3 sous-onglets (même pattern) — demande explicite : la page
 // mélangeait Crédit, cycle sectoriel et indicateurs macro US sur un seul écran de plus
 // en plus long à mesure que le Crédit s'étoffait.
@@ -4953,7 +4954,8 @@ const MOBILE_NAV_MANIFEST = [
     { page:'pageSecteur', label:'Secteur' },
     { page:'pageClassement', label:'Classement' },
     { page:'pageWatchlist', label:'Watchlist' },
-    { page:'pageComparaison', label:'Comparaison' }
+    { page:'pageComparaison', label:'Comparaison' },
+    { page:'pageTierList', label:'Tier List' }
   ] },
   { page:'pageCerveau', label:'Cerveau numérique' },
   { page:'pageAlertes', label:'Alertes' },
@@ -9033,6 +9035,200 @@ function initWatchlist(){
 }
 
 /* ============================================================
+   TIER LIST — sous-onglet Screener. Classement par glisser-déposer façon "tier list"
+   (S/A/B/C/D/F), pensé pour tourner des vidéos de classement. Demande explicite :
+   même fondation que la Watchlist (glisser-déposer maison en Pointer Events, seuil de
+   4px, unifié souris/tactile) MAIS avec 2 différences précises que l'utilisateur a
+   demandées : (1) un vrai fantôme qui suit le curseur pendant le glisser — la
+   Watchlist se contente d'atténuer l'opacité de la puce SUR PLACE, ("je veux que
+   l'entreprise suive bien ma souris") et (2) comme les cartes affichent le nom en
+   texte (contrairement aux puces logo-seul de la Watchlist), user-select:none est
+   appliqué pendant le glisser pour ne rien sélectionner au passage de la souris.
+   Persistance identique aux autres onglets : localStorage + socle data/tierlist.json +
+   Export JSON + Export PDF. ============================================================ */
+const TIER_LIST_LS_KEY = 'wolfAnalysisTierList';
+const TIER_LIST_BASELINE_URL = 'data/tierlist.json';
+// Couleurs reprises telles quelles du design system (rouge→or→jaune→vert→bleu→gris),
+// dégradé "chaud vers neutre" habituel d'une tier list, aucune nouvelle couleur créée.
+const TIER_LIST_TIERS = [
+  { key:'S', color: THEME.red },
+  { key:'A', color: THEME.gold },
+  { key:'B', color: THEME.yellow },
+  { key:'C', color: THEME.green },
+  { key:'D', color: THEME.blue },
+  { key:'F', color: css.getPropertyValue('--text-faint').trim() }
+];
+let tierListStore = {}; // { [nomEntreprise]: 'S'|'A'|'B'|'C'|'D'|'F' } — absent du dico = pool
+
+function mergeTierList(extra){
+  if (extra && typeof extra === 'object') Object.assign(tierListStore, extra);
+}
+async function loadTierListBaseline(){
+  try{
+    const res = await fetch(TIER_LIST_BASELINE_URL, { cache:'no-store' });
+    if (res.ok){
+      const json = await res.json();
+      mergeTierList(json);
+    }
+  }catch(e){ /* socle absent ou fetch bloqué (ex. file://) — non bloquant */ }
+  try{
+    const raw = localStorage.getItem(TIER_LIST_LS_KEY);
+    if (raw) mergeTierList(JSON.parse(raw));
+  }catch(e){ /* localStorage indisponible ou JSON corrompu */ }
+  renderTierList();
+}
+function persistTierListLocal(){
+  try{ localStorage.setItem(TIER_LIST_LS_KEY, JSON.stringify(tierListStore)); }catch(e){ /* quota / navigateur privé */ }
+}
+function exportTierList(){
+  const blob = new Blob([JSON.stringify(tierListStore, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'wolf-analysis-tierlist.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+function exportTierListAsPdf(){
+  const body = TIER_LIST_TIERS.map(t => {
+    const noms = Object.keys(tierListStore).filter(n => tierListStore[n] === t.key && companies[n]);
+    const rows = noms.length
+      ? `<table class="print-table"><thead><tr><th>Entreprise</th></tr></thead><tbody>${noms.map(n => {
+          const logo = companyLogoUrl(n);
+          const logoImg = logo ? `<img class="print-inline-logo" src="${logo}" alt="">` : '';
+          return `<tr><td>${logoImg}${n.replace(/</g,'&lt;')}</td></tr>`;
+        }).join('')}</tbody></table>`
+      : '<p style="color:#999">Aucune entreprise dans ce tier.</p>';
+    return `<div class="print-section"><h3 style="color:${t.color}">Tier ${t.key} (${noms.length})</h3>${rows}</div>`;
+  }).join('');
+  exportSectionAsPdf('Tier List', null, body);
+}
+function tierListLocationOf(nom){ return tierListStore[nom] || null; }
+function setTierListEntry(nom, tierKey){
+  if (tierKey) tierListStore[nom] = tierKey;
+  else delete tierListStore[nom];
+  persistTierListLocal();
+  renderTierList();
+}
+function applyTierListSearchFilter(){
+  const input = document.getElementById('tierListSearch');
+  if (!input) return;
+  const q = stripAccents(input.value.trim().toLowerCase());
+  document.querySelectorAll('#tierListPool .tierlist-card[data-nom]').forEach(card => {
+    const match = !q || stripAccents(card.dataset.nom.toLowerCase()).includes(q);
+    card.classList.toggle('filtered-out', !match);
+  });
+}
+function tierListCardHtml(nom){
+  const rows = companies[nom];
+  const logo = rows && rows.length ? rows[rows.length - 1].lienImage : null;
+  const safe = nom.replace(/"/g, '&quot;');
+  return `<div class="tierlist-card" data-nom="${safe}" title="${safe}">
+    <div class="tierlist-card-logo">${logo ? `<img src="${logo}" alt="">` : `<span>${nom.charAt(0).toUpperCase()}</span>`}</div>
+    <span class="tierlist-card-name">${nom}</span>
+  </div>`;
+}
+function renderTierList(){
+  const board = document.getElementById('tierListBoard');
+  const pool = document.getElementById('tierListPool');
+  if (!board || !pool) return;
+
+  board.innerHTML = TIER_LIST_TIERS.map(t => {
+    const noms = Object.keys(companies).filter(nom => tierListLocationOf(nom) === t.key);
+    return `<div class="tierlist-row">
+      <div class="tierlist-row-label" style="background:${t.color}">${t.key}</div>
+      <div class="tierlist-dropzone" data-tier="${t.key}">${noms.map(tierListCardHtml).join('')}</div>
+    </div>`;
+  }).join('');
+
+  const unassigned = Object.keys(companies).filter(nom => !tierListLocationOf(nom));
+  pool.innerHTML = unassigned.length
+    ? unassigned.map(tierListCardHtml).join('')
+    : '<div class="objectifs-empty">Toutes les entreprises sont déjà classées dans un tier.</div>';
+  applyTierListSearchFilter();
+}
+
+function initTierList(){
+  const page = document.getElementById('pageTierList');
+  if (!page) return;
+
+  let ghost = null, dragNom = null;
+  function clearTierListHighlights(){
+    document.querySelectorAll('.tierlist-dropzone.dragover').forEach(el => el.classList.remove('dragover'));
+  }
+  function moveGhost(x, y){
+    if (!ghost) return;
+    ghost.style.left = (x - ghost._offsetX) + 'px';
+    ghost.style.top = (y - ghost._offsetY) + 'px';
+  }
+
+  page.addEventListener('pointerdown', e => {
+    const card = e.target.closest('.tierlist-card[data-nom]');
+    if (!card) return;
+    const nom = card.dataset.nom;
+    let moved = false;
+    const startX = e.clientX, startY = e.clientY;
+
+    function onMove(me){
+      if (!moved){
+        // Seuil de 4px avant de considérer que c'est un glisser (pas un simple tap/clic)
+        // — même logique que la Watchlist, évite un déplacement fantôme accidentel.
+        if (Math.abs(me.clientX - startX) < 4 && Math.abs(me.clientY - startY) < 4) return;
+        moved = true;
+        dragNom = nom;
+        card.classList.add('dragging');
+        document.body.style.userSelect = 'none'; // les cartes ont du texte, contrairement aux puces logo de la Watchlist
+        const rect = card.getBoundingClientRect();
+        ghost = card.cloneNode(true);
+        ghost.classList.add('tierlist-ghost');
+        ghost.style.width = rect.width + 'px';
+        ghost._offsetX = startX - rect.left;
+        ghost._offsetY = startY - rect.top;
+        document.body.appendChild(ghost);
+      }
+      moveGhost(me.clientX, me.clientY);
+      clearTierListHighlights();
+      const el = document.elementFromPoint(me.clientX, me.clientY);
+      const zone = el && el.closest('.tierlist-dropzone');
+      if (zone) zone.classList.add('dragover');
+    }
+    function onUp(me){
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      card.classList.remove('dragging');
+      clearTierListHighlights();
+      document.body.style.userSelect = '';
+      if (ghost){ ghost.remove(); ghost = null; }
+      // Le tap/clic (pas de glisser) va directement à la fiche entreprise — même
+      // logique que la Watchlist, gérée ici plutôt que via un listener 'click' séparé
+      // (peu fiable après un vrai glisser tactile).
+      if (!moved){ goToAnalyse(nom); dragNom = null; return; }
+      const el = document.elementFromPoint(me.clientX, me.clientY);
+      const zone = el && el.closest('.tierlist-dropzone');
+      if (zone) setTierListEntry(nom, zone.dataset.tier || null);
+      dragNom = null;
+    }
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  });
+
+  const searchInput = document.getElementById('tierListSearch');
+  if (searchInput) searchInput.addEventListener('input', applyTierListSearchFilter);
+  const exportBtn = document.getElementById('tierListExportBtn');
+  if (exportBtn) exportBtn.addEventListener('click', exportTierList);
+  const exportPdfBtn = document.getElementById('tierListExportPdfBtn');
+  if (exportPdfBtn) exportPdfBtn.addEventListener('click', exportTierListAsPdf);
+  const resetBtn = document.getElementById('tierListResetBtn');
+  if (resetBtn) resetBtn.addEventListener('click', () => {
+    tierListStore = {};
+    persistTierListLocal();
+    renderTierList();
+  });
+}
+
+/* ============================================================
    ALERTES DE PRIX — pas de notification/email (choix explicite de
    l'utilisateur : une vraie alerte en arrière-plan demanderait un
    backend planifié, hors périmètre du site statique actuel). Seuil
@@ -12523,6 +12719,8 @@ document.getElementById('objectifsList').addEventListener('click', e => {
 loadObjectifsBaseline();
 initWatchlist();
 loadWatchlistBaseline();
+initTierList();
+loadTierListBaseline();
 initAlertes();
 loadAlertesBaseline();
 initFicheModal();
