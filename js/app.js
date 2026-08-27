@@ -8469,11 +8469,33 @@ const DOCUMENTS_CF_ROWS = [
 const DOCUMENTS_STATS_GROUPS = [
   { title:'Valorisation', items:['P/E','P/FCF','EV/EBITDA','P/B','P/S'] },
   { title:'Rentabilité', items:['Marge brute','Marge opérationnelle','Marge nette','ROE','ROIC'] },
-  { title:'Croissance', items:['CAGR CA 5a','CAGR CA 10a','CAGR BPA 5a','CAGR FCF 5a'] },
   { title:'Santé financière', items:['Dette nette / EBITDA','Current Ratio','Quick Ratio','Couverture des intérêts'] },
   { title:'Dividende', items:['Rendement','Payout Ratio','CAGR Dividende 5a'] }
 ];
+// Tableau de croissance (remplace l'ancien groupe "Croissance" en simples cartes) —
+// demande explicite : "sur cinq ans, les différentes croissances annuelles, la
+// croissance totale, de différents ratios" — donc les 4 croissances annuelles (YoY)
+// sur 5 exercices + la croissance totale cumulée + le TCAC, par métrique, pas juste un
+// chiffre de CAGR isolé par carte.
+const DOCUMENTS_GROWTH_ROWS = [
+  { label:"Chiffre d'affaires" },
+  { label:'EBITDA' },
+  { label:'Résultat net' },
+  { label:'BPA (EPS)' },
+  { label:'Free Cash Flow' },
+  { label:'Dividende par action' }
+];
+const DOCUMENTS_GROWTH_COLS = ['A-4 → A-3', 'A-3 → A-2', 'A-2 → A-1', 'A-1 → A', 'Croissance totale (5a)', 'TCAC (5a)'];
 const DOCUMENTS_PERIOD_PLACEHOLDERS = ['—', '—', '—', '—', '—'];
+
+function documentsGrowthTableHtml(){
+  return `<div class="documents-table-wrap">
+    <table class="documents-table">
+      <thead><tr><th>Métrique</th>${DOCUMENTS_GROWTH_COLS.map(c => `<th>${c}</th>`).join('')}</tr></thead>
+      <tbody>${DOCUMENTS_GROWTH_ROWS.map(r => `<tr><td>${r.label}</td>${DOCUMENTS_GROWTH_COLS.map(() => `<td>—</td>`).join('')}</tr>`).join('')}</tbody>
+    </table>
+  </div>`;
+}
 
 function documentsStatementTableHtml(rows){
   return `<div class="documents-empty-banner">📭 Données pas encore importées — l'import FMP complet remplira ce tableau automatiquement, structure déjà prête à les recevoir.</div>
@@ -8494,11 +8516,18 @@ function documentsStatementSectionHtml(title, rows){
   </div>`;
 }
 function documentsStatisticsHtml(){
-  return `<div class="documents-empty-banner">🧮 Synthèse de ratios à construire ensemble, secteur par secteur — juste la structure des catégories pour l'instant.</div>` +
-    DOCUMENTS_STATS_GROUPS.map(g => `
+  return `<div class="documents-empty-banner">🧮 Synthèse de ratios à construire ensemble — juste la structure pour l'instant, les ratios précis (et ceux spécifiques à chaque secteur ci-dessous) restent à définir.</div>
+
+    <div class="section-label">Croissance (5 ans)</div>
+    ${documentsGrowthTableHtml()}
+
+    ${DOCUMENTS_STATS_GROUPS.map(g => `
     <div class="section-label" style="margin-top:14px;">${g.title}</div>
     <div class="ratio-grid">${g.items.map(label => `<div class="ratio-card"><div class="k">${label}</div><div class="v">—</div></div>`).join('')}</div>
-  `).join('');
+  `).join('')}
+
+    <div class="section-label" style="margin-top:14px;">Indicateurs spécifiques au secteur</div>
+    <div class="documents-empty-banner">🏦 Banques, foncières, "serial acquirers"... certains secteurs ont leurs propres ratios clés (ex. NIM et ratio Tier 1 pour une banque, FFO pour une foncière, ROIC sur capital déployé pour un serial acquirer). Section prête, à remplir une fois qu'on aura défini ensemble lesquels suivre pour chaque secteur.</div>`;
 }
 function renderDocumentsPage(nom){
   const name = nom || activeCompany;
