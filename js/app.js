@@ -9125,9 +9125,10 @@ function tierListCardHtml(nom){
   const rows = companies[nom];
   const logo = rows && rows.length ? rows[rows.length - 1].lienImage : null;
   const safe = nom.replace(/"/g, '&quot;');
+  // Logo seul, pas de nom en texte à côté (demande explicite) — le nom complet reste
+  // accessible en survol via title, même pattern que .watchlist-chip.
   return `<div class="tierlist-card" data-nom="${safe}" title="${safe}">
-    <div class="tierlist-card-logo">${logo ? `<img src="${logo}" alt="">` : `<span>${nom.charAt(0).toUpperCase()}</span>`}</div>
-    <span class="tierlist-card-name">${nom}</span>
+    ${logo ? `<img src="${logo}" alt="">` : `<span>${nom.charAt(0).toUpperCase()}</span>`}
   </div>`;
 }
 function renderTierList(){

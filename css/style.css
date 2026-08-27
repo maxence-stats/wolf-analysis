@@ -409,23 +409,24 @@
      tactile, dépôt résolu via elementFromPoint) — voir initTierList() dans app.js —
      mais avec 2 différences demandées explicitement : (1) la carte suit VRAIMENT le
      curseur pendant le glisser (fantôme position:fixed, pas juste une opacité réduite
-     sur place comme la Watchlist) et (2) les cartes affichent le nom en texte (pas
-     juste un logo), donc user-select:none est appliqué pendant le glisser pour éviter
-     de sélectionner du texte au passage de la souris. */
+     sur place comme la Watchlist) et (2) user-select:none appliqué pendant le glisser
+     (ceinture-bretelles : les cartes sont maintenant juste un logo en bulle, comme la
+     Watchlist, mais le nom complet reste accessible en info-bulle via l'attribut
+     title). */
   .tierlist-toprow{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;}
   .tierlist-search-wrap{max-width:320px;margin-bottom:0;flex:1;}
   .tierlist-board{display:flex;flex-direction:column;gap:6px;margin-bottom:6px;}
   .tierlist-row{display:flex;align-items:stretch;border-radius:12px;overflow:hidden;border:var(--card-border);background:var(--card-bg);box-shadow:var(--shadow-card);}
   .tierlist-row-label{width:56px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:22px;color:#14100a;}
-  .tierlist-dropzone{flex:1;display:flex;flex-wrap:wrap;align-content:flex-start;gap:8px;padding:10px;min-height:68px;border-radius:10px;transition:background .12s ease;}
+  .tierlist-dropzone{flex:1;display:flex;flex-wrap:wrap;align-content:flex-start;gap:10px;padding:10px;min-height:68px;border-radius:10px;transition:background .12s ease;}
   .tierlist-dropzone.dragover{background:rgba(217,164,65,0.12);}
   #tierListPool.tierlist-dropzone{padding:16px;background:var(--card-bg);border:var(--card-border);border-radius:14px;box-shadow:var(--shadow-card);min-height:80px;}
-  .tierlist-card{display:flex;align-items:center;gap:6px;background:var(--panel-2);border:1px solid var(--hair);border-radius:20px;padding:4px 12px 4px 4px;cursor:grab;touch-action:none;}
+  /* Bulle logo seul (même gabarit que .watchlist-chip) — plus de nom en texte à côté,
+     demande explicite ("juste les logos dans les bulles"). */
+  .tierlist-card{width:44px;height:44px;background:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;padding:6px;cursor:grab;border:1px solid var(--hair);touch-action:none;overflow:hidden;flex-shrink:0;}
+  .tierlist-card img{max-width:100%;max-height:100%;object-fit:contain;pointer-events:none;}
+  .tierlist-card span{font-family:var(--font-display);font-weight:700;color:var(--bg);font-size:15px;pointer-events:none;}
   .tierlist-card.dragging{opacity:0.3;}
-  .tierlist-card-logo{width:24px;height:24px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;}
-  .tierlist-card-logo img{max-width:100%;max-height:100%;object-fit:contain;pointer-events:none;}
-  .tierlist-card-logo span{font-family:var(--font-display);font-weight:700;color:var(--bg);font-size:11px;}
-  .tierlist-card-name{font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;pointer-events:none;}
   .tierlist-card.filtered-out{display:none;}
   /* Fantôme qui suit le curseur — cloné depuis la carte au mousedown, détruit au
      mouseup. z-index élevé pour rester au-dessus de tout (dont la modale de zoom). */
