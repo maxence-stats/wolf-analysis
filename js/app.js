@@ -3160,7 +3160,7 @@ function portfolioSegmentLogosPlugin(){
       const dataset = chart.data.datasets[0];
       const total = dataset.data.reduce((a, b) => a + b, 0);
       const ctx = chart.ctx;
-      const badgeSize = 34;
+      const badgeSize = 44; // agrandi (34→44), demande explicite — layout.padding recalculé en conséquence sur les 2 configs qui utilisent ce plugin (voir ci-dessous)
       const lineGap = 6, lineLen = 22;
       meta.data.forEach((arc, i) => {
         const pct = total ? dataset.data[i] / total : 0;
@@ -3249,7 +3249,7 @@ function buildPortfolioDonutConfig(){
       // valeur précédente ne comptait que jusqu'au CENTRE du badge, pas son bord externe,
       // d'où des logos "des fois un peu coupés") : lineGap(6) + lineLen(22) + badgeSize
       // (34, donc son rayon 17 pour atteindre le bord) + marge de sécurité(2) = 68.
-      layout:{ padding:68 },
+      layout:{ padding:78 }, // recalculé pour badgeSize=44 (voir portfolioSegmentLogosPlugin)
       plugins:{
         legend:{ display:false },
         // position:'nearest' + caretPadding : la bulle suit le curseur au lieu de
@@ -3661,7 +3661,7 @@ function buildPersoDonutConfig(prefix, block){
       // Marge fixe : laisse la place aux callouts logo à l'extérieur du donut, voir
       // portfolioSegmentLogosPlugin (même raison que buildPortfolioDonutConfig — calcul
       // exact du bord externe du badge, bug de logos coupés corrigé en même temps ici).
-      layout:{ padding:68 },
+      layout:{ padding:78 }, // recalculé pour badgeSize=44 (voir portfolioSegmentLogosPlugin)
       plugins:{ legend:{ display:false }, tooltip:{ position:'nearest', caretPadding:14, callbacks:{ label: ctx => {
         const pct = total ? (ctx.parsed / total * 100) : 0;
         return ctx.label + ' : ' + fmtEUR(ctx.parsed, 0) + ' (' + pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%)';
