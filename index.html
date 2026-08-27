@@ -92,6 +92,7 @@
     <div class="page-subnav" id="analyseSubnav" style="display:flex;">
       <button class="page-subnav-btn active" data-page="pageAnalyse">Vue d'ensemble</button>
       <button class="page-subnav-btn" data-page="pageValorisation">Valorisation</button>
+      <button class="page-subnav-btn" data-page="pageDocuments">Documents financiers</button>
     </div>
 
     <div class="page-subnav" id="macroSubnav" style="display:none;">
@@ -346,6 +347,35 @@
         <p class="objectifs-note">Sauvegardé dans ce navigateur. Utilise « Exporter » pour transmettre le fichier
           et le rendre disponible sur tous tes appareils.</p>
       </div>
+    </div>
+
+    <!-- Documents financiers : structure prête à accueillir les données (compte de
+         résultat / bilan / flux de trésorerie / synthèse de ratios) une fois l'import
+         FMP complet fait — demandé explicitement en attendant, pas de données réelles
+         pour l'instant. Les libellés de lignes reprennent le mapping déjà documenté
+         dans fmp-database/endpoints.py (income_statement/balance_sheet/cash_flow), donc
+         prêts à recevoir les vraies valeurs sans redesign. Voir renderDocumentsPage()
+         dans app.js. -->
+    <div id="pageDocuments" class="page">
+      <div class="section-label">🧾 Documents financiers</div>
+      <p class="valo-intro">Compte de résultat, bilan et flux de trésorerie — structure prête à accueillir les données, en attente de l'import FMP complet. La synthèse de ratios (Statistics) se construira ensemble, secteur par secteur.</p>
+
+      <div class="documents-header">
+        <img id="documentsLogo" alt="">
+        <div>
+          <h2 id="documentsCompanyName">—</h2>
+          <p class="chart-subtitle" id="documentsTicker">—</p>
+        </div>
+      </div>
+
+      <div class="documents-tabbar" id="documentsSubnav">
+        <button type="button" class="documents-tab-btn active" data-doc-view="income">Income Statement</button>
+        <button type="button" class="documents-tab-btn" data-doc-view="balance">Balance Sheet</button>
+        <button type="button" class="documents-tab-btn" data-doc-view="cashflow">Cash Flow</button>
+        <button type="button" class="documents-tab-btn" data-doc-view="statistics">Statistics</button>
+      </div>
+
+      <div id="documentsContent"></div>
     </div>
 
     <div id="pagePortfolio" class="page">

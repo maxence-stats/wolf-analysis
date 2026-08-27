@@ -443,6 +443,27 @@
      mouseup. z-index élevé pour rester au-dessus de tout (dont la modale de zoom). */
   .tierlist-ghost{position:fixed;z-index:2000;pointer-events:none;opacity:0.92;box-shadow:0 10px 26px rgba(0,0,0,0.45);transform:rotate(-2deg);}
 
+  /* ---------- DOCUMENTS FINANCIERS (structure seule, pas de données pour l'instant) ---------- */
+  .documents-header{display:flex;align-items:center;gap:14px;margin:4px 0 16px;}
+  .documents-header img{width:48px;height:48px;border-radius:10px;background:#fff;object-fit:contain;padding:4px;}
+  .documents-header h2{font-family:var(--font-display);font-size:20px;margin:0;}
+  /* Onglets INTERNES à la page (pas le sous-menu de navigation du site) — classe dédiée
+     .documents-tab-btn plutôt que .page-subnav-btn : ce dernier est câblé sur un
+     listener global qui appelle switchPage(btn.dataset.page), qui casserait tout en
+     recevant "undefined" pour ces boutons internes sans data-page. */
+  .documents-tabbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;border-bottom:1px solid var(--hair);padding-bottom:10px;}
+  .documents-tab-btn{font-family:var(--font-mono);font-size:12px;font-weight:600;padding:7px 14px;border-radius:20px;border:1px solid var(--hair);background:var(--panel-2);color:var(--text-dim);cursor:pointer;}
+  .documents-tab-btn:hover{border-color:var(--gold);color:var(--text);}
+  .documents-tab-btn.active{background:linear-gradient(135deg, var(--gold-2) 0%, var(--gold) 100%);color:#1a1305;border-color:var(--gold);box-shadow:0 4px 14px -6px rgba(217,164,65,0.55);}
+  .documents-empty-banner{background:rgba(217,164,65,0.08);border:1px dashed var(--gold);border-radius:12px;padding:12px 16px;font-size:12.5px;color:var(--text-dim);margin-bottom:14px;}
+  .documents-table-wrap{overflow-x:auto;}
+  .documents-table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  .documents-table th, .documents-table td{padding:8px 12px;text-align:right;border-bottom:1px solid var(--hair);white-space:nowrap;}
+  .documents-table th:first-child, .documents-table td:first-child{text-align:left;color:var(--text-dim);white-space:normal;}
+  .documents-table thead th{color:var(--text-faint);font-weight:600;font-family:var(--font-mono);font-size:11px;}
+  .documents-table tbody tr:hover{background:var(--panel-2);}
+  .documents-table tr.documents-row-bold td{font-weight:700;color:var(--text);border-top:1px solid var(--hair);}
+
   /* ---------- CERVEAU NUMÉRIQUE ---------- */
   .cerveau-breadcrumb{font-family:var(--font-mono);font-size:12px;color:var(--text-dim);margin-bottom:16px;}
   .cerveau-breadcrumb a{color:var(--gold);text-decoration:none;cursor:pointer;}

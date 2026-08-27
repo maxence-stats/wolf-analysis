@@ -4897,7 +4897,7 @@ const PORTFOLIO_GROUP_PAGES = ['pagePortfolio', 'pageDividende', 'pagePerso', 'p
 // retour explicite : l'avoir append en bas de la même page #pageAnalyse forçait à
 // défiler bien plus bas que voulu ("il faut descendre trop bas, ce n'est pas ça que je
 // veux"). Même mécanique de groupe que PORTFOLIO_GROUP_PAGES, juste un second groupe.
-const ANALYSE_GROUP_PAGES = ['pageAnalyse', 'pageValorisation'];
+const ANALYSE_GROUP_PAGES = ['pageAnalyse', 'pageValorisation', 'pageDocuments'];
 // Secteur/Classement/Watchlist regroupés sous "🔍 Screener" (même pattern que
 // Portefeuille) — demande explicite pour désencombrer la nav principale.
 const SCREENER_GROUP_PAGES = ['pageSecteur', 'pageClassement', 'pageWatchlist', 'pageComparaison', 'pageTierList'];
@@ -4944,6 +4944,7 @@ function switchPage(pageId){
 const MOBILE_NAV_MANIFEST = [
   { page:'pageAnalyse', label:'Analyse' },
   { page:'pageValorisation', label:'Valorisation', indent:true },
+  { page:'pageDocuments', label:'Documents financiers', indent:true },
   { group:'💼 Portefeuille', items:[
     { page:'pagePortfolio', label:'Wolf Portfolio' },
     { page:'pageDividende', label:'Dividende' },
@@ -5219,6 +5220,7 @@ function renderCompany(nom){
 
   renderValorisation(nom);
   renderAnalyseValoSummary(nom);
+  renderDocumentsPage(nom);
 
   // destroyCharts() vide chartInstances en bloc — appelé avant loadStockChart() pour ne
   // pas effacer le graphique boursier juste après sa création (piège révélé par la
@@ -8399,6 +8401,134 @@ function valorisationInputs(latest, hist, nom){
 // via la tuile éditable (wireFcfActuelInput()) : toute carte qui recalcule doit relire
 // la valeur COURANTE, jamais celle capturée au moment du premier rendu.
 let activeFcfActuel = null;
+
+/* ============================================================
+   DOCUMENTS FINANCIERS — sous-onglet Analyse. Structure seule pour l'instant (pas de
+   données réelles tant que l'import FMP complet n'est pas fait) — demandé
+   explicitement en attendant ("je n'ai pas encore les données, mais prépare toute la
+   structure"). Les libellés de lignes reprennent le mapping déjà documenté dans
+   fmp-database/endpoints.py (income_statement/balance_sheet/cash_flow), donc prêts à
+   recevoir les vraies valeurs sans redesign une fois l'import fait — remplacer
+   PERIOD_PLACEHOLDERS par les vraies années et injecter les valeurs dans
+   documentsStatementTableHtml() suffira.
+   ============================================================ */
+let documentsView = 'income';
+const DOCUMENTS_IS_ROWS = [
+  { label:'Revenue' },
+  { label:'Cost of Revenue' },
+  { label:'Gross Profit', bold:true },
+  { label:'R&D Expenses' },
+  { label:'SG&A Expenses' },
+  { label:'Operating Expenses' },
+  { label:'Operating Income', bold:true },
+  { label:'Interest Expense' },
+  { label:'EBITDA', bold:true },
+  { label:'Net Income', bold:true },
+  { label:'EPS' },
+  { label:'EPS Diluted' },
+  { label:'Weighted Avg Shares Outstanding' }
+];
+const DOCUMENTS_BS_ROWS = [
+  { label:'Cash & Cash Equivalents' },
+  { label:'Short-Term Investments' },
+  { label:'Total Current Assets', bold:true },
+  { label:'Property, Plant & Equipment' },
+  { label:'Goodwill' },
+  { label:'Intangible Assets' },
+  { label:'Total Non-Current Assets', bold:true },
+  { label:'Total Assets', bold:true },
+  { label:'Accounts Payable' },
+  { label:'Short-Term Debt' },
+  { label:'Total Current Liabilities', bold:true },
+  { label:'Long-Term Debt' },
+  { label:'Total Non-Current Liabilities', bold:true },
+  { label:'Total Liabilities', bold:true },
+  { label:'Retained Earnings' },
+  { label:'Total Stockholders Equity', bold:true }
+];
+const DOCUMENTS_CF_ROWS = [
+  { label:'Net Income' },
+  { label:'Depreciation & Amortization' },
+  { label:'Stock-Based Compensation' },
+  { label:'Change in Working Capital' },
+  { label:'Net Cash from Operating Activities', bold:true },
+  { label:'Capital Expenditure' },
+  { label:'Acquisitions' },
+  { label:'Net Cash from Investing Activities', bold:true },
+  { label:'Debt Repayment' },
+  { label:'Dividends Paid' },
+  { label:'Stock Repurchase' },
+  { label:'Net Cash from Financing Activities', bold:true },
+  { label:'Free Cash Flow', bold:true },
+  { label:'Net Change in Cash', bold:true }
+];
+// Regroupements provisoires pour la page Statistics — les ratios précis restent à
+// définir ENSEMBLE, secteur par secteur (décision explicite, pas à moi d'inventer les
+// meilleurs ratios pour une banque vs une foncière vs une tech). Juste la structure de
+// catégories pour l'instant.
+const DOCUMENTS_STATS_GROUPS = [
+  { title:'Valorisation', items:['P/E','P/FCF','EV/EBITDA','P/B','P/S'] },
+  { title:'Rentabilité', items:['Marge brute','Marge opérationnelle','Marge nette','ROE','ROIC'] },
+  { title:'Croissance', items:['CAGR CA 5a','CAGR CA 10a','CAGR BPA 5a','CAGR FCF 5a'] },
+  { title:'Santé financière', items:['Dette nette / EBITDA','Current Ratio','Quick Ratio','Couverture des intérêts'] },
+  { title:'Dividende', items:['Rendement','Payout Ratio','CAGR Dividende 5a'] }
+];
+const DOCUMENTS_PERIOD_PLACEHOLDERS = ['—', '—', '—', '—', '—'];
+
+function documentsStatementTableHtml(rows){
+  return `<div class="documents-empty-banner">📭 Données pas encore importées — l'import FMP complet remplira ce tableau automatiquement, structure déjà prête à les recevoir.</div>
+    <div class="documents-table-wrap">
+    <table class="documents-table">
+      <thead><tr><th>Ligne</th>${DOCUMENTS_PERIOD_PLACEHOLDERS.map(() => `<th>—</th>`).join('')}</tr></thead>
+      <tbody>${rows.map(r => `<tr class="${r.bold ? 'documents-row-bold' : ''}"><td>${r.label}</td>${DOCUMENTS_PERIOD_PLACEHOLDERS.map(() => `<td>—</td>`).join('')}</tr>`).join('')}</tbody>
+    </table>
+    </div>`;
+}
+function documentsStatementSectionHtml(title, rows){
+  return `<div class="chart-card wide">
+    <div class="chart-card-head">
+      <div><h3>${title}</h3><p>Annuel — 5 derniers exercices (en attente de l'import FMP)</p></div>
+      <div class="range-buttons" style="margin:0;"><button class="active">Annuel</button><button>Trimestriel</button></div>
+    </div>
+    ${documentsStatementTableHtml(rows)}
+  </div>`;
+}
+function documentsStatisticsHtml(){
+  return `<div class="documents-empty-banner">🧮 Synthèse de ratios à construire ensemble, secteur par secteur — juste la structure des catégories pour l'instant.</div>` +
+    DOCUMENTS_STATS_GROUPS.map(g => `
+    <div class="section-label" style="margin-top:14px;">${g.title}</div>
+    <div class="ratio-grid">${g.items.map(label => `<div class="ratio-card"><div class="k">${label}</div><div class="v">—</div></div>`).join('')}</div>
+  `).join('');
+}
+function renderDocumentsPage(nom){
+  const name = nom || activeCompany;
+  const content = document.getElementById('documentsContent');
+  if (!content || !name || !companies[name]) return;
+  const hist = companies[name];
+  const latest = hist[hist.length - 1];
+  const logo = document.getElementById('documentsLogo');
+  if (logo) logo.src = latest.lienImage || '';
+  const nameEl = document.getElementById('documentsCompanyName');
+  if (nameEl) nameEl.textContent = name;
+  const tickerEl = document.getElementById('documentsTicker');
+  if (tickerEl) tickerEl.textContent = (latest.ticker || '—') + ' · ' + (latest.secteur || '—');
+
+  if (documentsView === 'income') content.innerHTML = documentsStatementSectionHtml('Income Statement', DOCUMENTS_IS_ROWS);
+  else if (documentsView === 'balance') content.innerHTML = documentsStatementSectionHtml('Balance Sheet', DOCUMENTS_BS_ROWS);
+  else if (documentsView === 'cashflow') content.innerHTML = documentsStatementSectionHtml('Cash Flow', DOCUMENTS_CF_ROWS);
+  else content.innerHTML = documentsStatisticsHtml();
+}
+function initDocumentsTabbar(){
+  const bar = document.getElementById('documentsSubnav');
+  if (!bar) return;
+  bar.addEventListener('click', e => {
+    const btn = e.target.closest('[data-doc-view]');
+    if (!btn) return;
+    documentsView = btn.dataset.docView;
+    bar.querySelectorAll('.documents-tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+    renderDocumentsPage();
+  });
+}
 
 function renderValorisation(nom){
   const hist = companies[nom];
@@ -12690,6 +12820,7 @@ document.querySelectorAll('.page-subnav-btn').forEach(btn => {
 });
 initSearch();
 initSectorGrid();
+initDocumentsTabbar();
 initClassement();
 initMobileNav();
 initComparisonDetail();
