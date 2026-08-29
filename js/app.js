@@ -5262,20 +5262,60 @@ function chartsHistoryToRows(ch){
     return row;
   });
 }
+// Demande explicite : "toutes les données maintenant tu les calcules exclusivement et
+// uniquement avec les données de FMP. Oublie le Google Sheet." — pour les 4 tuiles
+// factuelles qui ont un équivalent FMP direct (Prix actuel, Rendement du dividende,
+// Médiane P/FCF, P/FCF actuel). Prix Juste/Prix Cible/Écart de valeur restent Sheet
+// (ce sont TES propres cibles de valorisation, pas une donnée FMP à remplacer).
+// Écrase les valeurs Sheet déjà affichées par renderCompany() une fois les données FMP
+// chargées (asynchrone) — appelée depuis plusieurs points d'entrée (stats FMP,
+// chartsHistory, cours de bourse), chacun ne touchant QUE ce qu'il vient de recevoir.
+function applyFmpRatioOverrides(nom){
+  if (activeCompany !== nom) return;
+  const real = documentsRealData[nom];
+  if (stockCandleFull && stockCandleFull.length){
+    const lastClose = stockCandleFull[stockCandleFull.length - 1].c;
+    const el = document.getElementById('prixActuel');
+    if (el && lastClose != null) el.innerHTML = lastClose.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' <sup>€</sup>';
+  }
+  if (!real) return;
+  if (real.stats && real.stats['Dividende'] && real.stats['Dividende']['Rendement'] != null){
+    document.getElementById('rRendDiv').textContent = fmtPct(real.stats['Dividende']['Rendement']);
+  }
+  if (real.chartsHistory){
+    const rows = chartsHistoryToRows(real.chartsHistory);
+    const med10 = medianOfLastYears(rows, 'pFcf', 10);
+    if (med10 != null) document.getElementById('rMedFcf').textContent = med10.toLocaleString('fr-FR',{minimumFractionDigits:1}) + 'x';
+    const knownPfcf = real.chartsHistory.pFcf.filter(v => v != null);
+    if (knownPfcf.length) document.getElementById('rPfcfActuel').textContent = knownPfcf[knownPfcf.length - 1].toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + 'x';
+  }
+}
 // Demande explicite : basculer les 9 graphiques historiques "classiques" sur FMP QUAND
 // l'entreprise a été exportée localement ("oui sur FMP mais pas avec l'API, juste avec
 // les données qui seront extraites" — jamais d'appel FMP direct depuis le navigateur,
 // uniquement le JSON pré-généré déjà utilisé par Documents financiers/Revenus). Repli
 // automatique et silencieux sur le Sheet sinon — même pattern que le cours de bourse.
+// Plage PARTAGÉE (5/10/20/30/Max) par les 9 graphiques — demande explicite vu la
+// profondeur d'historique désormais disponible via FMP (jusqu'à 40 ans). Un seul
+// sélecteur pour tous plutôt qu'un par graphique (aurait recréé l'encombrement qu'on
+// vient de retirer du cours de bourse). N'affecte QUE l'affichage — les médianes P/FCF
+// 10a/20a plus bas gardent leur propre fenêtre fixe, indépendante de ce réglage.
+let historicalChartsRange = 'max';
+function sliceHistoricalRange(arr, range){
+  if (range === 'max') return arr;
+  return arr.slice(-parseInt(range, 10));
+}
 function renderHistoricalCharts(nom, hist, years, latest){
   const real = documentsRealData[nom];
   const fmpCharts = real && real.chartsHistory;
   const chartHist = fmpCharts ? chartsHistoryToRows(fmpCharts) : hist;
   const chartYears = fmpCharts ? fmpCharts.years : years;
+  const displayHist = sliceHistoricalRange(chartHist, historicalChartsRange);
+  const displayYears = sliceHistoricalRange(chartYears, historicalChartsRange);
 
   destroyHistoricalCharts();
   HISTORICAL_CHART_KEYS.forEach(key => {
-    chartInstances[key] = makeChart(key, HISTORICAL_CHART_CANVAS_ID[key], buildHistoricalChartConfig(key, chartHist, chartYears));
+    chartInstances[key] = makeChart(key, HISTORICAL_CHART_CANVAS_ID[key], buildHistoricalChartConfig(key, displayHist, displayYears));
   });
 
   const pfcfMedian10 = fmpCharts ? medianOfLastYears(chartHist, 'pFcf', 10) : latest.medianePFCF;
@@ -7189,6 +7229,7 @@ async function loadStockChartCandle(nom, ticker){
   stockUsesCandleFmp = true;
   setStockSourceNote(`Source : FMP (historique quotidien, ${symbol}) — mise à jour du jour en cours…`);
   renderStockChart();
+  applyFmpRatioOverrides(nom);
 
   // Repli quotidien Yahoo — best-effort, jamais bloquant : si Yahoo échoue (CORS, relais
   // indisponible), le graphique reste utilisable avec la seule baseline FMP.
@@ -7206,6 +7247,7 @@ async function loadStockChartCandle(nom, ticker){
     setStockSourceNote(`Source : FMP (historique quotidien, ${symbol}) — mise à jour du jour indisponible (relais Yahoo Finance)`);
   }
   renderStockChart();
+  applyFmpRatioOverrides(nom);
   return true;
 }
 
@@ -7631,6 +7673,14 @@ function toggleStockIndicator(key){
 document.getElementById('stockIndicatorToggles').addEventListener('click', e => {
   const btn = e.target.closest('button[data-indicator]');
   if (btn) toggleStockIndicator(btn.dataset.indicator);
+});
+document.getElementById('historicalRangeButtons').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-hrange]');
+  if (!btn) return;
+  historicalChartsRange = btn.dataset.hrange;
+  document.querySelectorAll('#historicalRangeButtons button').forEach(b => b.classList.toggle('active', b === btn));
+  const hist = companies[activeCompany];
+  if (hist && hist.length) renderHistoricalCharts(activeCompany, hist, hist.map(r => r.annee), hist[hist.length - 1]);
 });
 // Menus déroulants du toolbar chandeliers FMP (#stockCandleToolbar, visible uniquement
 // en mode chandeliers — voir stockCandleShowChartJsControls()) — même mécanisme
@@ -8909,6 +8959,7 @@ async function ensureDocumentsRealData(name){
     renderDcfTiles(name);
     const hist = companies[name];
     if (hist && hist.length) renderHistoricalCharts(name, hist, hist.map(r => r.annee), hist[hist.length - 1]);
+    applyFmpRatioOverrides(name);
   }
 }
 

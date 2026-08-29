@@ -155,6 +155,17 @@
     <div class="analyse-valo-card" id="analyseValoCard" style="display:none;"></div>
 
     <div class="section-label">Historique</div>
+    <!-- Plage PARTAGÉE par les 9 graphiques ci-dessous (pas une par graphique — 9
+         sélecteurs auraient recréé exactement l'encombrement qu'on vient de retirer
+         du cours de bourse) — demande explicite vu la profondeur d'historique FMP
+         (jusqu'à 40 ans sur certaines entreprises, contre ~20 sur le Sheet). -->
+    <div class="range-buttons" id="historicalRangeButtons">
+      <button data-hrange="5">5a</button>
+      <button data-hrange="10">10a</button>
+      <button data-hrange="20">20a</button>
+      <button data-hrange="30">30a</button>
+      <button data-hrange="max" class="active">Max</button>
+    </div>
     <div class="chart-grid">
       <div class="chart-card wide" id="stockCard">
         <div class="chart-card-head">
