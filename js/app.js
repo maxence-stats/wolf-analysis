@@ -7172,18 +7172,76 @@ let stockCandleRegSeries = {};
 let stockCandlePriceLines = {};
 let stockCandleDrawWired = false; // wireWolfLaboChartClicks()/wireWolfLaboHandleDrag() appelées UNE SEULE fois pour ce graphique
 
-// Superposition d'indicateurs macro sur le graphique de cours — demande explicite
-// ("superposer la liquidité de la Fed, les taux à dix ans, les taux à deux ans, tous
-// les indicateurs macroéconomiques... avoir la possibilité de mettre logarithmique en
-// base 100 ou en normal"). Réutilise RATE_OVERLAY_INDICATORS/creditIndicatorsData/
-// stockScaleMode déjà en place pour l'outil "Taux vs Actions/Secteurs" (Macroéconomie →
-// Secteur) et pour l'ancien graphique Chart.js — mêmes données FRED (un seul fetch au
-// démarrage, loadCreditIndicators()), même variable de mode d'échelle partagée (les deux
-// systèmes de rendu ne tournent jamais en même temps : soit chandeliers FMP, soit repli
-// Chart.js, jamais les deux).
-let stockMacroOverlaySelected = [];
-let stockMacroOverlaySeries = {}; // { [indicatorKey]: série lightweight-charts }
-const STOCK_MACRO_COLORS = [THEME.blue, THEME.green, THEME.red, THEME.violet, THEME.yellow, THEME.white, THEME.gold];
+// Superposition UNIVERSELLE sur le graphique de cours — retour explicite : "je suis
+// censé pouvoir superposer tous les indicateurs qui me passent par la tête... vraiment
+// toutes les données doivent être superposables" (pas juste 9 indicateurs macro
+// pré-choisis). Catalogue construit depuis ce qui existe déjà, rien de dupliqué :
+// - Macroéconomie : TOUS les CREDIT_SERIES ayant un libellé (creditIndicatorsData,
+//   déjà chargé au démarrage via loadCreditIndicators()) — pas juste le sous-ensemble
+//   RATE_OVERLAY_INDICATORS utilisé par l'outil Macroéconomie → Secteur.
+// - Entreprise (annuel) : ratios déjà dans chartsHistory (marge op., ROIC, P/FCF...) +
+//   TOUTES les lignes des 3 états financiers (DOCUMENTS_IS_ROWS/BS_ROWS/CF_ROWS) —
+//   couvre EPS dilué, D&A, etc. sans lister chaque champ à la main : toute ligne déjà
+//   affichée dans Documents financiers devient superposable automatiquement.
+// - Secteurs GICS (ratio ETF sectoriel / S&P 500, sectorEtfRatioSeries() déjà en place).
+// - Autres entreprises (comparaison, cours quotidien FMP déjà exporté).
+let stockOverlaySelected = []; // [{type, key, label}]
+let stockOverlaySeries = {}; // { [`${type}:${key}`]: série lightweight-charts }
+const stockOverlayCompanyCache = {}; // { [fmpSymbol]: {dates, values} } — évite de refetcher une entreprise déjà comparée
+const STOCK_OVERLAY_COLORS = [THEME.blue, THEME.green, THEME.red, THEME.violet, THEME.yellow, THEME.white, THEME.gold, '#7DBEEA', '#E88AB0', '#6FCF97'];
+
+function buildStockOverlayCatalog(){
+  const catalog = [];
+  CREDIT_SERIES.forEach(s => {
+    const label = s.shortLabel || s.label;
+    if (!label) return; // dépendances internes pures (aaa10y, mktCapRaw, fedAssets...), jamais superposables seules
+    catalog.push({ type:'macro', key:s.key, label, group:'Macroéconomie' });
+  });
+  const ratioFields = { margeOp:'Marge opérationnelle (%)', roic:'ROIC (%)', fcfParAction:'FCF / action (€)', pFcf:'P/FCF (x)', ocfParAction:'OCF / action (€)', pOcf:'P/OCF (x)', per:'PER (x)', detteOCF:'Dette / OCF (x)', dividende:'Dividende / action (€)', payoutRatio:'Payout ratio (%)', actions:'Actions en circulation (M)', ca:'Chiffre d\'affaires (Md€)', cash:'Trésorerie (M€)', cashInvesti:'Placements (M€)' };
+  Object.keys(ratioFields).forEach(key => catalog.push({ type:'chartsHistory', key, label: ratioFields[key], group:'Cette entreprise — ratios' }));
+  DOCUMENTS_IS_ROWS.forEach(r => catalog.push({ type:'statement', statement:'incomeStatement', key:r.label, label:r.label, group:'Cette entreprise — compte de résultat' }));
+  DOCUMENTS_BS_ROWS.forEach(r => catalog.push({ type:'statement', statement:'balanceSheet', key:r.label, label:r.label, group:'Cette entreprise — bilan' }));
+  DOCUMENTS_CF_ROWS.forEach(r => catalog.push({ type:'statement', statement:'cashFlow', key:r.label, label:r.label, group:'Cette entreprise — flux de trésorerie' }));
+  MACRO_ROTATION_SECTORS.forEach(s => catalog.push({ type:'sector', key:s.key, label:'Secteur : ' + s.label + ' (vs S&P 500)', group:'Secteurs' }));
+  Object.keys(companies).forEach(nom => {
+    if (nom !== activeCompany) catalog.push({ type:'company', key:nom, label:nom, group:'Comparer une entreprise' });
+  });
+  return catalog;
+}
+
+// Résout la série {dates,values} d'un item du catalogue — async uniquement pour 'company'
+// (fetch à la demande d'un fichier prices-*.json pas encore en cache), synchrone sinon.
+async function resolveStockOverlaySeries(item){
+  if (item.type === 'macro') return creditIndicatorsData[item.key] || null;
+  if (item.type === 'chartsHistory'){
+    const ch = documentsRealData[activeCompany] && documentsRealData[activeCompany].chartsHistory;
+    if (!ch || !ch[item.key]) return null;
+    return { dates: ch.years.map(y => `${String(y).slice(0,4)}-12-31`), values: ch[item.key] };
+  }
+  if (item.type === 'statement'){
+    const sd = documentsRealData[activeCompany] && documentsRealData[activeCompany][item.statement];
+    if (!sd) return null;
+    const row = sd.rows.find(r => r.label === item.key);
+    if (!row) return null;
+    return { dates: sd.years.map(y => `${String(y).slice(0,4)}-12-31`), values: row.values };
+  }
+  if (item.type === 'sector') return sectorEtfRatioSeries(item.key);
+  if (item.type === 'company'){
+    const symbol = fmpSymbols[item.key];
+    if (!symbol) return null;
+    if (!stockOverlayCompanyCache[symbol]){
+      try{
+        const res = await fetch(`data/prices-${symbol}.json`, { cache:'no-store' });
+        if (res.ok){
+          const raw = await res.json();
+          stockOverlayCompanyCache[symbol] = { dates: raw.map(p => p.t), values: raw.map(p => p.c) };
+        }
+      }catch(e){ /* pas encore exportée — non bloquant */ }
+    }
+    return stockOverlayCompanyCache[symbol] || null;
+  }
+  return null;
+}
 let stockCandleFull = null; // [{t,o,h,l,c}] ascendant, baseline FMP + repli quotidien Yahoo fusionné
 // Choix explicite de l'utilisateur : "je veux avoir la possibilité de mettre ou non en
 // bougie... des fois je veux juste voir des courbes" + "les mettre en weekly, en
@@ -7451,8 +7509,8 @@ function renderStockChartCandleView(){
   // autoScale:false figerait l'échelle, jamais le cas ici.
   stockCandleChart.priceScale('right').applyOptions({ autoScale:true });
   applyStockCandleScaleMode();
-  renderStockMacroOverlayList(document.getElementById('stockMacroOverlaySearch') ? document.getElementById('stockMacroOverlaySearch').value : '');
-  renderStockMacroOverlays();
+  renderStockOverlayList(document.getElementById('stockMacroOverlaySearch') ? document.getElementById('stockMacroOverlaySearch').value : '');
+  renderStockOverlays();
   if (activeCompany && fmpSymbols[activeCompany]){
     renderWolfLaboDrawings();
     renderWolfLaboDrawingsList();
@@ -7475,42 +7533,65 @@ function applyStockCandleScaleMode(){
 // précisément l'intérêt de comparer un taux à ~4% et un cours à ~90€ sur un même
 // graphique — en échelle "Normale" les indicateurs macro écrasent visuellement le
 // cours, attendu, l'échelle normale n'a de sens que pour regarder le prix seul).
-function renderStockMacroOverlays(){
+function stockOverlayId(item){ return `${item.type}:${item.key}`; }
+
+async function renderStockOverlays(){
   if (!stockCandleChart) return;
-  Object.keys(stockMacroOverlaySeries).forEach(key => {
-    if (!stockMacroOverlaySelected.includes(key)){
-      try{ stockCandleChart.removeSeries(stockMacroOverlaySeries[key]); }catch(e){ /* déjà retirée */ }
-      delete stockMacroOverlaySeries[key];
+  const myToken = ++stockOverlayRenderToken;
+  const activeIds = stockOverlaySelected.map(stockOverlayId);
+  Object.keys(stockOverlaySeries).forEach(id => {
+    if (!activeIds.includes(id)){
+      try{ stockCandleChart.removeSeries(stockOverlaySeries[id]); }catch(e){ /* déjà retirée */ }
+      delete stockOverlaySeries[id];
     }
   });
-  stockMacroOverlaySelected.forEach((key, i) => {
-    const ind = RATE_OVERLAY_INDICATORS.find(x => x.key === key);
-    const raw = creditIndicatorsData[key];
-    if (!ind) return;
-    if (!stockMacroOverlaySeries[key]){
-      stockMacroOverlaySeries[key] = stockCandleChart.addLineSeries({
-        color: STOCK_MACRO_COLORS[i % STOCK_MACRO_COLORS.length], lineWidth:1.5,
-        priceLineVisible:false, lastValueVisible:true, title: ind.label
+  for (let i = 0; i < stockOverlaySelected.length; i++){
+    const item = stockOverlaySelected[i];
+    const id = stockOverlayId(item);
+    const raw = await resolveStockOverlaySeries(item);
+    if (myToken !== stockOverlayRenderToken) return; // sélection changée entre-temps (fetch 'company' en vol)
+    if (!stockCandleSeries) return; // graphique détruit/recréé pendant l'attente
+    if (!stockOverlaySeries[id]){
+      stockOverlaySeries[id] = stockCandleChart.addLineSeries({
+        color: STOCK_OVERLAY_COLORS[i % STOCK_OVERLAY_COLORS.length], lineWidth:1.5,
+        priceLineVisible:false, lastValueVisible:true, title: item.label
       });
     }
-    if (!raw){ stockMacroOverlaySeries[key].setData([]); return; }
+    if (!raw){ stockOverlaySeries[id].setData([]); continue; }
     const startIdx = stockCandleRangeStartIdx(raw.dates, stockRange);
     const data = raw.dates.slice(startIdx)
       .map((d, i2) => ({ time:d, value: raw.values[startIdx + i2] }))
       .filter(p => p.value != null && isFinite(p.value));
-    stockMacroOverlaySeries[key].setData(data);
-  });
+    stockOverlaySeries[id].setData(data);
+  }
 }
-function renderStockMacroOverlayList(filterText){
+let stockOverlayRenderToken = 0;
+
+// Recherche groupée par catégorie — catalogue trop large (macro + tout Documents
+// financiers + secteurs + entreprises) pour une liste à plat sans filtre, demande
+// explicite de ne rien afficher tant qu'on n'a pas tapé au moins 2 caractères.
+function renderStockOverlayList(filterText){
   const box = document.getElementById('stockMacroOverlayList');
   if (!box) return;
-  const q = stripAccents((filterText || '').toLowerCase());
-  const items = RATE_OVERLAY_INDICATORS.filter(i => stripAccents(i.label.toLowerCase()).includes(q));
-  box.innerHTML = items.length
-    ? items.map(i => `<button type="button" data-macro-key="${i.key}" class="${stockMacroOverlaySelected.includes(i.key) ? 'active' : ''}">${i.label}</button>`).join('')
-    : '<div style="padding:6px;color:var(--text-faint);font-size:11px;">Aucun résultat</div>';
+  const q = stripAccents((filterText || '').trim().toLowerCase());
+  if (q.length < 2){
+    box.innerHTML = '<div style="padding:6px;color:var(--text-faint);font-size:11px;">Tape au moins 2 lettres — entreprise, ratio, macro, secteur…</div>';
+  } else {
+    const catalog = buildStockOverlayCatalog();
+    const matches = catalog.filter(i => stripAccents(i.label.toLowerCase()).includes(q)).slice(0, 60);
+    if (!matches.length){
+      box.innerHTML = '<div style="padding:6px;color:var(--text-faint);font-size:11px;">Aucun résultat</div>';
+    } else {
+      const groups = {};
+      matches.forEach(i => { (groups[i.group] = groups[i.group] || []).push(i); });
+      box.innerHTML = Object.keys(groups).map(g => `
+        <div style="padding:3px 6px;color:var(--text-faint);font-size:9.5px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.04em;">${g}</div>
+        ${groups[g].map(i => `<button type="button" data-overlay-type="${i.type}" data-overlay-key="${escapeHtml(i.key)}" class="${stockOverlaySelected.some(s => s.type === i.type && s.key === i.key) ? 'active' : ''}">${escapeHtml(i.label)}</button>`).join('')}
+      `).join('');
+    }
+  }
   const btn = document.getElementById('stockMacroOverlayBtn');
-  if (btn) btn.textContent = `🌐 Indicateurs macro (${stockMacroOverlaySelected.length}) ▾`;
+  if (btn) btn.textContent = `🔎 Superposer (${stockOverlaySelected.length}) ▾`;
 }
 
 async function loadStockChart(ticker, nom){
@@ -7863,23 +7944,23 @@ document.getElementById('stockCandleDrawToolbar').addEventListener('click', e =>
     document.querySelectorAll('#stockCandleMagnetBtn, #wolfLaboMagnetBtn').forEach(b => b.classList.toggle('active', wolfLaboMagnetOn));
   }
 });
-// Recherche + multi-sélection d'indicateurs macro à superposer — demande explicite
-// ("faire des recherches d'indicateur pour les ajouter plutôt que de faire plein de
-// boutons"), reste ouvert pour en cocher/décocher plusieurs d'affilée (même pattern que
-// le menu Indicateurs techniques juste à côté).
+// Recherche + multi-sélection universelle à superposer — demande explicite ("vraiment
+// toutes les données doivent être superposables... faire une barre de recherche où on
+// recherche les données qu'on peut superposer"), reste ouvert pour en cocher/décocher
+// plusieurs d'affilée (même pattern que le menu Indicateurs techniques juste à côté).
 document.getElementById('stockMacroOverlaySearch').addEventListener('input', e => {
-  renderStockMacroOverlayList(e.target.value);
+  renderStockOverlayList(e.target.value);
 });
 document.getElementById('stockMacroOverlayMenu').addEventListener('click', e => {
-  const btn = e.target.closest('[data-macro-key]');
+  const btn = e.target.closest('[data-overlay-type]');
   if (!btn) return;
   e.stopPropagation();
-  const key = btn.dataset.macroKey;
-  const idx = stockMacroOverlaySelected.indexOf(key);
-  if (idx === -1) stockMacroOverlaySelected.push(key); else stockMacroOverlaySelected.splice(idx, 1);
+  const type = btn.dataset.overlayType, key = btn.dataset.overlayKey;
+  const idx = stockOverlaySelected.findIndex(s => s.type === type && s.key === key);
+  if (idx === -1) stockOverlaySelected.push({ type, key, label: btn.textContent }); else stockOverlaySelected.splice(idx, 1);
   btn.classList.toggle('active', idx === -1);
-  renderStockMacroOverlayList(document.getElementById('stockMacroOverlaySearch').value);
-  renderStockMacroOverlays();
+  renderStockOverlayList(document.getElementById('stockMacroOverlaySearch').value);
+  renderStockOverlays();
 });
 document.getElementById('stockCandleScaleMenu').addEventListener('click', e => {
   const btn = e.target.closest('button[data-scale-candle]');
