@@ -7220,11 +7220,10 @@ function stockCandleRangeStartIdx(dates, range){
 
 function stockCandleShowChartJsControls(show){
   const d = show ? 'flex' : 'none';
-  const ids = ['stockOverlayToggles', 'stockScaleModeRow', 'stockChartJsActions'];
+  const ids = ['rangeButtons', 'stockIndicatorToggles', 'stockOverlayToggles', 'stockScaleModeRow', 'stockChartJsActions'];
   ids.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = d; });
-  if (show){
-    ['stockCandleStyleRow', 'stockCandleTimeframeRow'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
-  }
+  const toolbar = document.getElementById('stockCandleToolbar');
+  if (toolbar) toolbar.style.display = show ? 'none' : 'flex';
   const cart = document.getElementById('stockCartBtn');
   if (cart) cart.style.display = show ? '' : 'none';
   const title = document.getElementById('stockCardTitle');
@@ -7239,8 +7238,6 @@ function renderStockChartCandleView(){
   if (canvas) canvas.style.display = 'none';
   if (holder) holder.style.display = 'block';
   stockCandleShowChartJsControls(false);
-  document.getElementById('stockCandleStyleRow').style.display = 'flex';
-  document.getElementById('stockCandleTimeframeRow').style.display = 'flex';
   document.getElementById('stockScaleNote').style.display = 'none';
   if (!stockCandleFull || !window.LightweightCharts || !holder) return;
 
@@ -7623,6 +7620,11 @@ document.getElementById('rangeButtons').addEventListener('click', e => {
 function toggleStockIndicator(key){
   stockIndicators[key] = !stockIndicators[key];
   document.querySelectorAll(`[data-indicator="${key}"]`).forEach(b => b.classList.toggle('active', stockIndicators[key]));
+  const indicatorsBtn = document.getElementById('stockCandleIndicatorsBtn');
+  if (indicatorsBtn){
+    const count = ['regression','sma200','sma30','prixJusteCible'].filter(k => stockIndicators[k]).length;
+    indicatorsBtn.textContent = `📊 Indicateurs techniques (${count}) ▾`;
+  }
   renderStockChart();
   if (zoomKey === 'stock') renderZoomChart();
 }
@@ -7630,22 +7632,41 @@ document.getElementById('stockIndicatorToggles').addEventListener('click', e => 
   const btn = e.target.closest('button[data-indicator]');
   if (btn) toggleStockIndicator(btn.dataset.indicator);
 });
-// Bougies/Courbe + Quotidien/Hebdo/Mensuel — demande explicite ("je veux avoir la
-// possibilité de mettre ou non en bougie... des fois je veux juste voir des courbes" +
-// "les mettre en weekly, en monthly"), spécifiques au nouveau graphique en chandeliers
-// FMP (pas de pendant sur l'ancien système Chart.js, masqués quand on y retombe).
+// Menus déroulants du toolbar chandeliers FMP (#stockCandleToolbar, visible uniquement
+// en mode chandeliers — voir stockCandleShowChartJsControls()) — même mécanisme
+// ouverture/fermeture que Wolf Labo (.labo-dropdown-btn générique, déjà câblé plus bas
+// dans ce fichier) et même distinction fermeture-au-clic (période/unité de temps,
+// sélection unique) vs menu qui reste ouvert (indicateurs techniques, sélection
+// multiple) — demande explicite de reprendre "les mêmes fonctionnalités" que Wolf Labo.
+document.getElementById('stockCandleRangeMenu').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-range]');
+  if (!btn) return;
+  stockRange = btn.dataset.range;
+  document.querySelectorAll('[data-range]').forEach(b => b.classList.toggle('active', b.dataset.range === stockRange));
+  document.getElementById('stockCandleRangeBtn').textContent = `📅 ${btn.textContent} ▾`;
+  btn.closest('.labo-dropdown').classList.remove('open');
+  renderStockChart();
+});
+document.getElementById('stockCandleTimeframeMenu').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-candle-tf]');
+  if (!btn) return;
+  stockCandleTimeframe = btn.dataset.candleTf;
+  document.querySelectorAll('[data-candle-tf]').forEach(b => b.classList.toggle('active', b.dataset.candleTf === stockCandleTimeframe));
+  document.getElementById('stockCandleTimeframeBtn').textContent = `🕐 ${btn.textContent} ▾`;
+  btn.closest('.labo-dropdown').classList.remove('open');
+  renderStockChart();
+});
+document.getElementById('stockCandleIndicatorsMenu').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-indicator]');
+  if (!btn) return;
+  e.stopPropagation(); // reste ouvert pour activer/désactiver plusieurs indicateurs d'affilée
+  toggleStockIndicator(btn.dataset.indicator);
+});
 document.getElementById('stockCandleStyleRow').addEventListener('click', e => {
   const btn = e.target.closest('button[data-candle-style]');
   if (!btn) return;
   stockCandleStyle = btn.dataset.candleStyle;
   document.querySelectorAll('[data-candle-style]').forEach(b => b.classList.toggle('active', b.dataset.candleStyle === stockCandleStyle));
-  renderStockChart();
-});
-document.getElementById('stockCandleTimeframeRow').addEventListener('click', e => {
-  const btn = e.target.closest('button[data-candle-tf]');
-  if (!btn) return;
-  stockCandleTimeframe = btn.dataset.candleTf;
-  document.querySelectorAll('[data-candle-tf]').forEach(b => b.classList.toggle('active', b.dataset.candleTf === stockCandleTimeframe));
   renderStockChart();
 });
 document.getElementById('zoomStockIndicatorRow').addEventListener('click', e => {

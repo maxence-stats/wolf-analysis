@@ -170,6 +170,7 @@
           <button data-range="5">5a</button>
           <button data-range="10">10a</button>
           <button data-range="20">20a</button>
+          <button data-range="30">30a</button>
           <button data-range="max" class="active">Max</button>
         </div>
         <div class="range-buttons stock-indicator-toggles" id="stockIndicatorToggles">
@@ -179,14 +180,46 @@
           <button data-indicator="sma30" class="active">SMA 30</button>
           <button data-indicator="prixJusteCible">Prix juste / cible</button>
         </div>
-        <div class="range-buttons" id="stockCandleStyleRow" style="display:none;">
-          <button data-candle-style="candle" class="active">🕯️ Bougies</button>
-          <button data-candle-style="line">📈 Courbe</button>
-        </div>
-        <div class="range-buttons" id="stockCandleTimeframeRow" style="display:none;">
-          <button data-candle-tf="daily" class="active">Quotidien</button>
-          <button data-candle-tf="weekly">Hebdo</button>
-          <button data-candle-tf="monthly">Mensuel</button>
+        <!-- Chandeliers FMP : menus déroulants façon Wolf Labo (1 bouton par réglage
+             plutôt qu'une rangée) — demande explicite pour désencombrer le haut du
+             graphique. Remplace les 3 rangées ci-dessus + l'ancien #stockIndicatorToggles
+             UNIQUEMENT en mode chandeliers FMP (repli Chart.js : rangées classiques
+             inchangées, voir stockCandleShowChartJsControls()). -->
+        <div class="labo-toolbar-row" id="stockCandleToolbar" style="display:none;">
+          <div class="labo-dropdown" data-dropdown="stockCandleRange">
+            <button type="button" class="labo-dropdown-btn" id="stockCandleRangeBtn">📅 Max ▾</button>
+            <div class="labo-dropdown-menu" id="stockCandleRangeMenu">
+              <button data-range="1">1a</button>
+              <button data-range="2">2a</button>
+              <button data-range="3">3a</button>
+              <button data-range="5">5a</button>
+              <button data-range="10">10a</button>
+              <button data-range="20">20a</button>
+              <button data-range="30">30a</button>
+              <button data-range="max" class="active">Max</button>
+            </div>
+          </div>
+          <div class="labo-dropdown" data-dropdown="stockCandleTimeframe">
+            <button type="button" class="labo-dropdown-btn" id="stockCandleTimeframeBtn">🕐 Quotidien ▾</button>
+            <div class="labo-dropdown-menu" id="stockCandleTimeframeMenu">
+              <button data-candle-tf="daily" class="active">Quotidien</button>
+              <button data-candle-tf="weekly">Hebdo</button>
+              <button data-candle-tf="monthly">Mensuel</button>
+            </div>
+          </div>
+          <div class="range-buttons" id="stockCandleStyleRow">
+            <button data-candle-style="candle" class="active">🕯️ Bougies</button>
+            <button data-candle-style="line">📈 Courbe</button>
+          </div>
+          <div class="labo-dropdown" data-dropdown="stockCandleIndicators">
+            <button type="button" class="labo-dropdown-btn" id="stockCandleIndicatorsBtn">📊 Indicateurs techniques (3) ▾</button>
+            <div class="labo-dropdown-menu" id="stockCandleIndicatorsMenu">
+              <button data-indicator="regression" class="active">Régression linéaire</button>
+              <button data-indicator="sma200" class="active">SMA 200</button>
+              <button data-indicator="sma30" class="active">SMA 30</button>
+              <button data-indicator="prixJusteCible">Prix juste / cible</button>
+            </div>
+          </div>
         </div>
         <div class="range-buttons" id="stockScaleModeRow">
           <button data-scale-mode="normal" class="active">Échelle normale</button>
