@@ -7420,6 +7420,26 @@ function renderStockChartCandleView(){
         priceLineVisible:false, lastValueVisible:false
       });
     });
+    // Échelle DÉDIÉE pour les superpositions ("Superposer") — bug trouvé en reproduisant
+    // le signalement utilisateur ("les moyennes mobiles bougent... le canal de régression
+    // part en couille en naviguant") : les séries de superposition (CA en Md€, PIB, dette
+    // en M€...) étaient créées SANS priceScaleId, donc par défaut sur la MÊME échelle
+    // 'right' que les bougies/SMA/régression. Une valeur de CA à plusieurs centaines
+    // écrase un cours à quelques dizaines d'euros sur une échelle en autoScale:true —
+    // à chaque pan/zoom, les points de CA visibles changent, l'autoScale recalcule la
+    // plage de PRIX entière en fonction de CETTE valeur écrasante, et bougies/SMA/canal
+    // de régression (qui eux restent sur 'right') se retrouvent compressés/déformés de
+    // façon chaotique. Fix : les superpositions vivent sur leur propre échelle
+    // ('stockOverlay'), masquée (pas d'axe dédié affiché, juste les lignes), avec les
+    // mêmes marges verticales que 'right' pour rester visuellement superposée au même
+    // espace — le prix garde son autoScale propre, plus jamais pollué par l'échelle des
+    // superpositions. mode (Normal/Log/Indexé 100) appliqué en miroir sur les deux
+    // échelles (voir applyStockCandleScaleMode) : en Indexé 100 chaque superposition se
+    // rebase sur SA propre valeur de départ, ce qui reste la vraie façon de comparer un
+    // cours et un CA sur un même graphique.
+    stockCandleChart.priceScale('stockOverlay').applyOptions({
+      visible:false, scaleMargins:{ top:0.1, bottom:0.1 }, autoScale:true
+    });
   }
 
   // Canaux directement sur CE graphique — demande explicite ("je dois avoir la
@@ -7508,6 +7528,7 @@ function renderStockChartCandleView(){
   // n'entre pas en conflit avec mode:Logarithmic/IndexedTo100, seul mode:Normal +
   // autoScale:false figerait l'échelle, jamais le cas ici.
   stockCandleChart.priceScale('right').applyOptions({ autoScale:true });
+  stockCandleChart.priceScale('stockOverlay').applyOptions({ autoScale:true });
   applyStockCandleScaleMode();
   renderStockOverlayList(document.getElementById('stockMacroOverlaySearch') ? document.getElementById('stockMacroOverlaySearch').value : '');
   renderStockOverlays();
@@ -7525,7 +7546,9 @@ function applyStockCandleScaleMode(){
     log: window.LightweightCharts.PriceScaleMode.Logarithmic,
     indexed: window.LightweightCharts.PriceScaleMode.IndexedTo100
   };
-  stockCandleChart.priceScale('right').applyOptions({ mode: modeMap[stockScaleMode] != null ? modeMap[stockScaleMode] : modeMap.normal });
+  const mode = modeMap[stockScaleMode] != null ? modeMap[stockScaleMode] : modeMap.normal;
+  stockCandleChart.priceScale('right').applyOptions({ mode });
+  stockCandleChart.priceScale('stockOverlay').applyOptions({ mode, autoScale:true });
 }
 
 // Indicateurs macro superposés au cours — sur la MÊME échelle de prix (droite) que les
@@ -7554,7 +7577,8 @@ async function renderStockOverlays(){
     if (!stockOverlaySeries[id]){
       stockOverlaySeries[id] = stockCandleChart.addLineSeries({
         color: STOCK_OVERLAY_COLORS[i % STOCK_OVERLAY_COLORS.length], lineWidth:1.5,
-        priceLineVisible:false, lastValueVisible:true, title: item.label
+        priceLineVisible:false, lastValueVisible:true, title: item.label,
+        priceScaleId: 'stockOverlay'
       });
     }
     if (!raw){ stockOverlaySeries[id].setData([]); continue; }
