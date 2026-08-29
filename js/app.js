@@ -7951,10 +7951,20 @@ document.getElementById('stockCandleDrawToolbar').addEventListener('click', e =>
 document.getElementById('stockMacroOverlaySearch').addEventListener('input', e => {
   renderStockOverlayList(e.target.value);
 });
+// Bug trouvé en retour utilisateur ("je clique sur la loupe, ça s'enlève direct, je ne
+// peux pas marquer") : le clic sur le champ de recherche (juste pour lui donner le
+// focus) remontait jusqu'au document, où le gestionnaire générique de fermeture des
+// .labo-dropdown (sur l'évènement CLICK, "n'importe quel clic ailleurs = tout fermer")
+// le refermait aussitôt — AVANT d'avoir pu taper quoi que ce soit. Le clic sur un bouton
+// de la liste juste en dessous s'en sortait car il appelait déjà stopPropagation(), mais
+// seulement APRÈS avoir vérifié qu'il s'agissait bien d'un bouton [data-overlay-type] —
+// jamais atteint pour un clic sur le champ texte. stopPropagation() déplacé tout en haut
+// (avant ce test), sur l'évènement CLICK — un stopPropagation() sur mousedown n'aurait
+// rien changé, mousedown et click se propagent chacun indépendamment.
 document.getElementById('stockMacroOverlayMenu').addEventListener('click', e => {
+  e.stopPropagation();
   const btn = e.target.closest('[data-overlay-type]');
   if (!btn) return;
-  e.stopPropagation();
   const type = btn.dataset.overlayType, key = btn.dataset.overlayKey;
   const idx = stockOverlaySelected.findIndex(s => s.type === type && s.key === key);
   if (idx === -1) stockOverlaySelected.push({ type, key, label: btn.textContent }); else stockOverlaySelected.splice(idx, 1);
