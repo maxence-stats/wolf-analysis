@@ -5481,7 +5481,11 @@ let stockRange = 'max';
 let stockRequestId = 0;
 // Indicateurs affichables/masquables sur le graphique boursier (bouton par indicateur,
 // demande explicite : "beaucoup d'informations", pouvoir en isoler certains à la fois).
-let stockIndicators = { price:true, regression:true, sma200:true, sma30:true, prixJusteCible:false };
+// sma20/sma80/sma100 ajoutées sur demande explicite ("tu as oublié la moyenne mobile à
+// vingt, quatre-vingt et cent périodes") — désactivées par défaut (contrairement à
+// sma200/sma30 déjà en place) pour ne pas surcharger d'un coup un graphique que
+// l'utilisateur utilise déjà, activables depuis le menu Indicateurs techniques.
+let stockIndicators = { price:true, regression:true, sma200:true, sma30:true, sma20:false, sma80:false, sma100:false, prixJusteCible:false };
 // Overlay universel (retour utilisateur : combiner n'importe quelle métrique
 // historique sur le graphique boursier, sans limite de nombre) + mode d'échelle,
 // choisi par l'utilisateur à chaque fois plutôt qu'un mode par défaut imposé.
@@ -7266,6 +7270,8 @@ function stockCandleShowChartJsControls(show){
   ids.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = d; });
   const toolbar = document.getElementById('stockCandleToolbar');
   if (toolbar) toolbar.style.display = show ? 'none' : 'flex';
+  const candleActions = document.getElementById('stockCandleActions');
+  if (candleActions) candleActions.style.display = show ? 'none' : 'flex';
   const cart = document.getElementById('stockCartBtn');
   if (cart) cart.style.display = show ? '' : 'none';
   const title = document.getElementById('stockCardTitle');
@@ -7298,6 +7304,13 @@ function renderStockChartCandleView(){
     stockLineSeries = stockCandleChart.addLineSeries({ color:THEME.yellow, lineWidth:1.75, priceLineVisible:false, lastValueVisible:true });
     stockCandleSmaSeries.sma200 = stockCandleChart.addLineSeries({ color:THEME.white, lineWidth:2, priceLineVisible:false, lastValueVisible:false });
     stockCandleSmaSeries.sma30 = stockCandleChart.addLineSeries({ color:THEME.violet, lineWidth:1, priceLineVisible:false, lastValueVisible:false });
+    // 20/80/100 semaines ajoutées après coup ("tu as oublié la moyenne mobile à vingt,
+    // quatre-vingt et cent périodes") — mêmes couleurs que Wolf Labo (WOLF_LABO_MA_CONFIG,
+    // "reprends les mêmes couleurs") pour rester cohérent entre les deux graphiques
+    // techniques du site plutôt que d'inventer une nouvelle palette.
+    stockCandleSmaSeries.sma20 = stockCandleChart.addLineSeries({ color:WOLF_LABO_MA_CONFIG[20].color, lineWidth:1, priceLineVisible:false, lastValueVisible:false });
+    stockCandleSmaSeries.sma80 = stockCandleChart.addLineSeries({ color:WOLF_LABO_MA_CONFIG[80].color, lineWidth:1, priceLineVisible:false, lastValueVisible:false });
+    stockCandleSmaSeries.sma100 = stockCandleChart.addLineSeries({ color:WOLF_LABO_MA_CONFIG[100].color, lineWidth:1, priceLineVisible:false, lastValueVisible:false });
     ['mid','p1','m1','p2','m2'].forEach(k => {
       stockCandleRegSeries[k] = stockCandleChart.addLineSeries({
         color: (k === 'p1' || k === 'm1') ? THEME.blue : THEME.red,
@@ -7330,12 +7343,11 @@ function renderStockChartCandleView(){
   const dailyDates = stockCandleFull.map(p => p.t);
   const dailyCloses = stockCandleFull.map(p => p.c);
   const { dates: wDates, closes: wCloses } = resampleWeekly(dailyDates, dailyCloses);
-  const sma200 = computeSMA(wCloses, 200);
-  const sma30 = computeSMA(wCloses, 30);
   const wStartIdx = stockCandleRangeStartIdx(wDates, stockRange);
   const setLine = (series, on, wVals) => series.setData(on ? wDates.slice(wStartIdx).map((d,i) => ({ time:d, value: wVals[wStartIdx+i] })).filter(p => p.value != null) : []);
-  setLine(stockCandleSmaSeries.sma200, stockIndicators.sma200, sma200);
-  setLine(stockCandleSmaSeries.sma30, stockIndicators.sma30, sma30);
+  [20, 30, 80, 100, 200].forEach(period => {
+    setLine(stockCandleSmaSeries['sma' + period], stockIndicators['sma' + period], computeSMA(wCloses, period));
+  });
 
   const reg = computeRegressionChannel(wDates, wCloses);
   const regMap = { mid:0, p1:1, m1:-1, p2:2, m2:-2 };
@@ -7664,7 +7676,7 @@ function toggleStockIndicator(key){
   document.querySelectorAll(`[data-indicator="${key}"]`).forEach(b => b.classList.toggle('active', stockIndicators[key]));
   const indicatorsBtn = document.getElementById('stockCandleIndicatorsBtn');
   if (indicatorsBtn){
-    const count = ['regression','sma200','sma30','prixJusteCible'].filter(k => stockIndicators[k]).length;
+    const count = ['regression','sma20','sma30','sma80','sma100','sma200','prixJusteCible'].filter(k => stockIndicators[k]).length;
     indicatorsBtn.textContent = `📊 Indicateurs techniques (${count}) ▾`;
   }
   renderStockChart();
@@ -7688,6 +7700,18 @@ document.getElementById('historicalRangeButtons').addEventListener('click', e =>
 // dans ce fichier) et même distinction fermeture-au-clic (période/unité de temps,
 // sélection unique) vs menu qui reste ouvert (indicateurs techniques, sélection
 // multiple) — demande explicite de reprendre "les mêmes fonctionnalités" que Wolf Labo.
+// Plein écran — demande explicite ("j'ai la possibilité d'agrandir... déjà le
+// graphique de cours"), même mécanisme CSS que le plein écran de Wolf Labo
+// (.chart-fullscreen générique, voir style.css) : lightweight-charts a autoSize:true,
+// il se redimensionne tout seul quand le conteneur change de taille via la classe CSS,
+// pas besoin d'appeler resize() à la main.
+document.getElementById('stockCandleFullscreenBtn').addEventListener('click', () => {
+  const card = document.getElementById('stockCard');
+  const btn = document.getElementById('stockCandleFullscreenBtn');
+  const isFs = card.classList.toggle('chart-fullscreen');
+  btn.textContent = isFs ? '✕' : '⤢';
+  if (stockCandleChart) setTimeout(() => stockCandleChart.timeScale().fitContent(), 50);
+});
 document.getElementById('stockCandleRangeMenu').addEventListener('click', e => {
   const btn = e.target.closest('button[data-range]');
   if (!btn) return;
@@ -9202,23 +9226,21 @@ function renderRevenusCharts(real){
       });
     }
     if (evolCanvas){
-      // Aires 100% empilées plutôt que des lignes fines superposées — retour explicite
-      // ("je ne vois pas grand-chose au niveau de l'historique, ce n'est pas terrible") :
-      // avec 5-6+ zones/segments, des lignes de part (%) qui s'entrecroisent sont
-      // illisibles. Empilées, la composition année par année (et son évolution —
-      // croissance/réduction/stagnation d'une zone) se lit d'un coup d'œil, la hauteur
-      // totale valant toujours 100%. Valeurs manquantes -> 0 UNIQUEMENT pour cet
-      // empilement (pas de "trou" dans une pile qui doit toujours sommer à 100%) ; le
-      // tableau de croissance juste en dessous garde lui les vrais trous (spanGaps).
+      // Barres 100% empilées — retour explicite après un premier essai en aires ("ce
+      // n'est pas clair... faut plutôt avec des barres") : une barre par exercice,
+      // toujours 100% de haut, lit plus franchement la composition année par année que
+      // des aires qui se fondent les unes dans les autres. Valeurs manquantes -> 0
+      // UNIQUEMENT pour cet empilement (un "trou" dans une pile qui doit toujours
+      // sommer à 100% n'aurait aucun sens visuellement) ; le tableau de croissance
+      // juste en dessous garde lui les vrais trous (spanGaps, inchangé).
       const { years, shareByLabel } = revenueShareSeries(seg);
       const labels = Object.keys(shareByLabel);
       revenusCharts[key + 'Evol'] = new Chart(evolCanvas.getContext('2d'), {
-        type:'line',
+        type:'bar',
         data:{ labels: years, datasets: labels.map((label, i) => ({
           label, data: shareByLabel[label].map(v => v == null ? 0 : v),
-          borderColor: PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length],
-          backgroundColor: PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length] + 'CC',
-          borderWidth:1, fill:true, tension:0.25, pointRadius:0
+          backgroundColor: PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length],
+          borderRadius:0, barPercentage:0.85, categoryPercentage:0.9
         })) },
         options:{ responsive:true, maintainAspectRatio:false,
           interaction:{ mode:'index', intersect:false },
