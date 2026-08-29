@@ -7066,11 +7066,43 @@ async function loadFmpSymbols(){
 }
 
 let stockUsesCandleFmp = false;
-let stockCandleChart = null, stockCandleSeries = null;
+let stockCandleChart = null, stockCandleSeries = null, stockLineSeries = null;
 let stockCandleSmaSeries = {};
 let stockCandleRegSeries = {};
 let stockCandlePriceLines = {};
 let stockCandleFull = null; // [{t,o,h,l,c}] ascendant, baseline FMP + repli quotidien Yahoo fusionné
+// Choix explicite de l'utilisateur : "je veux avoir la possibilité de mettre ou non en
+// bougie... des fois je veux juste voir des courbes" + "les mettre en weekly, en
+// monthly" — deux réglages indépendants du chandelier lui-même (pas des indicateurs
+// techniques SMA/régression, qui restent calculés en hebdo quoi qu'il arrive).
+let stockCandleStyle = 'candle'; // 'candle' | 'line'
+let stockCandleTimeframe = 'daily'; // 'daily' | 'weekly' | 'monthly'
+
+// Agrège des barres OHLC quotidiennes en hebdo/mensuel — même principe d'ancrage que
+// resampleWeekly() (dernier jour de la période = date/clôture retenues), généralisé à
+// open/high/low en plus de close puisqu'il faut de vraies bougies agrégées, pas
+// seulement une clôture.
+function resampleOHLC(bars, period){
+  if (period === 'daily') return bars;
+  const keyFn = period === 'monthly' ? (t => t.slice(0, 7)) : isoWeekKey;
+  const out = [];
+  let currentKey = null, group = null;
+  bars.forEach(b => {
+    const key = keyFn(b.t);
+    if (key !== currentKey){
+      if (group) out.push(group);
+      group = { t:b.t, o:b.o, h:b.h, l:b.l, c:b.c };
+      currentKey = key;
+    } else {
+      group.h = Math.max(group.h, b.h);
+      group.l = Math.min(group.l, b.l);
+      group.c = b.c;
+      group.t = b.t;
+    }
+  });
+  if (group) out.push(group);
+  return out;
+}
 
 // Repli quotidien : ne redemande QUE les jours postérieurs au dernier point FMP connu
 // (quelques jours, pas 20 ans) — garde le graphique à jour entre deux exports FMP sans
@@ -7150,6 +7182,9 @@ function stockCandleShowChartJsControls(show){
   const d = show ? 'flex' : 'none';
   const ids = ['stockOverlayToggles', 'stockScaleModeRow', 'stockChartJsActions'];
   ids.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = d; });
+  if (show){
+    ['stockCandleStyleRow', 'stockCandleTimeframeRow'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+  }
   const cart = document.getElementById('stockCartBtn');
   if (cart) cart.style.display = show ? '' : 'none';
   const title = document.getElementById('stockCardTitle');
@@ -7164,6 +7199,8 @@ function renderStockChartCandleView(){
   if (canvas) canvas.style.display = 'none';
   if (holder) holder.style.display = 'block';
   stockCandleShowChartJsControls(false);
+  document.getElementById('stockCandleStyleRow').style.display = 'flex';
+  document.getElementById('stockCandleTimeframeRow').style.display = 'flex';
   document.getElementById('stockScaleNote').style.display = 'none';
   if (!stockCandleFull || !window.LightweightCharts || !holder) return;
 
@@ -7179,6 +7216,7 @@ function renderStockChartCandleView(){
       upColor: THEME.green, downColor: THEME.red, borderVisible:false,
       wickUpColor: THEME.green, wickDownColor: THEME.red
     });
+    stockLineSeries = stockCandleChart.addLineSeries({ color:THEME.yellow, lineWidth:1.75, priceLineVisible:false, lastValueVisible:true });
     stockCandleSmaSeries.sma200 = stockCandleChart.addLineSeries({ color:THEME.white, lineWidth:2, priceLineVisible:false, lastValueVisible:false });
     stockCandleSmaSeries.sma30 = stockCandleChart.addLineSeries({ color:THEME.violet, lineWidth:1, priceLineVisible:false, lastValueVisible:false });
     ['mid','p1','m1','p2','m2'].forEach(k => {
@@ -7190,16 +7228,29 @@ function renderStockChartCandleView(){
     });
   }
 
-  const dates = stockCandleFull.map(p => p.t);
-  const startIdx = stockCandleRangeStartIdx(dates, stockRange);
-  const visible = stockCandleFull.slice(startIdx);
-  stockCandleSeries.setData(stockIndicators.price ? visible.map(p => ({ time:p.t, open:p.o, high:p.h, low:p.l, close:p.c })) : []);
+  const tfBars = resampleOHLC(stockCandleFull, stockCandleTimeframe);
+  const tfDates = tfBars.map(p => p.t);
+  const startIdx = stockCandleRangeStartIdx(tfDates, stockRange);
+  const visible = tfBars.slice(startIdx);
+  const candleData = visible.map(p => ({ time:p.t, open:p.o, high:p.h, low:p.l, close:p.c }));
+  const showPrice = stockIndicators.price;
+  stockCandleSeries.applyOptions({ visible: showPrice && stockCandleStyle === 'candle' });
+  stockLineSeries.applyOptions({ visible: showPrice && stockCandleStyle === 'line' });
+  stockCandleSeries.setData(showPrice && stockCandleStyle === 'candle' ? candleData : []);
+  stockLineSeries.setData(showPrice && stockCandleStyle === 'line' ? candleData.map(p => ({ time:p.time, value:p.close })) : []);
+  // Les lignes prix juste/cible et le dernier prix sont ancrés sur la série qui reste
+  // visible — createPriceLine()/setData() plantent silencieusement (ou n'affichent
+  // rien) sur une série vide, donc toujours utiliser la série ACTIVE comme point
+  // d'ancrage, jamais stockCandleSeries en dur.
+  const priceAnchorSeries = stockCandleStyle === 'line' ? stockLineSeries : stockCandleSeries;
 
-  // SMA200/SMA30 "semaines" — calculées sur les clôtures HEBDO (resampleWeekly), même
-  // sémantique que l'ancien graphique ("moyenne mobile 200 SEMAINES"), pas 200 jours de
-  // bourse qui raconterait une tout autre histoire.
-  const closes = stockCandleFull.map(p => p.c);
-  const { dates: wDates, closes: wCloses } = resampleWeekly(dates, closes);
+  // SMA200/SMA30 "semaines" — calculées sur les clôtures HEBDO (resampleWeekly) à
+  // partir du QUOTIDIEN brut, indépendamment du timeframe d'affichage choisi pour les
+  // bougies/la courbe (même sémantique que l'ancien graphique, "moyenne mobile 200
+  // SEMAINES", pas 200 jours de bourse qui raconterait une tout autre histoire).
+  const dailyDates = stockCandleFull.map(p => p.t);
+  const dailyCloses = stockCandleFull.map(p => p.c);
+  const { dates: wDates, closes: wCloses } = resampleWeekly(dailyDates, dailyCloses);
   const sma200 = computeSMA(wCloses, 200);
   const sma30 = computeSMA(wCloses, 30);
   const wStartIdx = stockCandleRangeStartIdx(wDates, stockRange);
@@ -7220,12 +7271,16 @@ function renderStockChartCandleView(){
 
   // Prix juste/cible : createPriceLine() plutôt qu'une série — ligne horizontale native
   // avec étiquette sur l'échelle de prix, plus adapté qu'une série pour une constante.
-  Object.values(stockCandlePriceLines).forEach(line => { try{ stockCandleSeries.removePriceLine(line); }catch(e){} });
+  // Ancrée sur la série ACTIVE (bougies ou courbe) — removePriceLine() doit cibler la
+  // MÊME instance de série qui a créé la ligne, jamais supposer que c'est toujours
+  // stockCandleSeries (faux dès que le style "Courbe" est actif), donc chaque ligne
+  // garde une référence à sa série d'origine plutôt qu'un handle nu.
+  Object.values(stockCandlePriceLines).forEach(({ series, line }) => { try{ series.removePriceLine(line); }catch(e){} });
   stockCandlePriceLines = {};
   const latestStock = activeCompany && companies[activeCompany] ? companies[activeCompany][companies[activeCompany].length - 1] : null;
   if (stockIndicators.prixJusteCible && latestStock){
-    if (latestStock.prixJuste != null) stockCandlePriceLines.juste = stockCandleSeries.createPriceLine({ price: latestStock.prixJuste, color: THEME.gold, lineWidth:1.5, lineStyle: window.LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'Prix juste' });
-    if (latestStock.prixCible != null) stockCandlePriceLines.cible = stockCandleSeries.createPriceLine({ price: latestStock.prixCible, color: THEME.green, lineWidth:1.5, lineStyle: window.LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'Prix cible' });
+    if (latestStock.prixJuste != null) stockCandlePriceLines.juste = { series:priceAnchorSeries, line:priceAnchorSeries.createPriceLine({ price: latestStock.prixJuste, color: THEME.gold, lineWidth:1.5, lineStyle: window.LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'Prix juste' }) };
+    if (latestStock.prixCible != null) stockCandlePriceLines.cible = { series:priceAnchorSeries, line:priceAnchorSeries.createPriceLine({ price: latestStock.prixCible, color: THEME.green, lineWidth:1.5, lineStyle: window.LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'Prix cible' }) };
   }
 
   stockCandleChart.timeScale().fitContent();
@@ -7534,6 +7589,24 @@ function toggleStockIndicator(key){
 document.getElementById('stockIndicatorToggles').addEventListener('click', e => {
   const btn = e.target.closest('button[data-indicator]');
   if (btn) toggleStockIndicator(btn.dataset.indicator);
+});
+// Bougies/Courbe + Quotidien/Hebdo/Mensuel — demande explicite ("je veux avoir la
+// possibilité de mettre ou non en bougie... des fois je veux juste voir des courbes" +
+// "les mettre en weekly, en monthly"), spécifiques au nouveau graphique en chandeliers
+// FMP (pas de pendant sur l'ancien système Chart.js, masqués quand on y retombe).
+document.getElementById('stockCandleStyleRow').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-candle-style]');
+  if (!btn) return;
+  stockCandleStyle = btn.dataset.candleStyle;
+  document.querySelectorAll('[data-candle-style]').forEach(b => b.classList.toggle('active', b.dataset.candleStyle === stockCandleStyle));
+  renderStockChart();
+});
+document.getElementById('stockCandleTimeframeRow').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-candle-tf]');
+  if (!btn) return;
+  stockCandleTimeframe = btn.dataset.candleTf;
+  document.querySelectorAll('[data-candle-tf]').forEach(b => b.classList.toggle('active', b.dataset.candleTf === stockCandleTimeframe));
+  renderStockChart();
 });
 document.getElementById('zoomStockIndicatorRow').addEventListener('click', e => {
   const btn = e.target.closest('button[data-indicator]');
