@@ -4932,6 +4932,14 @@ function switchPage(pageId){
   // même principe que ensureChartJs() — jamais de lib de graphique statique/bloquante,
   // voir CLAUDE.md piège #1), seulement quand l'onglet est réellement ouvert.
   if (pageId === 'pageWolfLabo') ensureWolfLaboChart();
+  // Revenir sur "Vue d'ensemble" SANS re-sélectionner d'entreprise (juste un clic sur
+  // l'onglet) ne redéclenche pas renderStockChartCandleView() — sans ce repointage
+  // explicite, wolfLaboChart resterait sur Wolf Labo si l'utilisateur vient d'y passer,
+  // et "Canal (3 clics)" dessinerait alors dans le mauvais graphique (invisible ici).
+  if (pageId === 'pageAnalyse' && stockUsesCandleFmp && activeCompany && fmpSymbols[activeCompany] && stockCandleFull){
+    activateWolfLaboForAnalyse(fmpSymbols[activeCompany], activeCompany, stockCandleFull.map(p => ({ time:p.t, open:p.o, high:p.h, low:p.l, close:p.c })));
+    renderWolfLaboDrawings(); renderWolfLaboDrawingsList(); renderWolfLaboHandles();
+  }
 }
 
 // Menu mobile (☰) : liste à plat TOUTES les pages, y compris les sous-onglets
@@ -7154,6 +7162,7 @@ let stockCandleChart = null, stockCandleSeries = null, stockLineSeries = null;
 let stockCandleSmaSeries = {};
 let stockCandleRegSeries = {};
 let stockCandlePriceLines = {};
+let stockCandleDrawWired = false; // wireWolfLaboChartClicks()/wireWolfLaboHandleDrag() appelées UNE SEULE fois pour ce graphique
 let stockCandleFull = null; // [{t,o,h,l,c}] ascendant, baseline FMP + repli quotidien Yahoo fusionné
 // Choix explicite de l'utilisateur : "je veux avoir la possibilité de mettre ou non en
 // bougie... des fois je veux juste voir des courbes" + "les mettre en weekly, en
@@ -7270,6 +7279,10 @@ function stockCandleShowChartJsControls(show){
   ids.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = d; });
   const toolbar = document.getElementById('stockCandleToolbar');
   if (toolbar) toolbar.style.display = show ? 'none' : 'flex';
+  const drawToolbar = document.getElementById('stockCandleDrawToolbar');
+  if (drawToolbar) drawToolbar.style.display = show ? 'none' : 'flex';
+  const drawingsList = document.getElementById('stockCandleDrawingsList');
+  if (drawingsList) drawingsList.style.display = show ? 'none' : '';
   const candleActions = document.getElementById('stockCandleActions');
   if (candleActions) candleActions.style.display = show ? 'none' : 'flex';
   const cart = document.getElementById('stockCartBtn');
@@ -7319,6 +7332,30 @@ function renderStockChartCandleView(){
         priceLineVisible:false, lastValueVisible:false
       });
     });
+  }
+
+  // Canaux directement sur CE graphique — demande explicite ("je dois avoir la
+  // possibilité de tracer des canaux [ici]... ne me renvoie pas vers un autre onglet").
+  // Réutilise le moteur de tracé de Wolf Labo (magnétisme, poignées, réglages par
+  // bande, persistance) via activateWolfLaboForAnalyse() plutôt que d'en écrire un
+  // second — voir le commentaire détaillé sur wolfLaboActiveCtx plus haut dans ce
+  // fichier. Appelé à CHAQUE rendu (pas seulement à la création du graphique, réutilisé
+  // d'une entreprise à l'autre) pour que wolfLaboSampleData/les bougies restent à jour ;
+  // wireWolfLaboChartClicks()/wireWolfLaboHandleDrag() en revanche UNE SEULE fois
+  // (s'abonnent directement sur l'instance CHART, pas besoin de les rappeler).
+  if (activeCompany && fmpSymbols[activeCompany]){
+    const candlesForLabo = stockCandleFull.map(p => ({ time:p.t, open:p.o, high:p.h, low:p.l, close:p.c }));
+    activateWolfLaboForAnalyse(fmpSymbols[activeCompany], activeCompany, candlesForLabo);
+    if (!stockCandleDrawWired){
+      stockCandleDrawWired = true;
+      if (typeof stockCandleSeries.attachPrimitive === 'function'){
+        wolfLaboBandPrimitive = new WolfLaboBandPrimitive();
+        stockCandleSeries.attachPrimitive(wolfLaboBandPrimitive);
+      }
+      stockCandleChart.timeScale().subscribeVisibleTimeRangeChange(() => renderWolfLaboHandles());
+      wireWolfLaboChartClicks();
+      wireWolfLaboHandleDrag();
+    }
   }
 
   const tfBars = resampleOHLC(stockCandleFull, stockCandleTimeframe);
@@ -7376,6 +7413,11 @@ function renderStockChartCandleView(){
   }
 
   stockCandleChart.timeScale().fitContent();
+  if (activeCompany && fmpSymbols[activeCompany]){
+    renderWolfLaboDrawings();
+    renderWolfLaboDrawingsList();
+    renderWolfLaboHandles();
+  }
 }
 
 async function loadStockChart(ticker, nom){
@@ -7706,25 +7748,27 @@ document.getElementById('historicalRangeButtons').addEventListener('click', e =>
 // (.chart-fullscreen générique, voir style.css) : lightweight-charts a autoSize:true,
 // il se redimensionne tout seul quand le conteneur change de taille via la classe CSS,
 // pas besoin d'appeler resize() à la main.
-// "Tracer un canal" — demande explicite ("je dois avoir la possibilité de tracer des
-// canaux où je peux régler leurs settings... exactement comme dans Wolf Labo").
-// Décision délibérée : PAS de second moteur de tracé sur ce graphique. Wolf Labo
-// (aimant, canaux avec réglages complets par bande, préréglages de style, poignées,
-// enregistrement automatique par entreprise — voir tout le module wolfLabo*) repose sur
-// une vingtaine de fonctions étroitement couplées à un seul état de graphique global ;
-// le dupliquer en double aurait un vrai risque de régression sur l'outil déjà réglé, et
-// un double entretien permanent ensuite. Ce bouton ouvre directement Wolf Labo sur
-// L'ENTREPRISE ACTIVE (déjà ouvert à toute entreprise exportée en FMP, voir
-// selectWolfLaboSymbol) — un clic, pas un second outil à maintenir. Les tracés sont de
-// toute façon déjà partagés par entreprise (wolfLaboDrawings clé par symbole), donc rien
-// ne se perd à passer par cette page plutôt qu'une autre.
-document.getElementById('stockCandleDrawBtn').addEventListener('click', async () => {
-  if (!activeCompany || !companies[activeCompany]) return;
-  const hist = companies[activeCompany];
-  const latest = hist[hist.length - 1];
-  switchPage('pageWolfLabo');
-  await ensureWolfLaboChart();
-  await selectWolfLaboSymbol(latest.ticker, activeCompany);
+// Canal directement sur ce graphique — demande explicite, sans redirection ("ne me
+// renvoie pas vers un autre onglet, je veux les tracer [dessus] les graphiques que tu
+// me montres"). Réutilise le moteur de tracé de Wolf Labo tel quel (setWolfLaboDrawMode/
+// commitWolfLaboChannel/wolfLaboAutoRegressionChannel...) : le graphique de ce onglet
+// pointe déjà wolfLaboChart/wolfLaboCandleSeries vers lui-même via
+// activateWolfLaboForAnalyse() (voir renderStockChartCandleView()), donc les mêmes
+// fonctions agissent directement sur CE graphique sans rien réécrire.
+document.getElementById('stockCandleDrawToolbar').addEventListener('click', e => {
+  const drawBtn = e.target.closest('button[data-draw]');
+  if (drawBtn){
+    setWolfLaboDrawMode(wolfLaboDrawMode === drawBtn.dataset.draw ? null : drawBtn.dataset.draw);
+    return;
+  }
+  if (e.target.closest('#stockCandleAutoChannelBtn')){
+    if (activeCompany && fmpSymbols[activeCompany]) wolfLaboAutoRegressionChannel();
+    return;
+  }
+  if (e.target.closest('#stockCandleMagnetBtn')){
+    wolfLaboMagnetOn = !wolfLaboMagnetOn;
+    document.querySelectorAll('#stockCandleMagnetBtn, #wolfLaboMagnetBtn').forEach(b => b.classList.toggle('active', wolfLaboMagnetOn));
+  }
 });
 document.getElementById('stockCandleFullscreenBtn').addEventListener('click', () => {
   const card = document.getElementById('stockCard');
@@ -12381,6 +12425,57 @@ let wolfLaboLastDragEvent = null;
 let wolfLaboDragRafScheduled = false;
 let wolfLaboBandPrimitive = null; // remplissage semi-transparent entre les bornes d'un canal/régression
 
+// ---- Contexte actif (Wolf Labo OU le graphique de l'onglet Analyse) ----------------
+// Demande explicite : "je dois avoir la possibilité de tracer des canaux [sur le
+// graphique de l'onglet Analyse]... ne me renvoie pas vers un autre onglet". Plutôt que
+// dupliquer tout le moteur de tracé (magnétisme, poignées, primitive de remplissage,
+// liste de tracés éditables) en un second exemplaire, wolfLaboChart/wolfLaboCandleSeries/
+// wolfLaboBandPrimitive/wolfLaboSampleData restent les MÊMES variables globales, mais
+// pointent vers QUEL QUE SOIT le graphique actuellement affiché — un seul est visible à
+// la fois dans une SPA, donc jamais de vraie collision tant que le repointage a lieu à
+// chaque affichage. wolfLaboOwnState conserve le graphique/la société de Wolf Labo
+// pendant qu'un détour par l'Analyse utilise temporairement ces mêmes globals — restauré
+// au retour, pour qu'un aller-retour n'efface jamais l'état propre de Wolf Labo (contrairement
+// au graphique de l'Analyse, qui n'a pas besoin de ce filet : stockCandleChart/
+// stockCandleSeries restent ses propres variables persistantes, recalculées à chaque
+// rendu depuis stockCandleFull/activeCompany, déjà fiables sans snapshot).
+let wolfLaboActiveCtx = null; // 'labo' | 'analyse' | null
+let wolfLaboOwnState = null; // { chart, series, band, sampleData } | null
+let wolfLaboHolderId = 'wolfLaboChartHolder';
+let wolfLaboHandlesElId = 'wolfLaboHandles';
+let wolfLaboDrawingsListId = 'wolfLaboDrawingsList';
+let wolfLaboDrawHintId = 'wolfLaboDrawHint';
+function activateWolfLaboForLabo(){
+  if (wolfLaboActiveCtx === 'analyse'){
+    if (wolfLaboOwnState){
+      wolfLaboChart = wolfLaboOwnState.chart;
+      wolfLaboCandleSeries = wolfLaboOwnState.series;
+      wolfLaboBandPrimitive = wolfLaboOwnState.band;
+      wolfLaboSampleData = wolfLaboOwnState.sampleData;
+    } else {
+      // Wolf Labo jamais ouvert avant dans cette session (l'utilisateur est passé par
+      // l'Analyse en premier) : ne pas laisser les pointeurs sur le graphique de
+      // l'Analyse, sinon renderWolfLaboChart() croirait à tort qu'un graphique existe
+      // déjà et sauterait sa création dans #wolfLaboChartHolder.
+      wolfLaboChart = null; wolfLaboCandleSeries = null; wolfLaboBandPrimitive = null; wolfLaboSampleData = null;
+    }
+  }
+  wolfLaboActiveCtx = 'labo';
+  wolfLaboHolderId = 'wolfLaboChartHolder'; wolfLaboHandlesElId = 'wolfLaboHandles';
+  wolfLaboDrawingsListId = 'wolfLaboDrawingsList'; wolfLaboDrawHintId = 'wolfLaboDrawHint';
+}
+function activateWolfLaboForAnalyse(fmpSymbol, nom, candles){
+  if (wolfLaboActiveCtx === 'labo'){
+    wolfLaboOwnState = { chart:wolfLaboChart, series:wolfLaboCandleSeries, band:wolfLaboBandPrimitive, sampleData:wolfLaboSampleData };
+  }
+  wolfLaboActiveCtx = 'analyse';
+  wolfLaboHolderId = 'chartStockCandle'; wolfLaboHandlesElId = 'stockCandleHandles';
+  wolfLaboDrawingsListId = 'stockCandleDrawingsList'; wolfLaboDrawHintId = 'stockCandleDrawHint';
+  wolfLaboChart = stockCandleChart;
+  wolfLaboCandleSeries = stockCandleSeries;
+  wolfLaboSampleData = { symbol: fmpSymbol, name: nom, candles };
+}
+
 // Préréglages de style nommés (couleur + opacité), réutilisables sur n'importe quel canal/
 // canal auto — demande explicite ("enregistrer des présets"). Liste globale, pas par
 // entreprise : un préréglage "Support fort" créé sur une entreprise doit rester
@@ -12830,7 +12925,7 @@ function wolfLaboDrawingLabel(d){
   return 'Canal auto (régression)';
 }
 function renderWolfLaboDrawingsList(){
-  const box = document.getElementById('wolfLaboDrawingsList');
+  const box = document.getElementById(wolfLaboDrawingsListId);
   if (!box) return;
   const symbol = currentWolfLaboSymbol();
   const list = symbol ? (wolfLaboDrawings[symbol] || []) : [];
@@ -12904,8 +12999,11 @@ function setWolfLaboDrawMode(mode){
   wolfLaboDrawMode = mode;
   wolfLaboDrawPending = [];
   wolfLaboClearChannelPreview();
-  document.querySelectorAll('#wolfLaboDrawToolbar button[data-draw]').forEach(b => b.classList.toggle('active', b.dataset.draw === mode));
-  const hint = document.getElementById('wolfLaboDrawHint');
+  // Sélecteur global (pas restreint à #wolfLaboDrawToolbar) : deux toolbars de tracé
+  // existent maintenant (Wolf Labo + l'onglet Analyse), data-draw suffit à les
+  // désigner sans dupliquer cette fonction.
+  document.querySelectorAll('button[data-draw]').forEach(b => b.classList.toggle('active', b.dataset.draw === mode));
+  const hint = document.getElementById(wolfLaboDrawHintId);
   if (hint){
     if (mode === 'trendline'){ hint.textContent = 'Clique 2 points sur le graphique pour tracer la ligne (Échap pour annuler).'; hint.style.display = ''; }
     else if (mode === 'channel'){ hint.textContent = "Comme sur TradingView : clique 2 points pour tracer UNE des deux bornes du canal (support ou résistance, peu importe laquelle), puis un 3e clic pour placer l'AUTRE borne (Échap pour annuler). La médiane s'affiche automatiquement au milieu, non modifiable. Une fois posé, clique le canal (sur le graphique ou dans la liste) pour ajuster chaque borne à la souris."; hint.style.display = ''; }
@@ -12991,7 +13089,7 @@ function wireWolfLaboChartClicks(){
       if (wolfLaboDrawPending.length < 2){
         wolfLaboDrawPending.push({ time, price: wolfLaboSnapPrice(time, price0) });
         if (wolfLaboDrawPending.length === 2){
-          const hint = document.getElementById('wolfLaboDrawHint');
+          const hint = document.getElementById(wolfLaboDrawHintId);
           if (hint) hint.textContent = "3e clic : déplace la souris pour placer l'autre borne, puis clique pour valider (Échap pour annuler).";
         }
       } else {
@@ -13043,7 +13141,7 @@ function wolfLaboProcessChannelPreview(){
 //     offset à partir de CE point de référence — donc toujours parallèle à la 1re borne
 //     par construction, jamais par un recalcul a posteriori.
 //   - secMid (carrée) : même chose, référencée au milieu.
-function wolfLaboHandlesEl(){ return document.getElementById('wolfLaboHandles'); }
+function wolfLaboHandlesEl(){ return document.getElementById(wolfLaboHandlesElId); }
 function renderWolfLaboHandles(){
   const box = wolfLaboHandlesEl();
   if (!box) return;
@@ -13077,7 +13175,7 @@ function renderWolfLaboHandles(){
   }).join('');
 }
 function wolfLaboContainerPoint(e){
-  const holder = document.getElementById('wolfLaboChartHolder');
+  const holder = document.getElementById(wolfLaboHolderId);
   const rect = holder.getBoundingClientRect();
   return { x: e.clientX - rect.left, y: e.clientY - rect.top };
 }
@@ -13106,7 +13204,7 @@ function wolfLaboTimeFromX(x){
   if (!wolfLaboChart) return null;
   const direct = wolfLaboChart.timeScale().coordinateToTime(x);
   if (direct != null) return direct;
-  const holder = document.getElementById('wolfLaboChartHolder');
+  const holder = document.getElementById(wolfLaboHolderId);
   const w = holder ? holder.clientWidth : 0;
   const clamped = Math.max(2, Math.min(w - 2, x));
   return wolfLaboChart.timeScale().coordinateToTime(clamped);
@@ -13501,6 +13599,11 @@ async function loadWolfLaboSample(){
 }
 
 async function ensureWolfLaboChart(){
+  // AVANT tout — loadWolfLaboSample()/selectWolfLaboSymbol() plus bas écrivent
+  // directement dans wolfLaboSampleData ; activer le contexte APRÈS les aurait
+  // effacées avec l'état restauré (ou remises à null au 1er passage), voir
+  // activateWolfLaboForLabo().
+  activateWolfLaboForLabo();
   if (wolfLaboLoaded){ renderWolfLaboChart(); return; }
   wolfLaboLoaded = true;
   loadWolfLaboDrawings();
@@ -13598,7 +13701,11 @@ document.getElementById('wolfLaboStyleMenu').addEventListener('click', e => {
   applyWolfLaboChartStyle();
 });
 document.getElementById('wolfLaboPenClear').addEventListener('click', clearWolfLaboSketch);
-document.getElementById('wolfLaboDrawingsList').addEventListener('click', e => {
+// Les 4 gestionnaires ci-dessous s'appliquent MAINTENANT à deux conteneurs
+// (#wolfLaboDrawingsList ET #stockCandleDrawingsList, voir wolfLaboDrawingsListId) — ne
+// lisent jamais `this`/e.currentTarget (uniquement e.target.closest(...)), donc
+// réutilisables tels quels sur les deux sans dupliquer leur corps (boucle plus bas).
+function wolfLaboDrawingsListClick(e){
   const delBtn = e.target.closest('[data-delete-drawing]');
   if (delBtn){ deleteWolfLaboDrawing(delBtn.dataset.deleteDrawing); return; }
   const styleToggle = e.target.closest('[data-style-toggle]');
@@ -13658,24 +13765,32 @@ document.getElementById('wolfLaboDrawingsList').addEventListener('click', e => {
   if (e.target.closest('input, select, button')) return;
   const chip = e.target.closest('[data-select-drawing]');
   if (chip) selectWolfLaboDrawing(chip.dataset.selectDrawing);
-});
-document.getElementById('wolfLaboDrawingsList').addEventListener('input', e => {
+}
+function wolfLaboDrawingsListInput(e){
   if (e.target.matches('[data-drawing-color]')) updateWolfLaboDrawingStyle(e.target.dataset.drawingColor, { color: e.target.value });
   if (e.target.matches('[data-drawing-opacity]')) updateWolfLaboDrawingStyle(e.target.dataset.drawingOpacity, { fillOpacity: parseFloat(e.target.value) });
   if (e.target.matches('[data-band-color]')) updateWolfLaboDrawingStyle(e.target.dataset.id, { [e.target.dataset.bandColor]: e.target.value });
-});
-document.getElementById('wolfLaboDrawingsList').addEventListener('change', e => {
+}
+function wolfLaboDrawingsListChange(e){
   if (e.target.matches('[data-preset-apply]') && e.target.value){
     applyWolfLaboStylePreset(e.target.dataset.presetApply, e.target.value);
     e.target.value = '';
     renderWolfLaboDrawingsList();
   }
-});
-document.getElementById('wolfLaboDrawingsList').addEventListener('keydown', e => {
+}
+function wolfLaboDrawingsListKeydown(e){
   if (e.key === 'Enter' && e.target.matches('[data-preset-name-input]')){
     e.preventDefault();
     document.querySelector(`[data-preset-name-confirm="${e.target.dataset.presetNameInput}"]`).click();
   }
+}
+['wolfLaboDrawingsList', 'stockCandleDrawingsList'].forEach(id => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('click', wolfLaboDrawingsListClick);
+  el.addEventListener('input', wolfLaboDrawingsListInput);
+  el.addEventListener('change', wolfLaboDrawingsListChange);
+  el.addEventListener('keydown', wolfLaboDrawingsListKeydown);
 });
 document.getElementById('wolfLaboFullscreenBtn').addEventListener('click', () => {
   wolfLaboFullscreen = !wolfLaboFullscreen;

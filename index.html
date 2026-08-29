@@ -174,7 +174,6 @@
             <button class="zoom-btn" onclick="openZoom('stock',&quot;Cours de bourse&quot;)" aria-label="Agrandir">⤢</button>
           </div>
           <div class="chart-card-actions" id="stockCandleActions" style="display:none;">
-            <button class="zoom-btn" id="stockCandleDrawBtn" title="Tracer un canal (ouvre Wolf Labo sur cette entreprise, avec réglages/couleurs/aimant/enregistrement complets)">📐 Tracer un canal</button>
             <button class="zoom-btn" id="stockCandleFullscreenBtn" aria-label="Plein écran" title="Plein écran">⤢</button>
           </div>
         </div>
@@ -240,6 +239,17 @@
             </div>
           </div>
         </div>
+        <!-- Tracé de canaux DIRECTEMENT sur ce graphique — demande explicite ("je dois
+             avoir la possibilité de tracer des canaux [ici]... ne me renvoie pas vers un
+             autre onglet"). Réutilise le moteur de Wolf Labo (magnétisme, poignées,
+             réglages par bande, enregistrement automatique) — voir
+             activateWolfLaboForAnalyse() côté app.js. -->
+        <div class="range-buttons" id="stockCandleDrawToolbar" style="display:none;">
+          <button type="button" data-draw="channel" title="Comme sur TradingView : 2 clics pour une borne (support ou résistance), 3e clic pour l'autre">📐 Canal (3 clics)</button>
+          <button type="button" id="stockCandleAutoChannelBtn" title="Zoome/déplace-toi sur la période voulue avant de cliquer — calculé uniquement sur ce qui est visible à l'écran">🤖 Canal auto (période visible)</button>
+          <button type="button" class="labo-toggle-btn active" id="stockCandleMagnetBtn" title="Aimant : accroche les tracés aux prix réels (O/H/L/C) de la bougie la plus proche">🧲 Aimant</button>
+          <span id="stockCandleDrawHint" class="chart-hint" style="margin:0 0 0 6px;display:none;"></span>
+        </div>
         <div class="range-buttons" id="stockScaleModeRow">
           <button data-scale-mode="normal" class="active">Échelle normale</button>
           <button data-scale-mode="indexed">Indexé base 100</button>
@@ -258,12 +268,15 @@
         </div>
         <div class="chart-holder" style="height:320px;">
           <canvas id="chartStock"></canvas>
-          <div id="chartStockCandle" style="display:none;width:100%;height:100%;"></div>
+          <div id="chartStockCandle" style="display:none;width:100%;height:100%;position:relative;">
+            <div id="stockCandleHandles" style="position:absolute;inset:0;z-index:6;pointer-events:none;"></div>
+          </div>
           <button class="chart-card-cart-btn" id="stockCartBtn" onclick="addChartInstanceToCart(chartInstances['stock'], 'Cours de bourse', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button>
         </div>
         <div class="stock-status" id="stockStatus"></div>
         <div class="stock-source" id="stockScaleNote" style="display:none;"></div>
         <div class="stock-source" id="stockSourceNote">Source : Yahoo Finance (repli automatique sur Stooq si indisponible)</div>
+        <div id="stockCandleDrawingsList" class="labo-drawings-list"></div>
       </div>
 
       <div class="chart-card">
