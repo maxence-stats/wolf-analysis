@@ -40,3 +40,4 @@ __pycache__/
 data/labo-*.json
 data/documents-*.json
 data/prices-*.json
+data/logos/

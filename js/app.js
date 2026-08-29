@@ -3032,10 +3032,18 @@ function printImagesRowHtml(images){
 // portfolioEntityLogo()/cerveauEntityCard() — résolu à chaque appel (jamais mis en
 // cache en dur), donc apparaît automatiquement dès que l'entreprise est ajoutée au
 // Sheet, sans changement de code.
+// Demande explicite : "être sûr que tous les logos soient... aux datas extraites avec
+// les images" — repli sur le logo FMP téléchargé en local (fmp-database/logos.py,
+// copié dans data/logos/ à la racine, voir sync_all_to_site()) quand le Sheet n'a pas
+// de LIEN IMAGE pour cette entreprise. Le Sheet reste prioritaire quand il en a un
+// (comportement inchangé pour toute entreprise déjà bien couverte).
 function companyLogoUrl(nom){
   if (!nom) return null;
   const match = Object.keys(companies).find(n => stripAccents(n.toLowerCase()) === stripAccents(nom.toLowerCase()));
-  return match ? companies[match][companies[match].length - 1].lienImage || null : null;
+  const sheetUrl = match ? companies[match][companies[match].length - 1].lienImage : null;
+  if (sheetUrl) return sheetUrl;
+  const symbol = fmpSymbols[nom] || (match && fmpSymbols[match]);
+  return symbol ? `data/logos/${symbol}.png` : null;
 }
 
 // Bug remonté : sur un export à PLUSIEURS graphiques (page Analyse/Macro complète),

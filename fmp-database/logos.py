@@ -21,6 +21,7 @@ l'utilisateur avant de les committer où que ce soit.
 """
 import json
 import pathlib
+import shutil
 import sys
 import urllib.request
 import urllib.error
@@ -29,6 +30,13 @@ import config
 import db
 
 LOGOS_DIR = config.DATA_DIR / "logos"
+# Copie servable par le site (data/logos/ à la racine du dépôt, PAS fmp-database/data/)
+# — demande explicite : "être sûr que tous les logos soient... aux datas extraites avec
+# les images". Reste gitignoré comme le reste des données FMP (voir .gitignore) : jamais
+# poussé sur GitHub, juste rendu accessible en local/sur le réseau local pour que le
+# site (app.js::companyLogoUrl()) puisse le charger par une URL relative normale, chose
+# qu'un chemin sous fmp-database/ (hors de la racine servie) ne permet pas.
+SITE_LOGOS_DIR = config.MODULE_DIR.parent / "data" / "logos"
 
 
 def download_logo(symbol, url):
@@ -40,6 +48,8 @@ def download_logo(symbol, url):
         with urllib.request.urlopen(req, timeout=config.REQUEST_TIMEOUT_SECONDS) as res:
             data = res.read()
         dest.write_bytes(data)
+        SITE_LOGOS_DIR.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(dest, SITE_LOGOS_DIR / dest.name)
         return dest, len(data)
     except (urllib.error.URLError, urllib.error.HTTPError) as e:
         return None, str(e)
@@ -83,10 +93,29 @@ def download_logos(conn, symbols):
     return results
 
 
+def sync_all_to_site():
+    """Recopie tout ce qui a déjà été téléchargé avant l'ajout de la synchronisation
+    automatique (download_logo() la fait maintenant à chaque téléchargement) — à lancer
+    une fois pour rattraper les logos déjà en place."""
+    if not LOGOS_DIR.exists():
+        print("Rien à synchroniser : fmp-database/data/logos/ n'existe pas encore.")
+        return
+    SITE_LOGOS_DIR.mkdir(parents=True, exist_ok=True)
+    n = 0
+    for f in LOGOS_DIR.iterdir():
+        if f.is_file():
+            shutil.copyfile(f, SITE_LOGOS_DIR / f.name)
+            n += 1
+    print(f"{n} logo(s) synchronisé(s) vers {SITE_LOGOS_DIR}")
+
+
 def main():
+    if "--sync" in sys.argv:
+        sync_all_to_site()
+        return
     symbols = sys.argv[1:]
     if not symbols:
-        print("Usage : python logos.py SYMBOLE [SYMBOLE2 ...]")
+        print("Usage : python logos.py SYMBOLE [SYMBOLE2 ...]\n        python logos.py --sync   (recopie ceux déjà téléchargés vers data/logos/ à la racine)")
         sys.exit(1)
     conn = db.get_connection()
     download_logos(conn, symbols)
