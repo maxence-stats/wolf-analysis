@@ -7171,6 +7171,19 @@ let stockCandleSmaSeries = {};
 let stockCandleRegSeries = {};
 let stockCandlePriceLines = {};
 let stockCandleDrawWired = false; // wireWolfLaboChartClicks()/wireWolfLaboHandleDrag() appelées UNE SEULE fois pour ce graphique
+
+// Superposition d'indicateurs macro sur le graphique de cours — demande explicite
+// ("superposer la liquidité de la Fed, les taux à dix ans, les taux à deux ans, tous
+// les indicateurs macroéconomiques... avoir la possibilité de mettre logarithmique en
+// base 100 ou en normal"). Réutilise RATE_OVERLAY_INDICATORS/creditIndicatorsData/
+// stockScaleMode déjà en place pour l'outil "Taux vs Actions/Secteurs" (Macroéconomie →
+// Secteur) et pour l'ancien graphique Chart.js — mêmes données FRED (un seul fetch au
+// démarrage, loadCreditIndicators()), même variable de mode d'échelle partagée (les deux
+// systèmes de rendu ne tournent jamais en même temps : soit chandeliers FMP, soit repli
+// Chart.js, jamais les deux).
+let stockMacroOverlaySelected = [];
+let stockMacroOverlaySeries = {}; // { [indicatorKey]: série lightweight-charts }
+const STOCK_MACRO_COLORS = [THEME.blue, THEME.green, THEME.red, THEME.violet, THEME.yellow, THEME.white, THEME.gold];
 let stockCandleFull = null; // [{t,o,h,l,c}] ascendant, baseline FMP + repli quotidien Yahoo fusionné
 // Choix explicite de l'utilisateur : "je veux avoir la possibilité de mettre ou non en
 // bougie... des fois je veux juste voir des courbes" + "les mettre en weekly, en
@@ -7433,12 +7446,71 @@ function renderStockChartCandleView(){
   // Filet de sécurité en plus du blocage du drag (handleScale.axisPressedMouseMove.price
   // ci-dessus) : réaffirme l'échelle auto à chaque rendu, se répare toute seule même si
   // l'axe s'était déjà figé sur une session avant ce correctif (ou par tout autre moyen).
+  // mode appliqué séparément (voir applyStockCandleScaleMode) : forcer autoScale:true
+  // n'entre pas en conflit avec mode:Logarithmic/IndexedTo100, seul mode:Normal +
+  // autoScale:false figerait l'échelle, jamais le cas ici.
   stockCandleChart.priceScale('right').applyOptions({ autoScale:true });
+  applyStockCandleScaleMode();
+  renderStockMacroOverlayList(document.getElementById('stockMacroOverlaySearch') ? document.getElementById('stockMacroOverlaySearch').value : '');
+  renderStockMacroOverlays();
   if (activeCompany && fmpSymbols[activeCompany]){
     renderWolfLaboDrawings();
     renderWolfLaboDrawingsList();
     renderWolfLaboHandles();
   }
+}
+
+function applyStockCandleScaleMode(){
+  if (!stockCandleChart || !window.LightweightCharts) return;
+  const modeMap = {
+    normal: window.LightweightCharts.PriceScaleMode.Normal,
+    log: window.LightweightCharts.PriceScaleMode.Logarithmic,
+    indexed: window.LightweightCharts.PriceScaleMode.IndexedTo100
+  };
+  stockCandleChart.priceScale('right').applyOptions({ mode: modeMap[stockScaleMode] != null ? modeMap[stockScaleMode] : modeMap.normal });
+}
+
+// Indicateurs macro superposés au cours — sur la MÊME échelle de prix (droite) que les
+// bougies, pour que le mode Logarithmique/Indexé base 100 rebase tout ensemble (c'est
+// précisément l'intérêt de comparer un taux à ~4% et un cours à ~90€ sur un même
+// graphique — en échelle "Normale" les indicateurs macro écrasent visuellement le
+// cours, attendu, l'échelle normale n'a de sens que pour regarder le prix seul).
+function renderStockMacroOverlays(){
+  if (!stockCandleChart) return;
+  Object.keys(stockMacroOverlaySeries).forEach(key => {
+    if (!stockMacroOverlaySelected.includes(key)){
+      try{ stockCandleChart.removeSeries(stockMacroOverlaySeries[key]); }catch(e){ /* déjà retirée */ }
+      delete stockMacroOverlaySeries[key];
+    }
+  });
+  stockMacroOverlaySelected.forEach((key, i) => {
+    const ind = RATE_OVERLAY_INDICATORS.find(x => x.key === key);
+    const raw = creditIndicatorsData[key];
+    if (!ind) return;
+    if (!stockMacroOverlaySeries[key]){
+      stockMacroOverlaySeries[key] = stockCandleChart.addLineSeries({
+        color: STOCK_MACRO_COLORS[i % STOCK_MACRO_COLORS.length], lineWidth:1.5,
+        priceLineVisible:false, lastValueVisible:true, title: ind.label
+      });
+    }
+    if (!raw){ stockMacroOverlaySeries[key].setData([]); return; }
+    const startIdx = stockCandleRangeStartIdx(raw.dates, stockRange);
+    const data = raw.dates.slice(startIdx)
+      .map((d, i2) => ({ time:d, value: raw.values[startIdx + i2] }))
+      .filter(p => p.value != null && isFinite(p.value));
+    stockMacroOverlaySeries[key].setData(data);
+  });
+}
+function renderStockMacroOverlayList(filterText){
+  const box = document.getElementById('stockMacroOverlayList');
+  if (!box) return;
+  const q = stripAccents((filterText || '').toLowerCase());
+  const items = RATE_OVERLAY_INDICATORS.filter(i => stripAccents(i.label.toLowerCase()).includes(q));
+  box.innerHTML = items.length
+    ? items.map(i => `<button type="button" data-macro-key="${i.key}" class="${stockMacroOverlaySelected.includes(i.key) ? 'active' : ''}">${i.label}</button>`).join('')
+    : '<div style="padding:6px;color:var(--text-faint);font-size:11px;">Aucun résultat</div>';
+  const btn = document.getElementById('stockMacroOverlayBtn');
+  if (btn) btn.textContent = `🌐 Indicateurs macro (${stockMacroOverlaySelected.length}) ▾`;
 }
 
 async function loadStockChart(ticker, nom){
@@ -7790,6 +7862,33 @@ document.getElementById('stockCandleDrawToolbar').addEventListener('click', e =>
     wolfLaboMagnetOn = !wolfLaboMagnetOn;
     document.querySelectorAll('#stockCandleMagnetBtn, #wolfLaboMagnetBtn').forEach(b => b.classList.toggle('active', wolfLaboMagnetOn));
   }
+});
+// Recherche + multi-sélection d'indicateurs macro à superposer — demande explicite
+// ("faire des recherches d'indicateur pour les ajouter plutôt que de faire plein de
+// boutons"), reste ouvert pour en cocher/décocher plusieurs d'affilée (même pattern que
+// le menu Indicateurs techniques juste à côté).
+document.getElementById('stockMacroOverlaySearch').addEventListener('input', e => {
+  renderStockMacroOverlayList(e.target.value);
+});
+document.getElementById('stockMacroOverlayMenu').addEventListener('click', e => {
+  const btn = e.target.closest('[data-macro-key]');
+  if (!btn) return;
+  e.stopPropagation();
+  const key = btn.dataset.macroKey;
+  const idx = stockMacroOverlaySelected.indexOf(key);
+  if (idx === -1) stockMacroOverlaySelected.push(key); else stockMacroOverlaySelected.splice(idx, 1);
+  btn.classList.toggle('active', idx === -1);
+  renderStockMacroOverlayList(document.getElementById('stockMacroOverlaySearch').value);
+  renderStockMacroOverlays();
+});
+document.getElementById('stockCandleScaleMenu').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-scale-candle]');
+  if (!btn) return;
+  stockScaleMode = btn.dataset.scaleCandle;
+  document.querySelectorAll('[data-scale-candle]').forEach(b => b.classList.toggle('active', b.dataset.scaleCandle === stockScaleMode));
+  document.getElementById('stockCandleScaleBtn').textContent = `📐 ${btn.textContent} ▾`;
+  btn.closest('.labo-dropdown').classList.remove('open');
+  applyStockCandleScaleMode();
 });
 document.getElementById('stockCandleFullscreenBtn').addEventListener('click', () => {
   const card = document.getElementById('stockCard');

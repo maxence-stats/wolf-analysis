@@ -238,6 +238,29 @@
               <button data-indicator="prixJusteCible">Prix juste / cible</button>
             </div>
           </div>
+          <!-- Superposition d'indicateurs macro (taux, liquidité Fed...) directement sur ce
+               graphique — demande explicite. Recherche plutôt qu'une rangée de boutons fixe
+               ("faut trouver un moyen de faire des recherches d'indicateur pour les ajouter
+               plutôt que de faire plein de boutons") : la liste reste utilisable même si
+               d'autres indicateurs viennent s'y ajouter plus tard. Réutilise
+               RATE_OVERLAY_INDICATORS/creditIndicatorsData, déjà chargés pour l'outil "Taux
+               vs Actions/Secteurs" de Macroéconomie → Secteur — même données, pas un second
+               pipeline de fetch FRED. -->
+          <div class="labo-dropdown" data-dropdown="stockMacroOverlay">
+            <button type="button" class="labo-dropdown-btn" id="stockMacroOverlayBtn">🌐 Indicateurs macro ▾</button>
+            <div class="labo-dropdown-menu" id="stockMacroOverlayMenu" style="min-width:220px;">
+              <input type="text" id="stockMacroOverlaySearch" placeholder="Rechercher un indicateur…" class="search-input" style="margin-bottom:6px;">
+              <div id="stockMacroOverlayList"></div>
+            </div>
+          </div>
+          <div class="labo-dropdown" data-dropdown="stockCandleScale">
+            <button type="button" class="labo-dropdown-btn" id="stockCandleScaleBtn">📐 Normale ▾</button>
+            <div class="labo-dropdown-menu" id="stockCandleScaleMenu">
+              <button data-scale-candle="normal" class="active">Normale</button>
+              <button data-scale-candle="log">Logarithmique</button>
+              <button data-scale-candle="indexed">Indexé base 100</button>
+            </div>
+          </div>
         </div>
         <!-- Tracé de canaux DIRECTEMENT sur ce graphique — demande explicite ("je dois
              avoir la possibilité de tracer des canaux [ici]... ne me renvoie pas vers un
