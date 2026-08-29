@@ -300,6 +300,35 @@ def build_stats(conn, symbol, div_cagr):
     return groups
 
 
+def build_revenue_segmentation(conn, symbol, category):
+    """revenue_segmentation_geo/product — chaque ligne FMP a une forme différente des
+    états financiers : {fiscalYear, date, data:{libellé_libre: montant}}, le jeu de
+    libellés n'est PAS fixe d'une entreprise à l'autre (contrairement à
+    FIELD_MAP_IS/BS/CF) donc pas de mapping de champs ici, juste l'union des libellés
+    rencontrés sur les exercices disponibles. Vide (pas de banner ici) pour une
+    entreprise qui ne segmente pas son CA dans ses dépôts — géré côté app.js comme un
+    autre bloc "en attente", jamais une erreur bloquante."""
+    rows = rows_for(conn, category, symbol, limit=50)
+    if not rows:
+        return None
+    years = [r.get("fiscalYear") or (r.get("date") or "")[:4] for r in rows]
+    labels = []
+    for r in rows:
+        for label in (r.get("data") or {}).keys():
+            if label not in labels:
+                labels.append(label)
+    series = {label: [(r.get("data") or {}).get(label) for r in rows] for label in labels}
+    return {"years": years, "series": series}
+
+
+def latest_dcf(conn, symbol, category):
+    rows = rows_for(conn, category, symbol, limit=1)
+    if not rows:
+        return None
+    row = rows[-1]
+    return {"value": row.get("dcf"), "stockPrice": row.get("Stock Price"), "date": row.get("date")}
+
+
 def main():
     symbol = sys.argv[1] if len(sys.argv) > 1 else "KO"
     conn = db.get_connection()
@@ -317,6 +346,10 @@ def main():
         "cashFlow": build_statement(cashflow_rows, FIELD_MAP_CF),
         "growth": growth_rows,
         "stats": build_stats(conn, symbol, div_row["cagr"] if div_row else None),
+        "dcf": latest_dcf(conn, symbol, "dcf"),
+        "dcfLevered": latest_dcf(conn, symbol, "dcf_levered"),
+        "revenueGeo": build_revenue_segmentation(conn, symbol, "revenue_segmentation_geo"),
+        "revenueProduct": build_revenue_segmentation(conn, symbol, "revenue_segmentation_product"),
     }
     conn.close()
 

@@ -93,6 +93,7 @@
       <button class="page-subnav-btn active" data-page="pageAnalyse">Vue d'ensemble</button>
       <button class="page-subnav-btn" data-page="pageValorisation">Valorisation</button>
       <button class="page-subnav-btn" data-page="pageDocuments">Documents financiers</button>
+      <button class="page-subnav-btn" data-page="pageRevenus">Revenus</button>
     </div>
 
     <div class="page-subnav" id="macroSubnav" style="display:none;">
@@ -335,6 +336,13 @@
         <div class="ratio-card"><div class="k" id="voMediane20Label">Médiane (20 ans)</div><div class="v" id="voMediane20">—</div><div class="sub">multiple médian sur 20 ans</div></div>
       </div>
 
+      <div class="section-label" style="margin-top:14px;">Référence externe — DCF (FMP)</div>
+      <p class="valo-intro" style="margin-top:0;">Estimation de juste valeur par discounted cash flow calculée par FMP — une méthode différente de tes scénarios (qui reposent sur FCF × médiane P/FCF), à prendre comme second avis, pas comme remplacement.</p>
+      <div class="ratio-grid">
+        <div class="ratio-card"><div class="k">DCF (non levier)</div><div class="v" id="voDcf">—</div><div class="sub">discounted cash flow, FMP</div></div>
+        <div class="ratio-card"><div class="k">DCF (levier)</div><div class="v" id="voDcfLevered">—</div><div class="sub">discounted cash flow (avec dette), FMP</div></div>
+      </div>
+
       <div class="scenario-grid" id="scenarioGrid"></div>
 
       <div class="section-label">Historique de vos objectifs</div>
@@ -376,6 +384,21 @@
       </div>
 
       <div id="documentsContent"></div>
+    </div>
+
+    <div id="pageRevenus" class="page">
+      <div class="section-label">🌍 Répartition des revenus</div>
+      <p class="valo-intro">D'où viennent les revenus de l'entreprise — par zone géographique et par segment d'activité — et comment cette répartition évolue dans le temps (croissance, réduction, stagnation d'une zone/d'un segment). Données FMP, tirées des dépôts annuels ; certaines entreprises (notamment hors États-Unis) ne détaillent pas ce niveau, la page l'indique alors clairement.</p>
+
+      <div class="documents-header">
+        <img id="revenusLogo" alt="">
+        <div>
+          <h2 id="revenusCompanyName">—</h2>
+          <p class="chart-subtitle" id="revenusTicker">—</p>
+        </div>
+      </div>
+
+      <div id="revenusContent"></div>
     </div>
 
     <div id="pagePortfolio" class="page">

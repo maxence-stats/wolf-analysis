@@ -4897,7 +4897,7 @@ const PORTFOLIO_GROUP_PAGES = ['pagePortfolio', 'pageDividende', 'pagePerso', 'p
 // retour explicite : l'avoir append en bas de la même page #pageAnalyse forçait à
 // défiler bien plus bas que voulu ("il faut descendre trop bas, ce n'est pas ça que je
 // veux"). Même mécanique de groupe que PORTFOLIO_GROUP_PAGES, juste un second groupe.
-const ANALYSE_GROUP_PAGES = ['pageAnalyse', 'pageValorisation', 'pageDocuments'];
+const ANALYSE_GROUP_PAGES = ['pageAnalyse', 'pageValorisation', 'pageDocuments', 'pageRevenus'];
 // Secteur/Classement/Watchlist regroupés sous "🔍 Screener" (même pattern que
 // Portefeuille) — demande explicite pour désencombrer la nav principale.
 const SCREENER_GROUP_PAGES = ['pageSecteur', 'pageClassement', 'pageWatchlist', 'pageComparaison', 'pageTierList'];
@@ -4945,6 +4945,7 @@ const MOBILE_NAV_MANIFEST = [
   { page:'pageAnalyse', label:'Analyse' },
   { page:'pageValorisation', label:'Valorisation', indent:true },
   { page:'pageDocuments', label:'Documents financiers', indent:true },
+  { page:'pageRevenus', label:'Revenus', indent:true },
   { group:'💼 Portefeuille', items:[
     { page:'pagePortfolio', label:'Wolf Portfolio' },
     { page:'pageDividende', label:'Dividende' },
@@ -5221,6 +5222,7 @@ function renderCompany(nom){
   renderValorisation(nom);
   renderAnalyseValoSummary(nom);
   renderDocumentsPage(nom);
+  renderRevenusPage(nom);
 
   // destroyCharts() vide chartInstances en bloc — appelé avant loadStockChart() pour ne
   // pas effacer le graphique boursier juste après sa création (piège révélé par la
@@ -8555,7 +8557,11 @@ async function ensureDocumentsRealData(name){
     if (res.ok) documentsRealData[name] = await res.json();
   }catch(e){ /* fichier absent en local ou fetch bloqué (ex. file://) — non bloquant, tirets */ }
   documentsRealDataLoading[name] = false;
-  if (documentsRealData[name] && activeCompany === name) renderDocumentsPage(name);
+  if (documentsRealData[name] && activeCompany === name){
+    renderDocumentsPage(name);
+    renderRevenusPage(name);
+    renderDcfTiles(name);
+  }
 }
 
 // value en unité brute FMP (dollars pour 'money'/'pershare', nombre d'actions pour
@@ -8686,6 +8692,135 @@ function initDocumentsTabbar(){
   });
 }
 
+/* ============================================================
+   REVENUS — sous-onglet Analyse. Répartition géographique + par segment
+   d'activité (FMP revenue_segmentation_geo/product), pie chart dernier
+   exercice + évolution de la part (%) dans le temps + tableau de croissance
+   par zone/segment — demande explicite : "je veux à la fois des camemberts,
+   mais je veux aussi l'historique... des outils permettant d'analyser
+   l'évolution... il me faut des pourcentages aussi". Réutilise
+   documentsRealData (même cache/fetch que Documents financiers, voir
+   ensureDocumentsRealData) — pas une source séparée.
+   ============================================================ */
+let revenusCharts = {};
+
+// Dernier exercice avec au moins une valeur connue — les entreprises qui ne
+// segmentent pas tous les ans laissent des trous (null) plutôt que 0.
+function revenueLatestYearRows(seg){
+  for (let idx = seg.years.length - 1; idx >= 0; idx--){
+    const rows = Object.entries(seg.series)
+      .map(([label, values]) => ({ label, value: values[idx] }))
+      .filter(r => r.value != null && r.value !== 0);
+    if (rows.length) return { year: seg.years[idx], rows };
+  }
+  return { year: seg.years[seg.years.length - 1], rows: [] };
+}
+// Part (%) de chaque zone/segment dans le total CONNU de chaque exercice (pas le total
+// de l'entreprise entière si tous les libellés ne sont pas déclarés cette année-là).
+function revenueShareSeries(seg){
+  const totals = seg.years.map((_, i) => Object.values(seg.series).reduce((s, vals) => s + (vals[i] || 0), 0));
+  const shareByLabel = {};
+  Object.entries(seg.series).forEach(([label, values]) => {
+    shareByLabel[label] = values.map((v, i) => (v == null || !totals[i]) ? null : v / totals[i] * 100);
+  });
+  return { years: seg.years, shareByLabel };
+}
+// Croissance totale + TCAC entre le premier et le dernier exercice CONNU de chaque
+// libellé (pas forcément le premier/dernier exercice de l'entreprise si ce libellé
+// n'existait pas encore, ex. un nouveau segment créé en cours d'historique).
+function revenueGrowthRows(seg){
+  return Object.entries(seg.series).map(([label, values]) => {
+    const known = seg.years.map((y, i) => ({ y, v: values[i] })).filter(x => x.v != null);
+    if (known.length < 2) return { label, firstYear: known[0] && known[0].y, lastYear: known[0] && known[0].y, total: null, cagr: null };
+    const first = known[0], last = known[known.length - 1];
+    const total = first.v !== 0 ? (last.v - first.v) / Math.abs(first.v) : null;
+    const nYears = Number(last.y) - Number(first.y);
+    const cagr = (nYears > 0 && first.v > 0 && (last.v / first.v) > 0) ? Math.pow(last.v / first.v, 1 / nYears) - 1 : null;
+    return { label, firstYear: first.y, lastYear: last.y, total, cagr };
+  });
+}
+function revenueSegmentSectionHtml(title, key, seg){
+  if (!seg || !seg.years || !seg.years.length){
+    return `<div class="chart-card wide"><div class="chart-card-head"><h3>${title}</h3></div>
+      <div class="documents-empty-banner">📭 Cette entreprise ne détaille pas cette répartition dans ses dépôts (ou l'import FMP n'a pas encore été fait pour elle) — pas une erreur, certaines entreprises (notamment hors États-Unis) ne segmentent pas leur CA de cette façon.</div></div>`;
+  }
+  const { year, rows } = revenueLatestYearRows(seg);
+  const total = rows.reduce((s, r) => s + r.value, 0);
+  const growth = revenueGrowthRows(seg);
+  return `<div class="chart-card wide">
+    <div class="chart-card-head"><div><h3>${title}</h3><p>Dernier exercice connu : ${year}</p></div></div>
+    <div class="analyse-chart-body">
+      <div class="chart-holder analyse-chart-canvas-holder"><canvas id="revenusChart_${key}"></canvas></div>
+      <div class="analyse-chart-table">
+        ${rows.map(r => {
+          const pct = total ? (r.value / total * 100) : 0;
+          return `<div class="analyse-chart-row"><span>${r.label}</span><span>${fmtFmpValue(r.value)}</span><span>${pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</span></div>`;
+        }).join('')}
+      </div>
+    </div>
+    <div class="section-label" style="margin-top:14px;">Évolution de la part (%) dans le temps</div>
+    <div class="chart-holder" style="height:260px;"><canvas id="revenusEvol_${key}"></canvas></div>
+    <div class="documents-table-wrap" style="margin-top:10px;">
+      <table class="documents-table">
+        <thead><tr><th>Zone / Segment</th><th>Premier exercice</th><th>Dernier exercice</th><th>Croissance totale</th><th>TCAC</th></tr></thead>
+        <tbody>${growth.map(g => `<tr><td>${g.label}</td><td>${g.firstYear ?? '—'}</td><td>${g.lastYear ?? '—'}</td><td>${fmtFmpPct(g.total)}</td><td>${fmtFmpPct(g.cagr)}</td></tr>`).join('')}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+function renderRevenusCharts(real){
+  Object.values(revenusCharts).forEach(ch => ch && ch.destroy());
+  revenusCharts = {};
+  [['geo', real && real.revenueGeo], ['product', real && real.revenueProduct]].forEach(([key, seg]) => {
+    if (!seg || !seg.years || !seg.years.length) return;
+    const canvas = document.getElementById('revenusChart_' + key);
+    const evolCanvas = document.getElementById('revenusEvol_' + key);
+    const { rows } = revenueLatestYearRows(seg);
+    if (canvas && rows.length){
+      revenusCharts[key] = new Chart(canvas.getContext('2d'), {
+        type:'pie',
+        data:{ labels: rows.map(r => r.label), datasets:[{ data: rows.map(r => r.value), backgroundColor: rows.map((_, i) => PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length]), borderColor:THEME.hair, borderWidth:2 }] },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true, color:THEME.dim, font:{size:10.5} } } } }
+      });
+    }
+    if (evolCanvas){
+      const { years, shareByLabel } = revenueShareSeries(seg);
+      const labels = Object.keys(shareByLabel);
+      revenusCharts[key + 'Evol'] = new Chart(evolCanvas.getContext('2d'), {
+        type:'line',
+        data:{ labels: years, datasets: labels.map((label, i) => ({
+          label, data: shareByLabel[label], borderColor: PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length],
+          backgroundColor:'transparent', borderWidth:2, spanGaps:true, tension:0.25, pointRadius:0
+        })) },
+        options:{ responsive:true, maintainAspectRatio:false,
+          scales:{ x:{ grid:{display:false}, ticks:{color:THEME.dim} }, y:{ ticks:{ color:THEME.dim, callback:v => v+'%' }, grid:{color:THEME.hair} } },
+          plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true, color:THEME.dim, font:{size:10.5} } } }
+        }
+      });
+    }
+  });
+}
+function renderRevenusPage(nom){
+  const name = nom || activeCompany;
+  const content = document.getElementById('revenusContent');
+  if (!content || !name || !companies[name]) return;
+  const hist = companies[name];
+  const latest = hist[hist.length - 1];
+  const logo = document.getElementById('revenusLogo');
+  if (logo) logo.src = latest.lienImage || '';
+  const nameEl = document.getElementById('revenusCompanyName');
+  if (nameEl) nameEl.textContent = name;
+  const tickerEl = document.getElementById('revenusTicker');
+  if (tickerEl) tickerEl.textContent = (latest.ticker || '—') + ' · ' + (latest.secteur || '—');
+
+  const real = documentsRealData[name];
+  if (!real) ensureDocumentsRealData(name);
+
+  content.innerHTML = revenueSegmentSectionHtml('Répartition géographique', 'geo', real && real.revenueGeo)
+    + revenueSegmentSectionHtml('Répartition par segment d\'activité', 'product', real && real.revenueProduct);
+  renderRevenusCharts(real);
+}
+
 function renderValorisation(nom){
   const hist = companies[nom];
   if (!hist) return;
@@ -8732,6 +8867,21 @@ function renderValorisation(nom){
   wireFcfActuelControls(nom, hist, prixActuel, fcfActuelAuto);
 
   renderObjectifsHistory(nom);
+
+  if (!documentsRealData[nom]) ensureDocumentsRealData(nom);
+  renderDcfTiles(nom);
+}
+// Tuiles DCF (FMP) de la page Valorisation — fonction dédiée plutôt que de refaire tout
+// renderValorisation() quand la donnée réelle arrive après coup (fetch async), pour ne
+// pas re-déclencher tout le câblage des scénarios pour 2 chiffres.
+function renderDcfTiles(name){
+  const real = documentsRealData[name];
+  const dcfEl = document.getElementById('voDcf');
+  const dcfLevEl = document.getElementById('voDcfLevered');
+  if (!dcfEl || !dcfLevEl) return;
+  const fmtDcf = d => (d && d.value != null) ? fmtFmpValue(d.value, 'pershare') : '—';
+  dcfEl.textContent = fmtDcf(real && real.dcf);
+  dcfLevEl.textContent = fmtDcf(real && real.dcfLevered);
 }
 
 // FCF/OCF/EPS "actuel" éditable À LA FOIS depuis la tuile résumé du haut
