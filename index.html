@@ -158,8 +158,8 @@
     <div class="chart-grid">
       <div class="chart-card wide" id="stockCard">
         <div class="chart-card-head">
-          <div><h3>Cours de bourse (hebdomadaire)</h3><p>Clôture hebdomadaire et moyenne mobile 200 semaines</p></div>
-          <div class="chart-card-actions">
+          <div><h3 id="stockCardTitle">Cours de bourse (hebdomadaire)</h3><p id="stockCardSubtitle">Clôture hebdomadaire et moyenne mobile 200 semaines</p></div>
+          <div class="chart-card-actions" id="stockChartJsActions">
             <button class="zoom-btn" onclick="openZoom('stock',&quot;Cours de bourse&quot;)" aria-label="Agrandir">⤢</button>
           </div>
         </div>
@@ -195,7 +195,11 @@
           <button data-overlay="pfcf">+ P/FCF</button>
           <button data-overlay="cash">+ Trésorerie</button>
         </div>
-        <div class="chart-holder" style="height:320px;"><canvas id="chartStock"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['stock'], 'Cours de bourse', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
+        <div class="chart-holder" style="height:320px;">
+          <canvas id="chartStock"></canvas>
+          <div id="chartStockCandle" style="display:none;width:100%;height:100%;"></div>
+          <button class="chart-card-cart-btn" id="stockCartBtn" onclick="addChartInstanceToCart(chartInstances['stock'], 'Cours de bourse', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button>
+        </div>
         <div class="stock-status" id="stockStatus"></div>
         <div class="stock-source" id="stockScaleNote" style="display:none;"></div>
         <div class="stock-source" id="stockSourceNote">Source : Yahoo Finance (repli automatique sur Stooq si indisponible)</div>

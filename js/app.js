@@ -7041,15 +7041,226 @@ function setStockSourceNote(text){
   if (el) el.textContent = text;
 }
 
+/* ============================================================
+   COURS DE BOURSE — CHANDELIERS FMP (nouvelle source PAR DÉFAUT). Demande explicite :
+   "remplacer l'historique des cours par l'historique des cours qu'il y a sur FMP...
+   et compléter tous les jours avec Yahoo pour faire le chandelier". lightweight-charts
+   (déjà chargée pour Wolf Labo, AUCUNE nouvelle dépendance CDN — choix délibéré plutôt
+   qu'un plugin candlestick Chart.js jamais utilisé dans ce projet, voir discussion avec
+   l'utilisateur). Repli AUTOMATIQUE et silencieux sur l'ancien système Chart.js
+   (Sheet dédié -> Yahoo -> Stooq, juste en dessous) pour toute entreprise sans fichier
+   data/prices-{SYMBOLE}.json exporté (voir fmp-database/export_prices.py) — jamais de
+   régression pour les entreprises pas encore migrées vers FMP.
+   PAS PORTÉ sur ce nouveau graphique pour l'instant (repli Chart.js uniquement) : les 9
+   indicateurs de comparaison superposables, l'échelle indexée/logarithmique, le zoom
+   modal et l'export PDF/panier — accumulés au fil du temps sur l'ancien système,
+   au-delà de la demande initiale de ce remplacement (compromis explicite accepté avec
+   l'utilisateur, à reconstruire dans un second temps si besoin).
+   ============================================================ */
+let fmpSymbols = {}; // nom Sheet -> symbole FMP, voir data/fmp-symbols.json (généré par fmp-database/resolve_tickers.py)
+async function loadFmpSymbols(){
+  try{
+    const res = await fetch('data/fmp-symbols.json', { cache:'no-store' });
+    if (res.ok) fmpSymbols = await res.json();
+  }catch(e){ /* absent en local, non bloquant — toutes les entreprises retombent sur l'ancien système */ }
+}
+
+let stockUsesCandleFmp = false;
+let stockCandleChart = null, stockCandleSeries = null;
+let stockCandleSmaSeries = {};
+let stockCandleRegSeries = {};
+let stockCandlePriceLines = {};
+let stockCandleFull = null; // [{t,o,h,l,c}] ascendant, baseline FMP + repli quotidien Yahoo fusionné
+
+// Repli quotidien : ne redemande QUE les jours postérieurs au dernier point FMP connu
+// (quelques jours, pas 20 ans) — garde le graphique à jour entre deux exports FMP sans
+// alourdir le relais CORS (fetchWithRetry/corsProxyUrls, même mécanisme déjà en place
+// pour l'ancien système Yahoo Finance).
+async function fetchYahooDailyTopUp(ySymbol, sinceDateStr){
+  const since = new Date(sinceDateStr + 'T00:00:00Z');
+  const period1 = Math.floor(since.getTime() / 1000);
+  const period2 = Math.floor(Date.now() / 1000);
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ySymbol)}?period1=${period1}&period2=${period2}&interval=1d`;
+  const res = await fetchWithRetry(url, { cache:'no-store' }, 12000);
+  const json = await res.json();
+  const result = json && json.chart && json.chart.result && json.chart.result[0];
+  if (!result) throw new Error('réponse Yahoo Finance invalide');
+  const ts = result.timestamp;
+  const q = result.indicators && result.indicators.quote && result.indicators.quote[0];
+  if (!ts || !q) throw new Error('données Yahoo Finance incomplètes');
+  const out = [];
+  for (let i = 0; i < ts.length; i++){
+    if (q.close[i] == null) continue;
+    out.push({ t: new Date(ts[i]*1000).toISOString().slice(0,10), o:q.open[i], h:q.high[i], l:q.low[i], c:q.close[i] });
+  }
+  return out;
+}
+function mergeDailyTopUp(baseline, topUp){
+  const byDate = {};
+  baseline.forEach(p => { byDate[p.t] = p; });
+  topUp.forEach(p => { byDate[p.t] = p; }); // le repli quotidien écrase la baseline sur les dates communes (plus frais)
+  return Object.keys(byDate).sort().map(t => byDate[t]);
+}
+
+async function loadStockChartCandle(nom, ticker){
+  const symbol = fmpSymbols[nom];
+  if (!symbol) return false;
+  let baseline;
+  try{
+    const res = await fetch(`data/prices-${symbol}.json`, { cache:'no-store' });
+    if (!res.ok) return false;
+    baseline = await res.json();
+  }catch(e){ return false; }
+  if (!baseline || !baseline.length) return false;
+
+  stockCandleFull = baseline;
+  stockUsesCandleFmp = true;
+  setStockSourceNote(`Source : FMP (historique quotidien, ${symbol}) — mise à jour du jour en cours…`);
+  renderStockChart();
+
+  // Repli quotidien Yahoo — best-effort, jamais bloquant : si Yahoo échoue (CORS, relais
+  // indisponible), le graphique reste utilisable avec la seule baseline FMP.
+  try{
+    const ySymbol = mapTickerToYahoo(ticker);
+    const lastDate = baseline[baseline.length - 1].t;
+    const topUp = await fetchYahooDailyTopUp(ySymbol, lastDate);
+    if (topUp.length){
+      stockCandleFull = mergeDailyTopUp(baseline, topUp);
+      setStockSourceNote(`Source : FMP (historique) + Yahoo Finance (mise à jour quotidienne, ${ySymbol})`);
+    } else {
+      setStockSourceNote(`Source : FMP (historique quotidien, ${symbol})`);
+    }
+  }catch(e){
+    setStockSourceNote(`Source : FMP (historique quotidien, ${symbol}) — mise à jour du jour indisponible (relais Yahoo Finance)`);
+  }
+  renderStockChart();
+  return true;
+}
+
+function stockCandleRangeStartIdx(dates, range){
+  if (range === 'max') return 0;
+  const years = parseInt(range, 10);
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() - years);
+  const found = dates.findIndex(d => new Date(d) >= cutoff);
+  return found === -1 ? 0 : found;
+}
+
+function stockCandleShowChartJsControls(show){
+  const d = show ? 'flex' : 'none';
+  const ids = ['stockOverlayToggles', 'stockScaleModeRow', 'stockChartJsActions'];
+  ids.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = d; });
+  const cart = document.getElementById('stockCartBtn');
+  if (cart) cart.style.display = show ? '' : 'none';
+  const title = document.getElementById('stockCardTitle');
+  const sub = document.getElementById('stockCardSubtitle');
+  if (title) title.textContent = show ? 'Cours de bourse (hebdomadaire)' : 'Cours de bourse (chandeliers quotidiens, FMP)';
+  if (sub) sub.textContent = show ? 'Clôture hebdomadaire et moyenne mobile 200 semaines' : 'Chandeliers OHLC quotidiens — SMA 200/30 semaines, canal de régression, prix juste/cible';
+}
+
+function renderStockChartCandleView(){
+  const canvas = document.getElementById('chartStock');
+  const holder = document.getElementById('chartStockCandle');
+  if (canvas) canvas.style.display = 'none';
+  if (holder) holder.style.display = 'block';
+  stockCandleShowChartJsControls(false);
+  document.getElementById('stockScaleNote').style.display = 'none';
+  if (!stockCandleFull || !window.LightweightCharts || !holder) return;
+
+  if (!stockCandleChart){
+    stockCandleChart = window.LightweightCharts.createChart(holder, {
+      layout:{ background:{ color:'transparent' }, textColor: THEME.dim },
+      grid:{ vertLines:{ color: THEME.hair }, horzLines:{ color: THEME.hair } },
+      rightPriceScale:{ borderColor: THEME.hair },
+      timeScale:{ borderColor: THEME.hair },
+      autoSize:true
+    });
+    stockCandleSeries = stockCandleChart.addCandlestickSeries({
+      upColor: THEME.green, downColor: THEME.red, borderVisible:false,
+      wickUpColor: THEME.green, wickDownColor: THEME.red
+    });
+    stockCandleSmaSeries.sma200 = stockCandleChart.addLineSeries({ color:THEME.white, lineWidth:2, priceLineVisible:false, lastValueVisible:false });
+    stockCandleSmaSeries.sma30 = stockCandleChart.addLineSeries({ color:THEME.violet, lineWidth:1, priceLineVisible:false, lastValueVisible:false });
+    ['mid','p1','m1','p2','m2'].forEach(k => {
+      stockCandleRegSeries[k] = stockCandleChart.addLineSeries({
+        color: (k === 'p1' || k === 'm1') ? THEME.blue : THEME.red,
+        lineWidth: k === 'mid' ? 1.75 : 1.25, lineStyle: window.LightweightCharts.LineStyle.Dashed,
+        priceLineVisible:false, lastValueVisible:false
+      });
+    });
+  }
+
+  const dates = stockCandleFull.map(p => p.t);
+  const startIdx = stockCandleRangeStartIdx(dates, stockRange);
+  const visible = stockCandleFull.slice(startIdx);
+  stockCandleSeries.setData(stockIndicators.price ? visible.map(p => ({ time:p.t, open:p.o, high:p.h, low:p.l, close:p.c })) : []);
+
+  // SMA200/SMA30 "semaines" — calculées sur les clôtures HEBDO (resampleWeekly), même
+  // sémantique que l'ancien graphique ("moyenne mobile 200 SEMAINES"), pas 200 jours de
+  // bourse qui raconterait une tout autre histoire.
+  const closes = stockCandleFull.map(p => p.c);
+  const { dates: wDates, closes: wCloses } = resampleWeekly(dates, closes);
+  const sma200 = computeSMA(wCloses, 200);
+  const sma30 = computeSMA(wCloses, 30);
+  const wStartIdx = stockCandleRangeStartIdx(wDates, stockRange);
+  const setLine = (series, on, wVals) => series.setData(on ? wDates.slice(wStartIdx).map((d,i) => ({ time:d, value: wVals[wStartIdx+i] })).filter(p => p.value != null) : []);
+  setLine(stockCandleSmaSeries.sma200, stockIndicators.sma200, sma200);
+  setLine(stockCandleSmaSeries.sma30, stockIndicators.sma30, sma30);
+
+  const reg = computeRegressionChannel(wDates, wCloses);
+  const regMap = { mid:0, p1:1, m1:-1, p2:2, m2:-2 };
+  Object.keys(regMap).forEach(k => {
+    const offset = regMap[k];
+    const data = (stockIndicators.regression && reg) ? wDates.slice(wStartIdx).map((d, i) => {
+      const base = reg.byDate[wDates[wStartIdx + i]];
+      return base == null ? null : { time:d, value: base + offset*reg.stdDev };
+    }).filter(p => p != null) : [];
+    stockCandleRegSeries[k].setData(data);
+  });
+
+  // Prix juste/cible : createPriceLine() plutôt qu'une série — ligne horizontale native
+  // avec étiquette sur l'échelle de prix, plus adapté qu'une série pour une constante.
+  Object.values(stockCandlePriceLines).forEach(line => { try{ stockCandleSeries.removePriceLine(line); }catch(e){} });
+  stockCandlePriceLines = {};
+  const latestStock = activeCompany && companies[activeCompany] ? companies[activeCompany][companies[activeCompany].length - 1] : null;
+  if (stockIndicators.prixJusteCible && latestStock){
+    if (latestStock.prixJuste != null) stockCandlePriceLines.juste = stockCandleSeries.createPriceLine({ price: latestStock.prixJuste, color: THEME.gold, lineWidth:1.5, lineStyle: window.LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'Prix juste' });
+    if (latestStock.prixCible != null) stockCandlePriceLines.cible = stockCandleSeries.createPriceLine({ price: latestStock.prixCible, color: THEME.green, lineWidth:1.5, lineStyle: window.LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'Prix cible' });
+  }
+
+  stockCandleChart.timeScale().fitContent();
+}
+
 async function loadStockChart(ticker, nom){
   const statusEl = document.getElementById('stockStatus');
   const myId = ++stockRequestId;
   stockFull = null;
+  stockCandleFull = null;
+  stockUsesCandleFmp = false;
   if (chartInstances.stock){ chartInstances.stock.destroy(); delete chartInstances.stock; }
 
-  // Source principale : l'onglet historique dédié du Sheet (fiable, pas de CORS) —
-  // le relais Yahoo/Stooq ci-dessous ne sert que de repli pour une entreprise absente
-  // de cet onglet.
+  // Nouvelle source par défaut : chandeliers FMP (voir bloc ci-dessus) — retombe
+  // silencieusement sur l'ancien système (Sheet dédié -> Yahoo -> Stooq) si
+  // l'entreprise n'a pas encore été exportée en local.
+  if (nom){
+    const libOk = await ensureLightweightCharts();
+    if (myId !== stockRequestId) return;
+    if (libOk){
+      const usedCandle = await loadStockChartCandle(nom, ticker);
+      if (myId !== stockRequestId) return;
+      if (usedCandle) return;
+    }
+  }
+  stockUsesCandleFmp = false;
+  stockCandleShowChartJsControls(true);
+  const canvas0 = document.getElementById('chartStock');
+  const holder0 = document.getElementById('chartStockCandle');
+  if (canvas0) canvas0.style.display = 'block';
+  if (holder0) holder0.style.display = 'none';
+
+  // Source de repli : l'onglet historique dédié du Sheet (fiable, pas de CORS) — le
+  // relais Yahoo/Stooq ci-dessous ne sert que de second repli pour une entreprise
+  // absente à la fois de FMP et de cet onglet.
   if (nom){
     const sheetSeries = fetchPriceHistorySeries(nom);
     if (sheetSeries){
@@ -7270,6 +7481,7 @@ function renderStockChartAttempt(canvasEl){
   noteEl.style.display = config._scaleNote ? 'block' : 'none';
 }
 function renderStockChart(){
+  if (stockUsesCandleFmp){ renderStockChartCandleView(); return; }
   if (!stockFull) return;
   const canvasEl = document.getElementById('chartStock');
   if (chartInstances.stock) chartInstances.stock.destroy();
@@ -13127,6 +13339,7 @@ document.querySelectorAll('.page-subnav-btn').forEach(btn => {
 initSearch();
 initSectorGrid();
 initDocumentsTabbar();
+loadFmpSymbols();
 initClassement();
 initMobileNav();
 initComparisonDetail();

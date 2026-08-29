@@ -37,3 +37,4 @@ __pycache__/
 # rien d'autre sur le site (échec géré proprement, tirets affichés).
 data/labo-*.json
 data/documents-*.json
+data/prices-*.json
