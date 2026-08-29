@@ -9012,16 +9012,26 @@ function documentsStatementTableHtml(rows, statementData){
     </table>
     </div>`;
 }
-function documentsStatementSectionHtml(title, rows, statementData){
-  const sub = statementData
-    ? `Annuel — historique complet (${statementData.years.length} exercice${statementData.years.length > 1 ? 's' : ''}, données FMP)`
-    : 'Annuel — en attente de l\'import FMP';
+// Annuel/Trimestriel — bouton jusqu'ici purement décoratif (aucun data-period, aucun
+// gestionnaire de clic) alors que les données trimestrielles étaient déjà importées
+// (periods:["annual","quarter"] dans endpoints.py) — juste jamais exportées/branchées.
+// Activé maintenant, voir export_to_app.py::main() (incomeStatementQ/balanceSheetQ/
+// cashFlowQ, fenêtre 20 trimestres).
+let documentsPeriod = 'annual';
+function documentsStatementSectionHtml(statementKey, title, rows, statementData, statementDataQ){
+  const data = documentsPeriod === 'quarter' ? statementDataQ : statementData;
+  const sub = data
+    ? `${documentsPeriod === 'quarter' ? 'Trimestriel' : 'Annuel'} — ${data.years.length} période${data.years.length > 1 ? 's' : ''} (données FMP)`
+    : (documentsPeriod === 'quarter' ? 'Trimestriel — en attente de l\'import FMP' : 'Annuel — en attente de l\'import FMP');
   return `<div class="chart-card wide">
     <div class="chart-card-head">
       <div><h3>${title}</h3><p>${sub}</p></div>
-      <div class="range-buttons" style="margin:0;"><button class="active">Annuel</button><button>Trimestriel</button></div>
+      <div class="range-buttons documents-period-toggle" style="margin:0;" data-statement="${statementKey}">
+        <button data-period="annual" class="${documentsPeriod === 'annual' ? 'active' : ''}">Annuel</button>
+        <button data-period="quarter" class="${documentsPeriod === 'quarter' ? 'active' : ''}">Trimestriel</button>
+      </div>
     </div>
-    ${documentsStatementTableHtml(rows, statementData)}
+    ${documentsStatementTableHtml(rows, data)}
   </div>`;
 }
 // value déjà dans l'unité d'affichage (points de %, ou multiple) — voir
@@ -9074,9 +9084,9 @@ function renderDocumentsPage(nom){
   const real = documentsRealData[name];
   if (!real) ensureDocumentsRealData(name);
 
-  if (documentsView === 'income') content.innerHTML = documentsStatementSectionHtml('Income Statement', DOCUMENTS_IS_ROWS, real && real.incomeStatement);
-  else if (documentsView === 'balance') content.innerHTML = documentsStatementSectionHtml('Balance Sheet', DOCUMENTS_BS_ROWS, real && real.balanceSheet);
-  else if (documentsView === 'cashflow') content.innerHTML = documentsStatementSectionHtml('Cash Flow', DOCUMENTS_CF_ROWS, real && real.cashFlow);
+  if (documentsView === 'income') content.innerHTML = documentsStatementSectionHtml('income', 'Income Statement', DOCUMENTS_IS_ROWS, real && real.incomeStatement, real && real.incomeStatementQ);
+  else if (documentsView === 'balance') content.innerHTML = documentsStatementSectionHtml('balance', 'Balance Sheet', DOCUMENTS_BS_ROWS, real && real.balanceSheet, real && real.balanceSheetQ);
+  else if (documentsView === 'cashflow') content.innerHTML = documentsStatementSectionHtml('cashflow', 'Cash Flow', DOCUMENTS_CF_ROWS, real && real.cashFlow, real && real.cashFlowQ);
   else content.innerHTML = documentsStatisticsHtml(real && real.growth, real && real.stats);
 }
 function initDocumentsTabbar(){
@@ -9087,6 +9097,14 @@ function initDocumentsTabbar(){
     if (!btn) return;
     documentsView = btn.dataset.docView;
     bar.querySelectorAll('.documents-tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+    renderDocumentsPage();
+  });
+  // Annuel/Trimestriel — délégué sur le conteneur (le bouton est recréé à chaque
+  // renderDocumentsPage(), un addEventListener direct dessus serait perdu au re-rendu).
+  document.getElementById('documentsContent').addEventListener('click', e => {
+    const btn = e.target.closest('button[data-period]');
+    if (!btn) return;
+    documentsPeriod = btn.dataset.period;
     renderDocumentsPage();
   });
 }

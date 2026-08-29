@@ -191,8 +191,11 @@ def rows_for(conn, category, symbol, period="annual", limit=50):
     return all_rows[-limit:]
 
 
-def build_statement(rows, field_map):
-    years = [r.get("fiscalYear") or r.get("date", "")[:4] for r in rows]
+def build_statement(rows, field_map, quarterly=False):
+    years = [
+        (r.get("fiscalYear") or r.get("date", "")[:4]) + (f" {r.get('period')}" if quarterly and r.get("period") else "")
+        for r in rows
+    ]
     table = []
     for label, field in field_map.items():
         values = [r.get(field) if field else None for r in rows]
@@ -412,6 +415,15 @@ def main():
     income_rows = rows_for(conn, "income_statement", symbol)
     balance_rows = rows_for(conn, "balance_sheet", symbol)
     cashflow_rows = rows_for(conn, "cash_flow", symbol)
+    # Trimestriel : fenêtre plus courte (20 trimestres = 5 ans) que l'annuel — un tableau
+    # à 40 colonnes trimestrielles (10 ans) serait illisible, et le trimestriel sert
+    # surtout à repérer une tendance RÉCENTE, pas un historique profond (déjà couvert
+    # par l'annuel). Bouton "Trimestriel" jusqu'ici décoratif (aucune donnée derrière,
+    # aucun gestionnaire de clic côté app.js) — activé maintenant que les données
+    # existent déjà (import déjà fait avec periods=["annual","quarter"]).
+    income_q = rows_for(conn, "income_statement", symbol, period="quarter", limit=20)
+    balance_q = rows_for(conn, "balance_sheet", symbol, period="quarter", limit=20)
+    cashflow_q = rows_for(conn, "cash_flow", symbol, period="quarter", limit=20)
     growth_rows = build_growth(conn, symbol)
     div_row = next((r for r in growth_rows if r["label"] == "Dividende par action"), None)
 
@@ -420,6 +432,9 @@ def main():
         "incomeStatement": build_statement(income_rows, FIELD_MAP_IS),
         "balanceSheet": build_statement(balance_rows, FIELD_MAP_BS),
         "cashFlow": build_statement(cashflow_rows, FIELD_MAP_CF),
+        "incomeStatementQ": build_statement(income_q, FIELD_MAP_IS, quarterly=True),
+        "balanceSheetQ": build_statement(balance_q, FIELD_MAP_BS, quarterly=True),
+        "cashFlowQ": build_statement(cashflow_q, FIELD_MAP_CF, quarterly=True),
         "growth": growth_rows,
         "stats": build_stats(conn, symbol, div_row["cagr"] if div_row else None),
         "dcf": latest_dcf(conn, symbol, "dcf"),
