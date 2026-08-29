@@ -9202,16 +9202,30 @@ function renderRevenusCharts(real){
       });
     }
     if (evolCanvas){
+      // Aires 100% empilées plutôt que des lignes fines superposées — retour explicite
+      // ("je ne vois pas grand-chose au niveau de l'historique, ce n'est pas terrible") :
+      // avec 5-6+ zones/segments, des lignes de part (%) qui s'entrecroisent sont
+      // illisibles. Empilées, la composition année par année (et son évolution —
+      // croissance/réduction/stagnation d'une zone) se lit d'un coup d'œil, la hauteur
+      // totale valant toujours 100%. Valeurs manquantes -> 0 UNIQUEMENT pour cet
+      // empilement (pas de "trou" dans une pile qui doit toujours sommer à 100%) ; le
+      // tableau de croissance juste en dessous garde lui les vrais trous (spanGaps).
       const { years, shareByLabel } = revenueShareSeries(seg);
       const labels = Object.keys(shareByLabel);
       revenusCharts[key + 'Evol'] = new Chart(evolCanvas.getContext('2d'), {
         type:'line',
         data:{ labels: years, datasets: labels.map((label, i) => ({
-          label, data: shareByLabel[label], borderColor: PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length],
-          backgroundColor:'transparent', borderWidth:2, spanGaps:true, tension:0.25, pointRadius:0
+          label, data: shareByLabel[label].map(v => v == null ? 0 : v),
+          borderColor: PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length],
+          backgroundColor: PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length] + 'CC',
+          borderWidth:1, fill:true, tension:0.25, pointRadius:0
         })) },
         options:{ responsive:true, maintainAspectRatio:false,
-          scales:{ x:{ grid:{display:false}, ticks:{color:THEME.dim} }, y:{ ticks:{ color:THEME.dim, callback:v => v+'%' }, grid:{color:THEME.hair} } },
+          interaction:{ mode:'index', intersect:false },
+          scales:{
+            x:{ grid:{display:false}, ticks:{color:THEME.dim}, stacked:true },
+            y:{ min:0, max:100, stacked:true, ticks:{ color:THEME.dim, callback:v => v+'%' }, grid:{color:THEME.hair} }
+          },
           plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true, color:THEME.dim, font:{size:10.5} } } }
         }
       });
