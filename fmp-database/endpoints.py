@@ -2,22 +2,18 @@
 Registre des endpoints FMP à interroger pour "tout" sur une entreprise.
 
 IMPORTANT — à lire avant de lancer un import massif (2000-3000 tickers) :
-Registre testé en conditions réelles sur KO le 2026-08-25 (discover.py + ingest.py,
-clé au niveau plan gratuit/Basic) — "verified: True" veut dire "chemin d'URL confirmé
-correct", PAS "renvoie forcément des données sur ton plan actuel" : beaucoup
-d'endpoints corrects renvoient quand même une erreur HTTP 402 (Payment Required) sur
-Basic. Voir fetch_log dans la base SQLite pour le détail exact par endpoint. Seul
-"earnings_transcript" reste "verified: False" — jamais atteint (la liste des dates
-disponibles, earnings_transcript_dates, échoue déjà en 402 sur ce plan).
+Registre re-testé en conditions réelles sur KO le 2026-08-29, APRÈS passage à un plan
+FMP payant — 48/48 endpoints répondent avec des données (voir discover.py, sortie
+conservée dans fetch_log en base). Tout ce qui était bloqué HTTP 402 sur le plan
+gratuit (états financiers, ratios, growth, estimations analystes, transcripts, 13F)
+fonctionne maintenant, y compris les 7 endpoints ajoutés après le passage au plan
+payant (income/balance/cashflow growth, financial_scores, owner_earnings,
+key_metrics_ttm, ratios_ttm). Historique transcripts confirmé profond : 80 trimestres
+disponibles pour KO, de 2006 Q3 à 2026 Q2.
 
-Résultat du test réel sur KO (plan Basic/gratuit) : 16/38 endpoints répondent avec des
-données (identité, prix EOD ~20 ans, dividendes depuis 1970, splits, DCF, notations,
-segmentation du CA, rémunération des dirigeants). Les 3 états financiers (compte de
-résultat, bilan, flux de trésorerie), les ratios, le growth, les estimations
-analystes, les transcripts et le 13F sont TOUS bloqués en HTTP 402 sur ce plan — ce
-sont pourtant les données les plus importantes pour ce projet, un plan payant
-(Starter minimum, Premium/Ultimate pour la profondeur/couverture complète) sera
-nécessaire pour les débloquer.
+Historique (plan Basic/gratuit, test du 2026-08-25, avant le passage au payant) :
+16/38 endpoints répondaient avec des données — conservé pour mémoire, plus la
+situation actuelle.
 
 Chaque entrée :
   key            -> identifiant interne (nom de table SQLite associé, voir schema.sql)
@@ -81,6 +77,41 @@ ENDPOINTS = {
     "financial_growth": {
         "path": "/financial-growth", "extra_params": {"limit": 40}, "periods": ["annual", "quarter"],
         "paginate": False, "list_endpoint": True, "verified": True,
+    },
+    # ---- Ajoutés après passage au plan payant (2026-08-29) — la croissance % ligne par
+    # ligne (income/balance/cashflow) vient DIRECTEMENT de FMP, plus besoin de la
+    # recalculer nous-mêmes à partir des états bruts pour remplir le tableau "Croissance
+    # (5 ans)" de l'onglet Documents financiers/Statistics du site.
+    "income_statement_growth": {
+        "path": "/income-statement-growth", "extra_params": {"limit": 40}, "periods": ["annual", "quarter"],
+        "paginate": False, "list_endpoint": True, "verified": True,
+        "note": "Croissance % ligne par ligne du compte de résultat — alimente le tableau Croissance de Documents financiers."
+    },
+    "balance_sheet_growth": {
+        "path": "/balance-sheet-statement-growth", "extra_params": {"limit": 40}, "periods": ["annual", "quarter"],
+        "paginate": False, "list_endpoint": True, "verified": True,
+    },
+    "cashflow_growth": {
+        "path": "/cash-flow-statement-growth", "extra_params": {"limit": 40}, "periods": ["annual", "quarter"],
+        "paginate": False, "list_endpoint": True, "verified": True,
+    },
+    "financial_scores": {
+        "path": "/financial-scores", "extra_params": {}, "periods": [], "paginate": False,
+        "list_endpoint": True, "verified": True,
+        "note": "Piotroski/Altman Z-score — indicateurs de qualité/solidité, utile pour la future section 'Santé financière'."
+    },
+    "owner_earnings": {
+        "path": "/owner-earnings", "extra_params": {"limit": 40}, "periods": [], "paginate": False,
+        "list_endpoint": True, "verified": True,
+        "note": "Owner earnings façon Buffett — pertinent pour le positionnement value investing du site."
+    },
+    "key_metrics_ttm": {
+        "path": "/key-metrics-ttm", "extra_params": {}, "periods": [], "paginate": False,
+        "list_endpoint": True, "verified": True,
+    },
+    "ratios_ttm": {
+        "path": "/ratios-ttm", "extra_params": {}, "periods": [], "paginate": False,
+        "list_endpoint": True, "verified": True,
     },
     "enterprise_values": {
         "path": "/enterprise-values", "extra_params": {"limit": 40}, "periods": ["annual", "quarter"],
@@ -153,8 +184,8 @@ ENDPOINTS = {
     },
     "earnings_transcript": {
         "path": "/earning-call-transcript", "extra_params": {}, "periods": [], "paginate": False,
-        "list_endpoint": True, "verified": False,
-        "note": "Nécessite year= et quarter= — bouclé par ingest.py sur la liste de earnings_transcript_dates. Nécessite le plan Ultimate."
+        "list_endpoint": True, "verified": True,
+        "note": "Nécessite year= et quarter= — bouclé par ingest.py sur la liste de earnings_transcript_dates (80/80 récupérés pour KO le 2026-08-29, une fois le bug fiscalYear/year corrigé — voir ingest.py)."
     },
 
     # ---- Investisseurs institutionnels / initiés (13F) -------------------------

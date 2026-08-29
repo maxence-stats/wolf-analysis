@@ -60,7 +60,11 @@ def ingest_symbol(conn, symbol):
         print(f"  [OK]    earnings_transcript_dates — {n_dates} trimestre(s) à récupérer")
         transcripts = []
         for entry in dates_res.data:
-            year = entry.get("year") if isinstance(entry, dict) else (entry[0] if isinstance(entry, (list, tuple)) else None)
+            # Bug trouvé en test réel sur KO : le champ s'appelle "fiscalYear", pas
+            # "year" — entry.get("year") renvoyait toujours None, donc TOUS les
+            # trimestres étaient silencieusement sautés (0 transcript récupéré alors
+            # que earnings_transcript_dates en listait 80).
+            year = entry.get("fiscalYear", entry.get("year")) if isinstance(entry, dict) else (entry[0] if isinstance(entry, (list, tuple)) else None)
             quarter = entry.get("quarter") if isinstance(entry, dict) else (entry[1] if isinstance(entry, (list, tuple)) else None)
             if year is None or quarter is None:
                 continue

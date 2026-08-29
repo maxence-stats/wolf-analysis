@@ -8403,14 +8403,15 @@ function valorisationInputs(latest, hist, nom){
 let activeFcfActuel = null;
 
 /* ============================================================
-   DOCUMENTS FINANCIERS — sous-onglet Analyse. Structure seule pour l'instant (pas de
-   données réelles tant que l'import FMP complet n'est pas fait) — demandé
-   explicitement en attendant ("je n'ai pas encore les données, mais prépare toute la
-   structure"). Les libellés de lignes reprennent le mapping déjà documenté dans
-   fmp-database/endpoints.py (income_statement/balance_sheet/cash_flow), donc prêts à
-   recevoir les vraies valeurs sans redesign une fois l'import fait — remplacer
-   PERIOD_PLACEHOLDERS par les vraies années et injecter les valeurs dans
-   documentsStatementTableHtml() suffira.
+   DOCUMENTS FINANCIERS — sous-onglet Analyse. Structure prête pour tous, DONNÉES
+   RÉELLES branchées uniquement sur Coca-Cola pour l'instant (voir
+   DOCUMENTS_REAL_DATA_COMPANY plus bas) — test explicite du pipeline FMP de bout en
+   bout ("branche ça à l'application juste pour Coca-Cola, voir si ça fonctionne")
+   avant de l'étendre à tout l'univers suivi. Les libellés de lignes correspondent
+   exactement aux clés produites par fmp-database/export_to_app.py (mapping documenté
+   dans ce même fichier Python) — étendre à une autre entreprise consiste juste à
+   relancer ingest.py + export_to_app.py sur son ticker et ajouter son nom/URL au
+   dictionnaire DOCUMENTS_REAL_DATA_SOURCES.
    ============================================================ */
 let documentsView = 'income';
 const DOCUMENTS_IS_ROWS = [
@@ -8424,9 +8425,9 @@ const DOCUMENTS_IS_ROWS = [
   { label:'Interest Expense' },
   { label:'EBITDA', bold:true },
   { label:'Net Income', bold:true },
-  { label:'EPS' },
-  { label:'EPS Diluted' },
-  { label:'Weighted Avg Shares Outstanding' }
+  { label:'EPS', unit:'pershare' },
+  { label:'EPS Diluted', unit:'pershare' },
+  { label:'Weighted Avg Shares Outstanding', unit:'shares' }
 ];
 const DOCUMENTS_BS_ROWS = [
   { label:'Cash & Cash Equivalents' },
@@ -8488,38 +8489,92 @@ const DOCUMENTS_GROWTH_ROWS = [
 const DOCUMENTS_GROWTH_COLS = ['A-4 → A-3', 'A-3 → A-2', 'A-2 → A-1', 'A-1 → A', 'Croissance totale (5a)', 'TCAC (5a)'];
 const DOCUMENTS_PERIOD_PLACEHOLDERS = ['—', '—', '—', '—', '—'];
 
-function documentsGrowthTableHtml(){
+// Données réelles FMP — pour l'instant UNIQUEMENT Coca-Cola (test de bout en bout du
+// pipeline, voir fmp-database/export_to_app.py). Le fichier n'est pas dans le dépôt
+// public (licence FMP, voir .gitignore) : ne charge/n'affiche rien si absent, retombe
+// silencieusement sur les tirets comme pour toute autre entreprise.
+const DOCUMENTS_REAL_DATA_SOURCES = {
+  'Coca-Cola Company': 'data/documents-sample-ko.json' // nom exact tel qu'écrit dans le Sheet (colonne NOM), pas "Coca-Cola" tout court — vérifié en direct, sinon la donnée réelle ne se charge jamais
+};
+let documentsRealData = {}; // { [nomEntreprise]: {symbol, incomeStatement, balanceSheet, cashFlow, growth} }
+let documentsRealDataLoading = {};
+
+async function ensureDocumentsRealData(name){
+  const url = DOCUMENTS_REAL_DATA_SOURCES[name];
+  if (!url || documentsRealData[name] || documentsRealDataLoading[name]) return;
+  documentsRealDataLoading[name] = true;
+  try{
+    const res = await fetch(url, { cache:'no-store' });
+    if (res.ok) documentsRealData[name] = await res.json();
+  }catch(e){ /* fichier absent en local ou fetch bloqué (ex. file://) — non bloquant, tirets */ }
+  documentsRealDataLoading[name] = false;
+  if (documentsRealData[name] && activeCompany === name) renderDocumentsPage(name);
+}
+
+// value en unité brute FMP (dollars pour 'money'/'pershare', nombre d'actions pour
+// 'shares') — toujours en $ (KO reporte en USD), jamais converti en €.
+function fmtFmpValue(value, unit){
+  if (value == null) return '—';
+  if (unit === 'pershare') return '$' + value.toLocaleString('fr-FR', { minimumFractionDigits:2, maximumFractionDigits:2 });
+  if (unit === 'shares') return (value / 1e6).toLocaleString('fr-FR', { maximumFractionDigits:0 }) + ' M';
+  const abs = Math.abs(value);
+  if (abs >= 1e9) return (value / 1e9).toLocaleString('fr-FR', { minimumFractionDigits:2, maximumFractionDigits:2 }) + ' Md$';
+  if (abs >= 1e6) return (value / 1e6).toLocaleString('fr-FR', { minimumFractionDigits:1, maximumFractionDigits:1 }) + ' M$';
+  return value.toLocaleString('fr-FR', { maximumFractionDigits:2 }) + ' $';
+}
+function fmtFmpPct(value){
+  if (value == null) return '—';
+  return (value >= 0 ? '+' : '') + (value * 100).toLocaleString('fr-FR', { minimumFractionDigits:1, maximumFractionDigits:1 }) + '%';
+}
+
+function documentsGrowthTableHtml(growthData){
   return `<div class="documents-table-wrap">
     <table class="documents-table">
       <thead><tr><th>Métrique</th>${DOCUMENTS_GROWTH_COLS.map(c => `<th>${c}</th>`).join('')}</tr></thead>
-      <tbody>${DOCUMENTS_GROWTH_ROWS.map(r => `<tr><td>${r.label}</td>${DOCUMENTS_GROWTH_COLS.map(() => `<td>—</td>`).join('')}</tr>`).join('')}</tbody>
+      <tbody>${DOCUMENTS_GROWTH_ROWS.map(r => {
+        const g = growthData && growthData.find(x => x.label === r.label);
+        const cells = g
+          ? [...g.yoy.map(fmtFmpPct), fmtFmpPct(g.total), fmtFmpPct(g.cagr)]
+          : DOCUMENTS_GROWTH_COLS.map(() => '—');
+        return `<tr><td>${r.label}</td>${cells.map(c => `<td>${c}</td>`).join('')}</tr>`;
+      }).join('')}</tbody>
     </table>
   </div>`;
 }
 
-function documentsStatementTableHtml(rows){
-  return `<div class="documents-empty-banner">📭 Données pas encore importées — l'import FMP complet remplira ce tableau automatiquement, structure déjà prête à les recevoir.</div>
-    <div class="documents-table-wrap">
+function documentsStatementTableHtml(rows, statementData){
+  const years = statementData ? statementData.years : DOCUMENTS_PERIOD_PLACEHOLDERS;
+  const banner = statementData
+    ? ''
+    : `<div class="documents-empty-banner">📭 Données pas encore importées — l'import FMP complet remplira ce tableau automatiquement, structure déjà prête à les recevoir.</div>`;
+  return `${banner}<div class="documents-table-wrap">
     <table class="documents-table">
-      <thead><tr><th>Ligne</th>${DOCUMENTS_PERIOD_PLACEHOLDERS.map(() => `<th>—</th>`).join('')}</tr></thead>
-      <tbody>${rows.map(r => `<tr class="${r.bold ? 'documents-row-bold' : ''}"><td>${r.label}</td>${DOCUMENTS_PERIOD_PLACEHOLDERS.map(() => `<td>—</td>`).join('')}</tr>`).join('')}</tbody>
+      <thead><tr><th>Ligne</th>${years.map(y => `<th>${y}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map(r => {
+        const dataRow = statementData && statementData.rows.find(x => x.label === r.label);
+        const cells = dataRow
+          ? dataRow.values.map(v => `<td>${fmtFmpValue(v, r.unit)}</td>`).join('')
+          : years.map(() => `<td>—</td>`).join('');
+        return `<tr class="${r.bold ? 'documents-row-bold' : ''}"><td>${r.label}</td>${cells}</tr>`;
+      }).join('')}</tbody>
     </table>
     </div>`;
 }
-function documentsStatementSectionHtml(title, rows){
+function documentsStatementSectionHtml(title, rows, statementData){
+  const sub = statementData ? 'Annuel — 5 derniers exercices (données FMP)' : 'Annuel — 5 derniers exercices (en attente de l\'import FMP)';
   return `<div class="chart-card wide">
     <div class="chart-card-head">
-      <div><h3>${title}</h3><p>Annuel — 5 derniers exercices (en attente de l'import FMP)</p></div>
+      <div><h3>${title}</h3><p>${sub}</p></div>
       <div class="range-buttons" style="margin:0;"><button class="active">Annuel</button><button>Trimestriel</button></div>
     </div>
-    ${documentsStatementTableHtml(rows)}
+    ${documentsStatementTableHtml(rows, statementData)}
   </div>`;
 }
-function documentsStatisticsHtml(){
+function documentsStatisticsHtml(growthData){
   return `<div class="documents-empty-banner">🧮 Synthèse de ratios à construire ensemble — juste la structure pour l'instant, les ratios précis (et ceux spécifiques à chaque secteur ci-dessous) restent à définir.</div>
 
     <div class="section-label">Croissance (5 ans)</div>
-    ${documentsGrowthTableHtml()}
+    ${documentsGrowthTableHtml(growthData)}
 
     ${DOCUMENTS_STATS_GROUPS.map(g => `
     <div class="section-label" style="margin-top:14px;">${g.title}</div>
@@ -8542,10 +8597,13 @@ function renderDocumentsPage(nom){
   const tickerEl = document.getElementById('documentsTicker');
   if (tickerEl) tickerEl.textContent = (latest.ticker || '—') + ' · ' + (latest.secteur || '—');
 
-  if (documentsView === 'income') content.innerHTML = documentsStatementSectionHtml('Income Statement', DOCUMENTS_IS_ROWS);
-  else if (documentsView === 'balance') content.innerHTML = documentsStatementSectionHtml('Balance Sheet', DOCUMENTS_BS_ROWS);
-  else if (documentsView === 'cashflow') content.innerHTML = documentsStatementSectionHtml('Cash Flow', DOCUMENTS_CF_ROWS);
-  else content.innerHTML = documentsStatisticsHtml();
+  const real = documentsRealData[name];
+  if (!real) ensureDocumentsRealData(name);
+
+  if (documentsView === 'income') content.innerHTML = documentsStatementSectionHtml('Income Statement', DOCUMENTS_IS_ROWS, real && real.incomeStatement);
+  else if (documentsView === 'balance') content.innerHTML = documentsStatementSectionHtml('Balance Sheet', DOCUMENTS_BS_ROWS, real && real.balanceSheet);
+  else if (documentsView === 'cashflow') content.innerHTML = documentsStatementSectionHtml('Cash Flow', DOCUMENTS_CF_ROWS, real && real.cashFlow);
+  else content.innerHTML = documentsStatisticsHtml(real && real.growth);
 }
 function initDocumentsTabbar(){
   const bar = document.getElementById('documentsSubnav');

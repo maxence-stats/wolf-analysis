@@ -24,9 +24,11 @@ fmp-database/__pycache__/
 __pycache__/
 *.pyc
 
-# Échantillons extraits de FMP pour tester Wolf Labo (data/labo-*.json) — même
-# précaution que fmp-database/data/ : leurs CGU exigent un accord de licence séparé
-# pour "afficher ou redistribuer" leurs données, et ce dépôt est public. Reste en
-# local ; index.html/app.js chargent le fichier normalement s'il est présent sur ta
-# machine, l'absence du fichier ne casse rien d'autre sur le site (échec géré proprement).
+# Échantillons extraits de FMP pour tester Wolf Labo et Documents financiers
+# (data/labo-*.json, data/documents-*.json) — même précaution que fmp-database/data/ :
+# leurs CGU exigent un accord de licence séparé pour "afficher ou redistribuer" leurs
+# données, et ce dépôt est public. Reste en local ; index.html/app.js chargent le
+# fichier normalement s'il est présent sur ta machine, l'absence du fichier ne casse
+# rien d'autre sur le site (échec géré proprement, tirets affichés).
 data/labo-*.json
+data/documents-*.json
