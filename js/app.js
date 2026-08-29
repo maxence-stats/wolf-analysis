@@ -5485,7 +5485,7 @@ let stockRequestId = 0;
 // vingt, quatre-vingt et cent périodes") — désactivées par défaut (contrairement à
 // sma200/sma30 déjà en place) pour ne pas surcharger d'un coup un graphique que
 // l'utilisateur utilise déjà, activables depuis le menu Indicateurs techniques.
-let stockIndicators = { price:true, regression:true, sma200:true, sma30:true, sma20:false, sma80:false, sma100:false, prixJusteCible:false };
+let stockIndicators = { price:true, regression:true, sma200:true, sma30:true, sma20:false, sma50:false, sma80:false, sma100:false, prixJusteCible:false };
 // Overlay universel (retour utilisateur : combiner n'importe quelle métrique
 // historique sur le graphique boursier, sans limite de nombre) + mode d'échelle,
 // choisi par l'utilisateur à chaque fois plutôt qu'un mode par défaut imposé.
@@ -7309,6 +7309,7 @@ function renderStockChartCandleView(){
     // "reprends les mêmes couleurs") pour rester cohérent entre les deux graphiques
     // techniques du site plutôt que d'inventer une nouvelle palette.
     stockCandleSmaSeries.sma20 = stockCandleChart.addLineSeries({ color:WOLF_LABO_MA_CONFIG[20].color, lineWidth:1, priceLineVisible:false, lastValueVisible:false });
+    stockCandleSmaSeries.sma50 = stockCandleChart.addLineSeries({ color:WOLF_LABO_MA_CONFIG[50].color, lineWidth:1, priceLineVisible:false, lastValueVisible:false });
     stockCandleSmaSeries.sma80 = stockCandleChart.addLineSeries({ color:WOLF_LABO_MA_CONFIG[80].color, lineWidth:1, priceLineVisible:false, lastValueVisible:false });
     stockCandleSmaSeries.sma100 = stockCandleChart.addLineSeries({ color:WOLF_LABO_MA_CONFIG[100].color, lineWidth:1, priceLineVisible:false, lastValueVisible:false });
     ['mid','p1','m1','p2','m2'].forEach(k => {
@@ -7345,7 +7346,7 @@ function renderStockChartCandleView(){
   const { dates: wDates, closes: wCloses } = resampleWeekly(dailyDates, dailyCloses);
   const wStartIdx = stockCandleRangeStartIdx(wDates, stockRange);
   const setLine = (series, on, wVals) => series.setData(on ? wDates.slice(wStartIdx).map((d,i) => ({ time:d, value: wVals[wStartIdx+i] })).filter(p => p.value != null) : []);
-  [20, 30, 80, 100, 200].forEach(period => {
+  [20, 30, 50, 80, 100, 200].forEach(period => {
     setLine(stockCandleSmaSeries['sma' + period], stockIndicators['sma' + period], computeSMA(wCloses, period));
   });
 
@@ -7676,7 +7677,7 @@ function toggleStockIndicator(key){
   document.querySelectorAll(`[data-indicator="${key}"]`).forEach(b => b.classList.toggle('active', stockIndicators[key]));
   const indicatorsBtn = document.getElementById('stockCandleIndicatorsBtn');
   if (indicatorsBtn){
-    const count = ['regression','sma20','sma30','sma80','sma100','sma200','prixJusteCible'].filter(k => stockIndicators[k]).length;
+    const count = ['regression','sma20','sma30','sma50','sma80','sma100','sma200','prixJusteCible'].filter(k => stockIndicators[k]).length;
     indicatorsBtn.textContent = `📊 Indicateurs techniques (${count}) ▾`;
   }
   renderStockChart();
@@ -7705,6 +7706,26 @@ document.getElementById('historicalRangeButtons').addEventListener('click', e =>
 // (.chart-fullscreen générique, voir style.css) : lightweight-charts a autoSize:true,
 // il se redimensionne tout seul quand le conteneur change de taille via la classe CSS,
 // pas besoin d'appeler resize() à la main.
+// "Tracer un canal" — demande explicite ("je dois avoir la possibilité de tracer des
+// canaux où je peux régler leurs settings... exactement comme dans Wolf Labo").
+// Décision délibérée : PAS de second moteur de tracé sur ce graphique. Wolf Labo
+// (aimant, canaux avec réglages complets par bande, préréglages de style, poignées,
+// enregistrement automatique par entreprise — voir tout le module wolfLabo*) repose sur
+// une vingtaine de fonctions étroitement couplées à un seul état de graphique global ;
+// le dupliquer en double aurait un vrai risque de régression sur l'outil déjà réglé, et
+// un double entretien permanent ensuite. Ce bouton ouvre directement Wolf Labo sur
+// L'ENTREPRISE ACTIVE (déjà ouvert à toute entreprise exportée en FMP, voir
+// selectWolfLaboSymbol) — un clic, pas un second outil à maintenir. Les tracés sont de
+// toute façon déjà partagés par entreprise (wolfLaboDrawings clé par symbole), donc rien
+// ne se perd à passer par cette page plutôt qu'une autre.
+document.getElementById('stockCandleDrawBtn').addEventListener('click', async () => {
+  if (!activeCompany || !companies[activeCompany]) return;
+  const hist = companies[activeCompany];
+  const latest = hist[hist.length - 1];
+  switchPage('pageWolfLabo');
+  await ensureWolfLaboChart();
+  await selectWolfLaboSymbol(latest.ticker, activeCompany);
+});
 document.getElementById('stockCandleFullscreenBtn').addEventListener('click', () => {
   const card = document.getElementById('stockCard');
   const btn = document.getElementById('stockCandleFullscreenBtn');
