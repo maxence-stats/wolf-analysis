@@ -7,8 +7,10 @@ fois — ingest_symbol() ne lève jamais d'exception (chaque endpoint logue son 
 jamais les suivants.
 
 Usage :
-    python ingest_batch.py                 # tous les symboles "ok"/"ok_corrige_manuellement"
-    python ingest_batch.py --limit 5        # les 5 premiers seulement (test)
+    python ingest_batch.py                          # tous les symboles "ok"/"ok_corrige_manuellement" de resolved_tickers.json
+    python ingest_batch.py --limit 5                 # les 5 premiers seulement (test)
+    python ingest_batch.py --input fichier.json      # un autre fichier résolu (ex. un lot séparé) —
+                                                       # évite d'écraser resolved_tickers.json d'un lot à l'autre
 """
 import json
 import pathlib
@@ -25,10 +27,13 @@ RESOLVED_PATH = THIS_DIR / "resolved_tickers.json"
 
 def main():
     config.require_api_key()
-    if not RESOLVED_PATH.exists():
-        print(f"Fichier introuvable : {RESOLVED_PATH} — lance d'abord resolve_tickers.py")
+    resolved_path = RESOLVED_PATH
+    if "--input" in sys.argv:
+        resolved_path = pathlib.Path(sys.argv[sys.argv.index("--input") + 1])
+    if not resolved_path.exists():
+        print(f"Fichier introuvable : {resolved_path} — lance d'abord resolve_tickers.py")
         sys.exit(1)
-    resolved = json.loads(RESOLVED_PATH.read_text(encoding="utf-8"))
+    resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
     entries = [r for r in resolved if r["status"].startswith("ok") and r["fmp_symbol"]]
 
     limit = None
