@@ -5254,7 +5254,7 @@ function renderCompany(nom){
 // docstring pour le détail des unités/approximations). Reconstruit un tableau "hist"-
 // compatible ligne par ligne pour pouvoir réutiliser cette fonction SANS aucune
 // modification — seule la source des données change.
-const CHARTS_HISTORY_FIELDS = ['dividende','payoutRatio','ca','margeOp','roic','fcfParAction','pFcf','ocfParAction','actions','detteOCF','cash','cashInvesti'];
+const CHARTS_HISTORY_FIELDS = ['dividende','payoutRatio','ca','margeOp','roic','fcfParAction','pFcf','ocfParAction','pOcf','eps','per','actions','detteOCF','cash','cashInvesti'];
 function chartsHistoryToRows(ch){
   return ch.years.map((annee, i) => {
     const row = { annee };
@@ -8960,6 +8960,7 @@ async function ensureDocumentsRealData(name){
     const hist = companies[name];
     if (hist && hist.length) renderHistoricalCharts(name, hist, hist.map(r => r.annee), hist[hist.length - 1]);
     applyFmpRatioOverrides(name);
+    renderValoMetricHistory(name);
   }
 }
 
@@ -9238,6 +9239,68 @@ function renderRevenusPage(nom){
   renderRevenusCharts(real);
 }
 
+// Historique FCF/OCF/EPS + médianes de multiple + CAGR sur 4 horizons (5/10/20/30a),
+// propre à la métrique de valorisation actuellement sélectionnée — demande explicite,
+// TOUJOURS FMP (jamais de repli Sheet ici : pas de médiane PER ni de CAGR à 30 ans
+// dans le Sheet de toute façon, cette section n'existe QUE grâce à FMP).
+let voMetricChart = null;
+function cagrOfLastYears(hist, field, n){
+  const vals = hist.slice(-n).map(r => r[field]).filter(v => v != null);
+  if (vals.length < 2) return null;
+  const first = vals[0], last = vals[vals.length - 1];
+  const nYears = vals.length - 1;
+  if (first <= 0 || nYears <= 0 || (last / first) <= 0) return null;
+  return Math.pow(last / first, 1 / nYears) - 1;
+}
+const VALO_METRIC_FIELDS = {
+  fcf: { perShare:'fcfParAction', multiple:'pFcf', metricName:'FCF', chartLabel:'FCF / action (€)' },
+  ocf: { perShare:'ocfParAction', multiple:'pOcf', metricName:'OCF', chartLabel:'OCF / action (€)' },
+  per: { perShare:'eps', multiple:'per', metricName:'EPS', chartLabel:'EPS (€)' }
+};
+function renderValoMetricHistory(nom){
+  const content = document.getElementById('voMetricHistoryContent');
+  const label = document.getElementById('voMetricHistoryLabel');
+  if (!content || !label) return;
+  const f = VALO_METRIC_FIELDS[valorisationMetric] || VALO_METRIC_FIELDS.fcf;
+  const multipleLabel = valorisationMetric === 'per' ? 'PER' : 'P/' + f.metricName;
+  label.textContent = `Historique ${f.metricName} (FMP)`;
+  if (voMetricChart){ voMetricChart.destroy(); voMetricChart = null; }
+  const real = documentsRealData[nom];
+  if (!real || !real.chartsHistory){
+    content.innerHTML = `<div class="documents-empty-banner">📭 En attente de l'import FMP pour cette entreprise — l'historique ${f.metricName}, les médianes ${multipleLabel} et le CAGR sur 5/10/20/30 ans s'afficheront automatiquement une fois disponibles.</div>`;
+    return;
+  }
+  const rows = chartsHistoryToRows(real.chartsHistory);
+  const years = real.chartsHistory.years;
+  const horizons = [5, 10, 20, 30];
+  const medianTiles = horizons.map(n => {
+    const m = medianOfLastYears(rows, f.multiple, n);
+    return `<div class="ratio-card"><div class="k">Médiane ${multipleLabel} ${n}a</div><div class="v">${m != null ? m.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})+'x' : '—'}</div></div>`;
+  }).join('');
+  const cagrTiles = horizons.map(n => {
+    const c = cagrOfLastYears(rows, f.perShare, n);
+    return `<div class="ratio-card"><div class="k">CAGR ${f.metricName} ${n}a</div><div class="v">${c != null ? fmtPct(c*100) : '—'}</div></div>`;
+  }).join('');
+  content.innerHTML = `
+    <div class="chart-card wide">
+      <div class="chart-card-head"><div><h3>${f.chartLabel}</h3><p>Historique complet, données FMP</p></div></div>
+      <div class="chart-holder" style="height:200px;"><canvas id="voMetricChart"></canvas></div>
+    </div>
+    <div class="section-label" style="margin-top:10px;">Médianes ${multipleLabel}</div>
+    <div class="ratio-grid">${medianTiles}</div>
+    <div class="section-label" style="margin-top:10px;">CAGR ${f.metricName}</div>
+    <div class="ratio-grid">${cagrTiles}</div>
+  `;
+  const canvas = document.getElementById('voMetricChart');
+  if (canvas){
+    voMetricChart = new Chart(canvas.getContext('2d'), {
+      type:'bar',
+      data:{ labels: years, datasets:[{ label: f.chartLabel, data: rows.map(r => r[f.perShare]), backgroundColor:THEME.blue, borderRadius:4, barPercentage:0.6 }]},
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim} } } }
+    });
+  }
+}
+
 function renderValorisation(nom){
   const hist = companies[nom];
   if (!hist) return;
@@ -9287,6 +9350,7 @@ function renderValorisation(nom){
 
   if (!documentsRealData[nom]) ensureDocumentsRealData(nom);
   renderDcfTiles(nom);
+  renderValoMetricHistory(nom);
 }
 // Tuiles DCF (FMP) de la page Valorisation — fonction dédiée plutôt que de refaire tout
 // renderValorisation() quand la donnée réelle arrive après coup (fetch async), pour ne

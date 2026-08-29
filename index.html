@@ -396,9 +396,19 @@
       <div class="section-label" style="margin-top:14px;">Référence externe — DCF (FMP)</div>
       <p class="valo-intro" style="margin-top:0;">Estimation de juste valeur par discounted cash flow calculée par FMP — une méthode différente de tes scénarios (qui reposent sur FCF × médiane P/FCF), à prendre comme second avis, pas comme remplacement.</p>
       <div class="ratio-grid">
-        <div class="ratio-card"><div class="k">DCF (non levier)</div><div class="v" id="voDcf">—</div><div class="sub">discounted cash flow, FMP</div></div>
-        <div class="ratio-card"><div class="k">DCF (levier)</div><div class="v" id="voDcfLevered">—</div><div class="sub">discounted cash flow (avec dette), FMP</div></div>
+        <div class="ratio-card"><div class="k">DCF (non levier)</div><div class="v" id="voDcf">—</div><div class="sub">valorise TOUTE l'entreprise (dette + capitaux propres), avant effet du levier financier</div></div>
+        <div class="ratio-card"><div class="k">DCF (levier)</div><div class="v" id="voDcfLevered">—</div><div class="sub">valorise les seuls capitaux propres (après charge de la dette) — reflète l'effet du levier</div></div>
       </div>
+
+      <!-- Historique FCF/OCF/EPS + médianes de multiple + CAGR sur 4 horizons, propre à
+           la métrique actuellement sélectionnée (Valoriser avec le FCF/OCF/PER) —
+           demande explicite : "je voudrais pouvoir voir directement... l'historique des
+           FCF sur cinq, dix, vingt et trente ans, les moyennes de Price to Free
+           Cashflow... le CAGR du Free Cashflow... exactement pareil qu'avec l'OCF... et
+           pareil pour le PER". Toujours FMP ("avec les données de FMP toujours") — pas
+           de repli Sheet, bandeau explicite si l'entreprise n'a pas encore été exportée. -->
+      <div class="section-label" style="margin-top:14px;" id="voMetricHistoryLabel">Historique FCF (FMP)</div>
+      <div id="voMetricHistoryContent"></div>
 
       <div class="scenario-grid" id="scenarioGrid"></div>
 

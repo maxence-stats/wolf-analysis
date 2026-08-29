@@ -390,6 +390,9 @@ def build_charts_history(conn, symbol):
         "fcfParAction": pick(ratios_by_year, "freeCashFlowPerShare"),
         "pFcf": pick(ratios_by_year, "priceToFreeCashFlowRatio"),
         "ocfParAction": pick(ratios_by_year, "operatingCashFlowPerShare"),
+        "pOcf": pick(ratios_by_year, "priceToOperatingCashFlowRatio"),
+        "eps": [r.get("eps") for r in is_rows],
+        "per": pick(ratios_by_year, "priceToEarningsRatio"),
         "actions": [(r.get("weightedAverageShsOut") / 1e6) if r.get("weightedAverageShsOut") is not None else None for r in is_rows],
         "detteOCF": dette_ocf,
         # Par ANNÉE (via bs_by_year), pas positionnel sur bs_rows — balance_sheet peut ne
