@@ -21,6 +21,11 @@ fmp-database/data/
 fmp-database/**/*.env
 fmp-database/.env
 fmp-database/__pycache__/
+# Fichiers de travail générés par resolve_tickers.py/ingest_batch.py — regénérables à
+# la demande depuis le Google Sheet + l'API FMP, pas une source de vérité à versionner.
+fmp-database/companies.csv
+fmp-database/resolved_tickers.json
+fmp-database/import_log.txt
 __pycache__/
 *.pyc
 
