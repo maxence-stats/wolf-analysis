@@ -7551,11 +7551,12 @@ function applyStockCandleScaleMode(){
   stockCandleChart.priceScale('stockOverlay').applyOptions({ mode, autoScale:true });
 }
 
-// Indicateurs macro superposés au cours — sur la MÊME échelle de prix (droite) que les
-// bougies, pour que le mode Logarithmique/Indexé base 100 rebase tout ensemble (c'est
-// précisément l'intérêt de comparer un taux à ~4% et un cours à ~90€ sur un même
-// graphique — en échelle "Normale" les indicateurs macro écrasent visuellement le
-// cours, attendu, l'échelle normale n'a de sens que pour regarder le prix seul).
+// Indicateurs macro/données superposés au cours — sur leur propre échelle ('stockOverlay',
+// voir la création du graphique) pour ne jamais polluer l'autoScale du prix (voir le
+// commentaire détaillé à la création du graphique). mode Normal/Log/Indexé 100 appliqué
+// en miroir sur les deux échelles (applyStockCandleScaleMode) : en Indexé 100 chaque
+// série se rebase sur SA propre valeur de départ, la vraie façon de comparer un taux à
+// ~4% et un cours à ~90€ sur un même graphique.
 function stockOverlayId(item){ return `${item.type}:${item.key}`; }
 
 async function renderStockOverlays(){
@@ -7583,9 +7584,23 @@ async function renderStockOverlays(){
     }
     if (!raw){ stockOverlaySeries[id].setData([]); continue; }
     const startIdx = stockCandleRangeStartIdx(raw.dates, stockRange);
+    // Bug trouvé en reproduisant le signalement utilisateur ("il y a autant d'espace
+    // entre 2008 et 2009 qu'entre 2009 et 1993... problème de date je pense") : une
+    // superposition avec un historique plus ANCIEN que le premier chandelier dispo
+    // (ex. Chiffre d'affaires FMP démarre en 1992, TotalEnergies n'a de bougies FMP
+    // qu'à partir de 2007) étend l'axe des temps du graphique jusqu'à SA propre date
+    // de départ — lightweight-charts espace les barres par INDEX (une "case" de largeur
+    // égale par point temporel unique fusionné entre toutes les séries), pas
+    // proportionnellement au temps calendaire réel. Résultat : une poignée de points
+    // annuels antérieurs aux bougies se retrouvent compressés dans quelques cases
+    // étroites, donnant l'impression que 1993-2009 tient dans le même espace qu'un
+    // intervalle de 2 ans plus loin. Fix : ne jamais envoyer à la série un point
+    // antérieur à la toute première bougie chargée (candleMinDate) — la superposition
+    // reste visible sur toute la plage où il y a du prix, jamais au-delà.
+    const candleMinDate = stockCandleFull && stockCandleFull.length ? stockCandleFull[0].t : null;
     const data = raw.dates.slice(startIdx)
       .map((d, i2) => ({ time:d, value: raw.values[startIdx + i2] }))
-      .filter(p => p.value != null && isFinite(p.value));
+      .filter(p => p.value != null && isFinite(p.value) && (!candleMinDate || p.time >= candleMinDate));
     stockOverlaySeries[id].setData(data);
   }
 }
