@@ -1289,12 +1289,19 @@
       <div class="labo-layout" id="woflLaboLayout">
         <div class="chart-card labo-chart-card" id="wolfLaboChartCard">
           <div class="chart-card-head">
-            <div><h3 id="wolfLaboChartTitle">Coca-Cola (KO) — échantillon de test</h3><p class="chart-subtitle">lightweight-charts (librairie open-source TradingView, pas le widget public). Une seule entreprise a de vraies données pour l'instant ; le reste s'affiche "pas encore de données" jusqu'à l'import FMP complet.</p></div>
+            <div class="labo-chart-title-row">
+              <img id="wolfLaboChartLogo" class="labo-chart-logo" alt="" style="display:none;">
+              <div><h3 id="wolfLaboChartTitle">Coca-Cola (KO) — échantillon de test</h3><p class="chart-subtitle">lightweight-charts (librairie open-source TradingView, pas le widget public). Une seule entreprise a de vraies données pour l'instant ; le reste s'affiche "pas encore de données" jusqu'à l'import FMP complet.</p></div>
+            </div>
             <div class="chart-card-actions">
               <div class="search-wrap labo-symbol-search">
                 <span class="search-icon">⌕</span>
                 <input type="text" id="wolfLaboSymbolSearch" class="search-input" placeholder="Rechercher une entreprise…" autocomplete="off">
                 <div class="search-suggestions" id="wolfLaboSymbolSuggestions"></div>
+              </div>
+              <div class="labo-dropdown" data-dropdown="addlist">
+                <button type="button" class="labo-dropdown-btn" id="wolfLaboAddToListBtn" title="Enregistrer dans une ou plusieurs listes">➕ Listes</button>
+                <div class="labo-dropdown-menu" id="wolfLaboAddToListMenu"></div>
               </div>
               <button class="zoom-btn" id="wolfLaboFullscreenBtn" aria-label="Plein écran" title="Plein écran">⤢</button>
             </div>

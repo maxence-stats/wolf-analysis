@@ -7469,7 +7469,16 @@ function renderStockChartCandleView(){
   // d'une entreprise à l'autre) pour que wolfLaboSampleData/les bougies restent à jour ;
   // wireWolfLaboChartClicks()/wireWolfLaboHandleDrag() en revanche UNE SEULE fois
   // (s'abonnent directement sur l'instance CHART, pas besoin de les rappeler).
-  if (activeCompany && fmpSymbols[activeCompany]){
+  // Bug trouvé en testant Wolf Labo (logos + listes) : renderStockChartCandleView() peut
+  // être rappelée en ARRIÈRE-PLAN (rafraîchissement périodique des données) alors que
+  // l'utilisateur est en train de REGARDER Wolf Labo — sans garde, activateWolfLaboForAnalyse()
+  // volait alors le contexte partagé (wolfLaboChart/wolfLaboSmaSeries/...) à Wolf Labo en
+  // plein milieu de sa propre session, cassant son rendu (wolfLaboSmaSeries pointait vers
+  // les séries du graphique de l'Analyse, jamais recréées pour Wolf Labo). Ne reprendre le
+  // contexte que si l'onglet Analyse est RÉELLEMENT affiché, ou si personne n'est
+  // actuellement sur Wolf Labo (comportement de repli inchangé, 1re visite comprise).
+  const analysePageVisible = document.getElementById('pageAnalyse') && document.getElementById('pageAnalyse').classList.contains('active');
+  if (activeCompany && fmpSymbols[activeCompany] && (analysePageVisible || wolfLaboActiveCtx !== 'labo')){
     const candlesForLabo = stockCandleFull.map(p => ({ time:p.t, open:p.o, high:p.h, low:p.l, close:p.c }));
     activateWolfLaboForAnalyse(fmpSymbols[activeCompany], activeCompany, candlesForLabo);
     if (!stockCandleDrawWired){
@@ -13776,10 +13785,16 @@ function renderWolfLaboWatchlistPanel(){
     return `<div class="labo-list-group ${open ? 'open' : ''}" data-list-group="${cat.key}">
       <div class="labo-list-header" data-toggle-group="${cat.key}"><span>${escapeHtml(cat.label)}</span><span class="count">${entries.length}</span></div>
       <div class="labo-list-body">
-        ${entries.map(e => `<div class="labo-list-row ${e.symbol === activeSymbol ? 'active' : ''}" data-select-symbol="${escapeHtml(e.symbol)}" data-select-name="${escapeHtml(e.name)}">
-          <span>${escapeHtml(e.name)} <span style="color:var(--text-faint)">${escapeHtml(e.symbol)}</span></span>
+        ${entries.map(e => {
+          const logo = companyLogoUrl(e.name);
+          const logoHtml = logo
+            ? `<img src="${escapeHtml(logo)}" alt="" onerror="this.parentElement.innerHTML='${escapeHtml((e.name || e.symbol || '?').charAt(0).toUpperCase())}';">`
+            : escapeHtml((e.name || e.symbol || '?').charAt(0).toUpperCase());
+          return `<div class="labo-list-row ${e.symbol === activeSymbol ? 'active' : ''}" data-select-symbol="${escapeHtml(e.symbol)}" data-select-name="${escapeHtml(e.name)}">
+          <span class="labo-list-entry"><span class="labo-list-logo">${logoHtml}</span>${escapeHtml(e.name)} <span style="color:var(--text-faint)">${escapeHtml(e.symbol)}</span></span>
           <button type="button" data-remove-entry="${escapeHtml(e.symbol)}" data-remove-cat="${cat.key}" title="Retirer">✕</button>
-        </div>`).join('') || '<p class="chart-hint" style="margin:2px 0 6px;">Vide.</p>'}
+        </div>`;
+        }).join('') || '<p class="chart-hint" style="margin:2px 0 6px;">Vide.</p>'}
         <div class="labo-list-add">
           <input type="text" placeholder="Ticker (ex. AAPL)" data-add-symbol-input="${cat.key}">
           <button type="button" data-add-symbol-btn="${cat.key}">+ Ajouter</button>
@@ -13898,6 +13913,52 @@ function renderWolfLaboChart(){
   renderWolfLaboHandles();
   redrawWolfLaboSketch();
   renderWolfLaboWatchlistPanel();
+  renderWolfLaboChartLogo();
+  renderWolfLaboAddToListMenu();
+}
+
+// Logo de l'entreprise actuellement affichée, à côté du titre — demande explicite
+// ("quand j'affiche une entreprise sur le graphique, il faut qu'on y puisse y voir le
+// logo"). companyLogoUrl() résout par NOM (Sheet en priorité, repli data/logos/{SYMBOLE}
+// FMP) — jamais mis en cache en dur ici, se met à jour tout seul dès qu'un logo est
+// disponible pour une entreprise, comme ailleurs sur le site.
+function renderWolfLaboChartLogo(){
+  const img = document.getElementById('wolfLaboChartLogo');
+  if (!img) return;
+  const name = wolfLaboSampleData ? wolfLaboSampleData.name : null;
+  const url = name ? companyLogoUrl(name) : null;
+  if (url){
+    img.onerror = () => { img.style.display = 'none'; };
+    img.src = url;
+    img.style.display = 'block';
+  } else {
+    img.removeAttribute('src');
+    img.style.display = 'none';
+  }
+}
+// Menu "➕ Listes" à côté de la recherche — demande explicite : après avoir recherché et
+// affiché une entreprise, un bouton propose directement dans quelle(s) liste(s)
+// l'enregistrer, PLUSIEURS à la fois ("je peux avoir la possibilité d'en choisir
+// plusieurs") — plus rapide que de retaper le ticker à la main dans le panneau de listes
+// (mécanisme déjà existant, inchangé, toujours utilisable pour un ticker hors univers
+// suivi). Coché = déjà dans la liste ; reclique pour retirer. Le menu reste OUVERT après
+// un clic (stopPropagation), comme le menu "Superposer" du cours de bourse, pour cocher
+// plusieurs listes d'affilée sans le rouvrir à chaque fois.
+function renderWolfLaboAddToListMenu(){
+  const box = document.getElementById('wolfLaboAddToListMenu');
+  if (!box) return;
+  const rawSymbol = currentWolfLaboSymbol();
+  const symbol = rawSymbol ? rawSymbol.trim().toUpperCase() : null; // même normalisation que addWolfLaboListEntry()
+  const name = wolfLaboSampleData ? wolfLaboSampleData.name : symbol;
+  if (!symbol){
+    box.innerHTML = '<div style="padding:6px;color:var(--text-faint);font-size:11px;">Aucune entreprise affichée.</div>';
+    return;
+  }
+  box.innerHTML = `<div style="padding:3px 6px;color:var(--text-faint);font-size:9.5px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.04em;">${escapeHtml(name)}</div>`
+    + WOLF_LABO_LIST_CATEGORIES.map(cat => {
+      const inList = (wolfLaboLists[cat.key] || []).some(e => e.symbol === symbol);
+      return `<button type="button" class="${inList ? 'active' : ''}" data-addlist-cat="${cat.key}">${inList ? '✓ ' : ''}${escapeHtml(cat.label)}</button>`;
+    }).join('');
 }
 
 async function loadWolfLaboSample(){
@@ -13962,6 +14023,19 @@ document.querySelectorAll('.labo-dropdown-btn').forEach(btn => {
 });
 document.addEventListener('click', () => {
   document.querySelectorAll('.labo-dropdown.open').forEach(o => o.classList.remove('open'));
+});
+document.getElementById('wolfLaboAddToListMenu').addEventListener('click', e => {
+  e.stopPropagation();
+  const btn = e.target.closest('[data-addlist-cat]');
+  if (!btn) return;
+  const catKey = btn.dataset.addlistCat;
+  const rawSymbol = currentWolfLaboSymbol();
+  if (!rawSymbol) return;
+  const symbol = rawSymbol.trim().toUpperCase(); // même normalisation que addWolfLaboListEntry()
+  const name = wolfLaboSampleData ? wolfLaboSampleData.name : symbol;
+  const inList = (wolfLaboLists[catKey] || []).some(en => en.symbol === symbol);
+  if (inList) removeWolfLaboListEntry(catKey, symbol); else addWolfLaboListEntry(catKey, rawSymbol, name);
+  renderWolfLaboAddToListMenu();
 });
 document.getElementById('wolfLaboRangeButtons').addEventListener('click', e => {
   const btn = e.target.closest('button[data-range]');
