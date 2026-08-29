@@ -8414,54 +8414,101 @@ let activeFcfActuel = null;
    dictionnaire DOCUMENTS_REAL_DATA_SOURCES.
    ============================================================ */
 let documentsView = 'income';
+// Listes complètes (tous les postes utiles renvoyés par FMP, pas juste un sous-ensemble
+// — retour utilisateur explicite : "mes trois états financiers ne sont pas complets").
+// Chaque label doit correspondre EXACTEMENT à une clé de FIELD_MAP_IS/BS/CF côté
+// fmp-database/export_to_app.py, vérifiées contre la vraie charge utile FMP (KO) avant
+// d'écrire cette liste, pas devinées.
 const DOCUMENTS_IS_ROWS = [
   { label:'Revenue' },
   { label:'Cost of Revenue' },
   { label:'Gross Profit', bold:true },
   { label:'R&D Expenses' },
+  { label:'G&A Expenses' },
+  { label:'Selling & Marketing Expenses' },
   { label:'SG&A Expenses' },
-  { label:'Operating Expenses' },
+  { label:'Other Expenses' },
+  { label:'Operating Expenses', bold:true },
   { label:'Operating Income', bold:true },
+  { label:'Interest Income' },
   { label:'Interest Expense' },
+  { label:'Net Interest Income' },
+  { label:'Depreciation & Amortization' },
   { label:'EBITDA', bold:true },
+  { label:'EBIT', bold:true },
+  { label:'Non-Operating Income (excl. Interest)' },
+  { label:'Total Other Income/Expenses, Net' },
+  { label:'Income Before Tax', bold:true },
+  { label:'Income Tax Expense' },
+  { label:'Net Income from Continuing Operations' },
+  { label:'Net Income from Discontinued Operations' },
   { label:'Net Income', bold:true },
   { label:'EPS', unit:'pershare' },
   { label:'EPS Diluted', unit:'pershare' },
-  { label:'Weighted Avg Shares Outstanding', unit:'shares' }
+  { label:'Weighted Avg Shares Outstanding', unit:'shares' },
+  { label:'Weighted Avg Diluted Shares Outstanding', unit:'shares' }
 ];
 const DOCUMENTS_BS_ROWS = [
   { label:'Cash & Cash Equivalents' },
   { label:'Short-Term Investments' },
+  { label:'Cash & Short-Term Investments', bold:true },
+  { label:'Accounts Receivable' },
+  { label:'Inventory' },
+  { label:'Other Current Assets' },
   { label:'Total Current Assets', bold:true },
   { label:'Property, Plant & Equipment' },
   { label:'Goodwill' },
   { label:'Intangible Assets' },
+  { label:'Goodwill & Intangible Assets', bold:true },
+  { label:'Long-Term Investments' },
+  { label:'Other Non-Current Assets' },
   { label:'Total Non-Current Assets', bold:true },
   { label:'Total Assets', bold:true },
   { label:'Accounts Payable' },
+  { label:'Accrued Expenses' },
   { label:'Short-Term Debt' },
+  { label:'Deferred Revenue' },
+  { label:'Other Current Liabilities' },
   { label:'Total Current Liabilities', bold:true },
   { label:'Long-Term Debt' },
+  { label:'Deferred Tax Liabilities' },
+  { label:'Other Non-Current Liabilities' },
   { label:'Total Non-Current Liabilities', bold:true },
   { label:'Total Liabilities', bold:true },
+  { label:'Common Stock' },
+  { label:'Additional Paid-in Capital' },
   { label:'Retained Earnings' },
-  { label:'Total Stockholders Equity', bold:true }
+  { label:'Treasury Stock' },
+  { label:'Accumulated Other Comprehensive Income/Loss' },
+  { label:'Total Stockholders Equity', bold:true },
+  { label:'Minority Interest' },
+  { label:'Total Equity', bold:true },
+  { label:'Total Debt' },
+  { label:'Net Debt' }
 ];
 const DOCUMENTS_CF_ROWS = [
   { label:'Net Income' },
   { label:'Depreciation & Amortization' },
+  { label:'Deferred Income Tax' },
   { label:'Stock-Based Compensation' },
   { label:'Change in Working Capital' },
+  { label:'Other Non-Cash Items' },
   { label:'Net Cash from Operating Activities', bold:true },
   { label:'Capital Expenditure' },
   { label:'Acquisitions' },
+  { label:'Purchases of Investments' },
+  { label:'Sales/Maturities of Investments' },
+  { label:'Other Investing Activities' },
   { label:'Net Cash from Investing Activities', bold:true },
-  { label:'Debt Repayment' },
-  { label:'Dividends Paid' },
+  { label:'Net Debt Issuance' },
+  { label:'Common Stock Issuance' },
   { label:'Stock Repurchase' },
+  { label:'Dividends Paid' },
+  { label:'Other Financing Activities' },
   { label:'Net Cash from Financing Activities', bold:true },
-  { label:'Free Cash Flow', bold:true },
-  { label:'Net Change in Cash', bold:true }
+  { label:'Effect of Forex Changes on Cash' },
+  { label:'Net Change in Cash', bold:true },
+  { label:'Free Cash Flow', bold:true }
 ];
 // Regroupements provisoires pour la page Statistics — les ratios précis restent à
 // définir ENSEMBLE, secteur par secteur (décision explicite, pas à moi d'inventer les
