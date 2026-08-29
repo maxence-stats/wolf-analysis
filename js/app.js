@@ -13293,9 +13293,39 @@ function removeWolfLaboListEntry(catKey, symbol){
   persistWolfLaboLists();
   renderWolfLaboWatchlistPanel();
 }
-function selectWolfLaboSymbol(symbol, name){
-  if (symbol === 'KO'){ loadWolfLaboSample(); return; }
+// Charge le fichier prices-{SYMBOLE}.json déjà exporté pour l'onglet Analyse (voir
+// fmp-database/export_prices.py) — même source, pas un second pipeline à maintenir.
+// Résolu par NOM d'entreprise via fmpSymbols (le "symbol" reçu ici est souvent le
+// ticker Sheet brut, ex. "EPA:TTE", jamais le symbole FMP réel) plutôt que par le
+// ticker passé, sinon la résolution échoue pour toute entreprise hors bourse US.
+async function loadWolfLaboRealSymbol(fmpSymbol, name){
+  try{
+    const res = await fetch(`data/prices-${fmpSymbol}.json`, { cache:'no-store' });
+    if (!res.ok) return false;
+    const raw = await res.json();
+    if (!raw || !raw.length) return false;
+    wolfLaboSampleData = {
+      symbol: fmpSymbol, name: name || fmpSymbol, source: 'FMP (historique quotidien)',
+      candles: raw.map(p => ({ time:p.t, open:p.o, high:p.h, low:p.l, close:p.c, volume:0 }))
+    };
+    document.getElementById('wolfLaboChartTitle').textContent = `${name || fmpSymbol} (${fmpSymbol})`;
+    renderWolfLaboChart();
+    return true;
+  }catch(e){ return false; }
+}
+// Demande explicite : "il faut que tu remettes la possibilité de tracer des canaux...
+// exactement comme tu as fait dans [Wolf Labo]" — plutôt que dupliquer tout l'outil de
+// dessin (canaux, aimant, préréglages de style, poignées...) sur un second graphique,
+// Wolf Labo lui-même s'ouvre maintenant à toute entreprise déjà exportée en FMP (le
+// point d'entrée existait déjà, "pas encore de données... disponible après l'import
+// FMP complet" — juste jamais branché avant que l'export de prix n'existe).
+async function selectWolfLaboSymbol(symbol, name){
   const status = document.getElementById('wolfLaboStatus');
+  const fmpSymbol = (name && fmpSymbols[name]) || symbol;
+  if (status){ status.textContent = `Chargement de ${name || symbol}…`; status.style.display = 'block'; }
+  const ok = await loadWolfLaboRealSymbol(fmpSymbol, name);
+  if (ok){ if (status) status.style.display = 'none'; return; }
+  if (symbol === 'KO'){ loadWolfLaboSample(); return; }
   document.getElementById('wolfLaboChartTitle').textContent = `${name || symbol} (${symbol})`;
   if (status){ status.textContent = `Pas encore de données pour ${name || symbol} — disponible après l'import FMP complet. Affichage de l'échantillon Coca-Cola en attendant.`; status.style.display = 'block'; }
 }
