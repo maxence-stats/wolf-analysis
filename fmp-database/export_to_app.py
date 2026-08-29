@@ -96,10 +96,47 @@ RAW_FIELD_FOR_TOTAL = {
     "Free Cash Flow": ("cash_flow", "freeCashFlow"),
 }
 
+# Statistiques (dernier exercice annuel connu) : label -> (catégorie, champ FMP, format).
+# "frac" = fraction 0-1 à multiplier par 100 (ex. 0.61 -> "61,0%"), "pctdirect" = déjà en
+# points de pourcentage côté FMP (ex. dividendYieldPercentage = 2.92 -> "2,92%", PAS
+# 292% — vérifié en lisant la valeur brute sur KO avant d'écrire ce mapping, voir piège
+# CLAUDE.md #14 sur ne jamais supposer un format sans vérifier), "x" = multiple simple
+# (ex. P/E = 22,9x), "num" = nombre brut sans unité.
+STATS_FIELD_MAP = {
+    "Valorisation": [
+        ("P/E", "ratios", "priceToEarningsRatio", "x"),
+        ("P/FCF", "ratios", "priceToFreeCashFlowRatio", "x"),
+        ("EV/EBITDA", "key_metrics", "evToEBITDA", "x"),
+        ("P/B", "ratios", "priceToBookRatio", "x"),
+        ("P/S", "ratios", "priceToSalesRatio", "x"),
+    ],
+    "Rentabilité": [
+        ("Marge brute", "ratios", "grossProfitMargin", "frac"),
+        ("Marge opérationnelle", "ratios", "operatingProfitMargin", "frac"),
+        ("Marge nette", "ratios", "netProfitMargin", "frac"),
+        ("ROE", "key_metrics", "returnOnEquity", "frac"),
+        ("ROIC", "key_metrics", "returnOnInvestedCapital", "frac"),
+    ],
+    "Santé financière": [
+        ("Dette nette / EBITDA", "key_metrics", "netDebtToEBITDA", "x"),
+        ("Current Ratio", "ratios", "currentRatio", "x"),
+        ("Quick Ratio", "ratios", "quickRatio", "x"),
+        ("Couverture des intérêts", "ratios", "interestCoverageRatio", "x"),
+    ],
+    "Dividende": [
+        ("Rendement", "ratios", "dividendYieldPercentage", "pctdirect"),
+        ("Payout Ratio", "ratios", "dividendPayoutRatio", "frac"),
+        # "CAGR Dividende 5a" n'est pas dans ratios/key_metrics — repris tel quel du
+        # calcul déjà fait dans build_growth() (dividende par action reconstruit depuis
+        # les versements réels, voir dividend_per_share_by_year), ajouté après coup dans
+        # build_stats() plutôt que dupliqué ici.
+    ],
+}
+
 OUTPUT_PATH = pathlib.Path(__file__).resolve().parent.parent / "data" / "documents-sample-ko.json"
 
 
-def rows_for(conn, category, symbol, period="annual", limit=5):
+def rows_for(conn, category, symbol, period="annual", limit=50):
     cur = conn.cursor()
     cur.execute(
         "SELECT payload FROM raw_data WHERE category=? AND symbol=? AND (period=? OR period IS NULL) ORDER BY item_date ASC",
@@ -191,6 +228,33 @@ def build_growth(conn, symbol):
     return rows
 
 
+def fmt_stat(value, kind):
+    if value is None:
+        return None
+    if kind == "frac":
+        return value * 100  # app.js applique déjà "%"+2 décimales sur une valeur en points
+    if kind == "pctdirect":
+        return value  # déjà en points de pourcentage côté FMP, ne pas re-multiplier
+    return value  # "x" / "num" : valeur brute, app.js ajoute juste "x" ou rien
+
+
+def build_stats(conn, symbol, div_cagr):
+    """Dernier exercice ANNUEL connu de ratios/key_metrics — pas de TTM, pour rester
+    cohérent avec le reste de la page (états financiers eux aussi en annuel)."""
+    groups = {}
+    for title, items in STATS_FIELD_MAP.items():
+        cat_cache = {}
+        out_items = {}
+        for label, category, field, kind in items:
+            if category not in cat_cache:
+                rows = rows_for(conn, category, symbol, limit=1)
+                cat_cache[category] = rows[-1] if rows else {}
+            out_items[label] = fmt_stat(cat_cache[category].get(field), kind)
+        groups[title] = out_items
+    groups.setdefault("Dividende", {})["CAGR Dividende 5a"] = (div_cagr * 100) if div_cagr is not None else None
+    return groups
+
+
 def main():
     symbol = sys.argv[1] if len(sys.argv) > 1 else "KO"
     conn = db.get_connection()
@@ -198,13 +262,16 @@ def main():
     income_rows = rows_for(conn, "income_statement", symbol)
     balance_rows = rows_for(conn, "balance_sheet", symbol)
     cashflow_rows = rows_for(conn, "cash_flow", symbol)
+    growth_rows = build_growth(conn, symbol)
+    div_row = next((r for r in growth_rows if r["label"] == "Dividende par action"), None)
 
     out = {
         "symbol": symbol,
         "incomeStatement": build_statement(income_rows, FIELD_MAP_IS),
         "balanceSheet": build_statement(balance_rows, FIELD_MAP_BS),
         "cashFlow": build_statement(cashflow_rows, FIELD_MAP_CF),
-        "growth": build_growth(conn, symbol),
+        "growth": growth_rows,
+        "stats": build_stats(conn, symbol, div_row["cagr"] if div_row else None),
     }
     conn.close()
 

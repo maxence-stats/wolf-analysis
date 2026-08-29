@@ -8561,7 +8561,9 @@ function documentsStatementTableHtml(rows, statementData){
     </div>`;
 }
 function documentsStatementSectionHtml(title, rows, statementData){
-  const sub = statementData ? 'Annuel — 5 derniers exercices (données FMP)' : 'Annuel — 5 derniers exercices (en attente de l\'import FMP)';
+  const sub = statementData
+    ? `Annuel — historique complet (${statementData.years.length} exercice${statementData.years.length > 1 ? 's' : ''}, données FMP)`
+    : 'Annuel — en attente de l\'import FMP';
   return `<div class="chart-card wide">
     <div class="chart-card-head">
       <div><h3>${title}</h3><p>${sub}</p></div>
@@ -8570,16 +8572,36 @@ function documentsStatementSectionHtml(title, rows, statementData){
     ${documentsStatementTableHtml(rows, statementData)}
   </div>`;
 }
-function documentsStatisticsHtml(growthData){
-  return `<div class="documents-empty-banner">🧮 Synthèse de ratios à construire ensemble — juste la structure pour l'instant, les ratios précis (et ceux spécifiques à chaque secteur ci-dessous) restent à définir.</div>
-
-    <div class="section-label">Croissance (5 ans)</div>
+// value déjà dans l'unité d'affichage (points de %, ou multiple) — voir
+// fmp-database/export_to_app.py::fmt_stat, pas de re-conversion ici.
+function fmtDocStat(value, kind){
+  if (value == null) return '—';
+  const s = value.toLocaleString('fr-FR', { minimumFractionDigits:1, maximumFractionDigits:2 });
+  if (kind === 'pct') return s + '%';
+  if (kind === 'x') return s + 'x';
+  return s;
+}
+// kind par libellé, pour les groupes alimentés en données réelles (voir STATS_FIELD_MAP
+// côté export_to_app.py — "frac"/"pctdirect" y deviennent uniformément des points de
+// pourcentage une fois exportés, donc "pct" ici pour les deux).
+const DOCUMENTS_STATS_KIND = {
+  'P/E':'x', 'P/FCF':'x', 'EV/EBITDA':'x', 'P/B':'x', 'P/S':'x',
+  'Marge brute':'pct', 'Marge opérationnelle':'pct', 'Marge nette':'pct', 'ROE':'pct', 'ROIC':'pct',
+  'Dette nette / EBITDA':'x', 'Current Ratio':'x', 'Quick Ratio':'x', 'Couverture des intérêts':'x',
+  'Rendement':'pct', 'Payout Ratio':'pct', 'CAGR Dividende 5a':'pct'
+};
+function documentsStatisticsHtml(growthData, statsData){
+  return `<div class="section-label">Croissance (5 ans)</div>
     ${documentsGrowthTableHtml(growthData)}
 
     ${DOCUMENTS_STATS_GROUPS.map(g => `
     <div class="section-label" style="margin-top:14px;">${g.title}</div>
-    <div class="ratio-grid">${g.items.map(label => `<div class="ratio-card"><div class="k">${label}</div><div class="v">—</div></div>`).join('')}</div>
+    <div class="ratio-grid">${g.items.map(label => {
+      const v = statsData && statsData[g.title] ? statsData[g.title][label] : undefined;
+      return `<div class="ratio-card"><div class="k">${label}</div><div class="v">${fmtDocStat(v, DOCUMENTS_STATS_KIND[label])}</div></div>`;
+    }).join('')}</div>
   `).join('')}
+    ${statsData ? '' : '<div class="documents-empty-banner">🧮 Ratios en attente de l\'import FMP pour cette entreprise.</div>'}
 
     <div class="section-label" style="margin-top:14px;">Indicateurs spécifiques au secteur</div>
     <div class="documents-empty-banner">🏦 Banques, foncières, "serial acquirers"... certains secteurs ont leurs propres ratios clés (ex. NIM et ratio Tier 1 pour une banque, FFO pour une foncière, ROIC sur capital déployé pour un serial acquirer). Section prête, à remplir une fois qu'on aura défini ensemble lesquels suivre pour chaque secteur.</div>`;
@@ -8603,7 +8625,7 @@ function renderDocumentsPage(nom){
   if (documentsView === 'income') content.innerHTML = documentsStatementSectionHtml('Income Statement', DOCUMENTS_IS_ROWS, real && real.incomeStatement);
   else if (documentsView === 'balance') content.innerHTML = documentsStatementSectionHtml('Balance Sheet', DOCUMENTS_BS_ROWS, real && real.balanceSheet);
   else if (documentsView === 'cashflow') content.innerHTML = documentsStatementSectionHtml('Cash Flow', DOCUMENTS_CF_ROWS, real && real.cashFlow);
-  else content.innerHTML = documentsStatisticsHtml(real && real.growth);
+  else content.innerHTML = documentsStatisticsHtml(real && real.growth, real && real.stats);
 }
 function initDocumentsTabbar(){
   const bar = document.getElementById('documentsSubnav');
