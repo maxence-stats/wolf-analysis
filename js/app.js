@@ -7202,7 +7202,7 @@ function buildStockOverlayCatalog(){
   DOCUMENTS_IS_ROWS.forEach(r => catalog.push({ type:'statement', statement:'incomeStatement', key:r.label, label:r.label, group:'Cette entreprise — compte de résultat' }));
   DOCUMENTS_BS_ROWS.forEach(r => catalog.push({ type:'statement', statement:'balanceSheet', key:r.label, label:r.label, group:'Cette entreprise — bilan' }));
   DOCUMENTS_CF_ROWS.forEach(r => catalog.push({ type:'statement', statement:'cashFlow', key:r.label, label:r.label, group:'Cette entreprise — flux de trésorerie' }));
-  MACRO_ROTATION_SECTORS.forEach(s => catalog.push({ type:'sector', key:s.key, label:'Secteur : ' + s.label + ' (vs S&P 500)', group:'Secteurs' }));
+  MACRO_ROTATION_SECTORS.forEach(s => catalog.push({ type:'sector', key:s.key, label:'Secteur : ' + s.label + ' (ETF ' + s.ticker + ')', group:'Secteurs' }));
   Object.keys(companies).forEach(nom => {
     if (nom !== activeCompany) catalog.push({ type:'company', key:nom, label:nom, group:'Comparer une entreprise' });
   });
@@ -7225,7 +7225,18 @@ async function resolveStockOverlaySeries(item){
     if (!row) return null;
     return { dates: sd.years.map(y => `${String(y).slice(0,4)}-12-31`), values: row.values };
   }
-  if (item.type === 'sector') return sectorEtfRatioSeries(item.key);
+  if (item.type === 'sector'){
+    // Demande explicite : "je veux juste... que ça affiche l'ETF sectoriel [brut]" — pas
+    // le ratio vs S&P 500 réutilisé de l'outil "Taux vs Actions/Secteurs" (sectorEtfRatioSeries,
+    // conçu pour CET outil précis, pas pour une superposition directe sur le cours). Même
+    // source de données (sectorEtfData, chargée via Apps Script/Yahoo dès le démarrage du
+    // site, historique complet depuis la création de chaque ETF — 1998 pour la plupart —
+    // largement plus long que les ~3 ans du Sheet "Rotation Sectorielle"), juste le PRIX
+    // BRUT de l'ETF au lieu de sa division par SPY.
+    const meta = MACRO_ROTATION_SECTORS.find(s => s.key === item.key);
+    const raw = meta && sectorEtfData[meta.ticker];
+    return (raw && raw.dates && raw.dates.length) ? raw : null;
+  }
   if (item.type === 'company'){
     const symbol = fmpSymbols[item.key];
     if (!symbol) return null;
@@ -7463,10 +7474,6 @@ function renderStockChartCandleView(){
     activateWolfLaboForAnalyse(fmpSymbols[activeCompany], activeCompany, candlesForLabo);
     if (!stockCandleDrawWired){
       stockCandleDrawWired = true;
-      if (typeof stockCandleSeries.attachPrimitive === 'function'){
-        wolfLaboBandPrimitive = new WolfLaboBandPrimitive();
-        stockCandleSeries.attachPrimitive(wolfLaboBandPrimitive);
-      }
       stockCandleChart.timeScale().subscribeVisibleTimeRangeChange(() => renderWolfLaboHandles());
       wireWolfLaboChartClicks();
       wireWolfLaboHandleDrag();
@@ -7488,6 +7495,16 @@ function renderStockChartCandleView(){
   // rien) sur une série vide, donc toujours utiliser la série ACTIVE comme point
   // d'ancrage, jamais stockCandleSeries en dur.
   const priceAnchorSeries = stockCandleStyle === 'line' ? stockLineSeries : stockCandleSeries;
+  // Le moteur de tracé (canaux/lignes de tendance, partagé avec Wolf Labo) convertit
+  // les coordonnées souris <-> prix via wolfLaboCandleSeries.coordinateToPrice() — figé
+  // sur les bougies, ça renvoyait null dès qu'on passait en style "Courbe" (bougies
+  // cachées ET vidées via setData([]) juste au-dessus), donc plus moyen de cliquer pour
+  // tracer un canal ("en se mettant en courbe, j'ai plus trop accès à mon canal"). Fix :
+  // toujours pointer vers la série RÉELLEMENT visible, comme priceAnchorSeries ci-dessus.
+  if (wolfLaboActiveCtx === 'analyse'){
+    wolfLaboCandleSeries = priceAnchorSeries;
+    ensureWolfLaboBandPrimitiveOn(priceAnchorSeries);
+  }
 
   // SMA200/SMA30 "semaines" — calculées sur les clôtures HEBDO (resampleWeekly) à
   // partir du QUOTIDIEN brut, indépendamment du timeframe d'affichage choisi pour les
@@ -12703,6 +12720,27 @@ let wolfLaboDraggingHandle = null; // {id, kind} pendant un glisser de poignée
 let wolfLaboLastDragEvent = null;
 let wolfLaboDragRafScheduled = false;
 let wolfLaboBandPrimitive = null; // remplissage semi-transparent entre les bornes d'un canal/régression
+let wolfLaboBandPrimitiveSeries = null; // série sur laquelle wolfLaboBandPrimitive est ATTACHÉE actuellement
+// Un primitive lightweight-charts reste attaché à LA série passée à attachPrimitive() —
+// son rendu (WolfLaboBandPaneView) convertit prix->pixel via CETTE série précise
+// (source._series.priceToCoordinate()), jamais via le chart en général. Sur l'Analyse,
+// bougies et courbe (stockCandleSeries/stockLineSeries) sont deux séries DIFFÉRENTES
+// dont une seule a des données à la fois (l'autre reçoit setData([]) au changement de
+// style, voir renderStockChartCandleView()) — priceToCoordinate() sur une série sans
+// données ne donne rien d'exploitable (même piège que documenté sur createPriceLine()
+// juste au-dessus). Sans réattacher, passer en "Courbe" rendait les canaux tracés
+// invisibles ET impossibles à re-tracer ("en se mettant en courbe, j'ai plus trop accès
+// à mon canal"). Rappelée à chaque rendu avec la série RÉELLEMENT visible du moment.
+function ensureWolfLaboBandPrimitiveOn(series){
+  if (!series || typeof series.attachPrimitive !== 'function') return;
+  if (wolfLaboBandPrimitiveSeries === series && wolfLaboBandPrimitive) return;
+  if (wolfLaboBandPrimitive && wolfLaboBandPrimitiveSeries && typeof wolfLaboBandPrimitiveSeries.detachPrimitive === 'function'){
+    try{ wolfLaboBandPrimitiveSeries.detachPrimitive(wolfLaboBandPrimitive); }catch(e){ /* déjà détachée (série détruite) */ }
+  }
+  if (!wolfLaboBandPrimitive) wolfLaboBandPrimitive = new WolfLaboBandPrimitive();
+  series.attachPrimitive(wolfLaboBandPrimitive);
+  wolfLaboBandPrimitiveSeries = series;
+}
 
 // ---- Contexte actif (Wolf Labo OU le graphique de l'onglet Analyse) ----------------
 // Demande explicite : "je dois avoir la possibilité de tracer des canaux [sur le
@@ -12730,13 +12768,14 @@ function activateWolfLaboForLabo(){
       wolfLaboChart = wolfLaboOwnState.chart;
       wolfLaboCandleSeries = wolfLaboOwnState.series;
       wolfLaboBandPrimitive = wolfLaboOwnState.band;
+      wolfLaboBandPrimitiveSeries = wolfLaboOwnState.bandSeries;
       wolfLaboSampleData = wolfLaboOwnState.sampleData;
     } else {
       // Wolf Labo jamais ouvert avant dans cette session (l'utilisateur est passé par
       // l'Analyse en premier) : ne pas laisser les pointeurs sur le graphique de
       // l'Analyse, sinon renderWolfLaboChart() croirait à tort qu'un graphique existe
       // déjà et sauterait sa création dans #wolfLaboChartHolder.
-      wolfLaboChart = null; wolfLaboCandleSeries = null; wolfLaboBandPrimitive = null; wolfLaboSampleData = null;
+      wolfLaboChart = null; wolfLaboCandleSeries = null; wolfLaboBandPrimitive = null; wolfLaboBandPrimitiveSeries = null; wolfLaboSampleData = null;
     }
   }
   wolfLaboActiveCtx = 'labo';
@@ -12745,7 +12784,7 @@ function activateWolfLaboForLabo(){
 }
 function activateWolfLaboForAnalyse(fmpSymbol, nom, candles){
   if (wolfLaboActiveCtx === 'labo'){
-    wolfLaboOwnState = { chart:wolfLaboChart, series:wolfLaboCandleSeries, band:wolfLaboBandPrimitive, sampleData:wolfLaboSampleData };
+    wolfLaboOwnState = { chart:wolfLaboChart, series:wolfLaboCandleSeries, band:wolfLaboBandPrimitive, bandSeries:wolfLaboBandPrimitiveSeries, sampleData:wolfLaboSampleData };
   }
   wolfLaboActiveCtx = 'analyse';
   wolfLaboHolderId = 'chartStockCandle'; wolfLaboHandlesElId = 'stockCandleHandles';
@@ -13838,10 +13877,7 @@ function renderWolfLaboChart(){
     Object.keys(WOLF_LABO_MA_CONFIG).forEach(period => {
       wolfLaboSmaSeries[period] = wolfLaboChart.addLineSeries({ color: WOLF_LABO_MA_CONFIG[period].color, lineWidth:1.5, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
     });
-    if (typeof wolfLaboCandleSeries.attachPrimitive === 'function'){
-      wolfLaboBandPrimitive = new WolfLaboBandPrimitive();
-      wolfLaboCandleSeries.attachPrimitive(wolfLaboBandPrimitive);
-    }
+    ensureWolfLaboBandPrimitiveOn(wolfLaboCandleSeries);
     wolfLaboChart.timeScale().subscribeVisibleTimeRangeChange(() => renderWolfLaboHandles());
     wireWolfLaboChartClicks();
     wireWolfLaboHandleDrag();
