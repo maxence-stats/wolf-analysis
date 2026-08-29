@@ -931,6 +931,8 @@
   .labo-dropdown-menu button{width:100%;text-align:left;font-family:var(--font-mono);font-size:11px;font-weight:600;padding:6px 10px;border-radius:9px;border:1px solid var(--hair);background:var(--panel);color:var(--text-dim);cursor:pointer;}
   .labo-dropdown-menu button:hover{border-color:var(--gold);color:var(--text);}
   .labo-dropdown-menu button.active{background:linear-gradient(135deg, var(--gold-2) 0%, var(--gold) 100%);color:#1a1305;border-color:var(--gold);box-shadow:none;}
+  .labo-dropdown-menu button.labo-chip-remove{background:rgba(229,99,107,0.08);border-color:rgba(229,99,107,0.35);color:var(--text-dim);}
+  .labo-dropdown-menu button.labo-chip-remove:hover{background:rgba(229,99,107,0.18);border-color:var(--red);color:var(--text);}
   .labo-toggle-btn{font-family:var(--font-mono);font-size:11px;font-weight:600;padding:6px 12px;border-radius:14px;border:1px solid var(--hair);background:var(--panel-2);color:var(--text-dim);cursor:pointer;white-space:nowrap;}
   .labo-toggle-btn:hover{border-color:var(--gold);color:var(--text);}
   .labo-toggle-btn.active{background:linear-gradient(135deg, var(--gold-2) 0%, var(--gold) 100%);color:#1a1305;border-color:var(--gold);box-shadow:0 4px 14px -6px rgba(217,164,65,0.55);}

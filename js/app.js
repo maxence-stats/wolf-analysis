@@ -7402,22 +7402,29 @@ function renderStockChartCandleView(){
       upColor: THEME.green, downColor: THEME.red, borderVisible:false,
       wickUpColor: THEME.green, wickDownColor: THEME.red
     });
-    stockLineSeries = stockCandleChart.addLineSeries({ color:THEME.yellow, lineWidth:1.75, priceLineVisible:false, lastValueVisible:true });
-    stockCandleSmaSeries.sma200 = stockCandleChart.addLineSeries({ color:THEME.white, lineWidth:2, priceLineVisible:false, lastValueVisible:false });
-    stockCandleSmaSeries.sma30 = stockCandleChart.addLineSeries({ color:THEME.violet, lineWidth:1, priceLineVisible:false, lastValueVisible:false });
+    // crosshairMarkerVisible:false partout ci-dessous — demande explicite ("quand je
+    // passe ma souris... ça me met plein de ronds, enlève-les, je veux juste une croix
+    // qui montre où je suis") : par défaut lightweight-charts affiche un rond de
+    // couleur par SÉRIE de type ligne au survol (une bougie n'en a pas, mais avec
+    // ~11 lignes actives — SMA×6, canal de régression×5 — ça en fait beaucoup). Le
+    // curseur en croix (verticale+horizontale) reste géré séparément par le chart lui-
+    // même (crosshair.mode), inchangé.
+    stockLineSeries = stockCandleChart.addLineSeries({ color:THEME.yellow, lineWidth:1.75, priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false });
+    stockCandleSmaSeries.sma200 = stockCandleChart.addLineSeries({ color:THEME.white, lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+    stockCandleSmaSeries.sma30 = stockCandleChart.addLineSeries({ color:THEME.violet, lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
     // 20/80/100 semaines ajoutées après coup ("tu as oublié la moyenne mobile à vingt,
     // quatre-vingt et cent périodes") — mêmes couleurs que Wolf Labo (WOLF_LABO_MA_CONFIG,
     // "reprends les mêmes couleurs") pour rester cohérent entre les deux graphiques
     // techniques du site plutôt que d'inventer une nouvelle palette.
-    stockCandleSmaSeries.sma20 = stockCandleChart.addLineSeries({ color:WOLF_LABO_MA_CONFIG[20].color, lineWidth:1, priceLineVisible:false, lastValueVisible:false });
-    stockCandleSmaSeries.sma50 = stockCandleChart.addLineSeries({ color:WOLF_LABO_MA_CONFIG[50].color, lineWidth:1, priceLineVisible:false, lastValueVisible:false });
-    stockCandleSmaSeries.sma80 = stockCandleChart.addLineSeries({ color:WOLF_LABO_MA_CONFIG[80].color, lineWidth:1, priceLineVisible:false, lastValueVisible:false });
-    stockCandleSmaSeries.sma100 = stockCandleChart.addLineSeries({ color:WOLF_LABO_MA_CONFIG[100].color, lineWidth:1, priceLineVisible:false, lastValueVisible:false });
+    stockCandleSmaSeries.sma20 = stockCandleChart.addLineSeries({ color:WOLF_LABO_MA_CONFIG[20].color, lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+    stockCandleSmaSeries.sma50 = stockCandleChart.addLineSeries({ color:WOLF_LABO_MA_CONFIG[50].color, lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+    stockCandleSmaSeries.sma80 = stockCandleChart.addLineSeries({ color:WOLF_LABO_MA_CONFIG[80].color, lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+    stockCandleSmaSeries.sma100 = stockCandleChart.addLineSeries({ color:WOLF_LABO_MA_CONFIG[100].color, lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
     ['mid','p1','m1','p2','m2'].forEach(k => {
       stockCandleRegSeries[k] = stockCandleChart.addLineSeries({
         color: (k === 'p1' || k === 'm1') ? THEME.blue : THEME.red,
         lineWidth: k === 'mid' ? 1.75 : 1.25, lineStyle: window.LightweightCharts.LineStyle.Dashed,
-        priceLineVisible:false, lastValueVisible:false
+        priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false
       });
     });
     // Échelle DÉDIÉE pour les superpositions ("Superposer") — bug trouvé en reproduisant
@@ -7579,7 +7586,7 @@ async function renderStockOverlays(){
       stockOverlaySeries[id] = stockCandleChart.addLineSeries({
         color: STOCK_OVERLAY_COLORS[i % STOCK_OVERLAY_COLORS.length], lineWidth:1.5,
         priceLineVisible:false, lastValueVisible:true, title: item.label,
-        priceScaleId: 'stockOverlay'
+        priceScaleId: 'stockOverlay', crosshairMarkerVisible:false
       });
     }
     if (!raw){ stockOverlaySeries[id].setData([]); continue; }
@@ -7613,22 +7620,33 @@ function renderStockOverlayList(filterText){
   const box = document.getElementById('stockMacroOverlayList');
   if (!box) return;
   const q = stripAccents((filterText || '').trim().toLowerCase());
+  // Superpositions déjà actives : toujours listées en haut avec un bouton ✕, quelle que
+  // soit la recherche en cours — demande explicite ("il faudrait que je puisse les
+  // enlever") : avant ça, retirer une superposition obligeait à retaper exactement la
+  // même recherche pour retomber sur l'entrée surlignée dans le catalogue.
+  const activeHtml = stockOverlaySelected.length ? `
+    <div style="padding:3px 6px;color:var(--text-faint);font-size:9.5px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.04em;">Actives — cliquer pour retirer</div>
+    ${stockOverlaySelected.map(i => `<button type="button" class="labo-chip-remove" data-overlay-remove-type="${i.type}" data-overlay-remove-key="${escapeHtml(i.key)}">${escapeHtml(i.label)} ✕</button>`).join('')}
+    <div style="border-top:1px solid var(--hair);margin:4px 0;"></div>
+  ` : '';
+  let resultsHtml;
   if (q.length < 2){
-    box.innerHTML = '<div style="padding:6px;color:var(--text-faint);font-size:11px;">Tape au moins 2 lettres — entreprise, ratio, macro, secteur…</div>';
+    resultsHtml = '<div style="padding:6px;color:var(--text-faint);font-size:11px;">Tape au moins 2 lettres — entreprise, ratio, macro, secteur…</div>';
   } else {
     const catalog = buildStockOverlayCatalog();
     const matches = catalog.filter(i => stripAccents(i.label.toLowerCase()).includes(q)).slice(0, 60);
     if (!matches.length){
-      box.innerHTML = '<div style="padding:6px;color:var(--text-faint);font-size:11px;">Aucun résultat</div>';
+      resultsHtml = '<div style="padding:6px;color:var(--text-faint);font-size:11px;">Aucun résultat</div>';
     } else {
       const groups = {};
       matches.forEach(i => { (groups[i.group] = groups[i.group] || []).push(i); });
-      box.innerHTML = Object.keys(groups).map(g => `
+      resultsHtml = Object.keys(groups).map(g => `
         <div style="padding:3px 6px;color:var(--text-faint);font-size:9.5px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.04em;">${g}</div>
         ${groups[g].map(i => `<button type="button" data-overlay-type="${i.type}" data-overlay-key="${escapeHtml(i.key)}" class="${stockOverlaySelected.some(s => s.type === i.type && s.key === i.key) ? 'active' : ''}">${escapeHtml(i.label)}</button>`).join('')}
       `).join('');
     }
   }
+  box.innerHTML = activeHtml + resultsHtml;
   const btn = document.getElementById('stockMacroOverlayBtn');
   if (btn) btn.textContent = `🔎 Superposer (${stockOverlaySelected.length}) ▾`;
 }
@@ -8002,6 +8020,15 @@ document.getElementById('stockMacroOverlaySearch').addEventListener('input', e =
 // rien changé, mousedown et click se propagent chacun indépendamment.
 document.getElementById('stockMacroOverlayMenu').addEventListener('click', e => {
   e.stopPropagation();
+  const removeBtn = e.target.closest('[data-overlay-remove-type]');
+  if (removeBtn){
+    const type = removeBtn.dataset.overlayRemoveType, key = removeBtn.dataset.overlayRemoveKey;
+    const idx = stockOverlaySelected.findIndex(s => s.type === type && s.key === key);
+    if (idx !== -1) stockOverlaySelected.splice(idx, 1);
+    renderStockOverlayList(document.getElementById('stockMacroOverlaySearch').value);
+    renderStockOverlays();
+    return;
+  }
   const btn = e.target.closest('[data-overlay-type]');
   if (!btn) return;
   const type = btn.dataset.overlayType, key = btn.dataset.overlayKey;
@@ -12982,9 +13009,9 @@ function wolfLaboClearChannelPreview(){
 function wolfLaboEnsureChannelPreviewSeries(){
   if (wolfLaboChannelPreviewSeries || !wolfLaboChart) return wolfLaboChannelPreviewSeries;
   wolfLaboChannelPreviewSeries = {
-    median: wolfLaboChart.addLineSeries({ color: THEME.dim, lineWidth:1, lineStyle:1, priceLineVisible:false, lastValueVisible:false }),
-    upper: wolfLaboChart.addLineSeries({ color: THEME.gold, lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false }),
-    lower: wolfLaboChart.addLineSeries({ color: THEME.gold, lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false })
+    median: wolfLaboChart.addLineSeries({ color: THEME.dim, lineWidth:1, lineStyle:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false }),
+    upper: wolfLaboChart.addLineSeries({ color: THEME.gold, lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false }),
+    lower: wolfLaboChart.addLineSeries({ color: THEME.gold, lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false })
   };
   return wolfLaboChannelPreviewSeries;
 }
@@ -13126,7 +13153,7 @@ function renderWolfLaboDrawings(){
     const selected = d.id === wolfLaboSelectedDrawingId;
     if (d.type === 'trendline'){
       const pts = sortPts(d.points);
-      const s = wolfLaboChart.addLineSeries({ color: d.color || THEME.gold, lineWidth: selected ? 3 : 2, priceLineVisible:false, lastValueVisible:false });
+      const s = wolfLaboChart.addLineSeries({ color: d.color || THEME.gold, lineWidth: selected ? 3 : 2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
       s.setData(pts.map(p => ({ time:p.time, value:p.price })));
       series.push(s);
     } else if (d.type === 'channel'){
@@ -13142,9 +13169,9 @@ function renderWolfLaboDrawings(){
       const lowerPts = d.offset >= 0 ? basePts : secPts;
       const upperColor = d.upperColor || THEME.green;
       const lowerColor = d.lowerColor || THEME.green;
-      const upper = wolfLaboChart.addLineSeries({ color: upperColor, lineWidth: selected ? 2.5 : 1.5, lineStyle: d.upperDashed ? 2 : 0, priceLineVisible:false, lastValueVisible:false });
-      const lower = wolfLaboChart.addLineSeries({ color: lowerColor, lineWidth: selected ? 2.5 : 1.5, lineStyle: d.lowerDashed ? 2 : 0, priceLineVisible:false, lastValueVisible:false });
-      const median = wolfLaboChart.addLineSeries({ color: d.medianColor || THEME.dim, lineWidth: selected ? 2 : 1, lineStyle:1, priceLineVisible:false, lastValueVisible:false });
+      const upper = wolfLaboChart.addLineSeries({ color: upperColor, lineWidth: selected ? 2.5 : 1.5, lineStyle: d.upperDashed ? 2 : 0, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+      const lower = wolfLaboChart.addLineSeries({ color: lowerColor, lineWidth: selected ? 2.5 : 1.5, lineStyle: d.lowerDashed ? 2 : 0, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+      const median = wolfLaboChart.addLineSeries({ color: d.medianColor || THEME.dim, lineWidth: selected ? 2 : 1, lineStyle:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
       median.setData(medianPts); upper.setData(upperPts); lower.setData(lowerPts);
       series.push(upper, lower, median);
       const opacity = d.fillOpacity != null ? d.fillOpacity : 0.12;
@@ -13154,9 +13181,9 @@ function renderWolfLaboDrawings(){
       }
     } else if (d.type === 'regression'){
       const color = d.color || THEME.blue;
-      const mean = wolfLaboChart.addLineSeries({ color: THEME.dim, lineWidth: selected ? 2.5 : 1.5, priceLineVisible:false, lastValueVisible:false });
-      const upper = wolfLaboChart.addLineSeries({ color, lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false });
-      const lower = wolfLaboChart.addLineSeries({ color, lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false });
+      const mean = wolfLaboChart.addLineSeries({ color: THEME.dim, lineWidth: selected ? 2.5 : 1.5, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+      const upper = wolfLaboChart.addLineSeries({ color, lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+      const lower = wolfLaboChart.addLineSeries({ color, lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
       mean.setData(d.mean); upper.setData(d.upper); lower.setData(d.lower);
       series.push(mean, upper, lower);
       const opacity = d.fillOpacity != null ? d.fillOpacity : 0.12;
@@ -13809,7 +13836,7 @@ function renderWolfLaboChart(){
     });
     wolfLaboCandleSeries = wolfLaboChart.addCandlestickSeries({});
     Object.keys(WOLF_LABO_MA_CONFIG).forEach(period => {
-      wolfLaboSmaSeries[period] = wolfLaboChart.addLineSeries({ color: WOLF_LABO_MA_CONFIG[period].color, lineWidth:1.5, priceLineVisible:false, lastValueVisible:false });
+      wolfLaboSmaSeries[period] = wolfLaboChart.addLineSeries({ color: WOLF_LABO_MA_CONFIG[period].color, lineWidth:1.5, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
     });
     if (typeof wolfLaboCandleSeries.attachPrimitive === 'function'){
       wolfLaboBandPrimitive = new WolfLaboBandPrimitive();
