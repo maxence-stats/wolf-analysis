@@ -321,6 +321,82 @@ def build_revenue_segmentation(conn, symbol, category):
     return {"years": years, "series": series}
 
 
+def build_charts_history(conn, symbol):
+    """Alimente les 9 graphiques historiques "classiques" de l'onglet Analyse (Dividende,
+    CA, Marge op./ROIC, FCF/action, P/FCF, OCF/action, Actions, Dette/OCF, Trésorerie) —
+    normalement sourcés depuis le Google Sheet (colonnes COL, voir app.js/CLAUDE.md).
+    Demande explicite : les basculer sur FMP QUAND l'entreprise a été exportée, jamais
+    via un appel API direct depuis le navigateur ("pas avec l'API, juste avec les
+    données qui seront extraites") — ce fichier JSON pré-généré EST ce mécanisme.
+
+    Champs nommés à l'IDENTIQUE des colonnes Sheet consommées par
+    buildHistoricalChartConfig() côté app.js (hist[i].dividende, .payoutRatio, .ca...)
+    pour pouvoir remplacer `hist` par ce tableau SANS toucher au code de rendu des
+    graphiques — seule la source change, pas la fonction qui les dessine.
+    Unités alignées sur celles déjà utilisées par le Sheet (vérifiées via le code JS,
+    pas devinées) : ca/actions en MILLIONS (le graphique CA divise par 1000 pour
+    afficher des Md€, celui des actions affiche direct en "M"), margeOp/roic en POINTS
+    de % (pas une fraction 0-1, le graphique ajoute juste "%" sans multiplier).
+    "cashInvesti" n'a pas d'équivalent FMP direct (métrique propre au Sheet de
+    l'utilisateur, pas un champ standard) — approximé par la somme des placements
+    court/long terme (short+longTermInvestments), à distinguer explicitement de la
+    trésorerie pure (cashAndCashEquivalents) plutôt que deviné au hasard.
+    """
+    is_rows = rows_for(conn, "income_statement", symbol, limit=50)
+    bs_rows = rows_for(conn, "balance_sheet", symbol, limit=50)
+    cf_rows = rows_for(conn, "cash_flow", symbol, limit=50)
+    ratios_rows = rows_for(conn, "ratios", symbol, limit=50)
+    km_rows = rows_for(conn, "key_metrics", symbol, limit=50)
+    if not is_rows:
+        return None
+
+    def year_of(r):
+        return r.get("fiscalYear") or (r.get("date") or "")[:4]
+
+    years = [year_of(r) for r in is_rows]
+    by_year = lambda rows: {year_of(r): r for r in rows}
+    bs_by_year, cf_by_year, ratios_by_year, km_by_year = by_year(bs_rows), by_year(cf_rows), by_year(ratios_rows), by_year(km_rows)
+
+    def pick(by_year_map, field, mult=1):
+        out = []
+        for y in years:
+            r = by_year_map.get(y)
+            v = r.get(field) if r else None
+            out.append(v * mult if v is not None else None)
+        return out
+
+    dette_ocf = []
+    for y in years:
+        nd = (bs_by_year.get(y) or {}).get("netDebt")
+        ocf = (cf_by_year.get(y) or {}).get("netCashProvidedByOperatingActivities")
+        dette_ocf.append(nd / ocf if (nd is not None and ocf not in (None, 0)) else None)
+
+    cash_investi = []
+    for y in years:
+        r = bs_by_year.get(y) or {}
+        st, lt = r.get("shortTermInvestments"), r.get("longTermInvestments")
+        cash_investi.append((st or 0) + (lt or 0) if (st is not None or lt is not None) else None)
+
+    return {
+        "years": years,
+        "dividende": pick(ratios_by_year, "dividendPerShare"),
+        "payoutRatio": pick(ratios_by_year, "dividendPayoutRatio", 100),
+        "ca": [(r.get("revenue") / 1e6) if r.get("revenue") is not None else None for r in is_rows],
+        "margeOp": pick(ratios_by_year, "operatingProfitMargin", 100),
+        "roic": pick(km_by_year, "returnOnInvestedCapital", 100),
+        "fcfParAction": pick(ratios_by_year, "freeCashFlowPerShare"),
+        "pFcf": pick(ratios_by_year, "priceToFreeCashFlowRatio"),
+        "ocfParAction": pick(ratios_by_year, "operatingCashFlowPerShare"),
+        "actions": [(r.get("weightedAverageShsOut") / 1e6) if r.get("weightedAverageShsOut") is not None else None for r in is_rows],
+        "detteOCF": dette_ocf,
+        # Par ANNÉE (via bs_by_year), pas positionnel sur bs_rows — balance_sheet peut ne
+        # pas avoir exactement les mêmes exercices qu'income_statement (piège d'alignement
+        # déjà rencontré ailleurs dans ce projet, voir CLAUDE.md).
+        "cash": [((bs_by_year.get(y) or {}).get("cashAndCashEquivalents") / 1e6) if (bs_by_year.get(y) or {}).get("cashAndCashEquivalents") is not None else None for y in years],
+        "cashInvesti": [v / 1e6 if v is not None else None for v in cash_investi],
+    }
+
+
 def latest_dcf(conn, symbol, category):
     rows = rows_for(conn, category, symbol, limit=1)
     if not rows:
@@ -350,6 +426,7 @@ def main():
         "dcfLevered": latest_dcf(conn, symbol, "dcf_levered"),
         "revenueGeo": build_revenue_segmentation(conn, symbol, "revenue_segmentation_geo"),
         "revenueProduct": build_revenue_segmentation(conn, symbol, "revenue_segmentation_product"),
+        "chartsHistory": build_charts_history(conn, symbol),
     }
     conn.close()
 

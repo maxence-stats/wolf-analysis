@@ -5232,11 +5232,7 @@ function renderCompany(nom){
   destroyCharts();
   loadStockChart(latest.ticker, nom);
 
-  HISTORICAL_CHART_KEYS.forEach(key => {
-    chartInstances[key] = makeChart(key, HISTORICAL_CHART_CANVAS_ID[key], buildHistoricalChartConfig(key, hist, years));
-  });
-  document.getElementById('medianeBadgesPfcf').innerHTML =
-    medianeBadgeHtml('Médiane 10a', latest.medianePFCF ? 100/latest.medianePFCF : null, '%') + medianeBadgeHtml('Médiane 20a', latest.medianePFCF20 ? 100/latest.medianePFCF20 : null, '%');
+  renderHistoricalCharts(nom, hist, years, latest);
 
   // P/FCF et P/OCF superposés (retour utilisateur : juste les deux séries, activables/
   // désactivables séparément — voir #pfcfPocfToggles/togglePfcfPocfSeries()) — familles
@@ -5253,6 +5249,50 @@ function renderCompany(nom){
 // réutilisée TELLE QUELLE à la fois par l'onglet Analyse et par les colonnes côte-à-côte
 // de l'onglet Comparaison ("reprends exactement les mêmes codes" — demande explicite) :
 // une seule source de vérité pour le style, jamais deux implémentations à resynchroniser.
+// Champs FMP -> mêmes libellés que les colonnes Sheet consommées par
+// buildHistoricalChartConfig() (voir fmp-database/export_to_app.py::build_charts_history,
+// docstring pour le détail des unités/approximations). Reconstruit un tableau "hist"-
+// compatible ligne par ligne pour pouvoir réutiliser cette fonction SANS aucune
+// modification — seule la source des données change.
+const CHARTS_HISTORY_FIELDS = ['dividende','payoutRatio','ca','margeOp','roic','fcfParAction','pFcf','ocfParAction','actions','detteOCF','cash','cashInvesti'];
+function chartsHistoryToRows(ch){
+  return ch.years.map((annee, i) => {
+    const row = { annee };
+    CHARTS_HISTORY_FIELDS.forEach(k => { row[k] = ch[k][i]; });
+    return row;
+  });
+}
+// Demande explicite : basculer les 9 graphiques historiques "classiques" sur FMP QUAND
+// l'entreprise a été exportée localement ("oui sur FMP mais pas avec l'API, juste avec
+// les données qui seront extraites" — jamais d'appel FMP direct depuis le navigateur,
+// uniquement le JSON pré-généré déjà utilisé par Documents financiers/Revenus). Repli
+// automatique et silencieux sur le Sheet sinon — même pattern que le cours de bourse.
+function renderHistoricalCharts(nom, hist, years, latest){
+  const real = documentsRealData[nom];
+  const fmpCharts = real && real.chartsHistory;
+  const chartHist = fmpCharts ? chartsHistoryToRows(fmpCharts) : hist;
+  const chartYears = fmpCharts ? fmpCharts.years : years;
+
+  destroyHistoricalCharts();
+  HISTORICAL_CHART_KEYS.forEach(key => {
+    chartInstances[key] = makeChart(key, HISTORICAL_CHART_CANVAS_ID[key], buildHistoricalChartConfig(key, chartHist, chartYears));
+  });
+
+  const pfcfMedian10 = fmpCharts ? medianOfLastYears(chartHist, 'pFcf', 10) : latest.medianePFCF;
+  const pfcfMedian20 = fmpCharts ? medianOfLastYears(chartHist, 'pFcf', 20) : latest.medianePFCF20;
+  document.getElementById('medianeBadgesPfcf').innerHTML =
+    medianeBadgeHtml('Médiane 10a', pfcfMedian10 ? 100/pfcfMedian10 : null, '%') + medianeBadgeHtml('Médiane 20a', pfcfMedian20 ? 100/pfcfMedian20 : null, '%');
+}
+// destroyCharts() vide TOUT chartInstances (y compris le cours de bourse) — inadapté à
+// un re-rendu de CES 9 graphiques seuls (ex. dès que les données FMP arrivent après
+// coup, voir ensureDocumentsRealData) : détruire "stock" en cours de route le ferait
+// disparaître sans jamais être recréé, personne ne sait qu'il faut le refaire depuis
+// ici. Destruction scopée aux seules clés HISTORICAL_CHART_KEYS.
+function destroyHistoricalCharts(){
+  HISTORICAL_CHART_KEYS.forEach(key => {
+    if (chartInstances[key]){ chartInstances[key].destroy(); delete chartInstances[key]; }
+  });
+}
 const HISTORICAL_CHART_KEYS = ['div','ca','marges','fcf','pfcf','ocf','actions','dette','cash'];
 const HISTORICAL_CHART_CANVAS_ID = { div:'chartDiv', ca:'chartCA', marges:'chartMarges', fcf:'chartFCF', pfcf:'chartPFCF', ocf:'chartOCF', actions:'chartActions', dette:'chartDette', cash:'chartCash' };
 function buildHistoricalChartConfig(key, hist, years, detteMetric){
@@ -8846,6 +8886,8 @@ async function ensureDocumentsRealData(name){
     renderDocumentsPage(name);
     renderRevenusPage(name);
     renderDcfTiles(name);
+    const hist = companies[name];
+    if (hist && hist.length) renderHistoricalCharts(name, hist, hist.map(r => r.annee), hist[hist.length - 1]);
   }
 }
 
