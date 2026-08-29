@@ -7308,7 +7308,16 @@ function renderStockChartCandleView(){
       grid:{ vertLines:{ color: THEME.hair }, horzLines:{ color: THEME.hair } },
       rightPriceScale:{ borderColor: THEME.hair },
       timeScale:{ borderColor: THEME.hair },
-      autoSize:true
+      autoSize:true,
+      // Un simple glisser accidentel sur l'axe des prix (à droite) bascule
+      // lightweight-charts en échelle MANUELLE (autoScale:false) — l'échelle reste
+      // alors figée sur la plage du moment, complètement fausse dès que le zoom/la
+      // plage change ensuite (bougies écrasées en un pavé dense en haut du graphique,
+      // remonté comme "un canal qui ne veut pas s'enlever" par l'utilisateur — trouvé
+      // en reproduisant : priceScale('right').options().autoScale était à false après
+      // des tests d'interaction sur ce graphique). Axe des prix non draggable = ne peut
+      // plus jamais se figer, l'axe des temps reste zoomable/déplaçable normalement.
+      handleScale:{ axisPressedMouseMove:{ time:true, price:false } }
     });
     stockCandleSeries = stockCandleChart.addCandlestickSeries({
       upColor: THEME.green, downColor: THEME.red, borderVisible:false,
@@ -7413,6 +7422,10 @@ function renderStockChartCandleView(){
   }
 
   stockCandleChart.timeScale().fitContent();
+  // Filet de sécurité en plus du blocage du drag (handleScale.axisPressedMouseMove.price
+  // ci-dessus) : réaffirme l'échelle auto à chaque rendu, se répare toute seule même si
+  // l'axe s'était déjà figé sur une session avant ce correctif (ou par tout autre moyen).
+  stockCandleChart.priceScale('right').applyOptions({ autoScale:true });
   if (activeCompany && fmpSymbols[activeCompany]){
     renderWolfLaboDrawings();
     renderWolfLaboDrawingsList();
@@ -13575,6 +13588,9 @@ function renderWolfLaboChart(){
     wolfLaboSmaSeries[period].setData(wolfLaboSmaVisible[period] ? wolfLaboSma(candles, parseInt(period, 10)) : []);
   });
   wolfLaboChart.timeScale().fitContent();
+  // Même filet de sécurité que le graphique de l'Analyse — voir le commentaire détaillé
+  // sur handleScale.axisPressedMouseMove.price plus haut dans ce fichier.
+  wolfLaboChart.priceScale('right').applyOptions({ autoScale:true });
   renderWolfLaboDrawings();
   renderWolfLaboDrawingsList();
   renderWolfLaboHandles();
