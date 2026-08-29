@@ -17,6 +17,7 @@ import sys
 import config
 import db
 import fmp_client
+import logos
 from endpoints import ENDPOINTS
 
 # Aussi large que possible par défaut — FMP renvoie simplement moins si son historique
@@ -78,6 +79,11 @@ def ingest_symbol(conn, symbol):
     else:
         db.log_fetch(conn, "earnings_transcript_dates", symbol, None, dates_res.status, dates_res.http_status, dates_res.error_message, 0)
         print(f"  [{'vide' if dates_res.status=='empty' else 'ÉCHEC'}] earnings_transcript_dates" + (f" — {dates_res.error_message}" if dates_res.error_message else ""))
+
+    # Logo (fichier local, pas juste l'URL) — demande explicite : "je coupe
+    # l'abonnement, j'ai toutes les données et ça affiche toutes les images". Lu depuis
+    # le profil qu'on vient d'importer juste au-dessus, pas re-téléchargé séparément.
+    logos.download_logos(conn, [symbol])
 
 
 def main():
