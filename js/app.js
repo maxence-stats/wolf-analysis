@@ -9036,18 +9036,20 @@ const DOCUMENTS_GROWTH_ROWS = [
 const DOCUMENTS_GROWTH_COLS = ['A-4 → A-3', 'A-3 → A-2', 'A-2 → A-1', 'A-1 → A', 'Croissance totale (5a)', 'TCAC (5a)'];
 const DOCUMENTS_PERIOD_PLACEHOLDERS = ['—', '—', '—', '—', '—'];
 
-// Données réelles FMP — pour l'instant UNIQUEMENT Coca-Cola (test de bout en bout du
-// pipeline, voir fmp-database/export_to_app.py). Le fichier n'est pas dans le dépôt
-// public (licence FMP, voir .gitignore) : ne charge/n'affiche rien si absent, retombe
-// silencieusement sur les tirets comme pour toute autre entreprise.
-const DOCUMENTS_REAL_DATA_SOURCES = {
-  'Coca-Cola Company': 'data/documents-sample-ko.json' // nom exact tel qu'écrit dans le Sheet (colonne NOM), pas "Coca-Cola" tout court — vérifié en direct, sinon la donnée réelle ne se charge jamais
-};
+// Données réelles FMP — demande explicite : "je veux que quand je tape TotalEnergies ou
+// quoi que ce soit, ça va chercher les bonnes datas". URL dérivée de fmpSymbols[name]
+// (data/fmp-symbols.json, déjà chargé pour le cours de bourse/Wolf Labo) plutôt qu'un
+// dictionnaire à tenir à jour à la main entreprise par entreprise — toute entreprise
+// exportée par fmp-database/export_to_app.py --batch fonctionne automatiquement, aucun
+// nom à ajouter ici. Le fichier n'est pas dans le dépôt public (licence FMP, voir
+// .gitignore) : ne charge/n'affiche rien si absent (entreprise pas encore exportée),
+// retombe silencieusement sur les tirets/le Sheet comme pour toute autre entreprise.
 let documentsRealData = {}; // { [nomEntreprise]: {symbol, incomeStatement, balanceSheet, cashFlow, growth} }
 let documentsRealDataLoading = {};
 
 async function ensureDocumentsRealData(name){
-  const url = DOCUMENTS_REAL_DATA_SOURCES[name];
+  const symbol = fmpSymbols[name];
+  const url = symbol ? `data/documents-${symbol}.json` : null;
   if (!url || documentsRealData[name] || documentsRealDataLoading[name]) return;
   documentsRealDataLoading[name] = true;
   try{

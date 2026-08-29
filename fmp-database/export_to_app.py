@@ -1,19 +1,23 @@
 """
-Exporte les données FMP déjà importées (voir ingest.py) vers un JSON que le site peut
-charger directement pour l'onglet "Documents financiers" — UNIQUEMENT pour tester le
-pipeline de bout en bout sur une entreprise (Coca-Cola) avant de l'étendre. Écrit dans
-data/documents-sample-ko.json à la racine du dépôt (PAS dans fmp-database/data/, pour
-suivre le même pattern que data/labo-sample-ko.json déjà en place) — ce fichier est
-exclu de git (voir .gitignore, "data/labo-*.json" à étendre si le nom change) car les
-CGU FMP interdisent de redistribuer les données brutes sur un dépôt public.
+Exporte les données FMP déjà importées (voir ingest.py/ingest_batch.py) vers un JSON par
+entreprise que le site charge directement (Documents financiers, Revenus, Valorisation,
+les 9 graphiques historiques). Écrit dans data/documents-{SYMBOLE}.json à la racine du
+dépôt (PAS dans fmp-database/data/, même pattern que data/labo-*.json/data/prices-*.json)
+— exclu de git (voir .gitignore) car les CGU FMP interdisent de redistribuer leurs
+données brutes sur un dépôt public.
 
 Les clés de l'objet JSON produit correspondent EXACTEMENT aux libellés utilisés dans
 DOCUMENTS_IS_ROWS / DOCUMENTS_BS_ROWS / DOCUMENTS_CF_ROWS / DOCUMENTS_GROWTH_ROWS côté
 app.js — un champ FMP introuvable ou absent devient simplement `null` (le site affiche
-un tiret, pas de plantage).
+un tiret, pas de plantage). Côté app.js, ensureDocumentsRealData() résout l'URL depuis
+fmpSymbols[nom] (data/fmp-symbols.json) — AUCUNE entreprise à ajouter à la main dans le
+code : toute entreprise avec un fichier exporté ici fonctionne automatiquement.
 
 Usage :
-    python export_to_app.py KO
+    python export_to_app.py KO          # une seule entreprise
+    python export_to_app.py --batch     # toutes les entreprises déjà importées (voir
+                                          # all_symbols_with_data() — pas de liste séparée
+                                          # à tenir à jour, lu directement depuis la base)
 """
 import json
 import sys
@@ -178,7 +182,7 @@ STATS_FIELD_MAP = {
     ],
 }
 
-OUTPUT_PATH = pathlib.Path(__file__).resolve().parent.parent / "data" / "documents-sample-ko.json"
+OUTPUT_DIR = pathlib.Path(__file__).resolve().parent.parent / "data"
 
 
 def rows_for(conn, category, symbol, period="annual", limit=50):
@@ -411,10 +415,7 @@ def latest_dcf(conn, symbol, category):
     return {"value": row.get("dcf"), "stockPrice": row.get("Stock Price"), "date": row.get("date")}
 
 
-def main():
-    symbol = sys.argv[1] if len(sys.argv) > 1 else "KO"
-    conn = db.get_connection()
-
+def export_symbol(conn, symbol):
     income_rows = rows_for(conn, "income_statement", symbol)
     balance_rows = rows_for(conn, "balance_sheet", symbol)
     cashflow_rows = rows_for(conn, "cash_flow", symbol)
@@ -446,15 +447,36 @@ def main():
         "revenueProduct": build_revenue_segmentation(conn, symbol, "revenue_segmentation_product"),
         "chartsHistory": build_charts_history(conn, symbol),
     }
-    conn.close()
 
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_PATH.write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"Écrit : {OUTPUT_PATH}")
-    print(f"  Income Statement : {len(income_rows)} exercice(s) — {income_rows[0].get('fiscalYear') if income_rows else '?'} à {income_rows[-1].get('fiscalYear') if income_rows else '?'}")
-    print(f"  Balance Sheet    : {len(balance_rows)} exercice(s)")
-    print(f"  Cash Flow        : {len(cashflow_rows)} exercice(s)")
-    print(f"  Croissance       : {len(out['growth'])} métrique(s)")
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    dest = OUTPUT_DIR / f"documents-{symbol}.json"
+    dest.write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
+    return dest, len(income_rows)
+
+
+def all_symbols_with_data(conn):
+    """Tout symbole ayant au moins un compte de résultat importé — source de vérité
+    unique pour savoir "qui a des données exportables", pas une liste à tenir à jour
+    séparément (resolved_tickers*.json ne couvre qu'un lot à la fois)."""
+    cur = conn.cursor()
+    cur.execute("SELECT DISTINCT symbol FROM raw_data WHERE category='income_statement'")
+    return sorted(r[0] for r in cur.fetchall())
+
+
+def main():
+    conn = db.get_connection()
+    if "--batch" in sys.argv:
+        symbols = all_symbols_with_data(conn)
+        print(f"=== Export en lot : {len(symbols)} entreprise(s) ===")
+        for i, symbol in enumerate(symbols, 1):
+            dest, n_years = export_symbol(conn, symbol)
+            print(f"  [{i}/{len(symbols)}] {symbol} -> {dest.name} ({n_years} exercice(s))")
+        print(f"\nTerminé : {len(symbols)} fichier(s) écrits dans {OUTPUT_DIR}")
+    else:
+        symbol = sys.argv[1] if len(sys.argv) > 1 else "KO"
+        dest, n_years = export_symbol(conn, symbol)
+        print(f"Écrit : {dest} ({n_years} exercice(s))")
+    conn.close()
 
 
 if __name__ == "__main__":

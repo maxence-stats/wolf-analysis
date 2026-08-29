@@ -11,8 +11,10 @@ fichier fait retomber le site sur l'ancien relais Yahoo/Stooq, pas d'erreur bloq
 
 Usage :
     python export_prices.py KO
-    python export_prices.py --batch          # tous les symboles de resolved_tickers.json
-                                               # déjà présents en base (pas de nouvel appel FMP)
+    python export_prices.py --batch          # tous les symboles déjà importés en base
+                                               # (lu directement depuis price_history_daily,
+                                               # pas depuis resolved_tickers.json — ce fichier
+                                               # change d'un lot à l'autre, la base ne ment pas)
 """
 import json
 import pathlib
@@ -21,7 +23,6 @@ import sys
 import db
 
 OUTPUT_DIR = pathlib.Path(__file__).resolve().parent.parent / "data"
-RESOLVED_PATH = pathlib.Path(__file__).resolve().parent / "resolved_tickers.json"
 
 
 def export_symbol(conn, symbol):
@@ -42,11 +43,16 @@ def export_symbol(conn, symbol):
     return len(out)
 
 
+def all_symbols_with_prices(conn):
+    cur = conn.cursor()
+    cur.execute("SELECT DISTINCT symbol FROM raw_data WHERE category='price_history_daily'")
+    return sorted(r[0] for r in cur.fetchall())
+
+
 def main():
     conn = db.get_connection()
     if "--batch" in sys.argv:
-        resolved = json.loads(RESOLVED_PATH.read_text(encoding="utf-8"))
-        symbols = [r["fmp_symbol"] for r in resolved if r["status"].startswith("ok") and r["fmp_symbol"]]
+        symbols = all_symbols_with_prices(conn)
         total = 0
         for sym in symbols:
             n = export_symbol(conn, sym)
