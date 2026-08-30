@@ -180,9 +180,6 @@ def compute_entry(symbol, name_map, sector_map):
     fcf_series = [v for v in (ch.get("fcfParAction") or []) if v is not None]
 
     dividende = dividendes[-1] if dividendes else None
-    rendement_div = (dividende / prix_actuel * 100) if dividende and dividende > 0 else None
-    if rendement_div is not None and rendement_div > MAX_PLAUSIBLE_YIELD_PCT:
-        rendement_div = None  # incohérence probable (ex. devise du dividende ≠ devise du prix)
     cagr_div10 = cagr(dividendes[-11:]) if len(dividendes) >= 2 else None
 
     fcf_actuel = fcf_series[-1] if fcf_series else None
@@ -211,6 +208,37 @@ def compute_entry(symbol, name_map, sector_map):
     # 2) la priorité à l'objectif Réaliste enregistré par l'utilisateur en Valorisation
     #    quand il existe pour cette entreprise (jamais recalculé ici, propre au navigateur).
     mediane_pfcf = statistics.median(pfcf_series[-10:]) if len(pfcf_series) >= 3 else None
+
+    # Bug MAJEUR trouvé après retour utilisateur très clair ("Tencent sous-valorisée de
+    # 80%... Taiwan Semiconductor... tu as tout inversé... c'est de la merde") — investigué
+    # à fond plutôt que corrigé au doigt mouillé : pour un ticker OTC/ADR étranger (ex.
+    # TCEHY pour Tencent, TSM pour TSMC), le pFcf HISTORIQUE de FMP (et donc probablement
+    # aussi le dividende/action) est calculé contre le prix ET/OU la base d'actions de la
+    # cote PRIMAIRE (Tencent : ~535 HKD à Hong Kong), alors que prix_actuel ici vient du
+    # prix de l'ADR (Tencent : ~58 USD) — deux bases totalement différentes mélangées
+    # dans une seule formule. Résultat : medianePFCF (~32x pour Tencent) n'a AUCUN rapport
+    # avec le multiple réel au prix ADR actuel (~3x) — pas une vraie sous-valorisation de
+    # 90%, un artefact de calcul ; le rendement du dividende (7,1% affiché, ~0,5-1% réel)
+    # souffre du MÊME mélange de base, sous le seuil de 15% donc jamais intercepté par
+    # MAX_PLAUSIBLE_YIELD_PCT jusqu'ici. Détecté ainsi : le multiple implicite au prix
+    # actuel (prix_actuel / fcfBase) ne devrait normalement jamais s'écarter à ce point de
+    # sa propre médiane historique (vérifié sur 472 entreprises : rupture nette sous 0,15
+    # — entièrement des ADR japonaises/coréennes bien connues, Nintendo/Sony/Keyence/
+    # Nidec..., PAS des entreprises réellement bradées à 99% ; rien d'anormal au-dessus, y
+    # compris les cas extrêmes déjà confirmés réels par l'utilisateur comme Eli Lilly à
+    # 5,4x). Une fois détectée, l'incohérence disqualifie TOUS les ratios par action de
+    # cette entreprise (valorisation ET dividende, même origine) — pas seulement celui où
+    # elle a été repérée en premier.
+    mismatch_devise_ou_base = False
+    if fcf_base and fcf_base > 0 and mediane_pfcf and mediane_pfcf > 0:
+        current_multiple = prix_actuel / fcf_base
+        if (current_multiple / mediane_pfcf) < 0.15:
+            mismatch_devise_ou_base = True
+            mediane_pfcf = None
+
+    rendement_div = (dividende / prix_actuel * 100) if dividende and dividende > 0 and not mismatch_devise_ou_base else None
+    if rendement_div is not None and rendement_div > MAX_PLAUSIBLE_YIELD_PCT:
+        rendement_div = None  # incohérence probable (ex. devise du dividende ≠ devise du prix)
 
     return {
         "nom": name_map.get(symbol, doc.get("companyName") or symbol),
