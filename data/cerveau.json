@@ -970,6 +970,281 @@
           }
         ]
       }
+    ],
+    "sante": [
+      {
+        "id": "c-big-pharma",
+        "nom": "Big Pharma",
+        "sousSecteurPath": [
+          "Big Pharma"
+        ],
+        "rev": 1,
+        "phases": [
+          {
+            "nom": "Laboratoires mondiaux",
+            "groupe": {
+              "num": "01",
+              "label": "BIG PHARMA",
+              "tagline": "Recherche, production, distribution mondiale"
+            },
+            "entreprises": [
+              {
+                "nom": "Eli Lilly",
+                "image": "data/logos/LLY.png",
+                "legende": "US — leader du duopole GLP-1 (Mounjaro/Zepbound) contre l'obésité et le diabète.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Novo Nordisk",
+                "image": "data/logos/NVO.png",
+                "legende": "Danemark — pionnier du GLP-1 (Ozempic/Wegovy), l'autre moitié du duopole.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Johnson & Johnson",
+                "image": "data/logos/JNJ.png",
+                "legende": "US — plus gros groupe santé diversifié au monde (pharma + medtech).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Pfizer",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0b/Pfizer_logo.svg/250px-Pfizer_logo.svg.png",
+                "legende": "US — vaccins (COVID) et forte R&D en oncologie.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Roche",
+                "image": "data/logos/RHHBY.png",
+                "legende": "Suisse — leader mondial en oncologie et diagnostics in vitro.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "AstraZeneca",
+                "image": "data/logos/AZN.png",
+                "legende": "Royaume-Uni/Suède — forte croissance en oncologie et respiratoire.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Merck & Co.",
+                "image": "data/logos/MRK.png",
+                "legende": "US — Keytruda (immuno-oncologie), un des médicaments les plus vendus au monde.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Sanofi",
+                "image": "data/logos/SAN.PA.png",
+                "legende": "France — vaccins + immunologie (Dupixent, avec Regeneron).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          }
+        ]
+      },
+      {
+        "id": "c-biotech",
+        "nom": "Biotech",
+        "sousSecteurPath": [
+          "Biotech"
+        ],
+        "rev": 1,
+        "phases": [
+          {
+            "nom": "Biotechnologies",
+            "groupe": {
+              "num": "02",
+              "label": "BIOTECH",
+              "tagline": "Thérapies ciblées & ARN"
+            },
+            "entreprises": [
+              {
+                "nom": "Amgen",
+                "image": "data/logos/AMGN.png",
+                "legende": "US — pionnier biotech, franchise forte en inflammation et oncologie.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Gilead Sciences",
+                "image": "data/logos/GILD.png",
+                "legende": "US — leader mondial des antiviraux (VIH, hépatite).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Vertex Pharmaceuticals",
+                "image": "data/logos/VRTX.png",
+                "legende": "US — quasi-monopole du traitement de la mucoviscidose.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Regeneron Pharmaceuticals",
+                "image": "data/logos/REGN.png",
+                "legende": "US — Eylea (DMLA), co-développe Dupixent avec Sanofi.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Moderna",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/Moderna_logo.svg/250px-Moderna_logo.svg.png",
+                "legende": "US — pionnier de l'ARN messager, vaccins COVID puis pipeline élargi.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          }
+        ]
+      },
+      {
+        "id": "c-medtech",
+        "nom": "Medtech & dispositifs médicaux",
+        "sousSecteurPath": [
+          "Medtech & dispositifs médicaux"
+        ],
+        "rev": 1,
+        "phases": [
+          {
+            "nom": "Dispositifs médicaux",
+            "groupe": {
+              "num": "03",
+              "label": "MEDTECH",
+              "tagline": "Implants, diagnostics, chirurgie"
+            },
+            "entreprises": [
+              {
+                "nom": "Medtronic",
+                "image": "data/logos/MDT.png",
+                "legende": "Irlande/US — plus gros fabricant mondial de dispositifs médicaux.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Abbott Laboratories",
+                "image": "data/logos/ABT.png",
+                "legende": "US — diagnostics, dispositifs cardiovasculaires et nutrition.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Stryker",
+                "image": "data/logos/SYK.png",
+                "legende": "US — orthopédie, implants, robotique chirurgicale (Mako).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Boston Scientific",
+                "image": "data/logos/BSX.png",
+                "legende": "US — dispositifs cardiovasculaires mini-invasifs.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Intuitive Surgical",
+                "image": "data/logos/ISRG.png",
+                "legende": "US — quasi-monopole de la chirurgie robotique (système da Vinci).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              }
+            ],
+            "blocsLibres": []
+          }
+        ]
+      },
+      {
+        "id": "c-assurance-sante",
+        "nom": "Assurance santé & prestataires de soins",
+        "sousSecteurPath": [
+          "Assurance santé & prestataires de soins"
+        ],
+        "rev": 1,
+        "phases": [
+          {
+            "nom": "Assureurs & prestataires (marché US)",
+            "groupe": {
+              "num": "04",
+              "label": "ASSURANCE & SOINS",
+              "tagline": "Spécificité du système américain"
+            },
+            "entreprises": [
+              {
+                "nom": "UnitedHealth Group",
+                "image": "data/logos/UNH.png",
+                "legende": "US — plus gros assureur santé américain + Optum (gestionnaire de prestations).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "CVS Health",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/df/CVS_Health_Logo.svg/250px-CVS_Health_Logo.svg.png",
+                "legende": "US — pharmacies + assurance (Aetna) + prestations de soins intégrées.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Elevance Health",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/92/Elevance_Health_logo.svg/250px-Elevance_Health_logo.svg.png",
+                "legende": "US — ex-Anthem, un des plus gros réseaux Blue Cross Blue Shield.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Cigna",
+                "image": "https://upload.wikimedia.org/wikipedia/en/thumb/5/5f/Cigna_logo.svg/250px-Cigna_logo.svg.png",
+                "legende": "US — assurance santé + Express Scripts (gestion de prestations pharmaceutiques).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "HCA Healthcare",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6c/2019_HCA_logo.svg/250px-2019_HCA_logo.svg.png",
+                "legende": "US — plus grand opérateur d'hôpitaux privés du pays.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": [
+              {
+                "image": "",
+                "texte": "Sous-secteur spécifique au système de santé américain (assurance privée) — les autres pays suivis (Europe, Japon...) reposent majoritairement sur des systèmes publics/mutualisés, moins pertinents pour une chaîne de valeur investissable."
+              }
+            ]
+          }
+        ]
+      }
     ]
   },
   "notes": {},
