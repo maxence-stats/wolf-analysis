@@ -4176,7 +4176,7 @@ function classementValuationFor(e){
   // évite qu'un seul creux ponctuel de FCF (constaté sur Lennar/Amazon) fasse exploser
   // l'écart calculé, voir le commentaire détaillé dans export_ranking.py.
   const fcfBase = e.fcfBase != null ? e.fcfBase : e.fcfParAction;
-  if (fcfBase == null || e.prixActuel == null) return { multiple:null, ecartPrix:null, source:null };
+  if (fcfBase == null || e.prixActuel == null) return { multiple:null, ecartPrix:null, source:null, prixJuste:null };
   let multiple = e.medianePFCF;
   let source = 'auto';
   const saved = objectifsStore[e.nom];
@@ -4190,8 +4190,8 @@ function classementValuationFor(e){
   if (source === 'auto' && classementCapMultiple && multiple != null && multiple > CLASSEMENT_MAX_MULTIPLE){
     multiple = CLASSEMENT_MAX_MULTIPLE;
   }
-  if (multiple == null || multiple <= 0) return { multiple:null, ecartPrix:null, source };
-  const prixJuste = fcfBase * multiple;
+  if (multiple == null || multiple <= 0) return { multiple:null, ecartPrix:null, source, prixJuste:null };
+  let prixJuste = fcfBase * multiple;
   // Dénominateur prixJuste (pas prixActuel) : borne la sous-valorisation à -100% au
   // maximum (une entreprise ne peut pas valoir moins que zéro — retour explicite,
   // "-214%... ce n'est pas possible"), la survalorisation reste non bornée.
@@ -4203,8 +4203,11 @@ function classementValuationFor(e){
   // pratique, c'est presque toujours cette incohérence de devise plutôt qu'un signal réel
   // — jamais appliqué côté objectif enregistré par l'utilisateur (ses propres chiffres,
   // pas une donnée FMP à filtrer).
-  if (source === 'auto' && ecartPrix != null && ecartPrix > CLASSEMENT_MAX_ECART_PCT) ecartPrix = null;
-  return { multiple, ecartPrix, source };
+  if (source === 'auto' && ecartPrix != null && ecartPrix > CLASSEMENT_MAX_ECART_PCT){
+    ecartPrix = null;
+    prixJuste = null; // même filet de sécurité : ne pas afficher un prix juste sur une donnée jugée incohérente
+  }
+  return { multiple, ecartPrix, source, prixJuste };
 }
 
 function classementRankingRows(secteurFiltre){
@@ -5527,21 +5530,60 @@ function chartsHistoryToRows(ch){
     return row;
   });
 }
-// Demande explicite : "toutes les données maintenant tu les calcules exclusivement et
-// uniquement avec les données de FMP. Oublie le Google Sheet." — pour les 4 tuiles
-// factuelles qui ont un équivalent FMP direct (Prix actuel, Rendement du dividende,
-// Médiane P/FCF, P/FCF actuel). Prix Juste/Prix Cible/Écart de valeur restent Sheet
-// (ce sont TES propres cibles de valorisation, pas une donnée FMP à remplacer).
+// Demande explicite, réaffirmée trois fois de suite pour bien couvrir TOUTES les
+// entreprises (pas seulement Air Liquide) : "toutes les données maintenant tu les
+// calcules exclusivement et uniquement avec les données de FMP. Oublie le Google
+// Sheet." / "ce n'est pas que Air Liquide... c'est toutes les entreprises qui
+// doivent être branchées aux données FMP, plus le Excel." Couvre maintenant aussi
+// Prix Juste/Prix Cible/Écart de valeur/le verdict de la jauge — plus seulement les
+// 4 tuiles factuelles (Prix actuel, Rendement du dividende, Médiane P/FCF, P/FCF
+// actuel) — via la MÊME formule déjà calibrée et vérifiée pour l'onglet Classement
+// (classementValuationFor(), rankingSummaryData) : Prix Juste = FCF de base × médiane
+// P/FCF (ou le multiple Réaliste enregistré par l'utilisateur en Valorisation s'il en
+// existe un), Prix Cible = Prix Juste × 0,8 (même haircut que le simulateur de
+// Valorisation). rankingSummaryData est chargée au démarrage (loadRankingSummary()),
+// indépendamment de documentsRealData — ce bloc ne dépend donc PAS de `real`.
 // Écrase les valeurs Sheet déjà affichées par renderCompany() une fois les données FMP
 // chargées (asynchrone) — appelée depuis plusieurs points d'entrée (stats FMP,
 // chartsHistory, cours de bourse), chacun ne touchant QUE ce qu'il vient de recevoir.
 function applyFmpRatioOverrides(nom){
   if (activeCompany !== nom) return;
   const real = documentsRealData[nom];
+  let prixActuelFmp = null;
   if (stockCandleFull && stockCandleFull.length){
-    const lastClose = stockCandleFull[stockCandleFull.length - 1].c;
+    prixActuelFmp = stockCandleFull[stockCandleFull.length - 1].c;
     const el = document.getElementById('prixActuel');
-    if (el && lastClose != null) el.innerHTML = lastClose.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' <sup>€</sup>';
+    if (el && prixActuelFmp != null) el.innerHTML = prixActuelFmp.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' <sup>€</sup>';
+  }
+  const rankingEntry = rankingSummaryData.find(x => x.nom === nom);
+  if (rankingEntry){
+    const e = prixActuelFmp != null ? Object.assign({}, rankingEntry, { prixActuel: prixActuelFmp }) : rankingEntry;
+    const v = classementValuationFor(e);
+    if (v.prixJuste != null){
+      const prixJuste = v.prixJuste;
+      const prixCible = prixJuste * 0.8;
+      document.getElementById('rPrixJuste').textContent = fmtEUR(prixJuste);
+      document.getElementById('rPrixCible').textContent = fmtEUR(prixCible);
+      const ecartEl = document.getElementById('rEcart');
+      ecartEl.className = 'v';
+      if (v.ecartPrix != null){
+        ecartEl.textContent = fmtPct(v.ecartPrix);
+        // Convention Analyse (détail par entreprise) : sous-valorisé = vert (bon
+        // signal d'achat, cohérent avec le badge "Zone d'achat" de la jauge) —
+        // volontairement l'INVERSE de la convention Classement (choix distinct,
+        // confirmé séparément pour un usage de classement/tri).
+        ecartEl.classList.add(v.ecartPrix < 0 ? 'pos' : 'neg');
+      } else { ecartEl.textContent = 'N/D'; }
+      const rend5El = document.getElementById('rRend5');
+      rend5El.className = 'v';
+      if (e.prixActuel != null && e.rendementDiv != null && prixJuste > 0){
+        const reversion = Math.pow(prixJuste / e.prixActuel, 1/5) - 1;
+        const rend5 = reversion*100 + e.rendementDiv;
+        rend5El.textContent = (rend5>=0?'+':'') + fmtPct(rend5);
+        rend5El.classList.add(rend5>=0 ? 'pos':'neg');
+      } else { rend5El.textContent = 'N/D'; }
+      drawGauge({ prixCible, prixJuste, prixActuel: e.prixActuel });
+    }
   }
   if (!real) return;
   if (real.stats && real.stats['Dividende'] && real.stats['Dividende']['Rendement'] != null){
