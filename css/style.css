@@ -1252,6 +1252,42 @@
     .print-cec-text-soustitre{font-family:var(--font-display);font-size:13px;font-weight:600;font-style:italic;color:var(--text-dim);}
     .print-cec-text-titre{font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--text);}
     .print-footer{margin-top:22px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);font-size:10px;color:var(--text-faint);text-align:right;font-family:var(--font-mono);}
+    /* Export "mind map" du Cerveau numérique (chaîne de valeur) — porte la même charte
+       que les PDF Wolf Academy Invest générés côté Python (voir _wolfkit_build/
+       mindmap_lib.py) : panneaux encadrés par grande phase (chain.phases[].groupe),
+       numéro en filigrane, puces logo+nom, goulots d'étranglement en or plein. Demande
+       explicite : "je voudrais que quand je clique sur PDF, ça me fasse exactement
+       cette mise en page, peu importe la chaîne de valeur" — même rendu, mais construit
+       en HTML/CSS (pas de backend possible pour appeler un script Python depuis le
+       navigateur), donc disponible pour N'IMPORTE QUELLE chaîne sans script à écrire.
+    */
+    .chain-pdf-topbar{display:flex;align-items:center;gap:10px;margin-bottom:26px;}
+    .chain-pdf-topbar img{height:22px;width:22px;border-radius:50%;object-fit:cover;}
+    .chain-pdf-topbar-wordmark{font-family:var(--font-mono);font-size:9.5px;letter-spacing:0.1em;color:var(--text-dim);text-transform:uppercase;}
+    .chain-pdf-topbar-sep{width:20px;height:1px;background:var(--text-faint);}
+    .chain-pdf-topbar-label{font-family:var(--font-mono);font-size:9.5px;letter-spacing:0.1em;color:var(--gold);text-transform:uppercase;}
+    .chain-pdf-eyebrow{font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.12em;color:var(--gold);text-transform:uppercase;margin-bottom:10px;}
+    .chain-pdf-title{font-family:var(--font-display);font-size:24px;font-weight:700;color:#fff;margin:0 0 4px;}
+    .chain-pdf-sector{font-family:var(--font-mono);font-size:10.5px;color:var(--text-dim);margin:0 0 8px;}
+    .chain-pdf-subtitle{font-family:var(--font-body);font-style:italic;font-size:12.5px;color:var(--gold-2);margin:0 0 12px;}
+    .chain-pdf-rule{width:46px;height:3px;background:var(--gold);border-radius:2px;margin-bottom:22px;}
+    .chain-pdf-panel{position:relative;background:#121212;border:1px solid #262626;border-left:4px solid var(--gold);border-radius:12px;padding:18px 22px;margin-bottom:16px;overflow:hidden;page-break-inside:avoid;}
+    .chain-pdf-watermark{position:absolute;top:-6px;right:16px;font-family:var(--font-display);font-weight:700;font-size:54px;color:#1e1e1e;line-height:1;z-index:0;user-select:none;}
+    .chain-pdf-panel-head{position:relative;z-index:1;margin-bottom:14px;}
+    .chain-pdf-panel-label{font-family:var(--font-display);font-size:15px;font-weight:700;color:#fff;letter-spacing:0.02em;margin:0;}
+    .chain-pdf-panel-tagline{font-family:var(--font-body);font-style:italic;font-size:11px;color:var(--gold-2);margin:2px 0 0;}
+    .chain-pdf-subphase{position:relative;z-index:1;margin-bottom:12px;}
+    .chain-pdf-subphase:last-child{margin-bottom:0;}
+    .chain-pdf-subphase-label{font-family:var(--font-mono);font-size:9.5px;letter-spacing:0.08em;color:var(--text-dim);text-transform:uppercase;margin:0 0 8px;padding-left:11px;position:relative;}
+    .chain-pdf-subphase-label::before{content:'';position:absolute;left:0;top:5px;width:4px;height:4px;border-radius:50%;background:var(--gold);}
+    .chain-pdf-chips{display:flex;flex-wrap:wrap;gap:7px;}
+    .chain-pdf-chip{display:inline-flex;align-items:center;gap:6px;background:#1a1a1a;border:1px solid #3a3a3a;border-radius:14px;padding:4px 10px 4px 4px;font-family:var(--font-body);font-size:10.5px;color:var(--text);}
+    .chain-pdf-chip-bottleneck{background:var(--gold);border-color:var(--gold);color:#171717;font-weight:600;}
+    .chain-pdf-chip-logo{width:18px;height:18px;border-radius:5px;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;}
+    .chain-pdf-chip-logo img{max-width:15px;max-height:15px;object-fit:contain;}
+    .chain-pdf-freeblock{position:relative;z-index:1;font-size:10.5px;color:var(--text-dim);font-style:italic;margin-top:10px;}
+    .chain-pdf-legend{display:flex;align-items:center;gap:10px;margin-top:6px;font-family:var(--font-body);font-size:10.5px;color:var(--text-dim);}
+    .chain-pdf-legend-swatch{width:15px;height:11px;border-radius:6px;background:var(--gold);flex-shrink:0;}
     /* Éditeur PDF : chaque page = la zone imprimable exacte (182mm×269mm, A4 moins la
        marge @page ci-dessous), blocs positionnés en % — identique pixel-pour-pixel à
        l'écran, aucune conversion d'unité nécessaire. */

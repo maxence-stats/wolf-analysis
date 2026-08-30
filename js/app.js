@@ -11262,17 +11262,27 @@ async function loadCerveauData(){
   // Fusion PAR CHAÎNE (id), pas par clé de secteur entière — sinon toute mise à jour du
   // socle (nouvelle chaîne ajoutée par Claude dans un secteur déjà visité) se fait
   // silencieusement avaler dès qu'IndexedDB a ne serait-ce qu'un tableau vide pour cette
-  // clé (constaté deux fois de suite en pratique : une chaîne republiée dans
-  // data/cerveau.json n'apparaissait pas tant que l'ancien tableau restait en IndexedDB).
-  // Une chaîne du socle dont l'id existe déjà côté IndexedDB ne remplace JAMAIS la
-  // version locale (préserve les modifications de l'utilisateur) ; seules les chaînes du
-  // socle absentes localement sont ajoutées.
+  // clé (constaté en pratique : une chaîne republiée dans data/cerveau.json n'apparaissait
+  // pas tant que l'ancien tableau restait en IndexedDB). Une chaîne du socle absente
+  // localement est ajoutée.
+  // Chaîne déjà présente localement (même id) : comparée via chain.rev (entier, absent
+  // = 0), incrémenté par Claude à chaque mise à jour du CONTENU d'une chaîne existante
+  // (pas seulement son ajout) — sinon un enrichissement du socle (ex. ajout du champ
+  // groupe pour le regroupement par grande phase de l'export PDF) restait invisible
+  // indéfiniment, même après avoir corrigé le bug ci-dessus pour les NOUVELLES chaînes
+  // (reproduit en pratique : la chaîne existait déjà par id, donc jamais retouchée).
+  // baseline.rev STRICTEMENT supérieur au rev local => le socle remplace la version
+  // locale (Claude reste la source de vérité de ce qu'il a lui-même écrit) ; sinon la
+  // version locale est conservée telle quelle (préserve un ajout/edit fait entre-temps
+  // par l'utilisateur sur cette chaîne, tant que Claude n'y republie rien de nouveau).
   if (baselineChains){
     Object.keys(baselineChains).forEach(k => {
       if (!Array.isArray(cerveauData.chains[k])) cerveauData.chains[k] = [];
-      const existingIds = new Set(cerveauData.chains[k].map(c => c.id));
+      const list = cerveauData.chains[k];
       baselineChains[k].forEach(chain => {
-        if (!existingIds.has(chain.id)) cerveauData.chains[k].push(chain);
+        const idx = list.findIndex(c => c.id === chain.id);
+        if (idx === -1){ list.push(chain); return; }
+        if ((chain.rev || 0) > (list[idx].rev || 0)) list[idx] = chain;
       });
     });
   }
@@ -11586,7 +11596,7 @@ function syncCerveauToolbarState(){
 // estimes que là vraiment cette entreprise est un goulot d'étranglement et sans elle
 // c'est la merde, il faut que tu l'indiques... ça peut être les entreprises sur
 // lesquelles se focus pour les analyser." Visible dans l'app (bordure + badge sur la
-// carte, cliquable pour basculer) ET dans le PDF (voir printCerveauEntityHtml()).
+// carte, cliquable pour basculer) ET dans le PDF (voir chainPdfChipHtml()).
 function cerveauEntityCard(ent, phaseIdx, entIdx){
   const safe = ent.nom.replace(/"/g, '&quot;');
   const tracked = companies[ent.nom];
@@ -11699,25 +11709,100 @@ function cerveauFreeBlockHtml(bloc, phaseIdx, blocIdx){
   </div>`;
 }
 
-function printCerveauEntityHtml(ent){
-  const imgs = ent.image ? `<div class="print-img-row"><img src="${ent.image}" alt=""></div>` : '';
-  const logo = companyLogoUrl(ent.nom);
-  const logoImg = logo ? `<img class="print-inline-logo" src="${logo}" alt="">` : '';
-  const bottleneckTag = ent.bottleneck ? '<span class="print-bottleneck-tag">⚠ GOULOT D\'ÉTRANGLEMENT</span>' : '';
-  return `<div class="${ent.bottleneck ? 'print-cec-bottleneck' : ''}" style="margin-bottom:10px">${bottleneckTag}${logoImg}<strong>${ent.nom.replace(/</g, '&lt;')}</strong>${ent.legende ? `<p>${ent.legende.replace(/</g, '&lt;')}</p>` : ''}${imgs}</div>`;
+// Regroupe les phases (flat, chain.phases) par leur grande phase (ph.groupe, ajouté
+// par Claude lors de la construction de la chaîne — voir data/cerveau.json). Une phase
+// sans groupe (chaîne créée à la main par l'utilisateur, ou chaîne pas encore
+// enrichie) redevient sa propre "grande phase" solo, degré 0 — l'export reste
+// utilisable pour N'IMPORTE QUELLE chaîne, groupée ou non, jamais un plantage.
+function chainPdfGroups(chain){
+  const groups = [];
+  const byKey = new Map();
+  chain.phases.forEach(ph => {
+    const g = ph.groupe;
+    const key = g ? g.label : '__solo__' + ph.nom;
+    if (!byKey.has(key)){
+      const entry = { num: g ? g.num : '', label: g ? g.label : ph.nom, tagline: g ? g.tagline : '', phases: [] };
+      byKey.set(key, entry);
+      groups.push(entry);
+    }
+    byKey.get(key).phases.push(ph);
+  });
+  return groups;
 }
-function printCerveauFreeBlockHtml(bloc){
-  const imgs = bloc.image ? `<div class="print-img-row"><img src="${bloc.image}" alt=""></div>` : '';
-  const textHtml = (bloc.textBlocks || []).filter(tb => (tb.texteHtml || tb.texte)).map(tb => `<p class="print-cec-text-${tb.style || 'corps'}">${tb.texteHtml != null ? tb.texteHtml : escapeHtml(tb.texte)}</p>`).join('');
-  return `<div style="margin-bottom:10px">${textHtml}${imgs}</div>`;
+function chainPdfChipHtml(ent){
+  const logo = companyLogoUrl(ent.nom) || ent.image;
+  const logoHtml = `<span class="chain-pdf-chip-logo">${logo ? `<img src="${logo}" alt="">` : ''}</span>`;
+  return `<span class="chain-pdf-chip${ent.bottleneck ? ' chain-pdf-chip-bottleneck' : ''}">${logoHtml}${ent.nom.replace(/</g, '&lt;')}</span>`;
 }
-function exportChainAsPdf(chain, secteur){
-  const body = chain.phases.map(ph => {
-    const entHtml = ph.entreprises.map(printCerveauEntityHtml).join('') || '<p style="color:#999">Aucune entreprise.</p>';
-    const freeHtml = (ph.blocsLibres || []).map(printCerveauFreeBlockHtml).join('');
-    return `<div class="print-section"><h3>${ph.nom}</h3>${entHtml}${freeHtml}</div>`;
+function chainPdfFreeBlockText(bloc){
+  if (bloc.texteHtml != null) return bloc.texteHtml;
+  if (bloc.texte) return escapeHtml(bloc.texte);
+  return (bloc.textBlocks || []).map(tb => tb.texteHtml != null ? tb.texteHtml : escapeHtml(tb.texte || '')).join(' ');
+}
+function chainPdfPanelHtml(group){
+  const subphasesHtml = group.phases.map(ph => {
+    const chips = ph.entreprises.map(chainPdfChipHtml).join('')
+      || '<span style="color:var(--text-faint);font-size:10.5px;">Aucune entreprise.</span>';
+    const freeHtml = (ph.blocsLibres || [])
+      .filter(b => b.texte || (b.textBlocks && b.textBlocks.length))
+      .map(b => `<div class="chain-pdf-freeblock">${chainPdfFreeBlockText(b)}</div>`).join('');
+    return `<div class="chain-pdf-subphase"><div class="chain-pdf-subphase-label">${ph.nom.replace(/</g, '&lt;')}</div><div class="chain-pdf-chips">${chips}</div>${freeHtml}</div>`;
   }).join('');
-  exportSectionAsPdf('Chaîne de valeur — ' + chain.nom, cerveauSectorLabel(secteur), body);
+  return `<div class="chain-pdf-panel">
+    ${group.num ? `<div class="chain-pdf-watermark">${group.num}</div>` : ''}
+    <div class="chain-pdf-panel-head">
+      <div class="chain-pdf-panel-label">${group.label.replace(/</g, '&lt;')}</div>
+      ${group.tagline ? `<div class="chain-pdf-panel-tagline">${group.tagline.replace(/</g, '&lt;')}</div>` : ''}
+    </div>
+    ${subphasesHtml}
+  </div>`;
+}
+// Export "mind map" — même charte que les PDF Wolf Academy Invest générés côté Python
+// (_wolfkit_build/mindmap_lib.py), reconstruite en HTML/CSS (voir .chain-pdf-* dans
+// style.css) pour être disponible en un clic sur N'IMPORTE QUELLE chaîne, sans script à
+// lancer à la main. Demande explicite : "je voudrais que quand je clique sur PDF, ça me
+// fasse exactement cette mise en page, peu importe la chaîne de valeur."
+// Construit tout #printArea lui-même (ne passe PAS par exportSectionAsPdf, dont l'en-tête
+// générique — gros logo + titre — ne correspond pas à la maquette bandeau fin de la
+// charte "mind map") mais réutilise le même mécanisme d'attente des images avant
+// window.print() (voir exportSectionAsPdf, bug déjà corrigé : imprimer avant que les
+// images ne soient chargées les fait disparaître du PDF).
+function exportChainAsPdf(chain, secteur){
+  const groups = chainPdfGroups(chain);
+  const hasBottleneck = chain.phases.some(ph => ph.entreprises.some(e => e.bottleneck));
+  const totalCompanies = chain.phases.reduce((s, ph) => s + ph.entreprises.length, 0);
+  const sectorPath = [cerveauSectorLabel(secteur)].concat(chain.sousSecteurPath || []).join(' › ');
+  const panelsHtml = groups.map(chainPdfPanelHtml).join('');
+  const legendHtml = hasBottleneck
+    ? `<div class="chain-pdf-legend"><span class="chain-pdf-legend-swatch"></span>Puce dorée = goulot d'étranglement de la chaîne (dépendance critique, concentration de marché élevée)</div>`
+    : '';
+
+  const area = document.getElementById('printArea');
+  area.innerHTML = `
+    <div class="chain-pdf-topbar">
+      <img src="${WOLF_LOGO_URL}" alt="">
+      <span class="chain-pdf-topbar-wordmark">Wolf Academy Invest</span>
+      <span class="chain-pdf-topbar-sep"></span>
+      <span class="chain-pdf-topbar-label">Cerveau numérique</span>
+    </div>
+    <div class="chain-pdf-eyebrow">Chaîne de valeur</div>
+    <div class="chain-pdf-title">${chain.nom.replace(/</g, '&lt;')}</div>
+    <div class="chain-pdf-sector">${sectorPath.replace(/</g, '&lt;')}</div>
+    <div class="chain-pdf-subtitle">${totalCompanies} entreprise${totalCompanies > 1 ? 's' : ''} réparties sur ${groups.length} grande${groups.length > 1 ? 's' : ''} phase${groups.length > 1 ? 's' : ''} — Cerveau numérique</div>
+    <div class="chain-pdf-rule"></div>
+    ${panelsHtml}
+    ${legendHtml}
+    <div class="print-footer">Wolf Analysis — Cerveau numérique — carte générée à partir des données saisies, à vérifier/compléter.</div>`;
+
+  const imgs = Array.from(area.querySelectorAll('img'));
+  const waits = imgs.map(img => img.complete ? Promise.resolve() : new Promise(res => {
+    img.addEventListener('load', res, { once:true });
+    img.addEventListener('error', res, { once:true });
+  }));
+  Promise.race([
+    Promise.all(waits),
+    new Promise(res => setTimeout(res, 4000))
+  ]).then(() => window.print());
 }
 
 function renderCerveauPhases(box){

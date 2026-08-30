@@ -4,127 +4,456 @@
       {
         "id": "c-electrique-batterie",
         "nom": "Véhicule électrique & chaîne batterie",
-        "sousSecteurPath": ["Électrification", "Véhicules & batteries"],
+        "sousSecteurPath": [
+          "Électrification",
+          "Véhicules & batteries"
+        ],
         "phases": [
           {
             "nom": "Matières premières (lithium, cobalt, nickel, recyclage)",
             "entreprises": [
-              { "nom": "Albemarle", "image": "data/logos/ALB.png", "legende": "Numéro un mondial du lithium (mines + raffinage), US/Chili/Australie.", "width": 220, "imgHeight": 120, "bottleneck": true },
-              { "nom": "SQM", "image": "https://upload.wikimedia.org/wikipedia/en/thumb/7/79/Sociedad_Qu%C3%ADmica_y_Minera_logo.svg/250px-Sociedad_Qu%C3%ADmica_y_Minera_logo.svg.png", "legende": "Lithium chilien (salar d'Atacama) — 2ᵉ producteur mondial.", "width": 220, "imgHeight": 120 },
-              { "nom": "Pilbara Minerals", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/39/PLS-Logo-CMYK.png/250px-PLS-Logo-CMYK.png", "legende": "Australie — un des plus gros gisements de lithium en roche dure (spodumène).", "width": 220, "imgHeight": 120 },
-              { "nom": "Glencore", "image": "data/logos/GLEN.L.png", "legende": "Négoce + extraction diversifiée, forte exposition cobalt (RDC) et nickel.", "width": 220, "imgHeight": 120, "bottleneck": true },
-              { "nom": "Umicore", "image": "data/logos/UMI.BR.png", "legende": "Belgique — recyclage de batteries en fin de vie + matériaux de cathode.", "width": 220, "imgHeight": 120 }
+              {
+                "nom": "Albemarle",
+                "image": "data/logos/ALB.png",
+                "legende": "Numéro un mondial du lithium (mines + raffinage), US/Chili/Australie.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "SQM",
+                "image": "https://upload.wikimedia.org/wikipedia/en/thumb/7/79/Sociedad_Qu%C3%ADmica_y_Minera_logo.svg/250px-Sociedad_Qu%C3%ADmica_y_Minera_logo.svg.png",
+                "legende": "Lithium chilien (salar d'Atacama) — 2ᵉ producteur mondial.",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "Pilbara Minerals",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/39/PLS-Logo-CMYK.png/250px-PLS-Logo-CMYK.png",
+                "legende": "Australie — un des plus gros gisements de lithium en roche dure (spodumène).",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "Glencore",
+                "image": "data/logos/GLEN.L.png",
+                "legende": "Négoce + extraction diversifiée, forte exposition cobalt (RDC) et nickel.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Umicore",
+                "image": "data/logos/UMI.BR.png",
+                "legende": "Belgique — recyclage de batteries en fin de vie + matériaux de cathode.",
+                "width": 220,
+                "imgHeight": 120
+              }
             ],
-            "blocsLibres": []
+            "blocsLibres": [],
+            "groupe": {
+              "num": "01",
+              "label": "AMONT",
+              "tagline": "Matières premières"
+            }
           },
           {
             "nom": "Fabrication de cellules & packs batterie",
             "entreprises": [
-              { "nom": "CATL", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0d/Contemporary_Amperex_Technology_logo.svg/250px-Contemporary_Amperex_Technology_logo.svg.png", "legende": "1ᵉʳ fabricant mondial de cellules Li-ion, ~35-40% de part de marché.", "width": 220, "imgHeight": 120, "bottleneck": true },
-              { "nom": "LG Energy Solution", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/42/LG_Energy_Solution_logo_EN.svg/250px-LG_Energy_Solution_logo_EN.svg.png", "legende": "Corée — fournisseur clé de GM, Tesla, Hyundai, Volkswagen.", "width": 220, "imgHeight": 120 },
-              { "nom": "Panasonic", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/54/Panasonic_Group_logo.svg/250px-Panasonic_Group_logo.svg.png", "legende": "Partenaire batterie historique de Tesla (Gigafactory Nevada).", "width": 220, "imgHeight": 120 },
-              { "nom": "Samsung SDI", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/48/Samsung_SDI_logo_%28english%29.svg/250px-Samsung_SDI_logo_%28english%29.svg.png", "legende": "Corée — cellules pour VE et électronique grand public.", "width": 220, "imgHeight": 120 },
-              { "nom": "SK On", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/SK_on_logo.jpg/250px-SK_on_logo.jpg", "legende": "Filiale batterie de SK Group — non cotée séparément.", "width": 220, "imgHeight": 120 },
-              { "nom": "BYD", "image": "data/logos/1211.HK.png", "legende": "Fabrique ses propres cellules (Blade Battery) — intégré verticalement.", "width": 220, "imgHeight": 120 }
+              {
+                "nom": "CATL",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0d/Contemporary_Amperex_Technology_logo.svg/250px-Contemporary_Amperex_Technology_logo.svg.png",
+                "legende": "1ᵉʳ fabricant mondial de cellules Li-ion, ~35-40% de part de marché.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "LG Energy Solution",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/42/LG_Energy_Solution_logo_EN.svg/250px-LG_Energy_Solution_logo_EN.svg.png",
+                "legende": "Corée — fournisseur clé de GM, Tesla, Hyundai, Volkswagen.",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "Panasonic",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/54/Panasonic_Group_logo.svg/250px-Panasonic_Group_logo.svg.png",
+                "legende": "Partenaire batterie historique de Tesla (Gigafactory Nevada).",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "Samsung SDI",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/48/Samsung_SDI_logo_%28english%29.svg/250px-Samsung_SDI_logo_%28english%29.svg.png",
+                "legende": "Corée — cellules pour VE et électronique grand public.",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "SK On",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/SK_on_logo.jpg/250px-SK_on_logo.jpg",
+                "legende": "Filiale batterie de SK Group — non cotée séparément.",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "BYD",
+                "image": "data/logos/1211.HK.png",
+                "legende": "Fabrique ses propres cellules (Blade Battery) — intégré verticalement.",
+                "width": 220,
+                "imgHeight": 120
+              }
             ],
-            "blocsLibres": []
-          },
-          {
-            "nom": "Stockage d'énergie (stationnaire, réseau)",
-            "entreprises": [
-              { "nom": "Fluence Energy", "image": "https://fluenceenergy.com/wp-content/themes/fluence/assets/svg/static/branding/site-logo--color.svg", "legende": "Pure-player du stockage grande échelle, JV Siemens/AES.", "width": 220, "imgHeight": 120 },
-              { "nom": "Tesla", "image": "data/logos/TSLA.png", "legende": "Megapack/Powerwall — le stockage, un second métier après le VE.", "width": 220, "imgHeight": 120 },
-              { "nom": "Sungrow", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/Sungrow_Power_Supply.svg/250px-Sungrow_Power_Supply.svg.png", "legende": "Chine — onduleurs solaires + stockage batterie combinés.", "width": 220, "imgHeight": 120 },
-              { "nom": "Enphase Energy", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2d/Enphase_logo.svg/250px-Enphase_logo.svg.png", "legende": "Stockage résidentiel couplé au solaire, surtout marché US.", "width": 220, "imgHeight": 120 }
-            ],
-            "blocsLibres": []
+            "blocsLibres": [],
+            "groupe": {
+              "num": "02",
+              "label": "FABRICATION",
+              "tagline": "Production & assemblage"
+            }
           },
           {
             "nom": "Constructeurs — véhicules électriques",
             "entreprises": [
-              { "nom": "Tesla", "image": "data/logos/TSLA.png", "legende": "Toujours la référence en valeur de marché du secteur.", "width": 220, "imgHeight": 120 },
-              { "nom": "BYD", "image": "data/logos/1211.HK.png", "legende": "1er constructeur mondial en volumes (VE + hybrides rechargeables).", "width": 220, "imgHeight": 120 },
-              { "nom": "Rivian", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3f/Rivian_logo_and_wordmark.svg/250px-Rivian_logo_and_wordmark.svg.png", "legende": "Pure-player américain — pickups et utilitaires électriques.", "width": 220, "imgHeight": 120 },
-              { "nom": "Volkswagen", "image": "data/logos/VOW3.DE.png", "legende": "Groupe déjà suivi (Analyse) — gamme ID. électrique.", "width": 220, "imgHeight": 120 },
-              { "nom": "Mercedes-Benz Group", "image": "data/logos/MBG.DE.png", "legende": "Groupe déjà suivi (Analyse) — gamme EQ électrique.", "width": 220, "imgHeight": 120 }
+              {
+                "nom": "Tesla",
+                "image": "data/logos/TSLA.png",
+                "legende": "Toujours la référence en valeur de marché du secteur.",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "BYD",
+                "image": "data/logos/1211.HK.png",
+                "legende": "1er constructeur mondial en volumes (VE + hybrides rechargeables).",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "Rivian",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3f/Rivian_logo_and_wordmark.svg/250px-Rivian_logo_and_wordmark.svg.png",
+                "legende": "Pure-player américain — pickups et utilitaires électriques.",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "Volkswagen",
+                "image": "data/logos/VOW3.DE.png",
+                "legende": "Groupe déjà suivi (Analyse) — gamme ID. électrique.",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "Mercedes-Benz Group",
+                "image": "data/logos/MBG.DE.png",
+                "legende": "Groupe déjà suivi (Analyse) — gamme EQ électrique.",
+                "width": 220,
+                "imgHeight": 120
+              }
             ],
-            "blocsLibres": []
+            "blocsLibres": [],
+            "groupe": {
+              "num": "02",
+              "label": "FABRICATION",
+              "tagline": "Production & assemblage"
+            }
           },
           {
             "nom": "Électrification maritime",
             "entreprises": [
-              { "nom": "Wärtsilä", "image": "https://upload.wikimedia.org/wikipedia/en/thumb/d/dc/W%C3%A4rtsil%C3%A4_logo.svg/250px-W%C3%A4rtsil%C3%A4_logo.svg.png", "legende": "Finlande — motorisation et propulsion navale hybride/électrique.", "width": 220, "imgHeight": 120 },
-              { "nom": "Kongsberg Gruppen", "image": "https://upload.wikimedia.org/wikipedia/en/thumb/e/ea/Kongsberg_Gruppen_logo.svg/250px-Kongsberg_Gruppen_logo.svg.png", "legende": "Norvège — propulsion électrique et navigation autonome.", "width": 220, "imgHeight": 120 },
-              { "nom": "Corvus Energy", "image": "", "legende": "Norvège/Canada — spécialiste batteries marines. Non coté.", "width": 220, "imgHeight": 120 }
+              {
+                "nom": "Wärtsilä",
+                "image": "https://upload.wikimedia.org/wikipedia/en/thumb/d/dc/W%C3%A4rtsil%C3%A4_logo.svg/250px-W%C3%A4rtsil%C3%A4_logo.svg.png",
+                "legende": "Finlande — motorisation et propulsion navale hybride/électrique.",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "Kongsberg Gruppen",
+                "image": "https://upload.wikimedia.org/wikipedia/en/thumb/e/ea/Kongsberg_Gruppen_logo.svg/250px-Kongsberg_Gruppen_logo.svg.png",
+                "legende": "Norvège — propulsion électrique et navigation autonome.",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "Corvus Energy",
+                "image": "",
+                "legende": "Norvège/Canada — spécialiste batteries marines. Non coté.",
+                "width": 220,
+                "imgHeight": 120
+              }
             ],
-            "blocsLibres": []
+            "blocsLibres": [],
+            "groupe": {
+              "num": "02",
+              "label": "FABRICATION",
+              "tagline": "Production & assemblage"
+            }
           },
           {
             "nom": "Infrastructure de recharge",
             "entreprises": [
-              { "nom": "ChargePoint", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/81/ChargePoint_logo.svg/250px-ChargePoint_logo.svg.png", "legende": "Un des plus gros réseaux de bornes aux États-Unis.", "width": 220, "imgHeight": 120 },
-              { "nom": "EVgo", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a9/EVgo-corporate-logo.jpg/250px-EVgo-corporate-logo.jpg", "legende": "Réseau de recharge rapide US, forte présence en Californie.", "width": 220, "imgHeight": 120 },
-              { "nom": "Alfen", "image": "", "legende": "Pays-Bas — bornes de recharge + solutions de stockage réseau.", "width": 220, "imgHeight": 120 }
+              {
+                "nom": "ChargePoint",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/81/ChargePoint_logo.svg/250px-ChargePoint_logo.svg.png",
+                "legende": "Un des plus gros réseaux de bornes aux États-Unis.",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "EVgo",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a9/EVgo-corporate-logo.jpg/250px-EVgo-corporate-logo.jpg",
+                "legende": "Réseau de recharge rapide US, forte présence en Californie.",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "Alfen",
+                "image": "",
+                "legende": "Pays-Bas — bornes de recharge + solutions de stockage réseau.",
+                "width": 220,
+                "imgHeight": 120
+              }
             ],
             "blocsLibres": [
-              { "image": "", "texte": "À noter : le réseau Tesla Supercharger n'est pas une entité cotée séparément — c'est une division de Tesla, déjà présente dans la phase Constructeurs." }
-            ]
+              {
+                "image": "",
+                "texte": "À noter : le réseau Tesla Supercharger n'est pas une entité cotée séparément — c'est une division de Tesla, déjà présente dans la phase Constructeurs."
+              }
+            ],
+            "groupe": {
+              "num": "03",
+              "label": "DISTRIBUTION",
+              "tagline": "Infrastructure de recharge"
+            }
+          },
+          {
+            "nom": "Stockage d'énergie (stationnaire, réseau)",
+            "entreprises": [
+              {
+                "nom": "Fluence Energy",
+                "image": "https://fluenceenergy.com/wp-content/themes/fluence/assets/svg/static/branding/site-logo--color.svg",
+                "legende": "Pure-player du stockage grande échelle, JV Siemens/AES.",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "Tesla",
+                "image": "data/logos/TSLA.png",
+                "legende": "Megapack/Powerwall — le stockage, un second métier après le VE.",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "Sungrow",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/Sungrow_Power_Supply.svg/250px-Sungrow_Power_Supply.svg.png",
+                "legende": "Chine — onduleurs solaires + stockage batterie combinés.",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "Enphase Energy",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2d/Enphase_logo.svg/250px-Enphase_logo.svg.png",
+                "legende": "Stockage résidentiel couplé au solaire, surtout marché US.",
+                "width": 220,
+                "imgHeight": 120
+              }
+            ],
+            "blocsLibres": [],
+            "groupe": {
+              "num": "04",
+              "label": "SERVICE",
+              "tagline": "Stockage d'énergie (service au réseau)"
+            }
           }
-        ]
+        ],
+        "rev": 2
       },
       {
         "id": "c-robotique-automatisation",
         "nom": "Robotique & automatisation",
-        "sousSecteurPath": ["Robotique & automatisation"],
+        "sousSecteurPath": [
+          "Robotique & automatisation"
+        ],
         "phases": [
           {
             "nom": "Composants de précision (réducteurs, actionneurs, capteurs)",
             "entreprises": [
-              { "nom": "Harmonic Drive Systems", "image": "https://www.hds.co.jp/Portals/0/files/common/images/logo_en.png", "legende": "Japon — quasi-monopole des réducteurs harmoniques, présents dans la majorité des bras robotiques.", "width": 220, "imgHeight": 120, "bottleneck": true },
-              { "nom": "Nabtesco", "image": "data/logos/6268.T.png", "legende": "Japon — réducteurs cycloïdaux RV, duopole avec Harmonic Drive sur ce composant critique.", "width": 220, "imgHeight": 120, "bottleneck": true },
-              { "nom": "THK", "image": "data/logos/THKLY.png", "legende": "Japon — leader des guidages linéaires et actionneurs de précision.", "width": 220, "imgHeight": 120 },
-              { "nom": "Infineon Technologies", "image": "data/logos/IFX.DE.png", "legende": "Allemagne — semi-conducteurs de contrôle moteur et de puissance.", "width": 220, "imgHeight": 120 }
+              {
+                "nom": "Harmonic Drive Systems",
+                "image": "https://www.hds.co.jp/Portals/0/files/common/images/logo_en.png",
+                "legende": "Japon — quasi-monopole des réducteurs harmoniques, présents dans la majorité des bras robotiques.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Nabtesco",
+                "image": "data/logos/6268.T.png",
+                "legende": "Japon — réducteurs cycloïdaux RV, duopole avec Harmonic Drive sur ce composant critique.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "THK",
+                "image": "data/logos/THKLY.png",
+                "legende": "Japon — leader des guidages linéaires et actionneurs de précision.",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "Infineon Technologies",
+                "image": "data/logos/IFX.DE.png",
+                "legende": "Allemagne — semi-conducteurs de contrôle moteur et de puissance.",
+                "width": 220,
+                "imgHeight": 120
+              }
             ],
-            "blocsLibres": []
+            "blocsLibres": [],
+            "groupe": {
+              "num": "01",
+              "label": "AMONT",
+              "tagline": "Composants de précision"
+            }
           },
           {
             "nom": "Robots industriels (bras)",
             "entreprises": [
-              { "nom": "ABB", "image": "data/logos/ABBN.SW.png", "legende": "Suisse — un des 4 plus gros fabricants mondiaux de robots industriels.", "width": 220, "imgHeight": 120 },
-              { "nom": "FANUC", "image": "data/logos/FANUY.png", "legende": "Japon — pionnier historique des robots industriels et de la commande numérique (CNC).", "width": 220, "imgHeight": 120 },
-              { "nom": "Yaskawa Electric", "image": "data/logos/YASKY.png", "legende": "Japon — robots industriels (marque Motoman) + variateurs et moteurs.", "width": 220, "imgHeight": 120 },
-              { "nom": "Kawasaki Heavy Industries", "image": "data/logos/KWHIY.png", "legende": "Japon — un des tout premiers fabricants de robots industriels au monde.", "width": 220, "imgHeight": 120 }
+              {
+                "nom": "ABB",
+                "image": "data/logos/ABBN.SW.png",
+                "legende": "Suisse — un des 4 plus gros fabricants mondiaux de robots industriels.",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "FANUC",
+                "image": "data/logos/FANUY.png",
+                "legende": "Japon — pionnier historique des robots industriels et de la commande numérique (CNC).",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "Yaskawa Electric",
+                "image": "data/logos/YASKY.png",
+                "legende": "Japon — robots industriels (marque Motoman) + variateurs et moteurs.",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "Kawasaki Heavy Industries",
+                "image": "data/logos/KWHIY.png",
+                "legende": "Japon — un des tout premiers fabricants de robots industriels au monde.",
+                "width": 220,
+                "imgHeight": 120
+              }
             ],
-            "blocsLibres": []
+            "blocsLibres": [],
+            "groupe": {
+              "num": "02",
+              "label": "FABRICATION",
+              "tagline": "Production & assemblage"
+            }
           },
           {
             "nom": "Cobots, robots mobiles & humanoïdes",
             "entreprises": [
-              { "nom": "Teradyne", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/04/Teradyne_logo_2014.svg/250px-Teradyne_logo_2014.svg.png", "legende": "US — possède Universal Robots (cobots) et MiR (robots mobiles autonomes).", "width": 220, "imgHeight": 120 },
-              { "nom": "Tesla", "image": "data/logos/TSLA.png", "legende": "US — programme Optimus, robot humanoïde à vocation industrielle.", "width": 220, "imgHeight": 120 },
-              { "nom": "Hyundai Motor Group", "image": "data/logos/HYMTF.png", "legende": "Corée — a racheté Boston Dynamics en 2021.", "width": 220, "imgHeight": 120 }
+              {
+                "nom": "Teradyne",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/04/Teradyne_logo_2014.svg/250px-Teradyne_logo_2014.svg.png",
+                "legende": "US — possède Universal Robots (cobots) et MiR (robots mobiles autonomes).",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "Tesla",
+                "image": "data/logos/TSLA.png",
+                "legende": "US — programme Optimus, robot humanoïde à vocation industrielle.",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "Hyundai Motor Group",
+                "image": "data/logos/HYMTF.png",
+                "legende": "Corée — a racheté Boston Dynamics en 2021.",
+                "width": 220,
+                "imgHeight": 120
+              }
             ],
-            "blocsLibres": []
+            "blocsLibres": [],
+            "groupe": {
+              "num": "02",
+              "label": "FABRICATION",
+              "tagline": "Production & assemblage"
+            }
           },
           {
             "nom": "Intégration & automatisation industrielle",
             "entreprises": [
-              { "nom": "Rockwell Automation", "image": "data/logos/ROK.png", "legende": "US — logiciels et intégration d'automatisation industrielle.", "width": 220, "imgHeight": 120 },
-              { "nom": "Siemens", "image": "data/logos/SIE.DE.png", "legende": "Allemagne — automatisation industrielle (division Digital Industries).", "width": 220, "imgHeight": 120 },
-              { "nom": "Schneider Electric", "image": "data/logos/SU.PA.png", "legende": "France — automatisation et gestion de l'énergie industrielle.", "width": 220, "imgHeight": 120 }
+              {
+                "nom": "Rockwell Automation",
+                "image": "data/logos/ROK.png",
+                "legende": "US — logiciels et intégration d'automatisation industrielle.",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "Siemens",
+                "image": "data/logos/SIE.DE.png",
+                "legende": "Allemagne — automatisation industrielle (division Digital Industries).",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "Schneider Electric",
+                "image": "data/logos/SU.PA.png",
+                "legende": "France — automatisation et gestion de l'énergie industrielle.",
+                "width": 220,
+                "imgHeight": 120
+              }
             ],
-            "blocsLibres": []
+            "blocsLibres": [],
+            "groupe": {
+              "num": "03",
+              "label": "DISTRIBUTION",
+              "tagline": "Intégration & automatisation industrielle"
+            }
           },
           {
             "nom": "Intelligence artificielle, vision & logiciel",
             "entreprises": [
-              { "nom": "NVIDIA", "image": "data/logos/NVDA.png", "legende": "US — plateformes de calcul/simulation IA pour la robotique (Jetson, Isaac).", "width": 220, "imgHeight": 120, "bottleneck": true },
-              { "nom": "Cognex", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/42/Cognex_Corp_logo.svg/250px-Cognex_Corp_logo.svg.png", "legende": "US — vision industrielle, contrôle qualité et guidage robotique.", "width": 220, "imgHeight": 120 },
-              { "nom": "PTC", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/PTC_logo.svg/250px-PTC_logo.svg.png", "legende": "US — logiciel industriel et jumeaux numériques (ex. ThingWorx).", "width": 220, "imgHeight": 120 }
+              {
+                "nom": "NVIDIA",
+                "image": "data/logos/NVDA.png",
+                "legende": "US — plateformes de calcul/simulation IA pour la robotique (Jetson, Isaac).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Cognex",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/42/Cognex_Corp_logo.svg/250px-Cognex_Corp_logo.svg.png",
+                "legende": "US — vision industrielle, contrôle qualité et guidage robotique.",
+                "width": 220,
+                "imgHeight": 120
+              },
+              {
+                "nom": "PTC",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/PTC_logo.svg/250px-PTC_logo.svg.png",
+                "legende": "US — logiciel industriel et jumeaux numériques (ex. ThingWorx).",
+                "width": 220,
+                "imgHeight": 120
+              }
             ],
-            "blocsLibres": []
+            "blocsLibres": [],
+            "groupe": {
+              "num": "04",
+              "label": "SERVICE",
+              "tagline": "Intelligence artificielle, vision & logiciel"
+            }
           }
-        ]
+        ],
+        "rev": 2
       }
     ]
   },
