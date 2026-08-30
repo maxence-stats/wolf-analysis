@@ -5690,8 +5690,31 @@ const STOCK_OVERLAY_METRICS = {
 // points connus). Écarté (> ~200 jours) si aucun label de la plage affichée ne
 // correspond réellement à cette année (ex. plage "1a" avec un historique de 20 ans) —
 // sans ce garde-fou, une valeur ancienne se retrouverait plaquée au bord du graphique.
+// Base "hist" (tableau annuel {annee, [field]:valeur, ...}) pour une entreprise — Sheet
+// en priorité (companies[nom], comportement inchangé), repli sur chartsHistory FMP
+// (documentsRealData[nom], déjà chargée via ensureDocumentsRealData() — voir
+// ensureComparaisonMetricsData()) pour toute entreprise hors des 72 du Sheet. Les noms
+// de champ sont VOLONTAIREMENT identiques entre les deux sources (dividende, ca,
+// margeOp, roic, fcfParAction, pFcf, actions, detteOCF, cash) — même schéma, pas de
+// table de correspondance à maintenir. Demande explicite : "ça me met toutes les
+// entreprises qui ont été enregistrées avec FMP", pas seulement celles du Sheet.
+function comparaisonHistFor(nom){
+  if (companies[nom]) return companies[nom];
+  const ch = documentsRealData[nom] && documentsRealData[nom].chartsHistory;
+  if (!ch || !ch.years) return [];
+  return ch.years.map((y, i) => {
+    const row = { annee: parseInt(String(y).slice(0, 4), 10) };
+    Object.keys(ch).forEach(k => { if (k !== 'years' && Array.isArray(ch[k])) row[k] = ch[k][i]; });
+    return row;
+  });
+}
+async function ensureComparaisonMetricsData(nom){
+  if (companies[nom] || (documentsRealData[nom] && documentsRealData[nom].chartsHistory)) return;
+  try{ await ensureDocumentsRealData(nom); }catch(e){ /* pas exportée pour cette entreprise — non bloquant */ }
+}
+
 function mapAnnualSeriesToWeeklyLabels(labels, field, nom){
-  const hist = ((nom || activeCompany) && companies[nom || activeCompany]) || [];
+  const hist = comparaisonHistFor(nom || activeCompany);
   const arr = labels.map(() => null);
   const MAX_DIFF_MS = 200 * 24 * 3600 * 1000;
   hist.forEach(row => {
@@ -8330,15 +8353,21 @@ function populateComparaisonSectorFilter(){
   });
 }
 
+// Source élargie à toute la base FMP locale (~500 entreprises, en croissance), pas
+// seulement les 72 du Sheet — demande explicite : "ça ne me met plus uniquement les
+// entreprises du Excel, ça me met surtout toutes les entreprises qui ont été
+// enregistrées avec FMP". rankingSummaryData couvre déjà les 72 (elles y figurent aussi,
+// recalculées depuis FMP) donc pas de liste à fusionner : une seule source pour tout le
+// monde. Secteur résolu via son propre champ (profil FMP) plutôt que celui du Sheet.
 function renderComparaisonPicker(){
   populateComparaisonSectorFilter();
   const sectorVal = document.getElementById('comparaisonSectorFilter').value;
   const searchVal = stripAccents((document.getElementById('comparaisonSearch').value || '').trim().toLowerCase());
   const list = document.getElementById('comparaisonCompanyList');
-  const names = Object.keys(companies).sort((a,b) => a.localeCompare(b, 'fr')).filter(nom => {
+  const names = rankingSummaryData.map(e => e.nom).sort((a,b) => a.localeCompare(b, 'fr')).filter(nom => {
     if (sectorVal){
-      const latest = companies[nom][companies[nom].length - 1];
-      const sec = normalizeSector(latest.secteur);
+      const entry = rankingSummaryData.find(e => e.nom === nom);
+      const sec = normalizeSector(entry && entry.secteur);
       if (sectorVal === 'autre' ? sec !== null : sec !== sectorVal) return false;
     }
     if (searchVal && !stripAccents(nom.toLowerCase()).includes(searchVal)) return false;
@@ -8386,29 +8415,6 @@ document.getElementById('comparaisonRangeButtons').addEventListener('click', e =
   renderComparaisonCharts();
 });
 
-// Même chaîne de repli que loadStockChart() (Sheet dédié → Yahoo → Stooq), mais
-// paramétrable par entreprise et mise en cache pour ne pas refetcher à chaque
-// changement de plage ou d'entreprise déjà chargée.
-async function ensureComparaisonPriceData(nom){
-  if (comparaisonPriceCache[nom]) return comparaisonPriceCache[nom];
-  const sheetSeries = fetchPriceHistorySeries(nom);
-  if (sheetSeries){ comparaisonPriceCache[nom] = sheetSeries; return sheetSeries; }
-  const rows = companies[nom];
-  const ticker = rows && rows[rows.length - 1].ticker;
-  if (!ticker) return null;
-  try{
-    const r = await fetchYahooWeekly(mapTickerToYahoo(ticker));
-    comparaisonPriceCache[nom] = r;
-    return r;
-  }catch(e){}
-  try{
-    const r = await fetchStooqWeekly(mapTickerToStooq(ticker));
-    comparaisonPriceCache[nom] = r;
-    return r;
-  }catch(e){}
-  return null;
-}
-
 // Refonte demandée explicitement : plus de 3 graphiques fixes (prix/dividende/FCF),
 // UN seul graphique où n'importe quelle métrique est activable/désactivable, pour
 // n'importe quelle entreprise sélectionnée, toutes indexées base 100. L'axe est
@@ -8439,7 +8445,7 @@ const COMPARAISON_METRIC_DASHES = [[],[6,3],[2,2],[8,3,2,3],[1,3],[10,2],[4,4],[
 // n'ont pas de CAGR précalculé dans le Sheet).
 function computeMetricCagr(nom, key, years){
   const meta = COMPARAISON_METRICS[key];
-  const hist = companies[nom];
+  const hist = comparaisonHistFor(nom);
   if (!hist || !hist.length || !meta.field) return null;
   const latest = hist[hist.length - 1];
   if (meta.cagr && meta.cagr[years] && latest[meta.cagr[years]] != null) return latest[meta.cagr[years]];
@@ -8457,17 +8463,34 @@ async function ensureComparaisonPriceData(nom){
   if (sheetSeries){ comparaisonPriceCache[nom] = sheetSeries; return sheetSeries; }
   const rows = companies[nom];
   const ticker = rows && rows[rows.length - 1].ticker;
-  if (!ticker) return null;
-  try{
-    const r = await fetchYahooWeekly(mapTickerToYahoo(ticker));
-    comparaisonPriceCache[nom] = r;
-    return r;
-  }catch(e){}
-  try{
-    const r = await fetchStooqWeekly(mapTickerToStooq(ticker));
-    comparaisonPriceCache[nom] = r;
-    return r;
-  }catch(e){}
+  if (ticker){
+    try{
+      const r = await fetchYahooWeekly(mapTickerToYahoo(ticker));
+      comparaisonPriceCache[nom] = r;
+      return r;
+    }catch(e){}
+    try{
+      const r = await fetchStooqWeekly(mapTickerToStooq(ticker));
+      comparaisonPriceCache[nom] = r;
+      return r;
+    }catch(e){}
+  }
+  // Entreprise hors des 72 du Sheet (base FMP élargie, ~500 entreprises) : repli sur
+  // l'historique de prix FMP déjà exporté (data/prices-{symbole}.json, même fichier que
+  // la superposition "Comparer une entreprise" du cours de bourse) — demande explicite :
+  // "ça me met toutes les entreprises qui ont été enregistrées avec FMP".
+  const symbol = fmpSymbols[nom];
+  if (symbol){
+    try{
+      const res = await fetch(`data/prices-${symbol}.json`, { cache:'no-store' });
+      if (res.ok){
+        const raw = await res.json();
+        const r = resampleWeekly(raw.map(p => p.t), raw.map(p => p.c));
+        comparaisonPriceCache[nom] = r;
+        return r;
+      }
+    }catch(e){}
+  }
   return null;
 }
 
@@ -8587,6 +8610,7 @@ async function renderComparaisonCharts(){
   const myToken = ++comparaisonPriceRequestId;
   const selection = comparaisonSelected.slice();
   const results = await Promise.all(selection.map(ensureComparaisonPriceData));
+  await Promise.all(selection.map(ensureComparaisonMetricsData));
   if (myToken !== comparaisonPriceRequestId) return; // sélection changée entre-temps, résultat obsolète
   const missing = selection.filter((nom, i) => !results[i]);
 
@@ -8756,6 +8780,12 @@ function renderComparisonDetailColumns(){
     comparisonColumnCharts[c] = {};
   });
 
+  // Volontairement limité aux 72 du Sheet, contrairement au picker/graphique du haut
+  // (voir renderComparaisonPicker()/mapAnnualSeriesToWeeklyLabels()) : la jauge de
+  // valorisation a besoin de prixJuste/prixCible, qui n'existent que dans le Sheet — pas
+  // une restriction arbitraire, dictée par la donnée réellement disponible. Une
+  // entreprise FMP-only sélectionnée apparaît dans le graphique indexé base 100 du haut
+  // mais n'a simplement pas de colonne détaillée ici.
   const selection = comparaisonSelected.filter(nom => companies[nom]).slice(0, 4);
   box.innerHTML = selection.map((nom, i) => comparisonColumnHtml(COMPARISON_DETAIL_COLS[i], nom)).join('');
 
@@ -10410,18 +10440,68 @@ function renderWatchlist(){
 
   const unassigned = Object.keys(companies).filter(nom => !watchlistLocationOf(nom));
   pool.innerHTML = unassigned.length
-    ? unassigned.map(nom => watchlistChipHtml(nom, companies[nom][companies[nom].length - 1].lienImage)).join('')
-    : '<div class="objectifs-empty">Toutes les entreprises sont déjà classées dans une liste.</div>';
+    ? unassigned.map(nom => watchlistChipHtml(nom, companyLogoUrl(nom))).join('')
+    : '<div class="objectifs-empty">Toutes les entreprises du Sheet sont déjà classées dans une liste.</div>';
   applyWatchlistSearchFilter();
 
+  // Demande explicite : "je suis censé avoir toutes les entreprises qui sont
+  // disponibles, plus juste celles qui étaient dans mon Excel" — les listes affichent
+  // maintenant TOUTE entreprise ajoutée via la recherche FMP élargie (voir
+  // renderWatchlistSuggestions()/addToWatchlistFromSearch() plus bas), pas seulement les
+  // 72 du Sheet. Auparavant, .filter(nom => companies[nom]) faisait disparaître
+  // silencieusement toute entreprise FMP-only déjà présente dans watchlistStore — bug
+  // dormant tant que rien ne permettait d'en ajouter une, révélé par cette extension.
   WATCHLIST_LISTS.forEach(key => {
     const zone = document.querySelector(`.watchlist-dropzone[data-list="${key}"]`);
     if (!zone) return;
     zone.innerHTML = watchlistStore[key]
-      .filter(nom => companies[nom])
-      .map(nom => watchlistChipHtml(nom, companies[nom][companies[nom].length - 1].lienImage))
+      .map(nom => watchlistChipHtml(nom, companyLogoUrl(nom)))
       .join('');
   });
+}
+
+// Recherche élargie (toute la base FMP locale, ~500 entreprises et en croissance) pour
+// ajouter directement une entreprise à une des 4 listes sans passer par le pool (qui ne
+// couvre que les 72 entreprises du Sheet) — demande explicite : "je suis censé avoir
+// toutes les entreprises qui sont disponibles... j'ai la possibilité de le mettre soit
+// dans liste d'achat, soit dans l'idée du moment, à surveiller ou à analyser". Clic sur
+// une suggestion déplie 4 boutons de destination inline (watchlistSearchPendingAdd),
+// plutôt qu'un ajout direct à une liste fixe — l'utilisateur doit choisir laquelle.
+let watchlistSearchPendingAdd = null;
+function renderWatchlistSuggestions(query){
+  const box = document.getElementById('watchlistSuggestions');
+  if (!box) return;
+  const q = stripAccents((query || '').trim().toLowerCase());
+  if (q.length < 2){
+    box.classList.remove('open');
+    box.innerHTML = '';
+    watchlistSearchPendingAdd = null;
+    return;
+  }
+  const matches = rankingSummaryData
+    .filter(e => stripAccents(e.nom.toLowerCase()).includes(q))
+    .slice(0, 20);
+  if (!matches.length){
+    box.innerHTML = '<div class="search-suggestion" style="color:var(--text-faint);cursor:default;">Aucun résultat</div>';
+    box.classList.add('open');
+    return;
+  }
+  const listLabels = { achat:'Liste d\'achat', idee:'Idée du moment', surveiller:'À surveiller', analyser:'À analyser' };
+  box.innerHTML = matches.map(e => {
+    const current = watchlistLocationOf(e.nom);
+    const pending = watchlistSearchPendingAdd === e.nom;
+    const logo = companyLogoUrl(e.nom) || (e.symbol ? `data/logos/${e.symbol}.png` : null);
+    const addRow = pending
+      ? `<div class="watchlist-suggestion-addrow">${WATCHLIST_LISTS.map(key => `<button type="button" data-watchlist-add="${key}" data-nom="${escapeHtml(e.nom)}">${listLabels[key]}</button>`).join('')}</div>`
+      : '';
+    return `<div class="search-suggestion watchlist-suggestion${pending ? ' open' : ''}" data-watchlist-suggestion="${escapeHtml(e.nom)}">
+      <img class="search-suggestion-logo" src="${logo || ''}" alt="">
+      <span>${escapeHtml(e.nom)}</span>
+      ${current ? `<span class="watchlist-suggestion-current">${listLabels[current]}</span>` : ''}
+      ${addRow}
+    </div>`;
+  }).join('');
+  box.classList.add('open');
 }
 
 function initWatchlist(){
@@ -10491,7 +10571,10 @@ function initWatchlist(){
       // après un pointerup suite à un vrai glisser tactile, le click de compatibilité
       // du navigateur est trop peu fiable (timing, cible recalculée après un
       // re-rendu du DOM) pour distinguer proprement tap et glisser sur mobile.
-      if (!moved){ goToAnalyse(nom); return; }
+      // Entreprise hors des 72 du Sheet (base FMP élargie) : pas de fiche Analyse
+      // complète pour elle pour l'instant, tap sans effet plutôt que de basculer sur
+      // l'onglet Analyse sans rien y afficher de pertinent.
+      if (!moved){ if (companies[nom]) goToAnalyse(nom); return; }
       const target = findWatchlistDropTarget(me.clientX, me.clientY, chip);
       if (target) moveToWatchlist(nom, target.zone.dataset.list || null, target.targetNom, target.before);
     }
@@ -10500,7 +10583,36 @@ function initWatchlist(){
   });
 
   const searchInput = document.getElementById('watchlistSearch');
-  if (searchInput) searchInput.addEventListener('input', applyWatchlistSearchFilter);
+  if (searchInput) searchInput.addEventListener('input', () => {
+    applyWatchlistSearchFilter();
+    renderWatchlistSuggestions(searchInput.value);
+  });
+  const suggestionsBox = document.getElementById('watchlistSuggestions');
+  if (suggestionsBox){
+    suggestionsBox.addEventListener('click', e => {
+      e.stopPropagation(); // même piège que le menu "Superposer" du cours de bourse — sinon le clic ferme le menu avant d'atteindre les boutons
+      const addBtn = e.target.closest('[data-watchlist-add]');
+      if (addBtn){
+        moveToWatchlist(addBtn.dataset.nom, addBtn.dataset.watchlistAdd);
+        watchlistSearchPendingAdd = null;
+        renderWatchlistSuggestions(searchInput.value);
+        return;
+      }
+      const row = e.target.closest('[data-watchlist-suggestion]');
+      if (row){
+        const nom = row.dataset.watchlistSuggestion;
+        watchlistSearchPendingAdd = watchlistSearchPendingAdd === nom ? null : nom;
+        renderWatchlistSuggestions(searchInput.value);
+      }
+    });
+    // Fermeture au clic EXTÉRIEUR uniquement (toute la zone recherche+suggestions, pas
+    // juste la liste) — un simple document-click inconditionnel fermerait le menu avant
+    // même d'atteindre le champ texte pour taper, même piège déjà rencontré et corrigé
+    // sur le menu "Superposer" du cours de bourse.
+    document.addEventListener('click', e => {
+      if (!e.target.closest('.watchlist-search-wrap')) suggestionsBox.classList.remove('open');
+    });
+  }
 
   const exportBtn = document.getElementById('watchlistExportBtn');
   if (exportBtn) exportBtn.addEventListener('click', exportWatchlist);
@@ -10578,12 +10690,15 @@ function tierListPrintTableHtml(noms){
     : '<p style="color:#999">Aucune entreprise dans ce tier.</p>';
 }
 function exportTierListAsPdf(){
-  const selNoms = Object.keys(tierListStore).filter(n => tierListStore[n] === TIER_LIST_SELECTION_KEY && companies[n]);
+  // .filter(n => companies[n]) retiré — masquait silencieusement toute entreprise de la
+  // base FMP élargie ajoutée via la recherche (voir renderTierListSuggestions()), même
+  // bug que la Watchlist avant sa propre extension.
+  const selNoms = Object.keys(tierListStore).filter(n => tierListStore[n] === TIER_LIST_SELECTION_KEY);
   const selSection = selNoms.length
     ? `<div class="print-section"><h3>🎬 Sélection du jour (${selNoms.length})</h3>${tierListPrintTableHtml(selNoms)}</div>`
     : '';
   const body = selSection + TIER_LIST_TIERS.map(t => {
-    const noms = Object.keys(tierListStore).filter(n => tierListStore[n] === t.key && companies[n]);
+    const noms = Object.keys(tierListStore).filter(n => tierListStore[n] === t.key);
     return `<div class="print-section"><h3 style="color:${t.color}">Tier ${t.key} (${noms.length})</h3>${tierListPrintTableHtml(noms)}</div>`;
   }).join('');
   exportSectionAsPdf('Tier List', null, body);
@@ -10605,8 +10720,7 @@ function applyTierListSearchFilter(){
   });
 }
 function tierListCardHtml(nom){
-  const rows = companies[nom];
-  const logo = rows && rows.length ? rows[rows.length - 1].lienImage : null;
+  const logo = companyLogoUrl(nom);
   const safe = nom.replace(/"/g, '&quot;');
   // Logo seul, pas de nom en texte à côté (demande explicite) — le nom complet reste
   // accessible en survol via title, même pattern que .watchlist-chip.
@@ -10620,8 +10734,15 @@ function renderTierList(){
   const selection = document.getElementById('tierListSelection');
   if (!board || !pool) return;
 
+  // Board/Sélection du jour : itèrent tierListStore (TOUTE entreprise déjà classée,
+  // Sheet ou base FMP élargie), plus Object.keys(companies) — sinon une entreprise
+  // FMP-only ajoutée via la recherche (voir renderTierListSuggestions()) disparaîtrait
+  // silencieusement dès qu'elle est classée dans un tier, même bug que la Watchlist
+  // avant sa propre extension. Le POOL reste volontairement limité aux 72 du Sheet
+  // (demande explicite : "je ne suis pas censé avoir [un pool avec toute la base], il y
+  // en aura trop") — c'est justement pour ça que la recherche existe.
   board.innerHTML = TIER_LIST_TIERS.map(t => {
-    const noms = Object.keys(companies).filter(nom => tierListLocationOf(nom) === t.key);
+    const noms = Object.keys(tierListStore).filter(nom => tierListStore[nom] === t.key);
     return `<div class="tierlist-row">
       <div class="tierlist-row-label" style="background:${t.color}">${t.key}</div>
       <div class="tierlist-dropzone" data-tier="${t.key}">${noms.map(tierListCardHtml).join('')}</div>
@@ -10633,7 +10754,7 @@ function renderTierList(){
   // explicite). Un simple pseudo-tier de plus dans le même dictionnaire (clé 'SEL'),
   // pas une notion à part — reste donc dans l'export JSON tel quel.
   if (selection){
-    const selNoms = Object.keys(companies).filter(nom => tierListLocationOf(nom) === TIER_LIST_SELECTION_KEY);
+    const selNoms = Object.keys(tierListStore).filter(nom => tierListStore[nom] === TIER_LIST_SELECTION_KEY);
     selection.innerHTML = selNoms.map(tierListCardHtml).join('');
   }
 
@@ -10642,6 +10763,39 @@ function renderTierList(){
     ? unassigned.map(tierListCardHtml).join('')
     : '<div class="objectifs-empty">Toutes les entreprises sont déjà classées dans un tier.</div>';
   applyTierListSearchFilter();
+}
+
+// Recherche élargie (toute la base FMP locale) — demande explicite : "un sélecteur
+// d'entreprise directement relié à la donnée stockée que j'ai récupérée de FMP", SANS
+// pool géant ("il y en aura trop"). Contrairement à la Watchlist (4 destinations
+// possibles), une seule destination logique ici : "Sélection du jour", l'étape
+// d'atterrissage déjà prévue par le flux existant avant classement dans un vrai tier —
+// pas de choix à faire, clic direct sur la suggestion.
+function renderTierListSuggestions(query){
+  const box = document.getElementById('tierListSuggestions');
+  if (!box) return;
+  const q = stripAccents((query || '').trim().toLowerCase());
+  if (q.length < 2){
+    box.classList.remove('open');
+    box.innerHTML = '';
+    return;
+  }
+  const matches = rankingSummaryData.filter(e => stripAccents(e.nom.toLowerCase()).includes(q)).slice(0, 20);
+  if (!matches.length){
+    box.innerHTML = '<div class="search-suggestion" style="color:var(--text-faint);cursor:default;">Aucun résultat</div>';
+    box.classList.add('open');
+    return;
+  }
+  box.innerHTML = matches.map(e => {
+    const current = tierListLocationOf(e.nom);
+    const logo = companyLogoUrl(e.nom) || (e.symbol ? `data/logos/${e.symbol}.png` : null);
+    return `<div class="search-suggestion watchlist-suggestion" data-tierlist-suggestion="${escapeHtml(e.nom)}">
+      <img class="search-suggestion-logo" src="${logo || ''}" alt="">
+      <span>${escapeHtml(e.nom)}</span>
+      ${current ? `<span class="watchlist-suggestion-current">${current === TIER_LIST_SELECTION_KEY ? 'Sélection du jour' : 'Tier ' + current}</span>` : ''}
+    </div>`;
+  }).join('');
+  box.classList.add('open');
 }
 
 function initTierList(){
@@ -10697,8 +10851,9 @@ function initTierList(){
       if (ghost){ ghost.remove(); ghost = null; }
       // Le tap/clic (pas de glisser) va directement à la fiche entreprise — même
       // logique que la Watchlist, gérée ici plutôt que via un listener 'click' séparé
-      // (peu fiable après un vrai glisser tactile).
-      if (!moved){ goToAnalyse(nom); dragNom = null; return; }
+      // (peu fiable après un vrai glisser tactile). Entreprise hors des 72 du Sheet :
+      // pas de fiche Analyse complète pour l'instant, tap sans effet.
+      if (!moved){ if (companies[nom]) goToAnalyse(nom); dragNom = null; return; }
       const el = document.elementFromPoint(me.clientX, me.clientY);
       const zone = el && el.closest('.tierlist-dropzone');
       if (zone) setTierListEntry(nom, zone.dataset.tier || null);
@@ -10709,7 +10864,24 @@ function initTierList(){
   });
 
   const searchInput = document.getElementById('tierListSearch');
-  if (searchInput) searchInput.addEventListener('input', applyTierListSearchFilter);
+  if (searchInput) searchInput.addEventListener('input', () => {
+    applyTierListSearchFilter();
+    renderTierListSuggestions(searchInput.value);
+  });
+  const suggestionsBox = document.getElementById('tierListSuggestions');
+  if (suggestionsBox){
+    suggestionsBox.addEventListener('click', e => {
+      e.stopPropagation();
+      const row = e.target.closest('[data-tierlist-suggestion]');
+      if (!row) return;
+      setTierListEntry(row.dataset.tierlistSuggestion, TIER_LIST_SELECTION_KEY);
+      searchInput.value = '';
+      renderTierListSuggestions('');
+    });
+    document.addEventListener('click', e => {
+      if (!e.target.closest('.tierlist-search-wrap')) suggestionsBox.classList.remove('open');
+    });
+  }
   const exportBtn = document.getElementById('tierListExportBtn');
   if (exportBtn) exportBtn.addEventListener('click', exportTierList);
   const exportPdfBtn = document.getElementById('tierListExportPdfBtn');

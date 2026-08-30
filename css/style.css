@@ -67,6 +67,13 @@
   .search-suggestions.open{display:block;}
   .search-suggestion{padding:9px 14px;font-size:13px;color:var(--text);cursor:pointer;}
   .search-suggestion:hover{background:rgba(217,164,65,0.12);}
+  #watchlistSuggestions, #tierListSuggestions{max-height:360px;overflow-y:auto;}
+  .watchlist-suggestion{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .search-suggestion-logo{width:20px;height:20px;border-radius:5px;background:#fff;object-fit:contain;flex-shrink:0;}
+  .watchlist-suggestion-current{margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--gold);background:rgba(217,164,65,0.12);border-radius:6px;padding:2px 6px;white-space:nowrap;}
+  .watchlist-suggestion-addrow{display:flex;gap:6px;flex-wrap:wrap;width:100%;margin-top:6px;}
+  .watchlist-suggestion-addrow button{font-family:var(--font-mono);font-size:11px;padding:5px 9px;border-radius:8px;border:1px solid var(--hair);background:var(--panel);color:var(--text-dim);cursor:pointer;}
+  .watchlist-suggestion-addrow button:hover{border-color:var(--gold);color:var(--text);}
 
   /* ---------- PAGE NAV ---------- */
   .page-nav{display:flex;flex-wrap:wrap;gap:6px 22px;border-bottom:1px solid var(--hair);margin-bottom:20px;}
