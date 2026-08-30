@@ -3961,11 +3961,14 @@ function renderSectorView(){
    ============================================================ */
 function classementRowHtml(nom, logo, rank, valueText, cls, rendHtml, showAddBtn){
   const safe = nom.replace(/"/g,'&quot;');
+  const inSheet = !!companies[nom];
   const inDividendPortfolio = showAddBtn && dividendPortfolioStore.positions[nom] != null;
   const addBtn = showAddBtn
     ? `<button class="classement-add-btn${inDividendPortfolio ? ' active' : ''}" data-action="dividend-add" data-nom="${safe}" title="${inDividendPortfolio ? 'Déjà dans le portefeuille dividende' : 'Ajouter au portefeuille dividende'}">${inDividendPortfolio ? '✓' : '+'}</button>`
     : '';
-  return `<div class="classement-row${rendHtml ? ' classement-row-valo' : ''}" data-nom="${safe}">
+  // classement-row-nolink : entreprise hors des 72 du Sheet (base FMP élargie) — pas
+  // de fiche Analyse complète pour l'instant, curseur normal plutôt qu'un clic mort.
+  return `<div class="classement-row${rendHtml ? ' classement-row-valo' : ''}${inSheet ? '' : ' classement-row-nolink'}" data-nom="${safe}">
     <div class="classement-row-main">
       <span class="classement-rank">${rank}</span>
       <div class="classement-logo"><img src="${logo || ''}" alt=""></div>
@@ -4025,6 +4028,40 @@ function populateClassementSecteurFilter(){
   });
 }
 
+// Source du Classement — bug remonté ("AXA, Equasens... des chiffres bizarres") :
+// rendementDiv/ecartValeur venaient du Sheet, dont le prixActuel peut être obsolète
+// pour certaines lignes (AXA à 16,19€ dans le Sheet contre 43,61€ chez FMP — un
+// rendement du dividende à 14% au lieu de ~5% réel ; Equasens à 1,01€ contre 33,40€,
+// un facteur 33x donnant 138% de rendement). Le Classement lit maintenant
+// data/ranking-summary.json (voir fmp-database/export_ranking.py) — recalculé
+// entièrement depuis le prix et le dividende FMP les plus récents, jamais depuis une
+// valeur Sheet potentiellement périmée. Couvre aussi TOUTES les entreprises déjà
+// importées en FMP (507 aujourd'hui, pas seulement les 72 du Sheet) — demande
+// explicite ("il faut trouver un moyen d'afficher toutes les entreprises... top cent,
+// top cinquante"), avec un sélecteur Top N pour ne pas noyer l'écran.
+let rankingSummaryData = [];
+async function loadRankingSummary(){
+  try{
+    const res = await fetch('data/ranking-summary.json', { cache:'no-store' });
+    if (res.ok) rankingSummaryData = await res.json();
+  }catch(e){ /* pas encore généré — non bloquant, page vide en attendant */ }
+  if (document.getElementById('pageClassement') && document.getElementById('pageClassement').classList.contains('active')) renderClassement();
+}
+let classementTopN = 50; // 'all' ou un nombre
+
+function classementRankingRows(secteurFiltre){
+  return rankingSummaryData.map(e => ({
+    nom: e.nom, symbol: e.symbol,
+    logo: companyLogoUrl(e.nom) || (e.symbol ? `data/logos/${e.symbol}.png` : null),
+    rendementDiv: e.rendementDiv, ecartPrix: e.ecartPrix,
+    inSheet: !!companies[e.nom],
+    secteurKey: normalizeSector(e.secteur) || 'autre'
+  })).filter(r => !secteurFiltre || r.secteurKey === secteurFiltre);
+}
+function classementApplyTopN(list){
+  return classementTopN === 'all' ? list : list.slice(0, classementTopN);
+}
+
 function renderClassement(){
   const divLeftBox = document.getElementById('classementDivLeft');
   const divRightBox = document.getElementById('classementDivRight');
@@ -4034,32 +4071,36 @@ function renderClassement(){
   populateClassementSecteurFilter();
 
   const secteurFiltre = document.getElementById('classementSecteurFilter').value;
+  const rows = classementRankingRows(secteurFiltre);
+  const coverageNote = document.getElementById('classementCoverageNote');
+  if (coverageNote) coverageNote.textContent = rankingSummaryData.length
+    ? `${rankingSummaryData.length} entreprises couvertes (base locale FMP), classement recalculé depuis le prix et le dividende les plus récents.`
+    : '';
 
-  const rows = Object.keys(companies).map(nom => {
-    const latest = companies[nom][companies[nom].length - 1];
-    return {
-      nom, logo: latest.lienImage, rendementDiv: latest.rendementDiv, ecartValeur: latest.ecartValeur,
-      secteurKey: normalizeSector(latest.secteur) || 'autre'
-    };
-  }).filter(r => !secteurFiltre || r.secteurKey === secteurFiltre);
-
-  const byDiv = rows.filter(r => r.rendementDiv != null).sort((a, b) => b.rendementDiv - a.rendementDiv);
+  const byDiv = classementApplyTopN(rows.filter(r => r.rendementDiv != null).sort((a, b) => b.rendementDiv - a.rendementDiv));
   const half = Math.ceil(byDiv.length / 2);
   const divLeft = byDiv.slice(0, half);
   const divRight = byDiv.slice(half);
   const empty = '<div class="objectifs-empty">Aucune donnée disponible pour ce secteur.</div>';
 
-  divLeftBox.innerHTML = divLeft.length ? divLeft.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.rendementDiv), null, null, true)).join('') : empty;
-  divRightBox.innerHTML = divRight.map((r, i) => classementRowHtml(r.nom, r.logo, half + i + 1, fmtPct(r.rendementDiv), null, null, true)).join('');
+  divLeftBox.innerHTML = divLeft.length ? divLeft.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.rendementDiv), null, null, r.inSheet)).join('') : empty;
+  divRightBox.innerHTML = divRight.map((r, i) => classementRowHtml(r.nom, r.logo, half + i + 1, fmtPct(r.rendementDiv), null, null, r.inSheet)).join('');
 
-  const sousValo = rows.filter(r => r.ecartValeur != null && r.ecartValeur < 0).sort((a, b) => a.ecartValeur - b.ecartValeur);
-  const survalo = rows.filter(r => r.ecartValeur != null && r.ecartValeur >= 0).sort((a, b) => a.ecartValeur - b.ecartValeur);
+  // ecartPrix : upside vers la juste valeur AU PRIX ACTUEL (positif = sous-valorisée),
+  // volontairement différent de l'ancien ecartValeur du Sheet (qui comparait Prix Juste
+  // à Prix Cible, jamais au prix du jour — voir le commentaire détaillé dans
+  // export_ranking.py). Les deux listes trient par ecartPrix DÉCROISSANT : la plus
+  // grosse décote d'abord côté sous-valorisées, la moins survalorisée d'abord côté
+  // survalorisées (symétrique à l'ancien comportement, juste la convention de signe a
+  // changé de sens).
+  const sousValo = classementApplyTopN(rows.filter(r => r.ecartPrix != null && r.ecartPrix > 0).sort((a, b) => b.ecartPrix - a.ecartPrix));
+  const survalo = classementApplyTopN(rows.filter(r => r.ecartPrix != null && r.ecartPrix <= 0).sort((a, b) => b.ecartPrix - a.ecartPrix));
 
   valoSousBox.innerHTML = sousValo.length
-    ? sousValo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartValeur * 100), 'pos', classementRendementRowHtml(r.nom))).join('')
+    ? sousValo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartPrix), 'pos', r.inSheet ? classementRendementRowHtml(r.nom) : null)).join('')
     : '<div class="objectifs-empty">Aucune entreprise sous-valorisée.</div>';
   valoSurvaloBox.innerHTML = survalo.length
-    ? survalo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartValeur * 100), 'neg', classementRendementRowHtml(r.nom))).join('')
+    ? survalo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartPrix), 'neg', r.inSheet ? classementRendementRowHtml(r.nom) : null)).join('')
     : '<div class="objectifs-empty">Aucune entreprise survalorisée.</div>';
 }
 
@@ -4073,14 +4114,10 @@ function exportClassementAsPdf(){
   const secteurFiltre = filterSelect.value;
   const secteurLabel = secteurFiltre ? filterSelect.options[filterSelect.selectedIndex].text : null;
 
-  const rows = Object.keys(companies).map(nom => {
-    const latest = companies[nom][companies[nom].length - 1];
-    return { nom, logo: latest.lienImage, rendementDiv: latest.rendementDiv, ecartValeur: latest.ecartValeur, secteurKey: normalizeSector(latest.secteur) || 'autre' };
-  }).filter(r => !secteurFiltre || r.secteurKey === secteurFiltre);
-
-  const byDiv = rows.filter(r => r.rendementDiv != null).sort((a, b) => b.rendementDiv - a.rendementDiv);
-  const sousValo = rows.filter(r => r.ecartValeur != null && r.ecartValeur < 0).sort((a, b) => a.ecartValeur - b.ecartValeur);
-  const survalo = rows.filter(r => r.ecartValeur != null && r.ecartValeur >= 0).sort((a, b) => a.ecartValeur - b.ecartValeur);
+  const rows = classementRankingRows(secteurFiltre);
+  const byDiv = classementApplyTopN(rows.filter(r => r.rendementDiv != null).sort((a, b) => b.rendementDiv - a.rendementDiv));
+  const sousValo = classementApplyTopN(rows.filter(r => r.ecartPrix != null && r.ecartPrix > 0).sort((a, b) => b.ecartPrix - a.ecartPrix));
+  const survalo = classementApplyTopN(rows.filter(r => r.ecartPrix != null && r.ecartPrix <= 0).sort((a, b) => b.ecartPrix - a.ecartPrix));
 
   const table = (list, valueFn) => list.length
     ? `<table class="print-table"><thead><tr><th>#</th><th>Entreprise</th><th>Valeur</th></tr></thead><tbody>${list.map((r, i) => {
@@ -4091,12 +4128,22 @@ function exportClassementAsPdf(){
 
   const body = `
     <div class="print-section"><h3>Meilleur rendement du dividende</h3>${table(byDiv, r => fmtPct(r.rendementDiv))}</div>
-    <div class="print-section"><h3>Sous-valorisées</h3>${table(sousValo, r => fmtPct(r.ecartValeur * 100))}</div>
-    <div class="print-section"><h3>Survalorisées</h3>${table(survalo, r => fmtPct(r.ecartValeur * 100))}</div>`;
+    <div class="print-section"><h3>Sous-valorisées</h3>${table(sousValo, r => fmtPct(r.ecartPrix))}</div>
+    <div class="print-section"><h3>Survalorisées</h3>${table(survalo, r => fmtPct(r.ecartPrix))}</div>`;
   exportSectionAsPdf('Classement', secteurLabel, body);
 }
 
 function initClassement(){
+  const topNRow = document.getElementById('classementTopNButtons');
+  if (topNRow){
+    topNRow.addEventListener('click', e => {
+      const btn = e.target.closest('button[data-topn]');
+      if (!btn) return;
+      classementTopN = btn.dataset.topn === 'all' ? 'all' : parseInt(btn.dataset.topn, 10);
+      topNRow.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
+      renderClassement();
+    });
+  }
   ['classementDivLeft', 'classementDivRight', 'classementValoSous', 'classementValoSurvalo'].forEach(id => {
     const box = document.getElementById(id);
     if (!box) return;
@@ -4108,8 +4155,11 @@ function initClassement(){
         renderDividendPortfolio();
         return;
       }
+      // Entreprise hors des 72 du Sheet (base FMP élargie) : pas de fiche Analyse
+      // complète pour elle pour l'instant (celle-ci reste construite sur les données
+      // Sheet) — clic sans effet plutôt que goToAnalyse() silencieusement no-op.
       const row = e.target.closest('.classement-row[data-nom]');
-      if (row) goToAnalyse(row.dataset.nom);
+      if (row && companies[row.dataset.nom]) goToAnalyse(row.dataset.nom);
     });
   });
   const filter = document.getElementById('classementSecteurFilter');
@@ -14330,5 +14380,6 @@ document.getElementById('persoBlurToggleBtn').addEventListener('click', function
   loadCreditIndicators();
   loadSectorEtfData();
   loadLogosManifest();
+  loadRankingSummary();
 })();
 

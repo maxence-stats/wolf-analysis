@@ -40,5 +40,6 @@ __pycache__/
 data/labo-*.json
 data/documents-*.json
 data/prices-*.json
+data/ranking-summary.json
 data/logos/
 data/logos-manifest.json

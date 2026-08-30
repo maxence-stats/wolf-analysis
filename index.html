@@ -743,8 +743,15 @@
         <select id="classementSecteurFilter">
           <option value="">Tous les secteurs</option>
         </select>
+        <div class="range-buttons" id="classementTopNButtons">
+          <button type="button" data-topn="50" class="active">Top 50</button>
+          <button type="button" data-topn="100">Top 100</button>
+          <button type="button" data-topn="200">Top 200</button>
+          <button type="button" data-topn="all">Tout</button>
+        </div>
         <button class="zoom-btn objectifs-export" id="classementExportPdfBtn">🖨 Exporter PDF</button>
       </div>
+      <p class="chart-hint" id="classementCoverageNote"></p>
       <div class="classement-grid">
         <div class="classement-card">
           <h3>Meilleur rendement du dividende</h3>
