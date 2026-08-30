@@ -1968,13 +1968,27 @@ function renderExportCartWidget(){
 // technique "Export groupé" imposé par défaut. Mémorisé le temps de la session
 // (exportCartTitle) pour ne pas se réinitialiser à chaque ajout/retrait d'un graphique.
 let exportCartTitle = '';
+// Export panier — même charte "mind map" que le Cerveau numérique (voir
+// exportChainAsPdf/.chain-pdf-*) : demande explicite, "l'ensemble des PDF que
+// j'exporte... je veux que ça soit ce même interface... je puisse sélectionner
+// plusieurs graphiques et faire exporter en PDF et que ça me fasse une fiche
+// détaillée comme ça." Un panneau par graphique (bordure + numéro en filigrane),
+// au lieu du print-section générique utilisé avant.
 function exportCartAsPdf(){
   if (exportCart.length === 0) return;
   const title = exportCartTitle.trim() || 'Wolf Analysis';
-  const body = exportCart.map(item =>
-    `<div class="print-section"><h3>${item.title}</h3><img class="print-chart-img" src="${item.dataUrl}" alt=""></div>`
-  ).join('');
-  exportSectionAsPdf(title, `${exportCart.length} graphique${exportCart.length > 1 ? 's' : ''}`, body);
+  const panelsHtml = exportCart.map((item, i) => `<div class="chain-pdf-panel">
+      <div class="chain-pdf-watermark">${String(i + 1).padStart(2, '0')}</div>
+      <div class="chain-pdf-panel-head"><div class="chain-pdf-panel-label">${item.title.replace(/</g, '&lt;')}</div></div>
+      <img class="chain-pdf-chart-img" src="${item.dataUrl}" alt="">
+    </div>`).join('');
+  const area = document.getElementById('printArea');
+  area.innerHTML = brandedPdfHeader(
+    'Export groupé', title,
+    `${exportCart.length} graphique${exportCart.length > 1 ? 's' : ''} — Wolf Analysis`,
+    'Wolf Analysis'
+  ) + panelsHtml + brandedPdfFooter();
+  printAreaAfterImagesLoad(area);
 }
 
 /* ============================================================
@@ -3076,6 +3090,43 @@ function companyLogoUrl(nom){
 // du print() grimpe fortement. Fix : attendre que toutes les <img> du bloc à imprimer
 // aient chargé (ou échoué) avant d'appeler window.print(), avec un filet de sécurité
 // (timeout) pour ne jamais bloquer l'impression indéfiniment si une image traîne.
+// Attend que toutes les <img> de la zone d'impression aient chargé (ou échoué) avant
+// d'appeler window.print() — filet de sécurité 4s pour ne jamais bloquer indéfiniment.
+// Extrait en fonction partagée : trois exports différents (générique, chaîne de valeur,
+// panier de graphiques) en ont besoin à l'identique, voir le bug documenté ci-dessous.
+function printAreaAfterImagesLoad(area){
+  const imgs = Array.from(area.querySelectorAll('img'));
+  const waits = imgs.map(img => img.complete ? Promise.resolve() : new Promise(res => {
+    img.addEventListener('load', res, { once:true });
+    img.addEventListener('error', res, { once:true });
+  }));
+  Promise.race([
+    Promise.all(waits),
+    new Promise(res => setTimeout(res, 4000))
+  ]).then(() => window.print());
+}
+// Bloc d'en-tête "charte Wolf Academy Invest" partagé par tous les exports PDF de
+// l'application (voir .chain-pdf-* dans style.css) — demande explicite : "l'ensemble
+// des PDF que j'exporte... je veux que ça soit ce même interface". `sectionLabel`
+// apparaît dans le bandeau fin (ex. "Cerveau numérique", "Wolf Analysis") ; `sectorLine`
+// est la ligne de repère optionnelle sous le titre (ex. rangement Cerveau, secteur…).
+function brandedPdfHeader(eyebrow, title, subtitle, sectionLabel, sectorLine){
+  return `
+    <div class="chain-pdf-topbar">
+      <img src="${WOLF_LOGO_URL}" alt="">
+      <span class="chain-pdf-topbar-wordmark">Wolf Academy Invest</span>
+      <span class="chain-pdf-topbar-sep"></span>
+      <span class="chain-pdf-topbar-label">${(sectionLabel || 'Wolf Analysis').replace(/</g, '&lt;')}</span>
+    </div>
+    <div class="chain-pdf-eyebrow">${(eyebrow || '').replace(/</g, '&lt;')}</div>
+    <div class="chain-pdf-title">${(title || '').replace(/</g, '&lt;')}</div>
+    ${sectorLine ? `<div class="chain-pdf-sector">${sectorLine.replace(/</g, '&lt;')}</div>` : ''}
+    ${subtitle ? `<div class="chain-pdf-subtitle">${subtitle.replace(/</g, '&lt;')}</div>` : ''}
+    <div class="chain-pdf-rule"></div>`;
+}
+function brandedPdfFooter(note){
+  return `<div class="print-footer">${note || 'Wolf Analysis — document généré automatiquement.'}</div>`;
+}
 function exportSectionAsPdf(title, subtitle, bodyHtml, entityLogoUrl){
   const area = document.getElementById('printArea');
   const dateLabel = new Date().toLocaleDateString('fr-FR', { year:'numeric', month:'long', day:'numeric' });
@@ -3090,16 +3141,7 @@ function exportSectionAsPdf(title, subtitle, bodyHtml, entityLogoUrl){
     </div>
     ${bodyHtml}
     <div class="print-footer">Wolf Analysis — document généré automatiquement</div>`;
-
-  const imgs = Array.from(area.querySelectorAll('img'));
-  const waits = imgs.map(img => img.complete ? Promise.resolve() : new Promise(res => {
-    img.addEventListener('load', res, { once:true });
-    img.addEventListener('error', res, { once:true });
-  }));
-  Promise.race([
-    Promise.all(waits),
-    new Promise(res => setTimeout(res, 4000)) // filet de sécurité, jamais de blocage indéfini
-  ]).then(() => window.print());
+  printAreaAfterImagesLoad(area);
 }
 // Capture un canvas Chart.js vivant en image (le canvas lui-même ne peut pas être
 // déplacé/cloné dans #printArea sans perdre son rendu — Chart.js dessine sur un
