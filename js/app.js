@@ -11232,6 +11232,7 @@ function openCerveauDB(){
 
 async function loadCerveauData(){
   GICS_SECTORS.forEach(s => { if (!cerveauData.chains[s.key]) cerveauData.chains[s.key] = []; });
+  CERVEAU_EXTRA_SECTORS.forEach(s => { if (!cerveauData.chains[s.key]) cerveauData.chains[s.key] = []; });
   if (!cerveauData.chains.autre) cerveauData.chains.autre = [];
 
   try{
@@ -11293,8 +11294,17 @@ function exportCerveau(){
   URL.revokeObjectURL(url);
 }
 
+// Bucket de navigation supplémentaire, PROPRE au Cerveau numérique — pas ajouté à
+// GICS_SECTORS (utilisé ailleurs pour classer les entreprises par leur secteur RÉEL,
+// ex. onglet Secteur/filtre Classement : aucune entreprise n'a jamais "thematiques"
+// comme secteur, l'y ajouter créerait un filtre toujours vide sur ces autres onglets).
+// Demande explicite : des chaînes de valeur transversales (ex. "l'électrique" — batteries,
+// stockage, maritime, transport) qui ne rentrent dans AUCUN des 11 secteurs GICS pris
+// isolément, pour ne pas les entasser dans "Autre / non classé" au fil du temps.
+const CERVEAU_EXTRA_SECTORS = [{ key:'thematiques', label:'🔗 Thématiques transversales' }];
 function cerveauSectorLabel(key){
-  return (GICS_SECTORS.find(s => s.key === key) || { label:'Autre / non classé' }).label;
+  const all = GICS_SECTORS.concat(CERVEAU_EXTRA_SECTORS);
+  return (all.find(s => s.key === key) || { label:'Autre / non classé' }).label;
 }
 
 function renderCerveau(){
@@ -11306,7 +11316,7 @@ function renderCerveau(){
 }
 
 function renderCerveauSecteurs(box){
-  const allSectors = GICS_SECTORS.concat([{ key:'autre', label:'Autre / non classé' }]);
+  const allSectors = GICS_SECTORS.concat(CERVEAU_EXTRA_SECTORS).concat([{ key:'autre', label:'Autre / non classé' }]);
   box.innerHTML = `
     <div class="cerveau-actions"><button class="zoom-btn objectifs-export" id="cerveauExportBtn">⭳ Exporter</button></div>
     <div class="sector-grid">${allSectors.map(s => {

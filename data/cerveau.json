@@ -1,1 +1,78 @@
-{}
+{
+  "chains": {
+    "thematiques": [
+      {
+        "id": "c-electrique-batterie",
+        "nom": "Véhicule électrique & chaîne batterie",
+        "phases": [
+          {
+            "nom": "Matières premières (lithium, cobalt, nickel, recyclage)",
+            "entreprises": [
+              { "nom": "Albemarle", "image": "", "legende": "Leader mondial de la production de lithium (Chili, Australie, US)." },
+              { "nom": "SQM", "image": "", "legende": "Sociedad Química y Minera — lithium chilien, un des plus gros producteurs mondiaux." },
+              { "nom": "Pilbara Minerals", "image": "", "legende": "Producteur australien de spodumène (concentré de lithium), coté ASX." },
+              { "nom": "Glencore", "image": "", "legende": "Négociant/mineur diversifié — gros producteur de cobalt et nickel." },
+              { "nom": "Umicore", "image": "", "legende": "Belge — matériaux de cathode + recyclage de batteries en fin de vie." }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Fabrication de cellules & packs batterie",
+            "entreprises": [
+              { "nom": "CATL", "image": "", "legende": "Contemporary Amperex Technology — n°1 mondial des cellules Li-ion, Chine." },
+              { "nom": "LG Energy Solution", "image": "", "legende": "Corée du Sud — fournisseur majeur des constructeurs occidentaux (GM, Tesla, VW...)." },
+              { "nom": "Panasonic", "image": "", "legende": "Partenaire historique de Tesla (Gigafactory Nevada)." },
+              { "nom": "Samsung SDI", "image": "", "legende": "Corée du Sud — cellules pour VE et stockage stationnaire." },
+              { "nom": "SK On", "image": "", "legende": "Filiale batterie de SK Group (Corée) — non cotée séparément, reportée dans SK Innovation." },
+              { "nom": "BYD", "image": "", "legende": "Chine — fabrique ses propres cellules (Blade Battery) en plus d'être constructeur." }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Stockage d'énergie (stationnaire, réseau)",
+            "entreprises": [
+              { "nom": "Fluence Energy", "image": "", "legende": "Pure-player du stockage stationnaire grande échelle, JV Siemens/AES." },
+              { "nom": "Tesla", "image": "", "legende": "Division Megapack/Powerwall — stockage stationnaire en plus des véhicules." },
+              { "nom": "Sungrow", "image": "", "legende": "Chine — onduleurs solaires + solutions de stockage batterie." },
+              { "nom": "Enphase Energy", "image": "", "legende": "Stockage résidentiel couplé au solaire, marché US principalement." }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Constructeurs — véhicules électriques",
+            "entreprises": [
+              { "nom": "Tesla", "image": "", "legende": "Pionnier et leader historique du VE en valeur de marché." },
+              { "nom": "BYD", "image": "", "legende": "Leader mondial en volumes (VE + hybrides rechargeables), Chine." },
+              { "nom": "Rivian", "image": "", "legende": "Pure-player américain — pickups et utilitaires électriques." },
+              { "nom": "Volkswagen", "image": "", "legende": "Déjà suivi — gamme ID./électrification du groupe (Sheet)." },
+              { "nom": "Mercedes-Benz Group", "image": "", "legende": "Déjà suivi — gamme EQ (Sheet)." }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Électrification maritime",
+            "entreprises": [
+              { "nom": "Wärtsilä", "image": "", "legende": "Finlande — motorisation et propulsion navale, gamme hybride/électrique." },
+              { "nom": "Kongsberg Gruppen", "image": "", "legende": "Norvège — systèmes de propulsion électrique et navigation autonome." },
+              { "nom": "Corvus Energy", "image": "", "legende": "Norvège/Canada — spécialiste batteries marines. Non coté (à titre informatif)." }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Infrastructure de recharge",
+            "entreprises": [
+              { "nom": "ChargePoint", "image": "", "legende": "Un des plus gros réseaux de bornes de recharge aux États-Unis." },
+              { "nom": "EVgo", "image": "", "legende": "Réseau de recharge rapide US, forte présence en Californie." },
+              { "nom": "Alfen", "image": "", "legende": "Pays-Bas — bornes de recharge + solutions de stockage réseau." }
+            ],
+            "blocsLibres": [
+              { "image": "", "texte": "À noter : le réseau Tesla Supercharger n'est pas une entité cotée séparément — c'est une division de Tesla, déjà présente dans la phase Constructeurs." }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "notes": {},
+  "analyses": {}
+}
