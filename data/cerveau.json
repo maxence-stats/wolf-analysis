@@ -782,6 +782,103 @@
             "blocsLibres": []
           }
         ]
+      },
+      {
+        "id": "c-equipements-lourds",
+        "nom": "Equipements Industriels Lourds - de la terre au chantier",
+        "sousSecteurPath": [],
+        "rev": 1,
+        "phases": [
+          {
+            "nom": "Machines de Construction & Agricoles",
+            "groupe": {
+              "num": "01",
+              "label": "MACHINES DE CONSTRUCTION & AGRICOLES",
+              "tagline": "Les machines qui construisent routes, batiments et cultivent les terres - un oligopole mondial tres concentre"
+            },
+            "entreprises": [
+              {
+                "nom": "Caterpillar",
+                "image": "data/logos/CAT.png",
+                "legende": "US - premier fabricant mondial d'engins de construction et miniers.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Komatsu",
+                "image": "data/logos/6301.T.png",
+                "legende": "Japon - deuxieme fabricant mondial d'engins de construction et miniers, juste derriere Caterpillar.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Deere & Company",
+                "image": "data/logos/DE.png",
+                "legende": "US - premier fabricant mondial de materiel agricole (John Deere), aussi present en construction.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          }
+        ]
+      },
+      {
+        "id": "c-transport-logistique",
+        "nom": "Transport & Logistique - des airs a la derniere livraison",
+        "sousSecteurPath": [],
+        "rev": 1,
+        "phases": [
+          {
+            "nom": "Compagnies Aeriennes",
+            "groupe": {
+              "num": "01",
+              "label": "COMPAGNIES AERIENNES",
+              "tagline": "Transportent passagers (et une partie du fret) par la voie des airs"
+            },
+            "entreprises": [
+              {
+                "nom": "Delta Air Lines",
+                "image": "data/logos/DAL.png",
+                "legende": "US - une des plus grosses compagnies aeriennes mondiales par chiffre d'affaires.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Fret Aerien & Express",
+            "groupe": {
+              "num": "02",
+              "label": "FRET AERIEN & EXPRESS",
+              "tagline": "Livraison express mondiale - un duopole tres etabli aux Etats-Unis"
+            },
+            "entreprises": [
+              {
+                "nom": "FedEx",
+                "image": "data/logos/FDX.png",
+                "legende": "US - pionnier de la livraison express mondiale au lendemain.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "UPS",
+                "image": "data/logos/UPS.png",
+                "legende": "US - avec FedEx, forme un duopole quasi total sur le colis express americain.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          }
+        ]
       }
     ],
     "finance": [
@@ -1674,7 +1771,7 @@
         "id": "c-materiaux-complete",
         "nom": "Matériaux — de la mine au produit fini",
         "sousSecteurPath": [],
-        "rev": 2,
+        "rev": 3,
         "phases": [
           {
             "nom": "Métaux & mines",
@@ -1806,9 +1903,44 @@
             "blocsLibres": []
           },
           {
-            "nom": "Emballage",
+            "nom": "Materiaux de Construction",
             "groupe": {
               "num": "04",
+              "label": "MATERIAUX DE CONSTRUCTION",
+              "tagline": "Ciment et granulats - la sous-industrie qui construit villes et infrastructures, jamais couverte ici"
+            },
+            "entreprises": [
+              {
+                "nom": "Holcim",
+                "image": "data/logos/HOLN.SW.png",
+                "legende": "Suisse - premier cimentier mondial.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "CRH",
+                "image": "data/logos/CRH.png",
+                "legende": "Irlande/US - un des tout premiers groupes mondiaux de materiaux de construction (granulats, ciment, asphalte).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Cemex",
+                "image": "data/logos/CX.png",
+                "legende": "Mexique - un des plus gros cimentiers mondiaux, tres present en Amerique.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Emballage",
+            "groupe": {
+              "num": "05",
               "label": "CONDITIONNEMENT",
               "tagline": "Emballage — dernier maillon avant le produit fini"
             },
@@ -1848,7 +1980,7 @@
         "id": "c-conso-base-complete",
         "nom": "Consommation de base — du champ au foyer",
         "sousSecteurPath": [],
-        "rev": 1,
+        "rev": 2,
         "phases": [
           {
             "nom": "Agroalimentaire & négoce",
@@ -1986,6 +2118,57 @@
               }
             ],
             "blocsLibres": []
+          },
+          {
+            "nom": "Produits du Foyer & Tabac",
+            "groupe": {
+              "num": "04",
+              "label": "PRODUITS DU FOYER & TABAC",
+              "tagline": "Deux sous-industries a part de la consommation de base, jamais couvertes ici"
+            },
+            "entreprises": [
+              {
+                "nom": "Procter & Gamble",
+                "image": "data/logos/PG.png",
+                "legende": "US - premier groupe mondial de produits d'hygiene et d'entretien du foyer (Gillette, Pampers, Ariel).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Unilever",
+                "image": "data/logos/UL.png",
+                "legende": "Royaume-Uni/Pays-Bas - un des tout premiers groupes mondiaux de produits de grande consommation (Dove, Knorr, Persil).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Colgate-Palmolive",
+                "image": "data/logos/CL.png",
+                "legende": "US - leader mondial des produits d'hygiene bucco-dentaire.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Philip Morris International",
+                "image": "data/logos/PM.png",
+                "legende": "US - premier cigarettier mondial hors Chine et hors USA, forte transition vers le sans-fumee (IQOS).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "British American Tobacco",
+                "image": "data/logos/BTI.png",
+                "legende": "Royaume-Uni - un des plus gros cigarettiers mondiaux (Lucky Strike, Camel hors USA).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
           }
         ]
       }
@@ -1995,7 +2178,7 @@
         "id": "c-conso-discretionnaire-complete",
         "nom": "Consommation discrétionnaire",
         "sousSecteurPath": [],
-        "rev": 1,
+        "rev": 2,
         "phases": [
           {
             "nom": "Luxe",
@@ -2173,6 +2356,33 @@
                 "texte": "Ces 4 catégories (Luxe, E-commerce, Automobile, Hôtellerie & loisirs) sont regroupées ici pour la navigation, mais ne forment PAS une chaîne de valeur physique commune — contrairement à Matériaux ou Technologies de l'information, il n'y a pas de dépendance séquentielle entre elles."
               }
             ]
+          },
+          {
+            "nom": "Textile & Equipement Sportif",
+            "groupe": {
+              "num": "05",
+              "label": "TEXTILE & EQUIPEMENT SPORTIF",
+              "tagline": "Distinct du luxe (phase 01) - articles de sport et mode grand public"
+            },
+            "entreprises": [
+              {
+                "nom": "Nike",
+                "image": "data/logos/NKE.png",
+                "legende": "US - premier equipementier sportif mondial par chiffre d'affaires.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Adidas",
+                "image": "data/logos/ADS.DE.png",
+                "legende": "Allemagne - deuxieme equipementier sportif mondial.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
           }
         ]
       }
