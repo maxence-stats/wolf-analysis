@@ -286,9 +286,6 @@
   .classement-rend-tag{font-family:var(--font-mono);font-size:10px;font-weight:600;padding:2px 7px;border-radius:8px;}
   .classement-rend-tag.fcf{color:var(--gold);background:rgba(217,164,65,0.12);}
   .classement-rend-tag.ocf{color:var(--blue);background:rgba(74,159,224,0.12);}
-  .classement-add-btn{flex-shrink:0;width:24px;height:24px;border-radius:7px;border:1px solid var(--hair);background:var(--panel);color:var(--text-dim);font-size:14px;line-height:1;cursor:pointer;transition:background .12s ease,color .12s ease,border-color .12s ease;}
-  .classement-add-btn:hover{border-color:var(--gold);color:var(--gold);}
-  .classement-add-btn.active{background:rgba(79,209,165,0.15);border-color:var(--green);color:var(--green);cursor:default;}
   @media (max-width:1300px){
     .classement-grid{grid-template-columns:1fr;}
   }

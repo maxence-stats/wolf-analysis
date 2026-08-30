@@ -4050,13 +4050,13 @@ function renderSectorView(){
    opportunité de valorisation (écart de valeur, colonne K,
    négatif = sous-valorisé = plus intéressant, tri croissant)
    ============================================================ */
-function classementRowHtml(nom, logo, rank, valueText, cls, rendHtml, showAddBtn, sourceLabel){
+// Bouton "+" d'ajout direct au portefeuille dividende RETIRÉ (demande explicite :
+// "il faut l'enlever... pour l'ajout des entreprises, ça sera directement dans
+// l'onglet portefeuille dividende") — l'ajout se fait désormais exclusivement via
+// #dividendeAddSearch (voir initDividendPortfolio()), déjà en place et fonctionnel.
+function classementRowHtml(nom, logo, rank, valueText, cls, rendHtml, sourceLabel){
   const safe = nom.replace(/"/g,'&quot;');
   const inSheet = !!companies[nom];
-  const inDividendPortfolio = showAddBtn && dividendPortfolioStore.positions[nom] != null;
-  const addBtn = showAddBtn
-    ? `<button class="classement-add-btn${inDividendPortfolio ? ' active' : ''}" data-action="dividend-add" data-nom="${safe}" title="${inDividendPortfolio ? 'Déjà dans le portefeuille dividende' : 'Ajouter au portefeuille dividende'}">${inDividendPortfolio ? '✓' : '+'}</button>`
-    : '';
   // Badge "Mon objectif" : signale que CETTE ligne utilise le multiple enregistré par
   // l'utilisateur en Valorisation (pas le calcul auto FMP) — demande explicite ("tu es
   // censé prendre mes résultats qui ont été enregistrés"), utile de voir laquelle des
@@ -4071,7 +4071,6 @@ function classementRowHtml(nom, logo, rank, valueText, cls, rendHtml, showAddBtn
       <span class="classement-name">${nom}</span>
       ${badge}
       <span class="classement-value${cls ? ' ' + cls : ''}">${valueText}</span>
-      ${addBtn}
     </div>
     ${rendHtml || ''}
   </div>`;
@@ -4248,8 +4247,8 @@ function renderClassement(){
   const divRight = byDiv.slice(half);
   const empty = '<div class="objectifs-empty">Aucune donnée disponible pour ce secteur.</div>';
 
-  divLeftBox.innerHTML = divLeft.length ? divLeft.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.rendementDiv), null, null, r.inSheet)).join('') : empty;
-  divRightBox.innerHTML = divRight.map((r, i) => classementRowHtml(r.nom, r.logo, half + i + 1, fmtPct(r.rendementDiv), null, null, r.inSheet)).join('');
+  divLeftBox.innerHTML = divLeft.length ? divLeft.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.rendementDiv), null, null)).join('') : empty;
+  divRightBox.innerHTML = divRight.map((r, i) => classementRowHtml(r.nom, r.logo, half + i + 1, fmtPct(r.rendementDiv), null, null)).join('');
 
   // ecartPrix (voir classementValuationFor ci-dessus) : (prixActuel - prixJuste) /
   // prixJuste — NÉGATIF = prix actuel EN DESSOUS de la juste valeur = sous-valorisée =
@@ -4271,10 +4270,10 @@ function renderClassement(){
   // couleur CSS, pas le sens sous-valorisé/survalorisé (qui reste correct par ailleurs,
   // ex. dans l'export PDF) — ne pas "corriger" ce mapping en le pensant inversé par erreur.
   valoSousBox.innerHTML = sousValo.length
-    ? sousValo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartPrix), 'neg', r.inSheet ? classementRendementRowHtml(r.nom) : null, false, r.valuationSource)).join('')
+    ? sousValo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartPrix), 'neg', r.inSheet ? classementRendementRowHtml(r.nom) : null, r.valuationSource)).join('')
     : '<div class="objectifs-empty">Aucune entreprise sous-valorisée.</div>';
   valoSurvaloBox.innerHTML = survalo.length
-    ? survalo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartPrix), 'pos', r.inSheet ? classementRendementRowHtml(r.nom) : null, false, r.valuationSource)).join('')
+    ? survalo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartPrix), 'pos', r.inSheet ? classementRendementRowHtml(r.nom) : null, r.valuationSource)).join('')
     : '<div class="objectifs-empty">Aucune entreprise survalorisée.</div>';
 }
 
@@ -4328,13 +4327,6 @@ function initClassement(){
     const box = document.getElementById(id);
     if (!box) return;
     box.addEventListener('click', e => {
-      const addBtn = e.target.closest('[data-action="dividend-add"]');
-      if (addBtn){
-        addDividendPosition(addBtn.dataset.nom);
-        renderClassement();
-        renderDividendPortfolio();
-        return;
-      }
       // Entreprise hors des 72 du Sheet (base FMP élargie) : pas de fiche Analyse
       // complète pour elle pour l'instant (celle-ci reste construite sur les données
       // Sheet) — clic sans effet plutôt que goToAnalyse() silencieusement no-op.
