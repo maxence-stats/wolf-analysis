@@ -4,6 +4,23 @@ Tableau de bord d'analyse financière (value investing) pour Wolf Academy Invest
 Site statique (HTML/CSS/JS vanilla, pas de framework, pas de backend) qui se
 connecte en direct à un Google Sheet publié comme source de données.
 
+## Comment ouvrir l'appli (IMPORTANT — ne plus ouvrir `index.html` directement)
+
+L'utilisateur ouvrait `index.html` en double-clic (`file://`), ce qui l'exposait de façon
+répétée et à répétition à des versions périmées en cache (voir "Cache navigateur
+agressif" dans Pièges techniques) — `file://` n'a aucun mécanisme HTTP de cache-control,
+donc aucun fix embarqué dans la page elle-même ne peut garantir un contenu frais. Fix
+définitif : un raccourci Bureau **« Wolf Analysis »** (créé via PowerShell/WScript.Shell,
+pointe vers `Lancer Wolf Analysis.bat` à la racine du dépôt) lance un petit serveur HTTP
+local (`.claude/static-server.ps1`, port 8091, démarré en arrière-plan s'il ne tourne pas
+déjà — vérifié par un test de connexion TCP avant de le relancer) puis ouvre
+`http://localhost:8091/` dans le navigateur par défaut. Le serveur envoie
+`Cache-Control: no-cache, no-store, must-revalidate` sur CHAQUE réponse : une version
+périmée devient structurellement impossible tant que ce raccourci est utilisé.
+**L'utilisateur doit désormais toujours utiliser ce raccourci, plus jamais `index.html`
+en direct.** Si le raccourci Bureau disparaît, le recréer avec le même script
+PowerShell (`WshShell.CreateShortcut`, cible = `Lancer Wolf Analysis.bat`).
+
 ## Structure du projet
 
 ```
