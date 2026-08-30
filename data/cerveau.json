@@ -455,6 +455,521 @@
         ],
         "rev": 2
       }
+    ],
+    "finance": [
+      {
+        "id": "c-banques",
+        "nom": "Banques",
+        "sousSecteurPath": [
+          "Banques"
+        ],
+        "rev": 1,
+        "phases": [
+          {
+            "nom": "Banques US",
+            "groupe": {
+              "num": "01",
+              "label": "BANQUES US",
+              "tagline": "Universelles & de détail"
+            },
+            "entreprises": [
+              {
+                "nom": "JPMorgan Chase",
+                "image": "data/logos/JPM.png",
+                "legende": "Plus grande banque américaine par les actifs, forte banque d'investissement.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Wells Fargo",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e2/Wells_Fargo_Logo_%282020%29.svg/250px-Wells_Fargo_Logo_%282020%29.svg.png",
+                "legende": "Forte présence en crédit immobilier et banque de détail domestique.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Citigroup",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Citi_logo_March_2023.svg/250px-Citi_logo_March_2023.svg.png",
+                "legende": "Le réseau international le plus étendu des banques américaines.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Banques européennes",
+            "groupe": {
+              "num": "02",
+              "label": "BANQUES EUROPÉENNES",
+              "tagline": "Universelles & de gestion de fortune"
+            },
+            "entreprises": [
+              {
+                "nom": "BNP Paribas",
+                "image": "data/logos/BNP.PA.png",
+                "legende": "France — première banque de la zone euro par les actifs.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "HSBC",
+                "image": "data/logos/HSBA.L.png",
+                "legende": "Royaume-Uni — forte empreinte Asie, héritage du commerce Europe-Asie.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Banco Santander",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b8/Banco_Santander_Logotipo.svg/250px-Banco_Santander_Logotipo.svg.png",
+                "legende": "Espagne — leader en Amérique latine (Brésil, Mexique) en plus de l'Europe.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "UBS",
+                "image": "https://upload.wikimedia.org/wikipedia/en/thumb/a/ab/UBS_Logo.svg/250px-UBS_Logo.svg.png",
+                "legende": "Suisse — a intégré Credit Suisse en 2023, leader mondial de la gestion de fortune.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Deutsche Bank",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a0/Deutsche_Bank_logo.svg/250px-Deutsche_Bank_logo.svg.png",
+                "legende": "Allemagne — première banque allemande, forte activité de banque d'investissement.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Banques Asie & émergents",
+            "groupe": {
+              "num": "03",
+              "label": "BANQUES ASIE & ÉMERGENTS",
+              "tagline": "Marchés à forte croissance"
+            },
+            "entreprises": [
+              {
+                "nom": "Mitsubishi UFJ Financial Group",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b2/Mitsubishi_UFJ_Financial_Group.svg/250px-Mitsubishi_UFJ_Financial_Group.svg.png",
+                "legende": "Japon — plus grand groupe bancaire japonais.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "DBS Group",
+                "image": "data/logos/DBSDY.png",
+                "legende": "Singapour — plus grande banque d'Asie du Sud-Est par les actifs.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "HDFC Bank",
+                "image": "data/logos/HDB.png",
+                "legende": "Inde — première banque privée indienne par capitalisation.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "ICICI Bank",
+                "image": "data/logos/IBN.png",
+                "legende": "Inde — deuxième banque privée indienne, forte digitalisation.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": [
+              {
+                "image": "",
+                "texte": "Pas de goulot d'étranglement identifié sur ce maillon : le secteur bancaire est structurellement fragmenté (aucun acteur ne détient de position de dépendance critique pour les autres), contrairement aux réseaux de paiement ou à la réassurance."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "c-assurance",
+        "nom": "Assurance",
+        "sousSecteurPath": [
+          "Assurance"
+        ],
+        "rev": 1,
+        "phases": [
+          {
+            "nom": "Assurance vie & santé",
+            "groupe": {
+              "num": "01",
+              "label": "ASSURANCE VIE & SANTÉ",
+              "tagline": "Prévoyance & retraite"
+            },
+            "entreprises": [
+              {
+                "nom": "MetLife",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c6/MetLife_logo.svg/250px-MetLife_logo.svg.png",
+                "legende": "Un des plus gros assureurs vie au monde, US.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Prudential Financial",
+                "image": "https://upload.wikimedia.org/wikipedia/en/thumb/7/7e/Prudential_Financial.svg/250px-Prudential_Financial.svg.png",
+                "legende": "US — assurance vie, retraite et gestion d'actifs (PGIM).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "AIA Group",
+                "image": "data/logos/1299.HK.png",
+                "legende": "Hong Kong — leader de l'assurance vie en Asie-Pacifique.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Assurance dommages (P&C)",
+            "groupe": {
+              "num": "02",
+              "label": "ASSURANCE DOMMAGES (P&C)",
+              "tagline": "Particuliers & entreprises"
+            },
+            "entreprises": [
+              {
+                "nom": "Allianz",
+                "image": "data/logos/ALV.DE.png",
+                "legende": "Allemagne — un des plus gros assureurs mondiaux, aussi gestionnaire d'actifs (PIMCO).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "AXA",
+                "image": "data/logos/CS.PA.png",
+                "legende": "France — assurance dommages et vie, présence mondiale.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Chubb",
+                "image": "data/logos/CB.png",
+                "legende": "Suisse/US — leader mondial de l'assurance dommages aux entreprises.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Progressive",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d8/Logo_of_the_Progressive_Corporation.svg/250px-Logo_of_the_Progressive_Corporation.svg.png",
+                "legende": "US — pionnier de la tarification auto par télématique.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Réassurance",
+            "groupe": {
+              "num": "03",
+              "label": "RÉASSURANCE",
+              "tagline": "Le «second étage» de l'assurance"
+            },
+            "entreprises": [
+              {
+                "nom": "Munich Re",
+                "image": "https://upload.wikimedia.org/wikipedia/en/thumb/b/b8/Munich_Re.svg/250px-Munich_Re.svg.png",
+                "legende": "Allemagne — un des deux plus gros réassureurs mondiaux.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Swiss Re",
+                "image": "data/logos/SREN.SW.png",
+                "legende": "Suisse — l'autre moitié du duopole mondial de la réassurance avec Munich Re.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              }
+            ],
+            "blocsLibres": []
+          }
+        ]
+      },
+      {
+        "id": "c-gestion-actifs-marches",
+        "nom": "Gestion d'actifs & marchés",
+        "sousSecteurPath": [
+          "Gestion d'actifs & marchés"
+        ],
+        "rev": 1,
+        "phases": [
+          {
+            "nom": "Gestion d'actifs",
+            "groupe": {
+              "num": "01",
+              "label": "GESTION D'ACTIFS",
+              "tagline": "Fonds, ETF, mandats"
+            },
+            "entreprises": [
+              {
+                "nom": "BlackRock",
+                "image": "data/logos/BLK.png",
+                "legende": "Premier gestionnaire d'actifs mondial (plateforme iShares/ETF), US.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "State Street",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/65/State-street-logo-final.svg/250px-State-street-logo-final.svg.png",
+                "legende": "US — conservation de titres + gestion d'actifs (gamme SPDR).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Amundi",
+                "image": "data/logos/AMUN.PA.png",
+                "legende": "France — premier gestionnaire d'actifs européen.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "T. Rowe Price",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/T._Rowe_Price_wordmark.svg/250px-T._Rowe_Price_wordmark.svg.png",
+                "legende": "US — gestion active, sans dette, réputée pour sa discipline.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Bourses & infrastructures de marché",
+            "groupe": {
+              "num": "02",
+              "label": "BOURSES & INFRASTRUCTURES",
+              "tagline": "Là où les échanges ont lieu"
+            },
+            "entreprises": [
+              {
+                "nom": "CME Group",
+                "image": "data/logos/CME.png",
+                "legende": "US — quasi-monopole des dérivés de taux et de matières premières américains.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Intercontinental Exchange",
+                "image": "data/logos/ICE.png",
+                "legende": "US — possède le NYSE, marchés dérivés énergie/matières premières.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "London Stock Exchange Group",
+                "image": "data/logos/LSEG.L.png",
+                "legende": "Royaume-Uni — bourse historique + données financières (Refinitiv).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Nasdaq",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/NASDAQ_Logo.svg/250px-NASDAQ_Logo.svg.png",
+                "legende": "US — bourse technologique + fournisseur de technologie boursière à d'autres places.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Deutsche Börse",
+                "image": "https://upload.wikimedia.org/wikipedia/en/thumb/0/0c/Deutsche_B%C3%B6rse.svg/250px-Deutsche_B%C3%B6rse.svg.png",
+                "legende": "Allemagne — bourse de Francfort + chambre de compensation Eurex/Clearstream.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Données financières & indices",
+            "groupe": {
+              "num": "03",
+              "label": "DONNÉES & INDICES",
+              "tagline": "Le péage de l'information financière"
+            },
+            "entreprises": [
+              {
+                "nom": "S&P Global",
+                "image": "data/logos/SPGI.png",
+                "legende": "US — agence de notation + indices (S&P 500) + données de marché.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Moody's",
+                "image": "data/logos/MCO.png",
+                "legende": "US — l'autre moitié du duopole mondial de la notation de crédit avec S&P.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "MSCI",
+                "image": "data/logos/MSCI.png",
+                "legende": "US — indices de référence mondiaux, très coûteux à substituer pour un fonds déjà lancé.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "FactSet",
+                "image": "data/logos/FDS.png",
+                "legende": "US — terminaux de données et analytique pour professionnels de la finance.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          }
+        ]
+      },
+      {
+        "id": "c-paiements-fintech",
+        "nom": "Paiements & fintech",
+        "sousSecteurPath": [
+          "Paiements & fintech"
+        ],
+        "rev": 1,
+        "phases": [
+          {
+            "nom": "Réseaux de paiement (rails)",
+            "groupe": {
+              "num": "01",
+              "label": "RÉSEAUX DE PAIEMENT",
+              "tagline": "Le duopole mondial des cartes"
+            },
+            "entreprises": [
+              {
+                "nom": "Visa",
+                "image": "data/logos/V.png",
+                "legende": "US — plus grand réseau mondial de cartes de paiement, duopole avec Mastercard.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Mastercard",
+                "image": "data/logos/MA.png",
+                "legende": "US — l'autre moitié du duopole mondial des réseaux de cartes.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Processeurs & plateformes",
+            "groupe": {
+              "num": "02",
+              "label": "PROCESSEURS & PLATEFORMES",
+              "tagline": "Entre le commerçant et la banque"
+            },
+            "entreprises": [
+              {
+                "nom": "PayPal",
+                "image": "data/logos/PYPL.png",
+                "legende": "US — pionnier du paiement en ligne, possède aussi Venmo.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Block",
+                "image": "data/logos/XYZ.png",
+                "legende": "US — Square (paiement commerçant) + Cash App.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Fiserv",
+                "image": "data/logos/FI.png",
+                "legende": "US — infrastructure de paiement et cœur bancaire pour les banques (Clover).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Adyen",
+                "image": "data/logos/ADYEN.AS.png",
+                "legende": "Pays-Bas — plateforme de paiement unifiée pour les grands marchands mondiaux.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Fintech & néobanques",
+            "groupe": {
+              "num": "03",
+              "label": "FINTECH & NÉOBANQUES",
+              "tagline": "Challengers 100% digitaux"
+            },
+            "entreprises": [
+              {
+                "nom": "SoFi Technologies",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/SoFi_logo.svg/250px-SoFi_logo.svg.png",
+                "legende": "US — néobanque + prêts étudiants/personnels, licence bancaire complète.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Nu Holdings",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f7/Nubank_logo_2021.svg/250px-Nubank_logo_2021.svg.png",
+                "legende": "Brésil (Nubank) — plus grande néobanque d'Amérique latine par le nombre de clients.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          }
+        ]
+      }
     ]
   },
   "notes": {},
