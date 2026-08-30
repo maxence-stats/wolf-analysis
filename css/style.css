@@ -396,8 +396,8 @@
   /* ---------- WATCHLIST ---------- */
   .watchlist-toprow{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:14px;}
   .watchlist-search-wrap{max-width:360px;margin-bottom:0;flex:1;}
-  .watchlist-chip.filtered-out{display:none;}
-  .watchlist-pool{display:flex;flex-wrap:wrap;gap:10px;padding:16px;background:var(--card-bg);border:var(--card-border);border-radius:14px;box-shadow:var(--shadow-card);margin-bottom:20px;min-height:76px;transition:background .12s ease;}
+  .watchlist-pool{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:16px;background:var(--card-bg);border:var(--card-border);border-radius:14px;box-shadow:var(--shadow-card);margin-bottom:20px;min-height:76px;transition:background .12s ease;}
+  .watchlist-pool-hint{font-size:12.5px;color:var(--text-faint);font-style:italic;}
   .watchlist-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;}
   .watchlist-column{background:var(--card-bg);border:var(--card-border);border-radius:14px;padding:16px;box-shadow:var(--shadow-card);}
   .watchlist-column h3{font-family:var(--font-display);font-size:14px;font-weight:700;margin:0 0 12px;}
@@ -449,6 +449,27 @@
   /* Fantôme qui suit le curseur — cloné depuis la carte au mousedown, détruit au
      mouseup. z-index élevé pour rester au-dessus de tout (dont la modale de zoom). */
   .tierlist-ghost{position:fixed;z-index:2000;pointer-events:none;opacity:0.92;box-shadow:0 10px 26px rgba(0,0,0,0.45);transform:rotate(-2deg);}
+  /* Parcours par secteur (remplace le pool complet, redondant avec la recherche) —
+     grille de bulles cliquables, même gabarit visuel que .tierlist-card. */
+  .tierlist-sector-browse{display:flex;flex-wrap:wrap;gap:10px;padding:14px;margin-bottom:10px;background:var(--card-bg);border:var(--card-border);border-radius:14px;box-shadow:var(--shadow-card);}
+  .tierlist-sector-item{display:flex;flex-direction:column;align-items:center;gap:4px;width:64px;cursor:pointer;padding:6px;border-radius:10px;transition:background .12s ease;}
+  .tierlist-sector-item:hover{background:rgba(217,164,65,0.10);}
+  .tierlist-sector-item img{width:40px;height:40px;border-radius:50%;background:#fff;object-fit:contain;padding:5px;border:1px solid var(--hair);}
+  .tierlist-sector-item span{font-size:10.5px;color:var(--text-dim);text-align:center;line-height:1.25;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .tierlist-sector-item.active{opacity:0.5;}
+  .tierlist-sector-item.active img{box-shadow:0 0 0 2px var(--gold);}
+  /* Formulaire inline d'enregistrement daté — pas de prompt(), voir CLAUDE.md. */
+  .tierlist-save-form{display:flex;align-items:center;gap:10px;padding:12px 14px;margin-bottom:10px;background:var(--card-bg);border:var(--card-border);border-radius:14px;box-shadow:var(--shadow-card);}
+  .tierlist-save-form input{flex:1;max-width:340px;background:var(--panel);border:1px solid var(--hair);border-radius:20px;padding:8px 16px;color:var(--text);font-family:var(--font-body);font-size:13px;}
+  .tierlist-history-panel{display:flex;flex-direction:column;gap:8px;padding:14px;margin-bottom:10px;background:var(--card-bg);border:var(--card-border);border-radius:14px;box-shadow:var(--shadow-card);}
+  .tierlist-history-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;background:var(--panel);border-radius:10px;border:1px solid var(--hair);}
+  .tierlist-history-info{display:flex;flex-direction:column;gap:2px;}
+  .tierlist-history-info strong{font-size:13px;color:var(--text);}
+  .tierlist-history-info span{font-size:11.5px;color:var(--text-faint);}
+  .tierlist-history-actions{display:flex;gap:8px;flex-shrink:0;}
+  .tierlist-history-actions button{font-family:var(--font-mono);font-size:12px;padding:6px 12px;border-radius:16px;border:1px solid var(--hair);background:var(--panel-2);color:var(--text-dim);cursor:pointer;white-space:nowrap;}
+  .tierlist-history-actions button:hover{border-color:var(--gold);color:var(--text);}
+  .tierlist-history-actions button[data-tierlist-history-delete]:hover{border-color:var(--red);color:var(--red);}
 
   /* ---------- DOCUMENTS FINANCIERS (structure seule, pas de données pour l'instant) ---------- */
   .documents-header{display:flex;align-items:center;gap:14px;margin:4px 0 16px;}

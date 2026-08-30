@@ -876,10 +876,25 @@
           <input type="text" id="tierListSearch" class="search-input" placeholder="Chercher une entreprise (toute la base FMP)…" autocomplete="off">
           <div class="search-suggestions" id="tierListSuggestions"></div>
         </div>
+        <select id="tierListSectorFilter" class="search-input" style="max-width:220px;">
+          <option value="">Parcourir par secteur…</option>
+        </select>
         <button class="zoom-btn objectifs-export" id="tierListExportBtn">⭳ Exporter</button>
         <button class="zoom-btn objectifs-export" id="tierListExportPdfBtn">🖨 Exporter PDF</button>
         <button class="zoom-btn" id="tierListResetBtn" title="Remet toutes les entreprises classées dans le pool">↺ Réinitialiser</button>
       </div>
+      <div class="tierlist-sector-browse" id="tierListSectorBrowse" style="display:none;"></div>
+
+      <div class="tierlist-toprow" style="margin-top:10px;">
+        <button class="zoom-btn objectifs-export" id="tierListSaveBtn">💾 Enregistrer ce classement</button>
+        <button class="zoom-btn objectifs-export" id="tierListHistoryBtn">🕐 Historique</button>
+      </div>
+      <div class="tierlist-save-form" id="tierListSaveForm" style="display:none;">
+        <input type="text" id="tierListSaveLabel" placeholder="Nom de ce classement (ex. Vidéo du 15/09)…">
+        <button class="refresh-btn" id="tierListSaveConfirmBtn">Enregistrer</button>
+        <button class="cerveau-btn-cancel" id="tierListSaveCancelBtn">Annuler</button>
+      </div>
+      <div class="tierlist-history-panel" id="tierListHistoryPanel" style="display:none;"></div>
 
       <div class="tierlist-layout">
         <div class="tierlist-board" id="tierListBoard"></div>
@@ -890,7 +905,6 @@
         </div>
       </div>
 
-      <div class="section-label" style="margin-top:16px;">Pool — entreprises non classées</div>
       <div class="tierlist-pool tierlist-dropzone" id="tierListPool" data-tier=""></div>
     </div>
 

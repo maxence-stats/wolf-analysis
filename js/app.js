@@ -10648,25 +10648,17 @@ function watchlistChipHtml(nom, logo){
   return `<div class="watchlist-chip" data-nom="${safe}" title="${safe}"><img src="${logo || ''}" alt=""></div>`;
 }
 
-function applyWatchlistSearchFilter(){
-  const input = document.getElementById('watchlistSearch');
-  if (!input) return;
-  const q = stripAccents(input.value.trim().toLowerCase());
-  document.querySelectorAll('#watchlistPool .watchlist-chip[data-nom]').forEach(chip => {
-    const match = !q || stripAccents(chip.dataset.nom.toLowerCase()).includes(q);
-    chip.classList.toggle('filtered-out', !match);
-  });
-}
-
+// Le pool affichait TOUTES les entreprises non classées en gros logos — redondant
+// depuis l'ajout de la recherche élargie (#watchlistSearch, toute la base FMP) qui
+// couvre déjà l'ajout : "ça ne sert plus à rien de me proposer toutes les entreprises
+// vu que j'ai une barre de recherche." Le pool reste un point de dépôt VALIDE pour
+// retirer une entreprise d'une liste (glisser depuis une colonne jusqu'ici), juste
+// affiché comme une simple zone d'indication plutôt qu'une galerie de logos.
 function renderWatchlist(){
   const pool = document.getElementById('watchlistPool');
   if (!pool) return;
 
-  const unassigned = Object.keys(companies).filter(nom => !watchlistLocationOf(nom));
-  pool.innerHTML = unassigned.length
-    ? unassigned.map(nom => watchlistChipHtml(nom, companyLogoUrl(nom))).join('')
-    : '<div class="objectifs-empty">Toutes les entreprises du Sheet sont déjà classées dans une liste.</div>';
-  applyWatchlistSearchFilter();
+  pool.innerHTML = '<div class="watchlist-pool-hint">Glisse une entreprise ici pour la retirer d\'une liste — utilise la recherche ci-dessus pour en ajouter une nouvelle.</div>';
 
   // Demande explicite : "je suis censé avoir toutes les entreprises qui sont
   // disponibles, plus juste celles qui étaient dans mon Excel" — les listes affichent
@@ -10807,10 +10799,7 @@ function initWatchlist(){
   });
 
   const searchInput = document.getElementById('watchlistSearch');
-  if (searchInput) searchInput.addEventListener('input', () => {
-    applyWatchlistSearchFilter();
-    renderWatchlistSuggestions(searchInput.value);
-  });
+  if (searchInput) searchInput.addEventListener('input', () => renderWatchlistSuggestions(searchInput.value));
   const suggestionsBox = document.getElementById('watchlistSuggestions');
   if (suggestionsBox){
     suggestionsBox.addEventListener('click', e => {
@@ -10934,15 +10923,6 @@ function setTierListEntry(nom, tierKey){
   persistTierListLocal();
   renderTierList();
 }
-function applyTierListSearchFilter(){
-  const input = document.getElementById('tierListSearch');
-  if (!input) return;
-  const q = stripAccents(input.value.trim().toLowerCase());
-  document.querySelectorAll('#tierListPool .tierlist-card[data-nom]').forEach(card => {
-    const match = !q || stripAccents(card.dataset.nom.toLowerCase()).includes(q);
-    card.classList.toggle('filtered-out', !match);
-  });
-}
 function tierListCardHtml(nom){
   const logo = companyLogoUrl(nom);
   const safe = nom.replace(/"/g, '&quot;');
@@ -10959,12 +10939,9 @@ function renderTierList(){
   if (!board || !pool) return;
 
   // Board/Sélection du jour : itèrent tierListStore (TOUTE entreprise déjà classée,
-  // Sheet ou base FMP élargie), plus Object.keys(companies) — sinon une entreprise
-  // FMP-only ajoutée via la recherche (voir renderTierListSuggestions()) disparaîtrait
-  // silencieusement dès qu'elle est classée dans un tier, même bug que la Watchlist
-  // avant sa propre extension. Le POOL reste volontairement limité aux 72 du Sheet
-  // (demande explicite : "je ne suis pas censé avoir [un pool avec toute la base], il y
-  // en aura trop") — c'est justement pour ça que la recherche existe.
+  // Sheet ou base FMP élargie) — sinon une entreprise FMP-only ajoutée via la recherche
+  // (voir renderTierListSuggestions()) disparaîtrait silencieusement dès qu'elle est
+  // classée dans un tier, même bug que la Watchlist avant sa propre extension.
   board.innerHTML = TIER_LIST_TIERS.map(t => {
     const noms = Object.keys(tierListStore).filter(nom => tierListStore[nom] === t.key);
     return `<div class="tierlist-row">
@@ -10982,11 +10959,11 @@ function renderTierList(){
     selection.innerHTML = selNoms.map(tierListCardHtml).join('');
   }
 
-  const unassigned = Object.keys(companies).filter(nom => !tierListLocationOf(nom));
-  pool.innerHTML = unassigned.length
-    ? unassigned.map(tierListCardHtml).join('')
-    : '<div class="objectifs-empty">Toutes les entreprises sont déjà classées dans un tier.</div>';
-  applyTierListSearchFilter();
+  // Pool simplifié en simple indication (retour explicite : "ça ne sert plus à rien de
+  // me mettre pool entreprise non classée, plein d'images" — la recherche + le
+  // navigateur par secteur ci-dessous couvrent déjà l'ajout) — reste un point de dépôt
+  // valide pour retirer une entreprise d'un tier/de la sélection.
+  pool.innerHTML = '<div class="watchlist-pool-hint">Glisse une entreprise ici pour la retirer d\'un tier — utilise la recherche ou le filtre secteur ci-dessus pour en ajouter une nouvelle.</div>';
 }
 
 // Recherche élargie (toute la base FMP locale) — demande explicite : "un sélecteur
@@ -11020,6 +10997,93 @@ function renderTierListSuggestions(query){
     </div>`;
   }).join('');
   box.classList.add('open');
+}
+
+// Navigation par secteur — alternative à la recherche par nom, demande explicite : "tu
+// me laisses la possibilité de sélectionner un secteur directement pour choisir les
+// entreprises aussi, et puis je les mettrai dans sélection du jour." Même source
+// élargie (rankingSummaryData) et même clic direct = ajout à "Sélection du jour" que
+// renderTierListSuggestions() (pas de choix de destination à faire ici non plus).
+function populateTierListSectorFilter(){
+  const select = document.getElementById('tierListSectorFilter');
+  if (!select || select.dataset.filled) return;
+  select.dataset.filled = '1';
+  GICS_SECTORS.concat([{ key:'autre', label:'Autre / non classé' }]).forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.key;
+    opt.textContent = s.label;
+    select.appendChild(opt);
+  });
+}
+function renderTierListSectorBrowse(){
+  const box = document.getElementById('tierListSectorBrowse');
+  const select = document.getElementById('tierListSectorFilter');
+  if (!box || !select) return;
+  const sectorVal = select.value;
+  if (!sectorVal){ box.style.display = 'none'; box.innerHTML = ''; return; }
+  const matches = rankingSummaryData
+    .filter(e => (sectorVal === 'autre' ? !normalizeSector(e.secteur) : normalizeSector(e.secteur) === sectorVal))
+    .sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
+  box.style.display = 'block';
+  box.innerHTML = matches.length
+    ? matches.map(e => {
+        const current = tierListLocationOf(e.nom);
+        const logo = companyLogoUrl(e.nom) || (e.symbol ? `data/logos/${e.symbol}.png` : null);
+        return `<div class="tierlist-sector-item${current ? ' active' : ''}" data-tierlist-sector-add="${escapeHtml(e.nom)}" title="${current ? (current === TIER_LIST_SELECTION_KEY ? 'Déjà dans la sélection du jour' : 'Déjà classée — Tier ' + current) : 'Ajouter à la sélection du jour'}">
+          <img src="${logo || ''}" alt="">
+          <span>${escapeHtml(e.nom)}</span>
+        </div>`;
+      }).join('')
+    : '<div class="objectifs-empty">Aucune entreprise dans ce secteur.</div>';
+}
+
+// Historique de classements datés — demande explicite : "j'ai la possibilité
+// d'enregistrer avec une date... que je puisse la retrouver, que je clique sur un
+// bouton... que je puisse retrouver le classement." Instantané complet de
+// tierListStore à un instant T, horodaté et nommé par l'utilisateur — même pattern de
+// persistance que le reste du site (localStorage), clé séparée du brouillon courant
+// pour ne jamais l'écraser silencieusement.
+const TIER_LIST_HISTORY_LS_KEY = 'wolfAnalysisTierListHistory';
+let tierListHistory = [];
+function loadTierListHistory(){
+  try{
+    const raw = localStorage.getItem(TIER_LIST_HISTORY_LS_KEY);
+    if (raw) tierListHistory = JSON.parse(raw) || [];
+  }catch(e){ /* localStorage indisponible ou JSON corrompu */ }
+}
+function persistTierListHistory(){
+  try{ localStorage.setItem(TIER_LIST_HISTORY_LS_KEY, JSON.stringify(tierListHistory)); }catch(e){ /* quota / navigateur privé */ }
+}
+function saveTierListSnapshot(label){
+  const dateLabel = new Date().toLocaleDateString('fr-FR', { year:'numeric', month:'long', day:'numeric' });
+  tierListHistory.unshift({
+    id: 'th' + Date.now(),
+    label: label.trim() || dateLabel,
+    date: new Date().toISOString(),
+    store: JSON.parse(JSON.stringify(tierListStore)),
+  });
+  persistTierListHistory();
+}
+let tierListHistoryDeleteConfirmingId = null;
+let tierListHistoryLoadConfirmingId = null;
+function renderTierListHistoryPanel(){
+  const panel = document.getElementById('tierListHistoryPanel');
+  if (!panel) return;
+  if (!tierListHistory.length){
+    panel.innerHTML = '<div class="objectifs-empty">Aucun classement enregistré pour l\'instant.</div>';
+    return;
+  }
+  panel.innerHTML = tierListHistory.map(entry => {
+    const dateLabel = new Date(entry.date).toLocaleDateString('fr-FR', { year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit' });
+    const n = Object.keys(entry.store).length;
+    return `<div class="tierlist-history-row">
+      <div class="tierlist-history-info"><strong>${escapeHtml(entry.label)}</strong><span>${dateLabel} — ${n} entreprise${n > 1 ? 's' : ''} classée${n > 1 ? 's' : ''}</span></div>
+      <div class="tierlist-history-actions">
+        <button data-tierlist-history-load="${entry.id}">${tierListHistoryLoadConfirmingId === entry.id ? '⚠️ Remplacer le classement actuel ?' : '↻ Charger'}</button>
+        <button data-tierlist-history-delete="${entry.id}" title="Supprimer">${tierListHistoryDeleteConfirmingId === entry.id ? '⚠️' : '✕'}</button>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function initTierList(){
@@ -11088,10 +11152,7 @@ function initTierList(){
   });
 
   const searchInput = document.getElementById('tierListSearch');
-  if (searchInput) searchInput.addEventListener('input', () => {
-    applyTierListSearchFilter();
-    renderTierListSuggestions(searchInput.value);
-  });
+  if (searchInput) searchInput.addEventListener('input', () => renderTierListSuggestions(searchInput.value));
   const suggestionsBox = document.getElementById('tierListSuggestions');
   if (suggestionsBox){
     suggestionsBox.addEventListener('click', e => {
@@ -11116,6 +11177,88 @@ function initTierList(){
     persistTierListLocal();
     renderTierList();
   });
+
+  populateTierListSectorFilter();
+  loadTierListHistory();
+  const sectorFilter = document.getElementById('tierListSectorFilter');
+  if (sectorFilter) sectorFilter.addEventListener('change', renderTierListSectorBrowse);
+  const sectorBrowse = document.getElementById('tierListSectorBrowse');
+  if (sectorBrowse){
+    sectorBrowse.addEventListener('click', e => {
+      const item = e.target.closest('[data-tierlist-sector-add]');
+      if (!item) return;
+      setTierListEntry(item.dataset.tierlistSectorAdd, TIER_LIST_SELECTION_KEY);
+      renderTierListSectorBrowse();
+    });
+  }
+
+  // Enregistrement daté — formulaire inline (jamais prompt(), voir "Pièges
+  // techniques" CLAUDE.md point 7) plutôt qu'une saisie bloquante.
+  const saveBtn = document.getElementById('tierListSaveBtn');
+  const saveForm = document.getElementById('tierListSaveForm');
+  const saveLabelInput = document.getElementById('tierListSaveLabel');
+  const saveConfirmBtn = document.getElementById('tierListSaveConfirmBtn');
+  const saveCancelBtn = document.getElementById('tierListSaveCancelBtn');
+  if (saveBtn && saveForm) saveBtn.addEventListener('click', () => {
+    saveForm.style.display = saveForm.style.display === 'none' ? 'flex' : 'none';
+    if (saveForm.style.display === 'flex'){
+      saveLabelInput.value = '';
+      saveLabelInput.focus();
+    }
+  });
+  if (saveCancelBtn) saveCancelBtn.addEventListener('click', () => { saveForm.style.display = 'none'; });
+  const doSave = () => {
+    saveTierListSnapshot(saveLabelInput.value);
+    saveForm.style.display = 'none';
+    renderTierListHistoryPanel();
+  };
+  if (saveConfirmBtn) saveConfirmBtn.addEventListener('click', doSave);
+  if (saveLabelInput) saveLabelInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSave(); });
+
+  const historyBtn = document.getElementById('tierListHistoryBtn');
+  const historyPanel = document.getElementById('tierListHistoryPanel');
+  if (historyBtn && historyPanel) historyBtn.addEventListener('click', () => {
+    const opening = historyPanel.style.display === 'none';
+    historyPanel.style.display = opening ? 'block' : 'none';
+    if (opening){ loadTierListHistory(); renderTierListHistoryPanel(); }
+  });
+  if (historyPanel){
+    historyPanel.addEventListener('click', e => {
+      const loadBtn = e.target.closest('[data-tierlist-history-load]');
+      const deleteBtn = e.target.closest('[data-tierlist-history-delete]');
+      if (loadBtn){
+        const id = loadBtn.dataset.tierlistHistoryLoad;
+        if (tierListHistoryLoadConfirmingId !== id){
+          tierListHistoryLoadConfirmingId = id;
+          tierListHistoryDeleteConfirmingId = null;
+          renderTierListHistoryPanel();
+          return;
+        }
+        const entry = tierListHistory.find(h => h.id === id);
+        if (entry){
+          tierListStore = JSON.parse(JSON.stringify(entry.store));
+          persistTierListLocal();
+          renderTierList();
+        }
+        tierListHistoryLoadConfirmingId = null;
+        renderTierListHistoryPanel();
+        return;
+      }
+      if (deleteBtn){
+        const id = deleteBtn.dataset.tierlistHistoryDelete;
+        if (tierListHistoryDeleteConfirmingId !== id){
+          tierListHistoryDeleteConfirmingId = id;
+          tierListHistoryLoadConfirmingId = null;
+          renderTierListHistoryPanel();
+          return;
+        }
+        tierListHistory = tierListHistory.filter(h => h.id !== id);
+        persistTierListHistory();
+        tierListHistoryDeleteConfirmingId = null;
+        renderTierListHistoryPanel();
+      }
+    });
+  }
 }
 
 /* ============================================================
