@@ -1977,11 +1977,9 @@ let exportCartTitle = '';
 function exportCartAsPdf(){
   if (exportCart.length === 0) return;
   const title = exportCartTitle.trim() || 'Wolf Analysis';
-  const panelsHtml = exportCart.map((item, i) => `<div class="chain-pdf-panel">
-      <div class="chain-pdf-watermark">${String(i + 1).padStart(2, '0')}</div>
-      <div class="chain-pdf-panel-head"><div class="chain-pdf-panel-label">${item.title.replace(/</g, '&lt;')}</div></div>
-      <img class="chain-pdf-chart-img" src="${item.dataUrl}" alt="">
-    </div>`).join('');
+  const panelsHtml = exportCart.map((item, i) =>
+    chainPdfPanelWrap(item.title, `<img class="chain-pdf-chart-img" src="${item.dataUrl}" alt="">`, String(i + 1).padStart(2, '0'))
+  ).join('');
   const area = document.getElementById('printArea');
   area.innerHTML = brandedPdfHeader(
     'Export groupé', title,
@@ -2570,28 +2568,62 @@ const ANALYSE_CHART_EXPORT_LIST = [
   ['dette', 'Dette nette / OCF'],
   ['cash', 'Trésorerie & investissements']
 ];
+// Grille de ratios clés reconstruite depuis les valeurs déjà affichées à l'écran (pas un
+// clonage brut de .ratio-grid, qui porte le style ÉCRAN, pas la charte PDF) — même
+// palette pos/neg (vert/rouge) que la carte à l'écran.
+const ANALYSE_PDF_RATIOS = [
+  ['rPrixJuste', 'Prix juste'], ['rPrixCible', 'Prix cible'], ['rEcart', 'Écart de valeur'],
+  ['rRendDiv', 'Rendement du dividende'], ['rRend5', 'Rendement total estimé, 5 ans'],
+  ['rFcfpeg', 'FCF PEG'], ['rMedFcf', 'Médiane P/FCF'], ['rPfcfActuel', 'P/FCF actuel'],
+];
+function analysePdfRatioGridHtml(){
+  const cards = ANALYSE_PDF_RATIOS.map(([id, label]) => {
+    const el = document.getElementById(id);
+    const val = el ? el.textContent : '—';
+    const cls = el ? el.className : '';
+    const sign = cls.includes('pos') ? ' pos' : (cls.includes('neg') ? ' neg' : '');
+    return `<div class="chain-pdf-ratio-card"><div class="chain-pdf-ratio-k">${label}</div><div class="chain-pdf-ratio-v${sign}">${val}</div></div>`;
+  }).join('');
+  return `<div class="chain-pdf-ratio-grid">${cards}</div>`;
+}
+function chainPdfPanelWrap(label, innerHtml, num){
+  return `<div class="chain-pdf-panel">
+    ${num ? `<div class="chain-pdf-watermark">${num}</div>` : ''}
+    <div class="chain-pdf-panel-head"><div class="chain-pdf-panel-label">${label.replace(/</g, '&lt;')}</div></div>
+    ${innerHtml}
+  </div>`;
+}
+// Fiche entreprise — même charte Wolf Academy que le Cerveau numérique et le panier de
+// graphiques (voir exportChainAsPdf/exportCartAsPdf). Demande explicite : "j'ai un
+// bouton en haut de l'onglet Analyse, je puisse exporter et tous les ratios ils
+// s'affichent sur une fiche mise en page bien jolie... en utilisant la même trame."
 function exportAnalyseFullAsPdf(){
   if (!activeCompany) return;
   const latest = companies[activeCompany][companies[activeCompany].length - 1];
   const logo = companyLogoUrl(activeCompany);
-  // Jauge de valorisation (SVG, couleurs déjà en hex réel via THEME.xxx au dessin —
-  // pas de var(--...) à résoudre, l'outerHTML s'imprime tel quel) — demande explicite,
-  // absente jusqu'ici de l'export complet.
-  const gaugeBox = document.querySelector('#pageAnalyse .gauge-card');
-  const gaugeHtml = gaugeBox ? `<div class="print-section"><h3>Positionnement sur l'échelle de valorisation</h3>${gaugeBox.outerHTML}</div>` : '';
-  const ratiosBox = document.querySelector('#pageAnalyse .ratio-grid');
-  const ratiosHtml = ratiosBox ? `<div class="print-section"><h3>Ratios clés</h3>${ratiosBox.outerHTML}</div>` : '';
+  const sectorLine = [latest.secteur, latest.sousSecteur].filter(Boolean).join(' › ');
+
+  const gaugeSvg = document.querySelector('#pageAnalyse #gaugeSvg');
+  const gaugePanel = gaugeSvg ? chainPdfPanelWrap("Positionnement sur l'échelle de valorisation", gaugeSvg.outerHTML) : '';
+
+  const ratioPanel = chainPdfPanelWrap('Ratios clés', analysePdfRatioGridHtml());
+
   const valoBox = document.getElementById('analyseValoCard');
-  const valoHtml = (valoBox && valoBox.style.display !== 'none' && valoBox.innerHTML.trim())
-    ? `<div class="print-section"><h3>Valorisation enregistrée</h3>${valoBox.outerHTML}</div>` : '';
-  const chartsHtml = ANALYSE_CHART_EXPORT_LIST.map(([key, title]) => {
+  const valoPanel = (valoBox && valoBox.style.display !== 'none' && valoBox.innerHTML.trim())
+    ? chainPdfPanelWrap('Valorisation enregistrée', valoBox.innerHTML) : '';
+
+  const chartsHtml = ANALYSE_CHART_EXPORT_LIST.map(([key, title], i) => {
     const chart = chartInstances[key];
     if (!chart) return '';
     const url = chartToPrintDataUrl(chart);
     if (!url) return '';
-    return `<div class="print-section"><h3>${title}</h3><img class="print-chart-img" src="${url}" alt=""></div>`;
+    return chainPdfPanelWrap(title, `<img class="chain-pdf-chart-img" src="${url}" alt="">`, String(i + 1).padStart(2, '0'));
   }).join('');
-  exportSectionAsPdf(activeCompany, (latest.ticker || '') + ' — Analyse complète', gaugeHtml + ratiosHtml + valoHtml + chartsHtml, logo);
+
+  const area = document.getElementById('printArea');
+  area.innerHTML = brandedPdfHeader('Fiche entreprise', activeCompany, (latest.ticker || '') + ' — Analyse complète', 'Wolf Analysis', sectorLine)
+    + gaugePanel + ratioPanel + valoPanel + chartsHtml + brandedPdfFooter();
+  printAreaAfterImagesLoad(area);
 }
 function exportValorisationFullAsPdf(){
   if (!activeCompany) return;

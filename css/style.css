@@ -1292,6 +1292,16 @@
        entreprise — un panneau .chain-pdf-panel générique contenant une image plutôt que
        des puces logo. */
     .chain-pdf-chart-img{position:relative;z-index:1;max-width:100%;border-radius:8px;margin-top:4px;display:block;}
+    .chain-pdf-panel svg{position:relative;z-index:1;width:100%;height:auto;display:block;}
+    /* Fiche entreprise (exportAnalyseFullAsPdf) — grille de ratios sur la même charte,
+       remplace le clonage brut de .ratio-grid (qui reprenait le style écran, pas la
+       charte PDF). */
+    .chain-pdf-ratio-grid{position:relative;z-index:1;display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+    .chain-pdf-ratio-card{background:#1a1a1a;border:1px solid #3a3a3a;border-radius:10px;padding:10px 12px;}
+    .chain-pdf-ratio-k{font-family:var(--font-mono);font-size:8.5px;letter-spacing:0.05em;color:var(--text-dim);text-transform:uppercase;margin-bottom:5px;}
+    .chain-pdf-ratio-v{font-family:var(--font-display);font-size:15px;font-weight:700;color:#fff;}
+    .chain-pdf-ratio-v.pos{color:var(--green);}
+    .chain-pdf-ratio-v.neg{color:var(--red);}
     /* Éditeur PDF : chaque page = la zone imprimable exacte (182mm×269mm, A4 moins la
        marge @page ci-dessous), blocs positionnés en % — identique pixel-pour-pixel à
        l'écran, aucune conversion d'unité nécessaire. */
