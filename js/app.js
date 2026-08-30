@@ -10927,9 +10927,13 @@ function tierListCardHtml(nom){
   const logo = companyLogoUrl(nom);
   const safe = nom.replace(/"/g, '&quot;');
   // Logo seul, pas de nom en texte à côté (demande explicite) — le nom complet reste
-  // accessible en survol via title, même pattern que .watchlist-chip.
+  // accessible en survol via title, même pattern que .watchlist-chip. Bouton ✕ dédié
+  // pour retirer SANS glisser (demande explicite : le clic simple navigue déjà vers la
+  // fiche entreprise, voir initTierList()/pointerup — il fallait un second geste,
+  // distinct, pour le retrait).
   return `<div class="tierlist-card" data-nom="${safe}" title="${safe}">
     ${logo ? `<img src="${logo}" alt="">` : `<span>${nom.charAt(0).toUpperCase()}</span>`}
+    <button type="button" class="tierlist-card-remove" data-tierlist-remove="${safe}" title="Retirer">✕</button>
   </div>`;
 }
 function renderTierList(){
@@ -11024,7 +11028,7 @@ function renderTierListSectorBrowse(){
   const matches = rankingSummaryData
     .filter(e => (sectorVal === 'autre' ? !normalizeSector(e.secteur) : normalizeSector(e.secteur) === sectorVal))
     .sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
-  box.style.display = 'block';
+  box.style.display = 'flex';
   box.innerHTML = matches.length
     ? matches.map(e => {
         const current = tierListLocationOf(e.nom);
@@ -11100,7 +11104,15 @@ function initTierList(){
     ghost.style.top = (y - ghost._offsetY) + 'px';
   }
 
+  page.addEventListener('click', e => {
+    const removeBtn = e.target.closest('[data-tierlist-remove]');
+    if (!removeBtn) return;
+    e.stopPropagation();
+    setTierListEntry(removeBtn.dataset.tierlistRemove, null);
+  });
+
   page.addEventListener('pointerdown', e => {
+    if (e.target.closest('[data-tierlist-remove]')) return;
     const card = e.target.closest('.tierlist-card[data-nom]');
     if (!card) return;
     const nom = card.dataset.nom;

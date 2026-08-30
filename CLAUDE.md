@@ -132,14 +132,25 @@ différents du même fichier — les deux sont codés en dur en haut de `app.js`
    renvoie sans prévenir des points mensuels sur un très long historique. Fix en place :
    timestamps explicites `period1`/`period2` (jamais `range=`) + rééchantillonnage manuel
    côté client (`resampleWeekly()`).
-4. **Cache navigateur agressif sur `<script src="js/app.js">` en `file://`.** Pendant le
-   développement local, Chrome peut continuer à exécuter une version en cache de `app.js`
-   après une modification, même après un rechargement complet de la page (F5, re-navigation,
-   nouvel onglet) — seul un `fetch()` direct de l'URL renvoie le contenu à jour. Symptôme :
-   une fonction ajoutée récemment est `undefined` sur `window` alors que le fichier sur
-   disque est correct. Contournement en session de test : ajouter temporairement un
-   paramètre de cache-bust à l'URL du script (`js/app.js?_test=1`), vérifier, puis le
-   retirer avant de committer. Ne pas laisser ce paramètre en prod.
+4. **Cache navigateur agressif sur `<script src="js/app.js">`/`<link href="css/style.css">`.**
+   Le navigateur de l'utilisateur (pas seulement en `file://` — vu aussi sur un vrai
+   hébergement/serveur) peut continuer à servir une version en cache de `app.js`/
+   `style.css` après une mise à jour, même après un rechargement normal (F5, re-navigation,
+   nouvel onglet) — seul un hard refresh (Ctrl+Shift+R) ou un `fetch()` direct de l'URL
+   renvoie le contenu à jour. Symptôme trompeur : l'utilisateur rapporte qu'une fonctionnalité
+   "ne marche pas"/"n'est pas à jour" alors que le code est correct et fonctionne dans un
+   test frais — vécu à répétition (Classement vide, Comparaison muette, Analyse encore sur
+   Sheet, Documents financiers manquants, toggle bougie/courbe absent : les 5 étaient déjà
+   corrigés, juste jamais vus par l'utilisateur à cause du cache). **Fix permanent en place,
+   ne pas revenir à un cache-bust temporaire retiré avant commit** : `index.html` référence
+   `js/app.js?v=AAAAMMJJx` et `css/style.css?v=AAAAMMJJx` avec une chaîne de version
+   littérale. **Règle impérative : à CHAQUE commit qui touche `js/app.js` OU
+   `css/style.css`, incrémenter cette chaîne de version dans `index.html` (les deux tags)**
+   — sinon le fix ne sert à rien, le navigateur continuera de recycler l'ancienne URL. Le
+   serveur de test local (`.claude/static-server.ps1`) envoie aussi `Cache-Control:
+   no-cache, no-store, must-revalidate` sur toute réponse, en complément (n'aide que les
+   tests via ce serveur, pas l'hébergement réel de l'utilisateur — d'où le paramètre `?v=`
+   qui, lui, fonctionne partout).
 5. **Cascade CSS et ordre des règles.** Une classe utilitaire réutilisant un sélecteur
    générique déjà stylé plus loin dans le fichier (ex. `.objectifs-export` combinée à
    `.zoom-btn`, qui fixe `width:26px` bien après dans `style.css`) peut se faire écraser

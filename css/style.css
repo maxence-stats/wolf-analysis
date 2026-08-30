@@ -446,6 +446,11 @@
   .tierlist-card span{font-family:var(--font-display);font-weight:700;color:var(--bg);font-size:15px;pointer-events:none;}
   .tierlist-card.dragging{opacity:0.3;}
   .tierlist-card.filtered-out{display:none;}
+  /* Retrait sans glisser (le clic simple navigue déjà vers la fiche, voir initTierList())
+     — petit badge ✕ en coin, visible au survol seulement pour ne pas alourdir la bulle. */
+  .tierlist-card{position:relative;}
+  .tierlist-card-remove{position:absolute;top:-4px;right:-4px;width:16px;height:16px;border-radius:50%;background:var(--red);color:#fff;border:1px solid var(--bg);font-size:9px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;opacity:0;transition:opacity .12s ease;padding:0;}
+  .tierlist-card:hover .tierlist-card-remove{opacity:1;}
   /* Fantôme qui suit le curseur — cloné depuis la carte au mousedown, détruit au
      mouseup. z-index élevé pour rester au-dessus de tout (dont la modale de zoom). */
   .tierlist-ghost{position:fixed;z-index:2000;pointer-events:none;opacity:0.92;box-shadow:0 10px 26px rgba(0,0,0,0.45);transform:rotate(-2deg);}
