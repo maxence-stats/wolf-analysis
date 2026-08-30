@@ -454,6 +454,100 @@
           }
         ],
         "rev": 2
+      },
+      {
+        "id": "c-defense-electronique",
+        "nom": "Défense & Aérospatiale — de la plateforme aux capteurs",
+        "sousSecteurPath": [],
+        "rev": 1,
+        "phases": [
+          {
+            "nom": "Systèmes d'Armes & Plateformes",
+            "groupe": {
+              "num": "01",
+              "label": "SYSTÈMES D'ARMES & PLATEFORMES",
+              "tagline": "Avions de combat, missiles, navires et véhicules militaires complets"
+            },
+            "entreprises": [
+              {
+                "nom": "Lockheed Martin",
+                "image": "data/logos/LMT.png",
+                "legende": "US — premier groupe de défense mondial par chiffre d'affaires, avion de combat F-35.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "RTX Corporation",
+                "image": "data/logos/RTX.png",
+                "legende": "US — ex-Raytheon Technologies, missiles et systèmes de défense antiaérienne (Patriot).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Northrop Grumman",
+                "image": "data/logos/NOC.png",
+                "legende": "US — bombardiers furtifs (B-21), systèmes spatiaux et de défense.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "General Dynamics",
+                "image": "data/logos/GD.png",
+                "legende": "US — véhicules blindés terrestres et sous-marins nucléaires.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "BAE Systems",
+                "image": "data/logos/BA.L.png",
+                "legende": "Royaume-Uni — premier groupe de défense européen, navires et véhicules blindés.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Thales",
+                "image": "data/logos/HO.PA.png",
+                "legende": "France — systèmes de défense, radars et électronique embarquée, fort en Europe.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Électronique de Défense & Capteurs",
+            "groupe": {
+              "num": "02",
+              "label": "ÉLECTRONIQUE DE DÉFENSE & CAPTEURS",
+              "tagline": "Radars, communications tactiques et capteurs embarqués dans les plateformes ci-dessus"
+            },
+            "entreprises": [
+              {
+                "nom": "L3Harris Technologies",
+                "image": "data/logos/LHX.png",
+                "legende": "US — spécialiste des communications tactiques et de l'électronique de défense embarquée.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Leonardo",
+                "image": "data/logos/LDO.MI.png",
+                "legende": "Italie — électronique de défense et hélicoptères, un des plus gros groupes de défense européens.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          }
+        ]
       }
     ],
     "finance": [
@@ -944,7 +1038,7 @@
         "id": "c-sante-complete",
         "nom": "Santé — de la recherche au patient",
         "sousSecteurPath": [],
-        "rev": 2,
+        "rev": 3,
         "phases": [
           {
             "nom": "Biotechnologies",
@@ -998,9 +1092,36 @@
             "blocsLibres": []
           },
           {
-            "nom": "Laboratoires mondiaux",
+            "nom": "Outils & Instruments de Recherche",
             "groupe": {
               "num": "02",
+              "label": "OUTILS & INSTRUMENTS DE RECHERCHE",
+              "tagline": "Les \"pics et pelles\" de la recherche médicale — vendent aux labos plutôt que de chercher eux-mêmes"
+            },
+            "entreprises": [
+              {
+                "nom": "Illumina",
+                "image": "data/logos/ILMN.png",
+                "legende": "US — quasi-monopole mondial sur le séquençage ADN haut débit (environ 70 à 80% du marché) : la quasi-totalité de la recherche génomique mondiale dépend de ses machines.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Thermo Fisher Scientific",
+                "image": "data/logos/TMO.png",
+                "legende": "US — premier fournisseur mondial d'instruments, réactifs et consommables de laboratoire : l'infrastructure invisible derrière la quasi-totalité de la recherche biotech/pharma.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Laboratoires mondiaux",
+            "groupe": {
+              "num": "03",
               "label": "PRODUCTION & COMMERCIALISATION",
               "tagline": "Big Pharma — mise à l'échelle mondiale, souvent après rachat/licence d'un biotech"
             },
@@ -1075,7 +1196,7 @@
           {
             "nom": "Dispositifs médicaux",
             "groupe": {
-              "num": "03",
+              "num": "04",
               "label": "ÉQUIPEMENTS & DIAGNOSTIC",
               "tagline": "Medtech — dispositifs utilisés aux côtés des traitements"
             },
@@ -1126,7 +1247,7 @@
           {
             "nom": "Assureurs & prestataires (marché US)",
             "groupe": {
-              "num": "04",
+              "num": "05",
               "label": "FINANCEMENT & ACCÈS AUX SOINS",
               "tagline": "Assurance & prestataires — comment le patient y accède"
             },
@@ -1187,7 +1308,7 @@
         "id": "c-materiaux-complete",
         "nom": "Matériaux — de la mine au produit fini",
         "sousSecteurPath": [],
-        "rev": 1,
+        "rev": 2,
         "phases": [
           {
             "nom": "Métaux & mines",
@@ -1236,6 +1357,41 @@
                 "width": 220,
                 "imgHeight": 120,
                 "bottleneck": false
+              },
+              {
+                "nom": "MP Materials",
+                "image": "data/logos/MP.png",
+                "legende": "US — seul producteur significatif de terres rares hors de Chine, qui en contrôle environ 90% de l'offre mondiale : un goulot d'étranglement géopolitique majeur pour l'électronique, les moteurs électriques et la défense.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Équipements d'Extraction",
+            "groupe": {
+              "num": "02",
+              "label": "ÉQUIPEMENTS D'EXTRACTION",
+              "tagline": "Le concassage et le broyage — sans ces machines, aucun minerai extrait ne devient utilisable"
+            },
+            "entreprises": [
+              {
+                "nom": "Sandvik",
+                "image": "data/logos/SAND.ST.png",
+                "legende": "Suède — un des deux leaders mondiaux des équipements de concassage et de broyage minier, aux côtés de Metso.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Metso",
+                "image": "data/logos/METSO.HE.png",
+                "legende": "Finlande — l'autre moitié du duopole mondial des équipements de concassage/broyage et de traitement des minerais.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
               }
             ],
             "blocsLibres": []
@@ -1243,7 +1399,7 @@
           {
             "nom": "Chimie & gaz industriels",
             "groupe": {
-              "num": "02",
+              "num": "03",
               "label": "TRANSFORMATION",
               "tagline": "Chimie — transforme la matière première en composés utilisables"
             },
@@ -1286,7 +1442,7 @@
           {
             "nom": "Emballage",
             "groupe": {
-              "num": "03",
+              "num": "04",
               "label": "CONDITIONNEMENT",
               "tagline": "Emballage — dernier maillon avant le produit fini"
             },
@@ -1660,52 +1816,270 @@
         "id": "c-tech-complete",
         "nom": "Technologies — du silicium à la sécurité",
         "sousSecteurPath": [],
-        "rev": 1,
+        "rev": 2,
         "phases": [
           {
-            "nom": "Semi-conducteurs",
+            "nom": "Conception (Fabless)",
             "groupe": {
               "num": "01",
-              "label": "SEMI-CONDUCTEURS",
-              "tagline": "La couche physique de toute la tech"
+              "label": "CONCEPTION (FABLESS)",
+              "tagline": "Dessine les puces mais ne les fabrique pas — sous-traite à une fonderie"
             },
             "entreprises": [
               {
-                "nom": "Taiwan Semiconductor",
-                "image": "data/logos/TSM.png",
-                "legende": "Taïwan — fabrique la quasi-totalité des puces les plus avancées au monde.",
-                "width": 220,
-                "imgHeight": 120,
-                "bottleneck": true
-              },
-              {
-                "nom": "ASML",
-                "image": "data/logos/ASML.png",
-                "legende": "Pays-Bas — quasi-monopole des machines de lithographie EUV, indispensables aux puces avancées.",
-                "width": 220,
-                "imgHeight": 120,
-                "bottleneck": true
-              },
-              {
                 "nom": "NVIDIA",
                 "image": "data/logos/NVDA.png",
-                "legende": "US — quasi-incontournable pour le calcul et l'entraînement de l'intelligence artificielle.",
-                "width": 220,
-                "imgHeight": 120,
-                "bottleneck": true
-              },
-              {
-                "nom": "Broadcom",
-                "image": "data/logos/AVGO.png",
-                "legende": "US — semi-conducteurs (réseaux, Wi-Fi) + logiciel d'entreprise (VMware).",
+                "legende": "US — leader mondial des puces IA/GPU, la société la plus valorisée au monde en 2025.",
                 "width": 220,
                 "imgHeight": 120,
                 "bottleneck": false
               },
               {
+                "nom": "Broadcom",
+                "image": "data/logos/AVGO.png",
+                "legende": "US — semi-conducteurs diversifiés (réseaux, puces sur-mesure pour Google/Meta).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Qualcomm",
+                "image": "data/logos/QCOM.png",
+                "legende": "US — leader mondial des puces pour smartphones (Snapdragon).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "AMD",
+                "image": "data/logos/AMD.png",
+                "legende": "US — concurrent direct de NVIDIA (GPU/IA) et d'Intel (CPU).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Fonderie",
+            "groupe": {
+              "num": "02",
+              "label": "FONDERIE",
+              "tagline": "Fabrique physiquement les puces dessinées par les fabless"
+            },
+            "entreprises": [
+              {
+                "nom": "Taiwan Semiconductor",
+                "image": "data/logos/TSM.png",
+                "legende": "Taïwan — fabrique plus de 90% des puces les plus avancées au monde (moins de 5 nanomètres) : le vrai goulot d'étranglement géopolitique de toute l'industrie tech.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Samsung Electronics",
+                "image": "data/logos/005930.KS.png",
+                "legende": "Corée du Sud — deuxième fondeur mondial (division Foundry), aussi numéro un mondial de la mémoire (voir plus bas).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "GlobalFoundries",
+                "image": "data/logos/GFS.png",
+                "legende": "US — fonderie américaine sur nœuds moins avancés, stratégique pour la souveraineté technologique occidentale.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Équipements de Fabrication",
+            "groupe": {
+              "num": "03",
+              "label": "ÉQUIPEMENTS DE FABRICATION",
+              "tagline": "Les machines sans lesquelles aucune fonderie ne peut graver une puce"
+            },
+            "entreprises": [
+              {
+                "nom": "ASML",
+                "image": "data/logos/ASML.png",
+                "legende": "Pays-Bas — monopole mondial sur la lithographie EUV : aucune puce de pointe au monde n'existe sans ses machines (plus de 200 M$ pièce).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
                 "nom": "Applied Materials",
                 "image": "data/logos/AMAT.png",
-                "legende": "US — leader mondial des équipements de fabrication de semi-conducteurs.",
+                "legende": "US — premier équipementier semi-conducteurs au monde par chiffre d'affaires (dépôt, gravure).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Lam Research",
+                "image": "data/logos/LRCX.png",
+                "legende": "US — leader mondial de la gravure et du dépôt de couches minces.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "KLA Corporation",
+                "image": "data/logos/KLAC.png",
+                "legende": "US — quasi-monopole sur les équipements d'inspection et de métrologie (contrôle qualité des puces).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Tokyo Electron",
+                "image": "data/logos/8035.T.png",
+                "legende": "Japon — un des cinq plus gros équipementiers semi-conducteurs mondiaux, aux côtés d'ASML/Applied Materials/Lam Research/KLA.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Matériaux & Composants Ultra-Spécifiques",
+            "groupe": {
+              "num": "04",
+              "label": "MATÉRIAUX & COMPOSANTS ULTRA-SPÉCIFIQUES",
+              "tagline": "Le goulot dans le goulot — des fournisseurs uniques dont dépendent les équipementiers eux-mêmes"
+            },
+            "entreprises": [
+              {
+                "nom": "Zeiss SMT",
+                "image": "data/logos/ZEISS-SMT.png",
+                "legende": "Allemagne — filiale PRIVÉE de Carl Zeiss AG, SEUL fournisseur mondial des systèmes optiques (jeux de lentilles) des machines EUV d'ASML. Sans Zeiss, ASML elle-même ne peut rien fabriquer : un goulot d'étranglement à l'intérieur du goulot d'étranglement.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Shin-Etsu Chemical",
+                "image": "data/logos/4063.T.png",
+                "legende": "Japon — un des deux seuls fabricants mondiaux de wafers de silicium de qualité avancée (duopole avec SUMCO).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "SUMCO",
+                "image": "data/logos/3436.T.png",
+                "legende": "Japon — l'autre moitié du duopole mondial des wafers de silicium avec Shin-Etsu.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "JSR Corporation",
+                "image": "data/logos/4185.T.png",
+                "legende": "Japon — un des rares fabricants mondiaux de photoresist EUV, la chimie photosensible sans laquelle la gravure EUV est impossible.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Tokyo Ohka Kogyo",
+                "image": "data/logos/4186.T.png",
+                "legende": "Japon — deuxième grand fabricant mondial de photoresist, même famille critique que JSR.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Mémoire",
+            "groupe": {
+              "num": "05",
+              "label": "MÉMOIRE",
+              "tagline": "Un oligopole à part — trois acteurs contrôlent environ 95% du marché mondial de la DRAM"
+            },
+            "entreprises": [
+              {
+                "nom": "Samsung Electronics",
+                "image": "data/logos/005930.KS.png",
+                "legende": "Corée du Sud — numéro un mondial de la mémoire (DRAM et NAND), même groupe que la division Foundry citée plus haut.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "SK Hynix",
+                "image": "data/logos/000660.KS.png",
+                "legende": "Corée du Sud — numéro deux mondial de la mémoire, fournisseur clé des puces HBM utilisées par NVIDIA pour l'IA.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Micron Technology",
+                "image": "data/logos/MU.png",
+                "legende": "US — seul grand fabricant de mémoire américain, complète l'oligopole à trois avec Samsung et SK Hynix.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Packaging & Test",
+            "groupe": {
+              "num": "06",
+              "label": "PACKAGING & TEST",
+              "tagline": "Assemble et teste les puces une fois gravées — l'étape finale avant la livraison"
+            },
+            "entreprises": [
+              {
+                "nom": "ASE Technology",
+                "image": "data/logos/3711.TW.png",
+                "legende": "Taïwan — premier groupe mondial d'assemblage et de test de semi-conducteurs (OSAT).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Amkor Technology",
+                "image": "data/logos/AMKR.png",
+                "legende": "US — deuxième groupe mondial OSAT.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Infrastructure Data Center",
+            "groupe": {
+              "num": "07",
+              "label": "INFRASTRUCTURE DATA CENTER",
+              "tagline": "Alimente et refroidit les puces une fois installées dans les centres de données"
+            },
+            "entreprises": [
+              {
+                "nom": "Vertiv",
+                "image": "data/logos/VRT.png",
+                "legende": "US — leader mondial de l'infrastructure critique des data centers (alimentation, refroidissement), porté par la demande liée à l'IA.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Munters",
+                "image": "data/logos/MTRS.ST.png",
+                "legende": "Suède — spécialiste pointu du traitement d'air et du refroidissement pour data centers et industrie.",
                 "width": 220,
                 "imgHeight": 120,
                 "bottleneck": false
@@ -1716,7 +2090,7 @@
           {
             "nom": "Cloud & logiciel d'entreprise",
             "groupe": {
-              "num": "02",
+              "num": "08",
               "label": "CLOUD & LOGICIEL",
               "tagline": "Construit sur cette infrastructure physique"
             },
@@ -1767,7 +2141,7 @@
           {
             "nom": "Cybersécurité",
             "groupe": {
-              "num": "03",
+              "num": "09",
               "label": "CYBERSÉCURITÉ",
               "tagline": "Protège l'ensemble de la pile, matériel et logiciel"
             },
@@ -1989,7 +2363,7 @@
         "id": "c-communication-complete",
         "nom": "Services de communication — du réseau à l'écran",
         "sousSecteurPath": [],
-        "rev": 1,
+        "rev": 2,
         "phases": [
           {
             "nom": "Réseaux Télécoms",
@@ -2129,6 +2503,49 @@
                 "nom": "Spotify Technology",
                 "image": "data/logos/SPOT.png",
                 "legende": "Suède — premier service de streaming musical au monde par abonnés.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Publicité & Marketing",
+            "groupe": {
+              "num": "04",
+              "label": "PUBLICITÉ & MARKETING",
+              "tagline": "Monétise le contenu et les plateformes en amont — la publicité finance la majorité du web gratuit"
+            },
+            "entreprises": [
+              {
+                "nom": "WPP",
+                "image": "data/logos/WPP.png",
+                "legende": "Royaume-Uni — un des plus gros groupes publicitaires mondiaux (agences historiques : Ogilvy, Grey).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Omnicom Group",
+                "image": "data/logos/OMC.png",
+                "legende": "US — un des \"Big 4\" de la publicité mondiale (BBDO, DDB, TBWA).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Publicis Groupe",
+                "image": "data/logos/PUB.PA.png",
+                "legende": "France — un des \"Big 4\" mondiaux de la publicité, fort en données et technologie publicitaire.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "The Trade Desk",
+                "image": "data/logos/TTD.png",
+                "legende": "US — première plateforme indépendante d'achat publicitaire programmatique, hors des écosystèmes fermés Google/Meta.",
                 "width": 220,
                 "imgHeight": 120,
                 "bottleneck": false
