@@ -99,6 +99,59 @@ def load_name_map():
     return {sym: nom for nom, sym in raw.items()}
 
 
+def load_company_name_map(conn):
+    """symbol -> companyName FMP (profil), pour détecter les doublons ci-dessous."""
+    cur = conn.cursor()
+    cur.execute("SELECT DISTINCT symbol FROM raw_data WHERE category='profile'")
+    symbols = [r[0] for r in cur.fetchall()]
+    out = {}
+    for sym in symbols:
+        cur.execute(
+            "SELECT payload FROM raw_data WHERE category='profile' AND symbol=? ORDER BY id DESC LIMIT 1",
+            (sym,),
+        )
+        row = cur.fetchone()
+        if not row:
+            continue
+        profile = json.loads(row[0])
+        if isinstance(profile, list):
+            profile = profile[0] if profile else {}
+        out[sym] = profile.get("companyName") or None
+    return out
+
+
+# Une même entreprise peut être ingérée sous DEUX symboles FMP distincts (cotation
+# primaire + ADR/second listing — ex. TotalEnergies en TTE.PA ET TTE, Ferrari en
+# RACE.MI ET RACE, SAP en SAP.DE ET SAP), chacun avec son propre prix/FCF dans une
+# devise différente : sans dédoublonnage, l'entreprise apparaît deux fois dans le
+# classement avec deux rendements différents et (souvent) deux logos différents.
+# Signalé par l'utilisateur : "j'ai une fois TotalEnergies et une fois TTE, la même
+# entreprise... et ce n'est pas le même logo". companyName (profil FMP) est le signal
+# fiable ici — contrairement au ticker de base (EL/EL.PA sont DEUX entreprises
+# différentes par coïncidence de ticker : Estée Lauder vs EssilorLuxottica, vérifié) ou
+# à l'ISIN (différent entre cotation primaire et ADR, ce n'est pas le même titre au
+# sens strict). Parmi les symboles partageant le même companyName, on garde celui lié
+# au Sheet (name_map) s'il y en a un — sinon le premier par ordre alphabétique de
+# symbole, choix arbitraire mais déterministe.
+def find_duplicate_symbols_to_skip(symbols, name_map, company_name_map):
+    groups = {}
+    for sym in symbols:
+        cname = company_name_map.get(sym)
+        if not cname:
+            continue
+        groups.setdefault(cname, []).append(sym)
+    skip = set()
+    for cname, syms in groups.items():
+        if len(syms) < 2:
+            continue
+        sheet_linked = [s for s in syms if s in name_map]
+        keep = sheet_linked[0] if sheet_linked else sorted(syms)[0]
+        for s in syms:
+            if s != keep:
+                skip.add(s)
+    return skip
+
+
 def load_sector_map(conn):
     """symbol -> secteur, lu depuis le profil FMP déjà en base (catégorie 'profile')."""
     cur = conn.cursor()
@@ -258,14 +311,20 @@ def main():
     conn = db.get_connection()
     name_map = load_name_map()
     sector_map = load_sector_map(conn)
+    company_name_map = load_company_name_map(conn)
 
     cur = conn.cursor()
     cur.execute("SELECT DISTINCT symbol FROM raw_data WHERE category='income_statement'")
     symbols = sorted(r[0] for r in cur.fetchall())
 
+    dup_skip = find_duplicate_symbols_to_skip(symbols, name_map, company_name_map)
+
     out = []
     skipped = 0
     for symbol in symbols:
+        if symbol in dup_skip:
+            skipped += 1
+            continue
         entry = compute_entry(symbol, name_map, sector_map)
         if entry:
             out.append(entry)
@@ -273,7 +332,9 @@ def main():
             skipped += 1
 
     OUTPUT_PATH.write_text(json.dumps(out, ensure_ascii=False, indent=0), encoding="utf-8")
-    print(f"{len(out)}/{len(symbols)} entreprises exportées dans le classement ({skipped} ignorées — fichiers manquants ou prix invalide).")
+    print(f"{len(out)}/{len(symbols)} entreprises exportées dans le classement ({skipped} ignorées — fichiers manquants, prix invalide, ou doublon d'une autre cotation).")
+    if dup_skip:
+        print(f"Doublons de cotation écartés ({len(dup_skip)}) : {', '.join(sorted(dup_skip))}")
     print(f"Écrit : {OUTPUT_PATH}")
 
 
