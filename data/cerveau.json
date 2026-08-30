@@ -71,6 +71,60 @@
             ]
           }
         ]
+      },
+      {
+        "id": "c-robotique-automatisation",
+        "nom": "Robotique & automatisation",
+        "sousSecteurPath": ["Robotique & automatisation"],
+        "phases": [
+          {
+            "nom": "Composants de précision (réducteurs, actionneurs, capteurs)",
+            "entreprises": [
+              { "nom": "Harmonic Drive Systems", "image": "https://www.hds.co.jp/Portals/0/files/common/images/logo_en.png", "legende": "Japon — quasi-monopole des réducteurs harmoniques, présents dans la majorité des bras robotiques.", "width": 220, "imgHeight": 120, "bottleneck": true },
+              { "nom": "Nabtesco", "image": "data/logos/6268.T.png", "legende": "Japon — réducteurs cycloïdaux RV, duopole avec Harmonic Drive sur ce composant critique.", "width": 220, "imgHeight": 120, "bottleneck": true },
+              { "nom": "THK", "image": "data/logos/THKLY.png", "legende": "Japon — leader des guidages linéaires et actionneurs de précision.", "width": 220, "imgHeight": 120 },
+              { "nom": "Infineon Technologies", "image": "data/logos/IFX.DE.png", "legende": "Allemagne — semi-conducteurs de contrôle moteur et de puissance.", "width": 220, "imgHeight": 120 }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Robots industriels (bras)",
+            "entreprises": [
+              { "nom": "ABB", "image": "data/logos/ABBN.SW.png", "legende": "Suisse — un des 4 plus gros fabricants mondiaux de robots industriels.", "width": 220, "imgHeight": 120 },
+              { "nom": "FANUC", "image": "data/logos/FANUY.png", "legende": "Japon — pionnier historique des robots industriels et de la commande numérique (CNC).", "width": 220, "imgHeight": 120 },
+              { "nom": "Yaskawa Electric", "image": "data/logos/YASKY.png", "legende": "Japon — robots industriels (marque Motoman) + variateurs et moteurs.", "width": 220, "imgHeight": 120 },
+              { "nom": "Kawasaki Heavy Industries", "image": "data/logos/KWHIY.png", "legende": "Japon — un des tout premiers fabricants de robots industriels au monde.", "width": 220, "imgHeight": 120 }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Cobots, robots mobiles & humanoïdes",
+            "entreprises": [
+              { "nom": "Teradyne", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/04/Teradyne_logo_2014.svg/250px-Teradyne_logo_2014.svg.png", "legende": "US — possède Universal Robots (cobots) et MiR (robots mobiles autonomes).", "width": 220, "imgHeight": 120 },
+              { "nom": "Tesla", "image": "data/logos/TSLA.png", "legende": "US — programme Optimus, robot humanoïde à vocation industrielle.", "width": 220, "imgHeight": 120 },
+              { "nom": "Hyundai Motor Group", "image": "data/logos/HYMTF.png", "legende": "Corée — a racheté Boston Dynamics en 2021.", "width": 220, "imgHeight": 120 }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Intégration & automatisation industrielle",
+            "entreprises": [
+              { "nom": "Rockwell Automation", "image": "data/logos/ROK.png", "legende": "US — logiciels et intégration d'automatisation industrielle.", "width": 220, "imgHeight": 120 },
+              { "nom": "Siemens", "image": "data/logos/SIE.DE.png", "legende": "Allemagne — automatisation industrielle (division Digital Industries).", "width": 220, "imgHeight": 120 },
+              { "nom": "Schneider Electric", "image": "data/logos/SU.PA.png", "legende": "France — automatisation et gestion de l'énergie industrielle.", "width": 220, "imgHeight": 120 }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Intelligence artificielle, vision & logiciel",
+            "entreprises": [
+              { "nom": "NVIDIA", "image": "data/logos/NVDA.png", "legende": "US — plateformes de calcul/simulation IA pour la robotique (Jetson, Isaac).", "width": 220, "imgHeight": 120, "bottleneck": true },
+              { "nom": "Cognex", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/42/Cognex_Corp_logo.svg/250px-Cognex_Corp_logo.svg.png", "legende": "US — vision industrielle, contrôle qualité et guidage robotique.", "width": 220, "imgHeight": 120 },
+              { "nom": "PTC", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/PTC_logo.svg/250px-PTC_logo.svg.png", "legende": "US — logiciel industriel et jumeaux numériques (ex. ThingWorx).", "width": 220, "imgHeight": 120 }
+            ],
+            "blocsLibres": []
+          }
+        ]
       }
     ]
   },
