@@ -4061,6 +4061,7 @@ function classementRankingRows(secteurFiltre){
 function classementApplyTopN(list){
   return classementTopN === 'all' ? list : list.slice(0, classementTopN);
 }
+let classementValoSortDir = 1; // 1 = cas les plus extrêmes en premier (défaut) ; -1 = inversé
 
 function renderClassement(){
   const divLeftBox = document.getElementById('classementDivLeft');
@@ -4086,15 +4087,18 @@ function renderClassement(){
   divLeftBox.innerHTML = divLeft.length ? divLeft.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.rendementDiv), null, null, r.inSheet)).join('') : empty;
   divRightBox.innerHTML = divRight.map((r, i) => classementRowHtml(r.nom, r.logo, half + i + 1, fmtPct(r.rendementDiv), null, null, r.inSheet)).join('');
 
-  // ecartPrix : upside vers la juste valeur AU PRIX ACTUEL (positif = sous-valorisée),
-  // volontairement différent de l'ancien ecartValeur du Sheet (qui comparait Prix Juste
-  // à Prix Cible, jamais au prix du jour — voir le commentaire détaillé dans
-  // export_ranking.py). Les deux listes trient par ecartPrix DÉCROISSANT : la plus
-  // grosse décote d'abord côté sous-valorisées, la moins survalorisée d'abord côté
-  // survalorisées (symétrique à l'ancien comportement, juste la convention de signe a
-  // changé de sens).
-  const sousValo = classementApplyTopN(rows.filter(r => r.ecartPrix != null && r.ecartPrix > 0).sort((a, b) => b.ecartPrix - a.ecartPrix));
-  const survalo = classementApplyTopN(rows.filter(r => r.ecartPrix != null && r.ecartPrix <= 0).sort((a, b) => b.ecartPrix - a.ecartPrix));
+  // ecartPrix : (prixActuel - prixJuste) / prixActuel — NÉGATIF = prix actuel EN DESSOUS
+  // de la juste valeur = sous-valorisée = plus intéressant ; POSITIF = au-dessus =
+  // survalorisée (convention explicitement demandée par l'utilisateur : "quand c'est
+  // négatif, c'est sous-valorisé... la valeur de l'entreprise est inférieure à sa valeur
+  // intrinsèque" — le sens inverse avait été utilisé par erreur au premier passage,
+  // corrigé ici ET dans export_ranking.py). Par défaut, les deux listes montrent les cas
+  // les plus extrêmes en premier (le plus négatif d'abord côté sous-valorisées, le plus
+  // positif d'abord côté survalorisées) — classementValoSortDir inverse les DEUX listes
+  // simultanément d'un même bouton ("pareil pour les opportunités sûres et
+  // sous-valorisées").
+  const sousValo = classementApplyTopN(rows.filter(r => r.ecartPrix != null && r.ecartPrix < 0).sort((a, b) => classementValoSortDir * (a.ecartPrix - b.ecartPrix)));
+  const survalo = classementApplyTopN(rows.filter(r => r.ecartPrix != null && r.ecartPrix >= 0).sort((a, b) => classementValoSortDir * (b.ecartPrix - a.ecartPrix)));
 
   valoSousBox.innerHTML = sousValo.length
     ? sousValo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartPrix), 'pos', r.inSheet ? classementRendementRowHtml(r.nom) : null)).join('')
@@ -4116,8 +4120,8 @@ function exportClassementAsPdf(){
 
   const rows = classementRankingRows(secteurFiltre);
   const byDiv = classementApplyTopN(rows.filter(r => r.rendementDiv != null).sort((a, b) => b.rendementDiv - a.rendementDiv));
-  const sousValo = classementApplyTopN(rows.filter(r => r.ecartPrix != null && r.ecartPrix > 0).sort((a, b) => b.ecartPrix - a.ecartPrix));
-  const survalo = classementApplyTopN(rows.filter(r => r.ecartPrix != null && r.ecartPrix <= 0).sort((a, b) => b.ecartPrix - a.ecartPrix));
+  const sousValo = classementApplyTopN(rows.filter(r => r.ecartPrix != null && r.ecartPrix < 0).sort((a, b) => classementValoSortDir * (a.ecartPrix - b.ecartPrix)));
+  const survalo = classementApplyTopN(rows.filter(r => r.ecartPrix != null && r.ecartPrix >= 0).sort((a, b) => classementValoSortDir * (b.ecartPrix - a.ecartPrix)));
 
   const table = (list, valueFn) => list.length
     ? `<table class="print-table"><thead><tr><th>#</th><th>Entreprise</th><th>Valeur</th></tr></thead><tbody>${list.map((r, i) => {
@@ -4166,6 +4170,11 @@ function initClassement(){
   if (filter) filter.addEventListener('change', renderClassement);
   const exportPdfBtn = document.getElementById('classementExportPdfBtn');
   if (exportPdfBtn) exportPdfBtn.addEventListener('click', exportClassementAsPdf);
+  const valoSortBtn = document.getElementById('classementValoSortBtn');
+  if (valoSortBtn) valoSortBtn.addEventListener('click', () => {
+    classementValoSortDir *= -1;
+    renderClassement();
+  });
 }
 
 /* ============================================================

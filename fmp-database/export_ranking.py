@@ -32,12 +32,17 @@ Champs par entreprise :
   prixJuste    -> fcfParAction * medianePFCF (même formule que l'onglet Valorisation,
                   scénario "Réaliste" — vérifié identique au Prix Juste du Sheet sur
                   plusieurs entreprises avant d'adopter cette formule ici)
-  ecartPrix    -> (prixJuste - prixActuel) / prixActuel * 100 — upside vers la juste
-                  valeur, positif = sous-valorisée. Volontairement DIFFÉRENT de
-                  l'ecartValeur du Sheet (qui compare Prix Juste à Prix Cible, jamais au
-                  prix actuel — une "marge de sécurité méthodologique", pas une
-                  opportunité au prix d'aujourd'hui) : pour un classement d'opportunités
-                  AU PRIX ACTUEL, comparer au prix actuel est le calcul pertinent.
+  ecartPrix    -> (prixActuel - prixJuste) / prixActuel * 100 — négatif = prix actuel
+                  EN DESSOUS de la juste valeur = sous-valorisée = plus intéressant ;
+                  positif = au-dessus = survalorisée (convention explicitement demandée
+                  par l'utilisateur, "quand c'est négatif, c'est sous-valorisé... la
+                  valeur de l'entreprise est inférieure à sa valeur intrinsèque" — signe
+                  inversé une première fois par erreur, corrigé). Volontairement
+                  DIFFÉRENT de l'ecartValeur du Sheet (qui compare Prix Juste à Prix
+                  Cible, jamais au prix actuel — une "marge de sécurité méthodologique",
+                  pas une opportunité au prix d'aujourd'hui) : pour un classement
+                  d'opportunités AU PRIX ACTUEL, comparer au prix actuel est le calcul
+                  pertinent.
 
 Usage :
     python export_ranking.py
@@ -150,7 +155,7 @@ def compute_entry(symbol, name_map, sector_map):
     fcf_actuel = fcf_series[-1] if fcf_series else None
     mediane_pfcf = statistics.median(pfcf_series[-10:]) if len(pfcf_series) >= 3 else None
     prix_juste = (fcf_actuel * mediane_pfcf) if (fcf_actuel and mediane_pfcf and fcf_actuel > 0) else None
-    ecart_prix = ((prix_juste - prix_actuel) / prix_actuel * 100) if prix_juste else None
+    ecart_prix = ((prix_actuel - prix_juste) / prix_actuel * 100) if prix_juste else None
     if ecart_prix is not None and abs(ecart_prix) > MAX_PLAUSIBLE_ECART_PCT:
         ecart_prix = None
 
