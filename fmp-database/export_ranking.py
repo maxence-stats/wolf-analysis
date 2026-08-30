@@ -27,22 +27,36 @@ Champs par entreprise :
   rendementDiv -> dividende / prixActuel * 100
   cagrDiv10    -> CAGR du dividende sur les 10 dernières années dispo (ou moins si historique
                   plus court), null si dividende nul/négatif à un bout
-  fcfParAction -> FCF/action le plus récent
-  medianePFCF  -> médiane du P/FCF sur les 10 dernières années dispo
-  prixJuste    -> fcfParAction * medianePFCF (même formule que l'onglet Valorisation,
-                  scénario "Réaliste" — vérifié identique au Prix Juste du Sheet sur
-                  plusieurs entreprises avant d'adopter cette formule ici)
-  ecartPrix    -> (prixActuel - prixJuste) / prixActuel * 100 — négatif = prix actuel
-                  EN DESSOUS de la juste valeur = sous-valorisée = plus intéressant ;
-                  positif = au-dessus = survalorisée (convention explicitement demandée
-                  par l'utilisateur, "quand c'est négatif, c'est sous-valorisé... la
-                  valeur de l'entreprise est inférieure à sa valeur intrinsèque" — signe
-                  inversé une première fois par erreur, corrigé). Volontairement
-                  DIFFÉRENT de l'ecartValeur du Sheet (qui compare Prix Juste à Prix
-                  Cible, jamais au prix actuel — une "marge de sécurité méthodologique",
-                  pas une opportunité au prix d'aujourd'hui) : pour un classement
-                  d'opportunités AU PRIX ACTUEL, comparer au prix actuel est le calcul
-                  pertinent.
+  fcfParAction -> FCF/action de la DERNIÈRE année dispo, valeur réelle (affichage/référence)
+  fcfBase      -> médiane des 3 dernières années POSITIVES de FCF/action — base utilisée
+                  pour le calcul de Prix Juste (pas fcfParAction seule) : lisse un creux
+                  ponctuel d'une seule année qui ferait exploser l'écart au prix actuel
+                  (constaté sur Lennar/Amazon) sans changer le résultat pour une entreprise
+                  au FCF stable/en croissance régulière
+  medianePFCF  -> médiane du P/FCF sur les 10 dernières années dispo, années où le P/FCF
+                  dépasse 150x déjà exclues du calcul (voir compute_entry() — un P/FCF
+                  explosif une année donnée vient quasi toujours d'un FCF proche de zéro
+                  cette année-là, pas d'une vraie valorisation de marché soutenue ; laissé
+                  brut sinon, PAS de plafond appliqué ici)
+
+  prixJuste et ecartPrix ne sont PLUS calculés dans ce script : le site les recalcule
+  côté client (renderClassement()/classementValuationFor() dans app.js) à partir de
+  fcfParAction/medianePFCF ci-dessus, pour pouvoir appliquer sans re-générer ce fichier :
+  1) le réglage "Plafonner à 25x" (demande explicite, activable/désactivable) ;
+  2) la priorité à l'objectif Réaliste enregistré par l'utilisateur en Valorisation pour
+     cette entreprise quand il existe ("tu es censé prendre mes résultats qui ont été
+     enregistrés") — cet objectif est propre au navigateur (localStorage), inaccessible
+     depuis ce script Python.
+  Formule (côté site) : prixJuste = fcfParAction * multiple (medianePFCF, éventuellement
+  plafonnée à 25x, ou le multiple de l'objectif enregistré s'il existe) ; ecartPrix =
+  (prixActuel - prixJuste) / prixJuste * 100 — négatif = prix EN DESSOUS de la juste
+  valeur = sous-valorisée (convention explicitement demandée par l'utilisateur : "quand
+  c'est négatif, c'est sous-valorisé... la valeur de l'entreprise est inférieure à sa
+  valeur intrinsèque"). Dénominateur volontairement prixJuste (pas prixActuel) : borne
+  la sous-valorisation à -100% au maximum (une entreprise ne peut pas valoir moins que
+  zéro), alors que la survalorisation reste non bornée — c'est le sens physique correct,
+  contrairement au 1er calcul (dénominateur prixActuel) qui bornait le mauvais côté et
+  produisait des "-214%" jugés à raison impossibles par l'utilisateur.
 
 Usage :
     python export_ranking.py
@@ -73,7 +87,6 @@ OUTPUT_PATH = DATA_DIR / "ranking-summary.json"
 # bug AXA/Equasens signalé par l'utilisateur : jamais afficher un ratio calculé sur une
 # donnée dont on sait qu'elle peut être incohérente).
 MAX_PLAUSIBLE_YIELD_PCT = 15.0
-MAX_PLAUSIBLE_ECART_PCT = 300.0
 MAX_PRICE_STALENESS_DAYS = 60
 
 
@@ -133,6 +146,15 @@ def compute_entry(symbol, name_map, sector_map):
     if not prices:
         return None
     prix_actuel = prices[-1].get("c")
+    # Bug trouvé en testant (HSBC : "59803%" de survalorisation, rendement du dividende
+    # à 0,05% au lieu de ~5% réel) : la Bourse de Londres cote en PENCE (GBp), pas en
+    # livres, alors que FMP renvoie les données fondamentales (FCF/action, dividende/
+    # action...) en livres — un facteur 100 partout où le prix LSE entre dans un calcul.
+    # Confirmé sur les 15 tickers ".L" du classement, tous avec un rendement du dividende
+    # anormalement proche de 0. Converti en livres (÷100) ici, à la source, plutôt que de
+    # rafistiner chaque ratio séparément.
+    if symbol.endswith(".L") and prix_actuel:
+        prix_actuel = prix_actuel / 100
     if not prix_actuel or prix_actuel <= 0:
         return None
     last_date_str = prices[-1].get("t")
@@ -143,7 +165,18 @@ def compute_entry(symbol, name_map, sector_map):
 
     ch = doc.get("chartsHistory") or {}
     dividendes = [v for v in (ch.get("dividende") or []) if v is not None]
-    pfcf_series = [v for v in (ch.get("pFcf") or []) if v is not None and v > 0]
+    # Bug trouvé après retour utilisateur ("Shopify, Zoom Video... je pense qu'il y a un
+    # problème") : une année où le FCF/action est quasi nul (ex. Shopify 2019, FCF/action
+    # ≈ 0,01) donne un P/FCF explosif (5468x) qui n'a jamais représenté une vraie
+    # valorisation de marché — juste un artefact de division par presque zéro. Inclure
+    # ces années dans la médiane la fait exploser (médiane Shopify à 232x sur seulement
+    # 6 valeurs positives dispo, dont 5468 et 354). Fix : exclure les années où le P/FCF
+    # dépasse un seuil qu'aucune valorisation de marché réelle et durable n'atteint
+    # (150x) AVANT de calculer la médiane — pas un plafond sur le résultat final (ça,
+    # c'est le réglage "Plafonner à 25x" côté site, une couche de prudence utilisateur
+    # EN PLUS de ce nettoyage, pas un remplacement).
+    PFCF_OUTLIER_CEILING = 150
+    pfcf_series = [v for v in (ch.get("pFcf") or []) if v is not None and 0 < v <= PFCF_OUTLIER_CEILING]
     fcf_series = [v for v in (ch.get("fcfParAction") or []) if v is not None]
 
     dividende = dividendes[-1] if dividendes else None
@@ -153,11 +186,31 @@ def compute_entry(symbol, name_map, sector_map):
     cagr_div10 = cagr(dividendes[-11:]) if len(dividendes) >= 2 else None
 
     fcf_actuel = fcf_series[-1] if fcf_series else None
+    # Bug trouvé après retour utilisateur ("Lennar, Amazon... 6597%, 1375%") : même avec
+    # une médiane P/FCF saine, une SEULE année de FCF/action anormalement basse (Lennar :
+    # 0,11 alors que ses années précédentes sont nettement plus hautes — un creux
+    # ponctuel, pas le nouveau niveau normal de l'entreprise) écrase le Prix Juste, qui
+    # explose l'écart au prix actuel. Fix : fcfBase = médiane des 3 dernières années
+    # positives de FCF/action (pas juste la toute dernière) — lisse un creux ponctuel
+    # sans changer le calcul pour une entreprise dont le FCF est stable/en croissance
+    # régulière (fcfBase ≈ fcf_actuel dans ce cas). fcfParAction reste exportée séparément
+    # (valeur RÉELLE de la dernière année, pour affichage/référence) — fcfBase est
+    # uniquement la base utilisée dans le calcul de Prix Juste.
+    # Bug trouvé en re-testant : Duke Energy n'avait qu'UNE SEULE année positive sur les
+    # 3 dernières (utility très capitalistique, dépenses d'investissement massives
+    # certaines années -> FCF négatif) — la "médiane" d'un seul point reste ce point
+    # isolé (0,06), pas mieux qu'avant. Exige au moins 2 années positives pour faire
+    # confiance à fcfBase, sinon None (entreprise exclue du classement valorisation
+    # plutôt qu'un chiffre construit sur une seule donnée non représentative).
+    fcf_recent_positive = [v for v in fcf_series[-3:] if v is not None and v > 0]
+    fcf_base = statistics.median(fcf_recent_positive) if len(fcf_recent_positive) >= 2 else None
+    # medianePFCF/fcfBase sont exportées BRUTES (pas de plafond sur le multiple ici) —
+    # le site recalcule prixJuste/ecartPrix côté client à partir de ces valeurs, pour
+    # pouvoir appliquer :
+    # 1) le réglage "Plafonner à 25x" (activable/désactivable sans re-générer ce fichier),
+    # 2) la priorité à l'objectif Réaliste enregistré par l'utilisateur en Valorisation
+    #    quand il existe pour cette entreprise (jamais recalculé ici, propre au navigateur).
     mediane_pfcf = statistics.median(pfcf_series[-10:]) if len(pfcf_series) >= 3 else None
-    prix_juste = (fcf_actuel * mediane_pfcf) if (fcf_actuel and mediane_pfcf and fcf_actuel > 0) else None
-    ecart_prix = ((prix_actuel - prix_juste) / prix_actuel * 100) if prix_juste else None
-    if ecart_prix is not None and abs(ecart_prix) > MAX_PLAUSIBLE_ECART_PCT:
-        ecart_prix = None
 
     return {
         "nom": name_map.get(symbol, doc.get("companyName") or symbol),
@@ -168,9 +221,8 @@ def compute_entry(symbol, name_map, sector_map):
         "rendementDiv": round(rendement_div, 4) if rendement_div is not None else None,
         "cagrDiv10": round(cagr_div10, 4) if cagr_div10 is not None else None,
         "fcfParAction": round(fcf_actuel, 4) if fcf_actuel is not None else None,
+        "fcfBase": round(fcf_base, 4) if fcf_base is not None else None,
         "medianePFCF": round(mediane_pfcf, 4) if mediane_pfcf is not None else None,
-        "prixJuste": round(prix_juste, 4) if prix_juste is not None else None,
-        "ecartPrix": round(ecart_prix, 4) if ecart_prix is not None else None,
     }
 
 

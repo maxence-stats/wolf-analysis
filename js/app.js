@@ -3959,13 +3959,18 @@ function renderSectorView(){
    opportunité de valorisation (écart de valeur, colonne K,
    négatif = sous-valorisé = plus intéressant, tri croissant)
    ============================================================ */
-function classementRowHtml(nom, logo, rank, valueText, cls, rendHtml, showAddBtn){
+function classementRowHtml(nom, logo, rank, valueText, cls, rendHtml, showAddBtn, sourceLabel){
   const safe = nom.replace(/"/g,'&quot;');
   const inSheet = !!companies[nom];
   const inDividendPortfolio = showAddBtn && dividendPortfolioStore.positions[nom] != null;
   const addBtn = showAddBtn
     ? `<button class="classement-add-btn${inDividendPortfolio ? ' active' : ''}" data-action="dividend-add" data-nom="${safe}" title="${inDividendPortfolio ? 'Déjà dans le portefeuille dividende' : 'Ajouter au portefeuille dividende'}">${inDividendPortfolio ? '✓' : '+'}</button>`
     : '';
+  // Badge "Mon objectif" : signale que CETTE ligne utilise le multiple enregistré par
+  // l'utilisateur en Valorisation (pas le calcul auto FMP) — demande explicite ("tu es
+  // censé prendre mes résultats qui ont été enregistrés"), utile de voir laquelle des
+  // deux sources s'applique sans avoir à rouvrir la fiche entreprise.
+  const badge = sourceLabel === 'objectif' ? '<span class="classement-source-badge" title="Basé sur ton objectif enregistré en Valorisation">Mon objectif</span>' : '';
   // classement-row-nolink : entreprise hors des 72 du Sheet (base FMP élargie) — pas
   // de fiche Analyse complète pour l'instant, curseur normal plutôt qu'un clic mort.
   return `<div class="classement-row${rendHtml ? ' classement-row-valo' : ''}${inSheet ? '' : ' classement-row-nolink'}" data-nom="${safe}">
@@ -3973,6 +3978,7 @@ function classementRowHtml(nom, logo, rank, valueText, cls, rendHtml, showAddBtn
       <span class="classement-rank">${rank}</span>
       <div class="classement-logo"><img src="${logo || ''}" alt=""></div>
       <span class="classement-name">${nom}</span>
+      ${badge}
       <span class="classement-value${cls ? ' ' + cls : ''}">${valueText}</span>
       ${addBtn}
     </div>
@@ -4048,15 +4054,79 @@ async function loadRankingSummary(){
   if (document.getElementById('pageClassement') && document.getElementById('pageClassement').classList.contains('active')) renderClassement();
 }
 let classementTopN = 50; // 'all' ou un nombre
+// "je veux que tu refasses tout avec maximum vingt cinq. Alors quand c'est une moyenne à
+// quinze, tu laisses quinze, mais quand c'est au-dessus de vingt cinq, tu me donnes un
+// bouton où je choisis de mettre vingt cinq" — plafonne le multiple P/FCF utilisé pour
+// Prix Juste à 25x quand la médiane historique le dépasse (jamais quand elle est déjà en
+// dessous). Par défaut ACTIF : l'utilisateur a explicitement demandé à repartir de cette
+// version prudente plutôt que du multiple brut ("non, je veux que tu refasses tout avec
+// maximum vingt cinq"), avec la possibilité de désactiver pour voir la valeur "brute".
+let classementCapMultiple = true;
+const CLASSEMENT_MAX_MULTIPLE = 25;
+// Filet de sécurité UNIQUEMENT pour les cas extrêmes qui sentent la donnée incohérente
+// (devise du FCF ≠ devise du prix, même famille que le bug AXA/Hyundai/HSBC — repéré sur
+// Shinhan Financial, Nidec...) — volontairement TRÈS large pour ne jamais couper une
+// sortie extrême mais RÉELLE de la formule (ex. Eli Lilly/Equinix/Zoetis, confirmées non
+// buggées : un FCF actuel bas face à un multiple historique riche est un signal légitime,
+// même agressif). Seuls les cas allant bien au-delà (typiquement 1000%+, la marque d'un
+// facteur d'échelle 10-100x entre deux devises) sont exclus plutôt qu'affichés.
+const CLASSEMENT_MAX_ECART_PCT = 2000;
+
+// Prix Juste / écart pour UNE entreprise du classement — priorité à l'objectif Réaliste
+// que l'utilisateur a lui-même enregistré en Valorisation pour cette entreprise, s'il en
+// existe un ET qu'il porte sur le FCF (même métrique que ce classement) : "quand moi
+// j'évalue moi-même l'entreprise, tu es censé prendre mes résultats qui ont été
+// enregistrés". Sinon, repli sur la médiane P/FCF FMP (10 ans, déjà nettoyée des années à
+// FCF quasi nul côté export_ranking.py), plafonnée à 25x si classementCapMultiple est
+// actif ET que la médiane le dépasse — jamais de plafond sur un multiple que l'utilisateur
+// a lui-même choisi, ce serait écraser sa propre analyse.
+function classementValuationFor(e){
+  // fcfBase (médiane des 3 dernières années positives, pas juste la toute dernière) —
+  // évite qu'un seul creux ponctuel de FCF (constaté sur Lennar/Amazon) fasse exploser
+  // l'écart calculé, voir le commentaire détaillé dans export_ranking.py.
+  const fcfBase = e.fcfBase != null ? e.fcfBase : e.fcfParAction;
+  if (fcfBase == null || e.prixActuel == null) return { multiple:null, ecartPrix:null, source:null };
+  let multiple = e.medianePFCF;
+  let source = 'auto';
+  const saved = objectifsStore[e.nom];
+  if (saved && saved.length){
+    const last = saved[saved.length - 1];
+    if (last.metric === 'fcf' && last.scenarios && last.scenarios.realiste && last.scenarios.realiste.multiple != null){
+      multiple = last.scenarios.realiste.multiple;
+      source = 'objectif';
+    }
+  }
+  if (source === 'auto' && classementCapMultiple && multiple != null && multiple > CLASSEMENT_MAX_MULTIPLE){
+    multiple = CLASSEMENT_MAX_MULTIPLE;
+  }
+  if (multiple == null || multiple <= 0) return { multiple:null, ecartPrix:null, source };
+  const prixJuste = fcfBase * multiple;
+  // Dénominateur prixJuste (pas prixActuel) : borne la sous-valorisation à -100% au
+  // maximum (une entreprise ne peut pas valoir moins que zéro — retour explicite,
+  // "-214%... ce n'est pas possible"), la survalorisation reste non bornée.
+  let ecartPrix = prixJuste > 0 ? ((e.prixActuel - prixJuste) / prixJuste * 100) : null;
+  // Garde-fou supplémentaire trouvé en testant (Shinhan Financial, Nidec... des tickers
+  // OTC/ADR étrangers où FMP mélange parfois le FCF de la cote primaire — won, yen — avec
+  // un prix ADR en dollars, même famille de bug que les rendements de dividende
+  // AXA/Hyundai/HSBC) : au-delà de ce qu'une vraie survalorisation atteint dans la
+  // pratique, c'est presque toujours cette incohérence de devise plutôt qu'un signal réel
+  // — jamais appliqué côté objectif enregistré par l'utilisateur (ses propres chiffres,
+  // pas une donnée FMP à filtrer).
+  if (source === 'auto' && ecartPrix != null && ecartPrix > CLASSEMENT_MAX_ECART_PCT) ecartPrix = null;
+  return { multiple, ecartPrix, source };
+}
 
 function classementRankingRows(secteurFiltre){
-  return rankingSummaryData.map(e => ({
-    nom: e.nom, symbol: e.symbol,
-    logo: companyLogoUrl(e.nom) || (e.symbol ? `data/logos/${e.symbol}.png` : null),
-    rendementDiv: e.rendementDiv, ecartPrix: e.ecartPrix,
-    inSheet: !!companies[e.nom],
-    secteurKey: normalizeSector(e.secteur) || 'autre'
-  })).filter(r => !secteurFiltre || r.secteurKey === secteurFiltre);
+  return rankingSummaryData.map(e => {
+    const v = classementValuationFor(e);
+    return {
+      nom: e.nom, symbol: e.symbol,
+      logo: companyLogoUrl(e.nom) || (e.symbol ? `data/logos/${e.symbol}.png` : null),
+      rendementDiv: e.rendementDiv, ecartPrix: v.ecartPrix, valuationSource: v.source,
+      inSheet: !!companies[e.nom],
+      secteurKey: normalizeSector(e.secteur) || 'autre'
+    };
+  }).filter(r => !secteurFiltre || r.secteurKey === secteurFiltre);
 }
 function classementApplyTopN(list){
   return classementTopN === 'all' ? list : list.slice(0, classementTopN);
@@ -4087,24 +4157,23 @@ function renderClassement(){
   divLeftBox.innerHTML = divLeft.length ? divLeft.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.rendementDiv), null, null, r.inSheet)).join('') : empty;
   divRightBox.innerHTML = divRight.map((r, i) => classementRowHtml(r.nom, r.logo, half + i + 1, fmtPct(r.rendementDiv), null, null, r.inSheet)).join('');
 
-  // ecartPrix : (prixActuel - prixJuste) / prixActuel — NÉGATIF = prix actuel EN DESSOUS
-  // de la juste valeur = sous-valorisée = plus intéressant ; POSITIF = au-dessus =
-  // survalorisée (convention explicitement demandée par l'utilisateur : "quand c'est
-  // négatif, c'est sous-valorisé... la valeur de l'entreprise est inférieure à sa valeur
-  // intrinsèque" — le sens inverse avait été utilisé par erreur au premier passage,
-  // corrigé ici ET dans export_ranking.py). Par défaut, les deux listes montrent les cas
-  // les plus extrêmes en premier (le plus négatif d'abord côté sous-valorisées, le plus
-  // positif d'abord côté survalorisées) — classementValoSortDir inverse les DEUX listes
+  // ecartPrix (voir classementValuationFor ci-dessus) : (prixActuel - prixJuste) /
+  // prixJuste — NÉGATIF = prix actuel EN DESSOUS de la juste valeur = sous-valorisée =
+  // plus intéressant, borné à -100% (une entreprise ne peut pas valoir moins que zéro,
+  // retour explicite "-214%... ce n'est pas possible") ; POSITIF = au-dessus =
+  // survalorisée, non borné. Par défaut, les deux listes montrent les cas les plus
+  // extrêmes en premier (le plus négatif d'abord côté sous-valorisées, le plus positif
+  // d'abord côté survalorisées) — classementValoSortDir inverse les DEUX listes
   // simultanément d'un même bouton ("pareil pour les opportunités sûres et
   // sous-valorisées").
   const sousValo = classementApplyTopN(rows.filter(r => r.ecartPrix != null && r.ecartPrix < 0).sort((a, b) => classementValoSortDir * (a.ecartPrix - b.ecartPrix)));
   const survalo = classementApplyTopN(rows.filter(r => r.ecartPrix != null && r.ecartPrix >= 0).sort((a, b) => classementValoSortDir * (b.ecartPrix - a.ecartPrix)));
 
   valoSousBox.innerHTML = sousValo.length
-    ? sousValo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartPrix), 'pos', r.inSheet ? classementRendementRowHtml(r.nom) : null)).join('')
+    ? sousValo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartPrix), 'pos', r.inSheet ? classementRendementRowHtml(r.nom) : null, false, r.valuationSource)).join('')
     : '<div class="objectifs-empty">Aucune entreprise sous-valorisée.</div>';
   valoSurvaloBox.innerHTML = survalo.length
-    ? survalo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartPrix), 'neg', r.inSheet ? classementRendementRowHtml(r.nom) : null)).join('')
+    ? survalo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartPrix), 'neg', r.inSheet ? classementRendementRowHtml(r.nom) : null, false, r.valuationSource)).join('')
     : '<div class="objectifs-empty">Aucune entreprise survalorisée.</div>';
 }
 
@@ -4148,6 +4217,12 @@ function initClassement(){
       renderClassement();
     });
   }
+  const capBtn = document.getElementById('classementCapMultipleBtn');
+  if (capBtn) capBtn.addEventListener('click', () => {
+    classementCapMultiple = !classementCapMultiple;
+    capBtn.classList.toggle('active', classementCapMultiple);
+    renderClassement();
+  });
   ['classementDivLeft', 'classementDivRight', 'classementValoSous', 'classementValoSurvalo'].forEach(id => {
     const box = document.getElementById(id);
     if (!box) return;
