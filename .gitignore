@@ -25,9 +25,9 @@ fmp-database/__pycache__/
 # la demande depuis le Google Sheet + l'API FMP, pas une source de vérité à versionner.
 fmp-database/companies*.csv
 fmp-database/resolved_tickers*.json
-fmp-database/*import_log.txt
-fmp-database/*resolve_log.txt
-fmp-database/*test*_log.txt
+fmp-database/resolved_sector_etfs.json
+fmp-database/sheet_logos.json
+fmp-database/*log*.txt
 __pycache__/
 *.pyc
 
@@ -41,3 +41,4 @@ data/labo-*.json
 data/documents-*.json
 data/prices-*.json
 data/logos/
+data/logos-manifest.json

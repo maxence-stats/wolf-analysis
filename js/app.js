@@ -3037,12 +3037,29 @@ function printImagesRowHtml(images){
 // copié dans data/logos/ à la racine, voir sync_all_to_site()) quand le Sheet n'a pas
 // de LIEN IMAGE pour cette entreprise. Le Sheet reste prioritaire quand il en a un
 // (comportement inchangé pour toute entreprise déjà bien couverte).
+// Manifeste des logos téléchargés EN LOCAL depuis les URL du Sheet (voir
+// fmp-database/download_sheet_logos.py) — demande explicite : "je veux que toutes les
+// données... logos... n'aient plus besoin de se connecter au Google Sheet [ni aux sites
+// distants (Wikipedia, sites officiels...) que le Sheet référence]". Une fois une
+// entreprise présente dans ce manifeste, son logo ne dépend plus JAMAIS d'une requête
+// réseau externe au chargement (juste un fichier local sous data/logos/), et prime sur
+// la colonne lienImage du Sheet — celle-ci ne sert plus que de source encore-non-
+// rapatriée en local (ou pour une entreprise ajoutée au Sheet après coup, tant que
+// download_sheet_logos.py n'a pas encore tourné dessus).
+let logosManifest = {};
+async function loadLogosManifest(){
+  try{
+    const res = await fetch('data/logos-manifest.json', { cache:'no-store' });
+    if (res.ok) logosManifest = await res.json();
+  }catch(e){ /* fichier absent (pas encore généré) ou fetch bloqué (file://) — non bloquant */ }
+}
 function companyLogoUrl(nom){
   if (!nom) return null;
   const match = Object.keys(companies).find(n => stripAccents(n.toLowerCase()) === stripAccents(nom.toLowerCase()));
+  const symbol = fmpSymbols[nom] || (match && fmpSymbols[match]);
+  if (symbol && logosManifest[symbol]) return `data/logos/${logosManifest[symbol]}`;
   const sheetUrl = match ? companies[match][companies[match].length - 1].lienImage : null;
   if (sheetUrl) return sheetUrl;
-  const symbol = fmpSymbols[nom] || (match && fmpSymbols[match]);
   return symbol ? `data/logos/${symbol}.png` : null;
 }
 
@@ -14312,5 +14329,6 @@ document.getElementById('persoBlurToggleBtn').addEventListener('click', function
   loadAllDataFromAppsScript();
   loadCreditIndicators();
   loadSectorEtfData();
+  loadLogosManifest();
 })();
 
