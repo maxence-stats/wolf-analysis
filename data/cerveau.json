@@ -457,9 +457,9 @@
       },
       {
         "id": "c-defense-electronique",
-        "nom": "Défense & Aérospatiale — de la plateforme aux capteurs",
+        "nom": "Defense & Aerospatiale - de la plateforme au drone",
         "sousSecteurPath": [],
-        "rev": 1,
+        "rev": 2,
         "phases": [
           {
             "nom": "Systèmes d'Armes & Plateformes",
@@ -540,6 +540,240 @@
                 "nom": "Leonardo",
                 "image": "data/logos/LDO.MI.png",
                 "legende": "Italie — électronique de défense et hélicoptères, un des plus gros groupes de défense européens.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Aviation Civile",
+            "groupe": {
+              "num": "03",
+              "label": "AVIATION CIVILE",
+              "tagline": "La construction aeronautique commerciale - duopole mondial serre"
+            },
+            "entreprises": [
+              {
+                "nom": "Boeing",
+                "image": "data/logos/BA.png",
+                "legende": "US - avec Airbus, forme un duopole mondial quasi total sur les avions commerciaux de plus de 100 places.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Airbus",
+                "image": "data/logos/AIR.PA.png",
+                "legende": "France/Europe - l'autre moitie du duopole mondial avec Boeing sur l'aviation commerciale.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Embraer",
+                "image": "data/logos/ERJ.png",
+                "legende": "Bresil - troisieme constructeur aeronautique civil mondial, specialiste des jets regionaux.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Motorisation Aeronautique",
+            "groupe": {
+              "num": "04",
+              "label": "MOTORISATION AERONAUTIQUE",
+              "tagline": "Sans ces moteurs, aucun avion du dessus ne peut voler - un oligopole tres concentre"
+            },
+            "entreprises": [
+              {
+                "nom": "GE Aerospace",
+                "image": "data/logos/GE.png",
+                "legende": "US - premier motoriste aeronautique mondial, coentreprise CFM International avec Safran sur les avions monocouloirs.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Safran",
+                "image": "data/logos/SAF.PA.png",
+                "legende": "France - via CFM International (coentreprise 50/50 avec GE), fournit la quasi-totalite des moteurs des avions monocouloirs Boeing/Airbus.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Rolls-Royce Holdings",
+                "image": "data/logos/RR.L.png",
+                "legende": "Royaume-Uni - leader mondial des moteurs pour avions long-courriers gros-porteurs.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Drones",
+            "groupe": {
+              "num": "05",
+              "label": "DRONES",
+              "tagline": "Une categorie a part, civile et militaire, en pleine expansion"
+            },
+            "entreprises": [
+              {
+                "nom": "DJI",
+                "image": "data/logos/DJI.png",
+                "legende": "Chine - PRIVEE, controle plus de 90% du marche mondial des drones grand public/professionnels : un des goulots d'etranglement les plus extremes de toute la tech.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "AeroVironment",
+                "image": "data/logos/AVAV.png",
+                "legende": "US - leader americain des drones tactiques et militaires (Switchblade, Puma).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Anduril Industries",
+                "image": "data/logos/ANDURIL.png",
+                "legende": "US - PRIVEE, licorne de la defense specialisee dans les systemes autonomes (drones, surveillance, IA de commandement) pour l'armee americaine.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          }
+        ]
+      },
+      {
+        "id": "c-maritime-naval",
+        "nom": "Maritime & Transport Naval - du chantier a la cargaison",
+        "sousSecteurPath": [],
+        "rev": 1,
+        "phases": [
+          {
+            "nom": "Construction Navale",
+            "groupe": {
+              "num": "01",
+              "label": "CONSTRUCTION NAVALE",
+              "tagline": "L'amont - concoit et construit les navires pour les armateurs"
+            },
+            "entreprises": [
+              {
+                "nom": "HD Hyundai Heavy Industries",
+                "image": "data/logos/009540.KS.png",
+                "legende": "Coree du Sud - plus gros chantier naval au monde par tonnage livre.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Samsung Heavy Industries",
+                "image": "data/logos/010140.KS.png",
+                "legende": "Coree du Sud - un des tout premiers chantiers navals mondiaux, fort sur les methaniers GNL.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "China State Shipbuilding Corporation",
+                "image": "data/logos/600150.SS.png",
+                "legende": "Chine - plus gros groupe naval au monde en volume de commandes, porte par la strategie maritime chinoise.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Fincantieri",
+                "image": "data/logos/FCT.MI.png",
+                "legende": "Italie - specialiste mondial des paquebots de croisiere et navires militaires.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Armateurs Conteneurs",
+            "groupe": {
+              "num": "02",
+              "label": "ARMATEURS & TRANSPORT DE CONTENEURS",
+              "tagline": "Possede et exploite les flottes qui transportent la quasi-totalite du fret manufacture mondial"
+            },
+            "entreprises": [
+              {
+                "nom": "Mediterranean Shipping Company",
+                "image": "data/logos/MSC-SHIPPING.png",
+                "legende": "Suisse/Italie - PRIVEE (famille Aponte), premier armateur mondial en capacite conteneurs (environ 21% de la capacite mondiale), a depasse Maersk en 2022.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "A.P. Moller-Maersk",
+                "image": "data/logos/MAERSK-B.CO.png",
+                "legende": "Danemark - deuxieme armateur mondial, historiquement le nom le plus connu du transport conteneurs.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "CMA CGM",
+                "image": "data/logos/CMA-CGM.png",
+                "legende": "France - PRIVEE (famille Saade), troisieme armateur mondial en capacite conteneurs.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "COSCO Shipping Holdings",
+                "image": "data/logos/1919.HK.png",
+                "legende": "Chine - un des plus gros armateurs mondiaux, bras maritime de la strategie commerciale chinoise.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Hapag-Lloyd",
+                "image": "data/logos/HLAG.DE.png",
+                "legende": "Allemagne - un des cinq premiers armateurs conteneurs mondiaux.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Transport de Vrac & Energie",
+            "groupe": {
+              "num": "03",
+              "label": "TRANSPORT DE VRAC & ENERGIE",
+              "tagline": "L'autre grande famille du maritime - transporte matieres premieres, petrole et gaz en vrac"
+            },
+            "entreprises": [
+              {
+                "nom": "Frontline",
+                "image": "data/logos/FRO.png",
+                "legende": "Norvege/Chypre - un des plus gros armateurs petroliers (tankers) cotes au monde.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Golden Ocean Group",
+                "image": "data/logos/GOGL.png",
+                "legende": "Bermudes/Norvege - un des plus gros armateurs de vraquiers (minerai, cereales, charbon) cotes.",
                 "width": 220,
                 "imgHeight": 120,
                 "bottleneck": false
@@ -1023,6 +1257,138 @@
                 "nom": "Nu Holdings",
                 "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f7/Nubank_logo_2021.svg/250px-Nubank_logo_2021.svg.png",
                 "legende": "Brésil (Nubank) — plus grande néobanque d'Amérique latine par le nombre de clients.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          }
+        ]
+      },
+      {
+        "id": "c-crypto-blockchain",
+        "nom": "Cryptomonnaies & Blockchain - du minage a la tresorerie",
+        "sousSecteurPath": [],
+        "rev": 1,
+        "phases": [
+          {
+            "nom": "Minage & Infrastructure",
+            "groupe": {
+              "num": "01",
+              "label": "MINAGE & INFRASTRUCTURE",
+              "tagline": "L'amont — produit et securise les blockchains \"proof-of-work\" comme Bitcoin"
+            },
+            "entreprises": [
+              {
+                "nom": "Marathon Digital Holdings",
+                "image": "data/logos/MARA.png",
+                "legende": "US — plus gros mineur de Bitcoin cote en bourse.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Riot Platforms",
+                "image": "data/logos/RIOT.png",
+                "legende": "US — deuxieme gros mineur de Bitcoin cote, forte capacite energetique au Texas.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "CleanSpark",
+                "image": "data/logos/CLSK.png",
+                "legende": "US — mineur de Bitcoin cote en forte croissance, strategie d'acquisition de sites.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Core Scientific",
+                "image": "data/logos/CORZ.png",
+                "legende": "US — un des plus gros hebergeurs d'infrastructure de minage aux Etats-Unis.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Bitmain",
+                "image": "data/logos/BITMAIN.png",
+                "legende": "Chine — PRIVEE, a controle jusqu'a environ 75% du marche mondial des machines de minage ASIC a la fin des annees 2010 ; toujours le plus gros fabricant, meme si la concurrence (MicroBT, Canaan) a depuis reduit sa part.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Plateformes & Echanges",
+            "groupe": {
+              "num": "02",
+              "label": "PLATEFORMES & ECHANGES",
+              "tagline": "Le marche secondaire — achete, vend et conserve les cryptoactifs pour les utilisateurs"
+            },
+            "entreprises": [
+              {
+                "nom": "Coinbase Global",
+                "image": "data/logos/COIN.png",
+                "legende": "US — premiere plateforme d'echange crypto cotee en bourse aux Etats-Unis.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Robinhood Markets",
+                "image": "data/logos/HOOD.png",
+                "legende": "US — courtier retail avec une activite crypto devenue tres significative.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Infrastructure & Stablecoins",
+            "groupe": {
+              "num": "03",
+              "label": "INFRASTRUCTURE & STABLECOINS",
+              "tagline": "Transversal — les rails monetaires qui font circuler la valeur entre les plateformes"
+            },
+            "entreprises": [
+              {
+                "nom": "Circle Internet Group",
+                "image": "data/logos/CRCL.png",
+                "legende": "US — emetteur de l'USDC, deuxieme stablecoin mondial, introduit en bourse en 2025.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Block Inc.",
+                "image": "data/logos/XYZ.png",
+                "legende": "US — paiements (Cash App, Square) avec une exposition Bitcoin significative via Cash App.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Tresorerie & Exposition Indirecte",
+            "groupe": {
+              "num": "04",
+              "label": "TRESORERIE & EXPOSITION INDIRECTE",
+              "tagline": "Des societes cotees classiques utilisees comme substitut d'investissement au Bitcoin lui-meme"
+            },
+            "entreprises": [
+              {
+                "nom": "Strategy",
+                "image": "data/logos/MSTR.png",
+                "legende": "US — ex-MicroStrategy, plus grosse tresorerie Bitcoin d'entreprise au monde ; son action fonctionne comme un proxy cote et fortement leverage du cours du Bitcoin.",
                 "width": 220,
                 "imgHeight": 120,
                 "bottleneck": false
