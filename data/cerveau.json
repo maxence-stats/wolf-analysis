@@ -1501,7 +1501,7 @@
         "id": "c-sante-complete",
         "nom": "Santé — de la recherche au patient",
         "sousSecteurPath": [],
-        "rev": 3,
+        "rev": 4,
         "phases": [
           {
             "nom": "Biotechnologies",
@@ -1708,9 +1708,44 @@
             "blocsLibres": []
           },
           {
-            "nom": "Assureurs & prestataires (marché US)",
+            "nom": "Distribution Pharmaceutique",
             "groupe": {
               "num": "05",
+              "label": "DISTRIBUTION PHARMACEUTIQUE",
+              "tagline": "Le dernier kilometre - achemine medicaments des laboratoires vers pharmacies et hopitaux"
+            },
+            "entreprises": [
+              {
+                "nom": "McKesson",
+                "image": "data/logos/MCK.png",
+                "legende": "US - premier distributeur pharmaceutique mondial par chiffre d'affaires.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Cencora",
+                "image": "data/logos/COR.png",
+                "legende": "US - ex-AmerisourceBergen, un des trois grands distributeurs pharmaceutiques americains.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Cardinal Health",
+                "image": "data/logos/CAH.png",
+                "legende": "US - troisieme grand distributeur pharmaceutique americain ; les trois ensemble controlent environ 90% du marche US.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Assureurs & prestataires (marché US)",
+            "groupe": {
+              "num": "06",
               "label": "FINANCEMENT & ACCÈS AUX SOINS",
               "tagline": "Assurance & prestataires — comment le patient y accède"
             },
@@ -2392,7 +2427,7 @@
         "id": "c-tech-complete",
         "nom": "Technologies — du silicium à la sécurité",
         "sousSecteurPath": [],
-        "rev": 2,
+        "rev": 3,
         "phases": [
           {
             "nom": "Conception (Fabless)",
@@ -2664,9 +2699,44 @@
             "blocsLibres": []
           },
           {
-            "nom": "Cloud & logiciel d'entreprise",
+            "nom": "Conseil & Services IT",
             "groupe": {
               "num": "08",
+              "label": "CONSEIL & SERVICES IT",
+              "tagline": "Integre et deploie les logiciels/le cloud chez le client final - le dernier maillon avant l'utilisateur"
+            },
+            "entreprises": [
+              {
+                "nom": "Accenture",
+                "image": "data/logos/ACN.png",
+                "legende": "Irlande/US - premier groupe mondial de conseil et services IT.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "IBM",
+                "image": "data/logos/IBM.png",
+                "legende": "US - pionnier de l'informatique d'entreprise, aujourd'hui recentre sur le cloud hybride et le conseil.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Capgemini",
+                "image": "data/logos/CAP.PA.png",
+                "legende": "France - un des plus gros groupes europeens de conseil et services IT.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Cloud & logiciel d'entreprise",
+            "groupe": {
+              "num": "09",
               "label": "CLOUD & LOGICIEL",
               "tagline": "Construit sur cette infrastructure physique"
             },
@@ -2717,7 +2787,7 @@
           {
             "nom": "Cybersécurité",
             "groupe": {
-              "num": "09",
+              "num": "10",
               "label": "CYBERSÉCURITÉ",
               "tagline": "Protège l'ensemble de la pile, matériel et logiciel"
             },
@@ -2939,7 +3009,7 @@
         "id": "c-communication-complete",
         "nom": "Services de communication — du réseau à l'écran",
         "sousSecteurPath": [],
-        "rev": 2,
+        "rev": 3,
         "phases": [
           {
             "nom": "Réseaux Télécoms",
@@ -3128,6 +3198,41 @@
               }
             ],
             "blocsLibres": []
+          },
+          {
+            "nom": "Jeux Video",
+            "groupe": {
+              "num": "05",
+              "label": "JEUX VIDEO",
+              "tagline": "Une sous-industrie a part du divertissement interactif, jamais couverte ici"
+            },
+            "entreprises": [
+              {
+                "nom": "Electronic Arts",
+                "image": "data/logos/EA.png",
+                "legende": "US - un des plus gros editeurs de jeux video au monde (FIFA/EA Sports FC, Battlefield).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Take-Two Interactive",
+                "image": "data/logos/TTWO.png",
+                "legende": "US - editeur de Grand Theft Auto, un des jeux les plus rentables de l'histoire.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Nintendo",
+                "image": "data/logos/NTDOY.png",
+                "legende": "Japon - constructeur et editeur, Switch et licences Mario/Zelda/Pokemon.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
           }
         ]
       }
@@ -3260,7 +3365,7 @@
         "id": "c-immobilier-complete",
         "nom": "Immobilier — du chantier à la gestion d'actifs",
         "sousSecteurPath": [],
-        "rev": 1,
+        "rev": 2,
         "phases": [
           {
             "nom": "Promotion & Développement",
@@ -3349,6 +3454,14 @@
                 "nom": "AvalonBay Communities",
                 "image": "data/logos/AVB.png",
                 "legende": "US — une des plus grosses foncières résidentielles (immeubles d'appartements) américaines.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Welltower",
+                "image": "data/logos/WELL.png",
+                "legende": "US - premiere foncière (REIT) specialisee dans l'immobilier de sante (maisons de retraite, cliniques) au monde.",
                 "width": 220,
                 "imgHeight": 120,
                 "bottleneck": false
