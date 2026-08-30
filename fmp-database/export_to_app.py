@@ -255,6 +255,18 @@ def dividend_per_share_by_year(conn, symbol, n_years=5):
 
 
 def build_growth(conn, symbol):
+    # Années de référence pour l'en-tête du tableau de croissance côté site (les colonnes
+    # affichaient juste "A-4 → A-3"... — l'utilisateur ne pouvait pas savoir quelles années
+    # c'était réellement : "il faut mettre les années pour que je vois lesquelles c'est").
+    # Basé sur le Chiffre d'affaires (toujours présent) plutôt que recalculé par ligne :
+    # les autres métriques utilisent quasi toujours la même fenêtre d'exercices, et un seul
+    # en-tête partagé reste plus simple à afficher qu'un en-tête par ligne.
+    ref_raw_cat, ref_raw_field = RAW_FIELD_FOR_TOTAL["Chiffre d'affaires"]
+    ref_rows = rows_for(conn, ref_raw_cat, symbol, limit=5)
+    years = [(r.get("fiscalYear") or r.get("date", "")[:4]) or None for r in ref_rows]
+    while len(years) < 5:
+        years.insert(0, None)
+
     rows = []
     for label, (growth_cat, growth_field) in GROWTH_FIELD_MAP.items():
         growth_rows = rows_for(conn, growth_cat, symbol, limit=4)  # 4 YoY = 5 exercices
@@ -277,7 +289,7 @@ def build_growth(conn, symbol):
     div_values = dividend_per_share_by_year(conn, symbol)
     div_yoy, div_total, div_cagr = growth_series_from_annual(div_values)
     rows.append({"label": "Dividende par action", "yoy": div_yoy, "total": div_total, "cagr": div_cagr})
-    return rows
+    return rows, years
 
 
 def fmt_stat(value, kind):
@@ -428,7 +440,7 @@ def export_symbol(conn, symbol):
     income_q = rows_for(conn, "income_statement", symbol, period="quarter", limit=20)
     balance_q = rows_for(conn, "balance_sheet", symbol, period="quarter", limit=20)
     cashflow_q = rows_for(conn, "cash_flow", symbol, period="quarter", limit=20)
-    growth_rows = build_growth(conn, symbol)
+    growth_rows, growth_years = build_growth(conn, symbol)
     div_row = next((r for r in growth_rows if r["label"] == "Dividende par action"), None)
 
     out = {
@@ -440,6 +452,7 @@ def export_symbol(conn, symbol):
         "balanceSheetQ": build_statement(balance_q, FIELD_MAP_BS, quarterly=True),
         "cashFlowQ": build_statement(cashflow_q, FIELD_MAP_CF, quarterly=True),
         "growth": growth_rows,
+        "growthYears": growth_years,
         "stats": build_stats(conn, symbol, div_row["cagr"] if div_row else None),
         "dcf": latest_dcf(conn, symbol, "dcf"),
         "dcfLevered": latest_dcf(conn, symbol, "dcf_levered"),

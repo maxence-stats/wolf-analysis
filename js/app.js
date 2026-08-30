@@ -9636,7 +9636,24 @@ const DOCUMENTS_GROWTH_ROWS = [
   { label:'Free Cash Flow' },
   { label:'Dividende par action' }
 ];
+// En-têtes génériques ("A-4 → A-3"...) — l'utilisateur ne pouvait pas savoir quelles
+// années c'était réellement : "il faut mettre les années pour que je vois lesquelles
+// c'est". Remplacées par les vraies années (real.growthYears, voir export_to_app.py::
+// build_growth()) via documentsGrowthCols(years) ci-dessous ; ce tableau générique reste
+// le repli si growthYears est absent (fichier généré avant cet ajout, ou entreprise pas
+// encore ré-exportée).
 const DOCUMENTS_GROWTH_COLS = ['A-4 → A-3', 'A-3 → A-2', 'A-2 → A-1', 'A-1 → A', 'Croissance totale (5a)', 'TCAC (5a)'];
+function documentsGrowthCols(years){
+  if (!years || years.length !== 5) return DOCUMENTS_GROWTH_COLS;
+  const yoyLabel = (i, fallback) => (years[i-1] != null && years[i] != null) ? `${years[i-1]} → ${years[i]}` : fallback;
+  const first = years.find(y => y != null), last = [...years].reverse().find(y => y != null);
+  const span = (first != null && last != null && first !== last) ? ` (${first}–${last})` : ' (5a)';
+  return [
+    yoyLabel(1, DOCUMENTS_GROWTH_COLS[0]), yoyLabel(2, DOCUMENTS_GROWTH_COLS[1]),
+    yoyLabel(3, DOCUMENTS_GROWTH_COLS[2]), yoyLabel(4, DOCUMENTS_GROWTH_COLS[3]),
+    `Croissance totale${span}`, `TCAC${span}`
+  ];
+}
 const DOCUMENTS_PERIOD_PLACEHOLDERS = ['—', '—', '—', '—', '—'];
 
 // Données réelles FMP — demande explicite : "je veux que quand je tape TotalEnergies ou
@@ -9687,10 +9704,11 @@ function fmtFmpPct(value){
   return (value >= 0 ? '+' : '') + (value * 100).toLocaleString('fr-FR', { minimumFractionDigits:1, maximumFractionDigits:1 }) + '%';
 }
 
-function documentsGrowthTableHtml(growthData){
+function documentsGrowthTableHtml(growthData, growthYears){
+  const cols = documentsGrowthCols(growthYears);
   return `<div class="documents-table-wrap">
     <table class="documents-table">
-      <thead><tr><th>Métrique</th>${DOCUMENTS_GROWTH_COLS.map(c => `<th>${c}</th>`).join('')}</tr></thead>
+      <thead><tr><th>Métrique</th>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
       <tbody>${DOCUMENTS_GROWTH_ROWS.map(r => {
         const g = growthData && growthData.find(x => x.label === r.label);
         const cells = g
@@ -9760,9 +9778,9 @@ const DOCUMENTS_STATS_KIND = {
   'Dette nette / EBITDA':'x', 'Current Ratio':'x', 'Quick Ratio':'x', 'Couverture des intérêts':'x',
   'Rendement':'pct', 'Payout Ratio':'pct', 'CAGR Dividende 5a':'pct'
 };
-function documentsStatisticsHtml(growthData, statsData){
+function documentsStatisticsHtml(growthData, statsData, growthYears){
   return `<div class="section-label">Croissance (5 ans)</div>
-    ${documentsGrowthTableHtml(growthData)}
+    ${documentsGrowthTableHtml(growthData, growthYears)}
 
     ${DOCUMENTS_STATS_GROUPS.map(g => `
     <div class="section-label" style="margin-top:14px;">${g.title}</div>
@@ -9795,7 +9813,7 @@ function renderDocumentsPage(nom){
   if (documentsView === 'income') content.innerHTML = documentsStatementSectionHtml('income', 'Income Statement', DOCUMENTS_IS_ROWS, real && real.incomeStatement, real && real.incomeStatementQ);
   else if (documentsView === 'balance') content.innerHTML = documentsStatementSectionHtml('balance', 'Balance Sheet', DOCUMENTS_BS_ROWS, real && real.balanceSheet, real && real.balanceSheetQ);
   else if (documentsView === 'cashflow') content.innerHTML = documentsStatementSectionHtml('cashflow', 'Cash Flow', DOCUMENTS_CF_ROWS, real && real.cashFlow, real && real.cashFlowQ);
-  else content.innerHTML = documentsStatisticsHtml(real && real.growth, real && real.stats);
+  else content.innerHTML = documentsStatisticsHtml(real && real.growth, real && real.stats, real && real.growthYears);
 }
 function initDocumentsTabbar(){
   const bar = document.getElementById('documentsSubnav');
