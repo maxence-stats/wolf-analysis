@@ -458,19 +458,17 @@
     ],
     "finance": [
       {
-        "id": "c-banques",
-        "nom": "Banques",
-        "sousSecteurPath": [
-          "Banques"
-        ],
-        "rev": 1,
+        "id": "c-finance-complete",
+        "nom": "Finance — du capital à la transaction quotidienne",
+        "sousSecteurPath": [],
+        "rev": 2,
         "phases": [
           {
             "nom": "Banques US",
             "groupe": {
               "num": "01",
-              "label": "BANQUES US",
-              "tagline": "Universelles & de détail"
+              "label": "CAPITAL & CRÉDIT",
+              "tagline": "Banques — où le capital entre dans l'économie"
             },
             "entreprises": [
               {
@@ -503,9 +501,9 @@
           {
             "nom": "Banques européennes",
             "groupe": {
-              "num": "02",
-              "label": "BANQUES EUROPÉENNES",
-              "tagline": "Universelles & de gestion de fortune"
+              "num": "01",
+              "label": "CAPITAL & CRÉDIT",
+              "tagline": "Banques — où le capital entre dans l'économie"
             },
             "entreprises": [
               {
@@ -554,9 +552,9 @@
           {
             "nom": "Banques Asie & émergents",
             "groupe": {
-              "num": "03",
-              "label": "BANQUES ASIE & ÉMERGENTS",
-              "tagline": "Marchés à forte croissance"
+              "num": "01",
+              "label": "CAPITAL & CRÉDIT",
+              "tagline": "Banques — où le capital entre dans l'économie"
             },
             "entreprises": [
               {
@@ -598,23 +596,13 @@
                 "texte": "Pas de goulot d'étranglement identifié sur ce maillon : le secteur bancaire est structurellement fragmenté (aucun acteur ne détient de position de dépendance critique pour les autres), contrairement aux réseaux de paiement ou à la réassurance."
               }
             ]
-          }
-        ]
-      },
-      {
-        "id": "c-assurance",
-        "nom": "Assurance",
-        "sousSecteurPath": [
-          "Assurance"
-        ],
-        "rev": 1,
-        "phases": [
+          },
           {
             "nom": "Assurance vie & santé",
             "groupe": {
-              "num": "01",
-              "label": "ASSURANCE VIE & SANTÉ",
-              "tagline": "Prévoyance & retraite"
+              "num": "02",
+              "label": "PROTECTION DU RISQUE",
+              "tagline": "Assurance — protège le capital et les actifs"
             },
             "entreprises": [
               {
@@ -648,8 +636,8 @@
             "nom": "Assurance dommages (P&C)",
             "groupe": {
               "num": "02",
-              "label": "ASSURANCE DOMMAGES (P&C)",
-              "tagline": "Particuliers & entreprises"
+              "label": "PROTECTION DU RISQUE",
+              "tagline": "Assurance — protège le capital et les actifs"
             },
             "entreprises": [
               {
@@ -690,9 +678,9 @@
           {
             "nom": "Réassurance",
             "groupe": {
-              "num": "03",
-              "label": "RÉASSURANCE",
-              "tagline": "Le «second étage» de l'assurance"
+              "num": "02",
+              "label": "PROTECTION DU RISQUE",
+              "tagline": "Assurance — protège le capital et les actifs"
             },
             "entreprises": [
               {
@@ -713,23 +701,13 @@
               }
             ],
             "blocsLibres": []
-          }
-        ]
-      },
-      {
-        "id": "c-gestion-actifs-marches",
-        "nom": "Gestion d'actifs & marchés",
-        "sousSecteurPath": [
-          "Gestion d'actifs & marchés"
-        ],
-        "rev": 1,
-        "phases": [
+          },
           {
             "nom": "Gestion d'actifs",
             "groupe": {
-              "num": "01",
-              "label": "GESTION D'ACTIFS",
-              "tagline": "Fonds, ETF, mandats"
+              "num": "03",
+              "label": "ÉPARGNE & MARCHÉS",
+              "tagline": "Gestion d'actifs & bourses — fait fructifier et alloue le capital"
             },
             "entreprises": [
               {
@@ -770,9 +748,9 @@
           {
             "nom": "Bourses & infrastructures de marché",
             "groupe": {
-              "num": "02",
-              "label": "BOURSES & INFRASTRUCTURES",
-              "tagline": "Là où les échanges ont lieu"
+              "num": "03",
+              "label": "ÉPARGNE & MARCHÉS",
+              "tagline": "Gestion d'actifs & bourses — fait fructifier et alloue le capital"
             },
             "entreprises": [
               {
@@ -822,8 +800,8 @@
             "nom": "Données financières & indices",
             "groupe": {
               "num": "03",
-              "label": "DONNÉES & INDICES",
-              "tagline": "Le péage de l'information financière"
+              "label": "ÉPARGNE & MARCHÉS",
+              "tagline": "Gestion d'actifs & bourses — fait fructifier et alloue le capital"
             },
             "entreprises": [
               {
@@ -860,23 +838,13 @@
               }
             ],
             "blocsLibres": []
-          }
-        ]
-      },
-      {
-        "id": "c-paiements-fintech",
-        "nom": "Paiements & fintech",
-        "sousSecteurPath": [
-          "Paiements & fintech"
-        ],
-        "rev": 1,
-        "phases": [
+          },
           {
             "nom": "Réseaux de paiement (rails)",
             "groupe": {
-              "num": "01",
-              "label": "RÉSEAUX DE PAIEMENT",
-              "tagline": "Le duopole mondial des cartes"
+              "num": "04",
+              "label": "CIRCULATION DE L'ARGENT",
+              "tagline": "Paiements & fintech — fait circuler l'argent au quotidien"
             },
             "entreprises": [
               {
@@ -901,9 +869,9 @@
           {
             "nom": "Processeurs & plateformes",
             "groupe": {
-              "num": "02",
-              "label": "PROCESSEURS & PLATEFORMES",
-              "tagline": "Entre le commerçant et la banque"
+              "num": "04",
+              "label": "CIRCULATION DE L'ARGENT",
+              "tagline": "Paiements & fintech — fait circuler l'argent au quotidien"
             },
             "entreprises": [
               {
@@ -944,9 +912,9 @@
           {
             "nom": "Fintech & néobanques",
             "groupe": {
-              "num": "03",
-              "label": "FINTECH & NÉOBANQUES",
-              "tagline": "Challengers 100% digitaux"
+              "num": "04",
+              "label": "CIRCULATION DE L'ARGENT",
+              "tagline": "Paiements & fintech — fait circuler l'argent au quotidien"
             },
             "entreprises": [
               {
@@ -973,19 +941,68 @@
     ],
     "sante": [
       {
-        "id": "c-big-pharma",
-        "nom": "Big Pharma",
-        "sousSecteurPath": [
-          "Big Pharma"
-        ],
-        "rev": 1,
+        "id": "c-sante-complete",
+        "nom": "Santé — de la recherche au patient",
+        "sousSecteurPath": [],
+        "rev": 2,
         "phases": [
+          {
+            "nom": "Biotechnologies",
+            "groupe": {
+              "num": "01",
+              "label": "RECHERCHE & DÉVELOPPEMENT",
+              "tagline": "Biotech — découverte de nouveaux traitements"
+            },
+            "entreprises": [
+              {
+                "nom": "Amgen",
+                "image": "data/logos/AMGN.png",
+                "legende": "US — pionnier biotech, franchise forte en inflammation et oncologie.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Gilead Sciences",
+                "image": "data/logos/GILD.png",
+                "legende": "US — leader mondial des antiviraux (VIH, hépatite).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Vertex Pharmaceuticals",
+                "image": "data/logos/VRTX.png",
+                "legende": "US — quasi-monopole du traitement de la mucoviscidose.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Regeneron Pharmaceuticals",
+                "image": "data/logos/REGN.png",
+                "legende": "US — Eylea (DMLA), co-développe Dupixent avec Sanofi.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Moderna",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/Moderna_logo.svg/250px-Moderna_logo.svg.png",
+                "legende": "US — pionnier de l'ARN messager, vaccins COVID puis pipeline élargi.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
           {
             "nom": "Laboratoires mondiaux",
             "groupe": {
-              "num": "01",
-              "label": "BIG PHARMA",
-              "tagline": "Recherche, production, distribution mondiale"
+              "num": "02",
+              "label": "PRODUCTION & COMMERCIALISATION",
+              "tagline": "Big Pharma — mise à l'échelle mondiale, souvent après rachat/licence d'un biotech"
             },
             "entreprises": [
               {
@@ -1054,84 +1071,13 @@
               }
             ],
             "blocsLibres": []
-          }
-        ]
-      },
-      {
-        "id": "c-biotech",
-        "nom": "Biotech",
-        "sousSecteurPath": [
-          "Biotech"
-        ],
-        "rev": 1,
-        "phases": [
-          {
-            "nom": "Biotechnologies",
-            "groupe": {
-              "num": "02",
-              "label": "BIOTECH",
-              "tagline": "Thérapies ciblées & ARN"
-            },
-            "entreprises": [
-              {
-                "nom": "Amgen",
-                "image": "data/logos/AMGN.png",
-                "legende": "US — pionnier biotech, franchise forte en inflammation et oncologie.",
-                "width": 220,
-                "imgHeight": 120,
-                "bottleneck": false
-              },
-              {
-                "nom": "Gilead Sciences",
-                "image": "data/logos/GILD.png",
-                "legende": "US — leader mondial des antiviraux (VIH, hépatite).",
-                "width": 220,
-                "imgHeight": 120,
-                "bottleneck": false
-              },
-              {
-                "nom": "Vertex Pharmaceuticals",
-                "image": "data/logos/VRTX.png",
-                "legende": "US — quasi-monopole du traitement de la mucoviscidose.",
-                "width": 220,
-                "imgHeight": 120,
-                "bottleneck": true
-              },
-              {
-                "nom": "Regeneron Pharmaceuticals",
-                "image": "data/logos/REGN.png",
-                "legende": "US — Eylea (DMLA), co-développe Dupixent avec Sanofi.",
-                "width": 220,
-                "imgHeight": 120,
-                "bottleneck": false
-              },
-              {
-                "nom": "Moderna",
-                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/Moderna_logo.svg/250px-Moderna_logo.svg.png",
-                "legende": "US — pionnier de l'ARN messager, vaccins COVID puis pipeline élargi.",
-                "width": 220,
-                "imgHeight": 120,
-                "bottleneck": false
-              }
-            ],
-            "blocsLibres": []
-          }
-        ]
-      },
-      {
-        "id": "c-medtech",
-        "nom": "Medtech & dispositifs médicaux",
-        "sousSecteurPath": [
-          "Medtech & dispositifs médicaux"
-        ],
-        "rev": 1,
-        "phases": [
+          },
           {
             "nom": "Dispositifs médicaux",
             "groupe": {
               "num": "03",
-              "label": "MEDTECH",
-              "tagline": "Implants, diagnostics, chirurgie"
+              "label": "ÉQUIPEMENTS & DIAGNOSTIC",
+              "tagline": "Medtech — dispositifs utilisés aux côtés des traitements"
             },
             "entreprises": [
               {
@@ -1176,23 +1122,13 @@
               }
             ],
             "blocsLibres": []
-          }
-        ]
-      },
-      {
-        "id": "c-assurance-sante",
-        "nom": "Assurance santé & prestataires de soins",
-        "sousSecteurPath": [
-          "Assurance santé & prestataires de soins"
-        ],
-        "rev": 1,
-        "phases": [
+          },
           {
             "nom": "Assureurs & prestataires (marché US)",
             "groupe": {
               "num": "04",
-              "label": "ASSURANCE & SOINS",
-              "tagline": "Spécificité du système américain"
+              "label": "FINANCEMENT & ACCÈS AUX SOINS",
+              "tagline": "Assurance & prestataires — comment le patient y accède"
             },
             "entreprises": [
               {
@@ -1242,6 +1178,634 @@
                 "texte": "Sous-secteur spécifique au système de santé américain (assurance privée) — les autres pays suivis (Europe, Japon...) reposent majoritairement sur des systèmes publics/mutualisés, moins pertinents pour une chaîne de valeur investissable."
               }
             ]
+          }
+        ]
+      }
+    ],
+    "materiaux": [
+      {
+        "id": "c-materiaux-complete",
+        "nom": "Matériaux — de la mine au produit fini",
+        "sousSecteurPath": [],
+        "rev": 1,
+        "phases": [
+          {
+            "nom": "Métaux & mines",
+            "groupe": {
+              "num": "01",
+              "label": "EXTRACTION",
+              "tagline": "Métaux & mines — la matière première brute"
+            },
+            "entreprises": [
+              {
+                "nom": "Rio Tinto",
+                "image": "data/logos/RIO.png",
+                "legende": "Royaume-Uni/Australie — un des plus gros groupes miniers diversifiés (fer, cuivre, aluminium).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "BHP Group",
+                "image": "data/logos/BHP.png",
+                "legende": "Australie — plus gros groupe minier mondial par capitalisation.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Freeport-McMoRan",
+                "image": "data/logos/FCX.png",
+                "legende": "US — un des plus gros producteurs mondiaux de cuivre, métal clé de l'électrification.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Newmont",
+                "image": "data/logos/NEM.png",
+                "legende": "US — plus gros producteur d'or au monde.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Nucor",
+                "image": "data/logos/NUE.png",
+                "legende": "US — leader de la sidérurgie par mini-aciéries (recyclage de ferraille).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Chimie & gaz industriels",
+            "groupe": {
+              "num": "02",
+              "label": "TRANSFORMATION",
+              "tagline": "Chimie — transforme la matière première en composés utilisables"
+            },
+            "entreprises": [
+              {
+                "nom": "BASF",
+                "image": "data/logos/BAS.DE.png",
+                "legende": "Allemagne — plus gros groupe chimique mondial.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Linde",
+                "image": "data/logos/LIN.png",
+                "legende": "Royaume-Uni/Allemagne — duopole mondial des gaz industriels avec Air Liquide.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Air Products and Chemicals",
+                "image": "data/logos/APD.png",
+                "legende": "US — gaz industriels, fort positionnement sur l'hydrogène.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Nutrien",
+                "image": "data/logos/NTR.png",
+                "legende": "Canada — plus gros producteur mondial d'engrais potassiques.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Emballage",
+            "groupe": {
+              "num": "03",
+              "label": "CONDITIONNEMENT",
+              "tagline": "Emballage — dernier maillon avant le produit fini"
+            },
+            "entreprises": [
+              {
+                "nom": "Amcor",
+                "image": "data/logos/AMCR.png",
+                "legende": "Suisse/Australie — plus gros fabricant mondial d'emballages.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "International Paper",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6d/InternationalPaper_logo_2023.svg/250px-InternationalPaper_logo_2023.svg.png",
+                "legende": "US — leader de l'emballage carton.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Ball Corporation",
+                "image": "data/logos/BALL.png",
+                "legende": "US — leader mondial des canettes aluminium.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          }
+        ]
+      }
+    ],
+    "conso-base": [
+      {
+        "id": "c-conso-base-complete",
+        "nom": "Consommation de base — du champ au foyer",
+        "sousSecteurPath": [],
+        "rev": 1,
+        "phases": [
+          {
+            "nom": "Agroalimentaire & négoce",
+            "groupe": {
+              "num": "01",
+              "label": "PRODUCTION & NÉGOCE",
+              "tagline": "Matières premières agricoles transformées"
+            },
+            "entreprises": [
+              {
+                "nom": "Nestlé",
+                "image": "data/logos/NESN.SW.png",
+                "legende": "Suisse — plus gros groupe agroalimentaire mondial.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Mondelez International",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3b/Mondelez_International.svg/250px-Mondelez_International.svg.png",
+                "legende": "US — snacks et chocolat mondial (Oreo, Cadbury, Milka).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "General Mills",
+                "image": "data/logos/GIS.png",
+                "legende": "US — céréales et snacks (Cheerios, Häagen-Dazs).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Danone",
+                "image": "data/logos/BN.PA.png",
+                "legende": "France — produits laitiers, eaux, nutrition infantile et médicale.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Archer-Daniels-Midland",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/36/Archer_Daniels_Midland_logo.svg/250px-Archer_Daniels_Midland_logo.svg.png",
+                "legende": "US — un des \"ABCD\", quatre négociants qui dominent le commerce mondial de céréales.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Boissons",
+            "groupe": {
+              "num": "02",
+              "label": "MARQUES & TRANSFORMATION",
+              "tagline": "Boissons — produits de marque à forte reconnaissance"
+            },
+            "entreprises": [
+              {
+                "nom": "PepsiCo",
+                "image": "data/logos/PEP.png",
+                "legende": "US — snacks (Lay's, Doritos) et boissons (Pepsi, Gatorade).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Coca-Cola",
+                "image": "data/logos/KO.png",
+                "legende": "US — première marque de boissons au monde par la distribution.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Anheuser-Busch InBev",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7a/Anheuser-Busch_InBev_-_logo_%28Belgium%2C_2022-%29.svg/250px-Anheuser-Busch_InBev_-_logo_%28Belgium%2C_2022-%29.svg.png",
+                "legende": "Belgique — plus gros brasseur mondial (Budweiser, Corona, Stella Artois).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Diageo",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d7/Diageo_Plc_Logo.svg/250px-Diageo_Plc_Logo.svg.png",
+                "legende": "Royaume-Uni — leader mondial des spiritueux (Johnnie Walker, Smirnoff, Guinness).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Grande distribution",
+            "groupe": {
+              "num": "03",
+              "label": "DISTRIBUTION",
+              "tagline": "Le dernier maillon vers le consommateur"
+            },
+            "entreprises": [
+              {
+                "nom": "Walmart",
+                "image": "data/logos/WMT.png",
+                "legende": "US — plus gros distributeur mondial par le chiffre d'affaires.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Costco Wholesale",
+                "image": "data/logos/COST.png",
+                "legende": "US — modèle entrepôt par adhésion, marges structurellement basses.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Carrefour",
+                "image": "https://upload.wikimedia.org/wikipedia/en/thumb/6/65/Carrefour_Groupe.svg/250px-Carrefour_Groupe.svg.png",
+                "legende": "France — grande distribution, forte présence Europe/Amérique latine.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Tesco",
+                "image": "https://upload.wikimedia.org/wikipedia/en/thumb/b/b0/Tesco_Logo.svg/250px-Tesco_Logo.svg.png",
+                "legende": "Royaume-Uni — leader de la distribution alimentaire britannique.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          }
+        ]
+      }
+    ],
+    "conso-discretionnaire": [
+      {
+        "id": "c-conso-discretionnaire-complete",
+        "nom": "Consommation discrétionnaire",
+        "sousSecteurPath": [],
+        "rev": 1,
+        "phases": [
+          {
+            "nom": "Luxe",
+            "groupe": {
+              "num": "01",
+              "label": "LUXE",
+              "tagline": "Catégorie indépendante — pas de lien de chaîne avec les 3 autres"
+            },
+            "entreprises": [
+              {
+                "nom": "LVMH",
+                "image": "data/logos/MC.PA.png",
+                "legende": "France — plus gros groupe de luxe mondial (Louis Vuitton, Dior, Moët).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Hermès",
+                "image": "data/logos/RMS.PA.png",
+                "legende": "France — maroquinerie ultra-premium, marges les plus élevées du secteur du luxe.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Kering",
+                "image": "data/logos/KER.PA.png",
+                "legende": "France — Gucci, Saint Laurent, Bottega Veneta.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Richemont",
+                "image": "data/logos/CFR.SW.png",
+                "legende": "Suisse — horlogerie et joaillerie (Cartier, Van Cleef & Arpels).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "L'Oréal",
+                "image": "data/logos/OR.PA.png",
+                "legende": "France — plus gros groupe cosmétique mondial.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "E-commerce & distribution spécialisée",
+            "groupe": {
+              "num": "02",
+              "label": "E-COMMERCE",
+              "tagline": "Catégorie indépendante"
+            },
+            "entreprises": [
+              {
+                "nom": "Amazon",
+                "image": "data/logos/AMZN.png",
+                "legende": "US — leader mondial du e-commerce (et du cloud, via AWS).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "MercadoLibre",
+                "image": "data/logos/MELI.png",
+                "legende": "Argentine — leader du e-commerce et des paiements en Amérique latine.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Home Depot",
+                "image": "data/logos/HD.png",
+                "legende": "US — plus gros distributeur spécialisé bricolage au monde.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Automobile traditionnelle",
+            "groupe": {
+              "num": "03",
+              "label": "AUTOMOBILE",
+              "tagline": "Catégorie indépendante — hors chaîne électrique (voir Industrie)"
+            },
+            "entreprises": [
+              {
+                "nom": "Toyota Motor",
+                "image": "data/logos/TM.png",
+                "legende": "Japon — plus gros constructeur automobile mondial par volumes.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "General Motors",
+                "image": "https://upload.wikimedia.org/wikipedia/en/thumb/e/ea/General_Motors_%28logo_with_wordmark%2C_horizontal%29.svg/250px-General_Motors_%28logo_with_wordmark%2C_horizontal%29.svg.png",
+                "legende": "US — Chevrolet, Cadillac, GMC — un des plus gros constructeurs américains.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Ford Motor",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/Ford_logo_flat.svg/250px-Ford_logo_flat.svg.png",
+                "legende": "US — pionnier historique de l'automobile de masse.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Honda Motor",
+                "image": "data/logos/HMC.png",
+                "legende": "Japon — automobile + motos, forte présence mondiale.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Hôtellerie & loisirs",
+            "groupe": {
+              "num": "04",
+              "label": "HÔTELLERIE & LOISIRS",
+              "tagline": "Catégorie indépendante"
+            },
+            "entreprises": [
+              {
+                "nom": "Booking Holdings",
+                "image": "data/logos/BKNG.png",
+                "legende": "US — plus gros groupe de réservation de voyage en ligne (Booking.com, Priceline).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Airbnb",
+                "image": "data/logos/ABNB.png",
+                "legende": "US — plateforme leader de location de courte durée entre particuliers.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Marriott International",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e7/Marriott_International.svg/250px-Marriott_International.svg.png",
+                "legende": "US — plus gros groupe hôtelier mondial par le nombre de chambres.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Walt Disney",
+                "image": "data/logos/DIS.png",
+                "legende": "US — parcs à thème, studios et streaming (Disney+).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": [
+              {
+                "image": "",
+                "texte": "Ces 4 catégories (Luxe, E-commerce, Automobile, Hôtellerie & loisirs) sont regroupées ici pour la navigation, mais ne forment PAS une chaîne de valeur physique commune — contrairement à Matériaux ou Technologies de l'information, il n'y a pas de dépendance séquentielle entre elles."
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "tech": [
+      {
+        "id": "c-tech-complete",
+        "nom": "Technologies — du silicium à la sécurité",
+        "sousSecteurPath": [],
+        "rev": 1,
+        "phases": [
+          {
+            "nom": "Semi-conducteurs",
+            "groupe": {
+              "num": "01",
+              "label": "SEMI-CONDUCTEURS",
+              "tagline": "La couche physique de toute la tech"
+            },
+            "entreprises": [
+              {
+                "nom": "Taiwan Semiconductor",
+                "image": "data/logos/TSM.png",
+                "legende": "Taïwan — fabrique la quasi-totalité des puces les plus avancées au monde.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "ASML",
+                "image": "data/logos/ASML.png",
+                "legende": "Pays-Bas — quasi-monopole des machines de lithographie EUV, indispensables aux puces avancées.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "NVIDIA",
+                "image": "data/logos/NVDA.png",
+                "legende": "US — quasi-incontournable pour le calcul et l'entraînement de l'intelligence artificielle.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Broadcom",
+                "image": "data/logos/AVGO.png",
+                "legende": "US — semi-conducteurs (réseaux, Wi-Fi) + logiciel d'entreprise (VMware).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Applied Materials",
+                "image": "data/logos/AMAT.png",
+                "legende": "US — leader mondial des équipements de fabrication de semi-conducteurs.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Cloud & logiciel d'entreprise",
+            "groupe": {
+              "num": "02",
+              "label": "CLOUD & LOGICIEL",
+              "tagline": "Construit sur cette infrastructure physique"
+            },
+            "entreprises": [
+              {
+                "nom": "Microsoft",
+                "image": "data/logos/MSFT.png",
+                "legende": "US — cloud (Azure), Office 365, partenariat stratégique avec OpenAI.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Salesforce",
+                "image": "data/logos/CRM.png",
+                "legende": "US — pionnier et leader du CRM en mode SaaS.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Oracle",
+                "image": "data/logos/ORCL.png",
+                "legende": "US — bases de données historiques + cloud d'entreprise.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "SAP",
+                "image": "data/logos/SAP.png",
+                "legende": "Allemagne — leader mondial des logiciels de gestion d'entreprise (ERP).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "ServiceNow",
+                "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/57/ServiceNow_logo.svg/250px-ServiceNow_logo.svg.png",
+                "legende": "US — plateforme de gestion des flux de travail d'entreprise.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Cybersécurité",
+            "groupe": {
+              "num": "03",
+              "label": "CYBERSÉCURITÉ",
+              "tagline": "Protège l'ensemble de la pile, matériel et logiciel"
+            },
+            "entreprises": [
+              {
+                "nom": "Palo Alto Networks",
+                "image": "data/logos/PANW.png",
+                "legende": "US — un des plus gros acteurs de la cybersécurité d'entreprise.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "CrowdStrike",
+                "image": "data/logos/CRWD.png",
+                "legende": "US — sécurité des postes de travail (endpoint) en mode cloud natif.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Fortinet",
+                "image": "data/logos/FTNT.png",
+                "legende": "US — pare-feu et sécurité réseau, forte présence PME.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Zscaler",
+                "image": "data/logos/ZS.png",
+                "legende": "US — sécurité cloud pour le travail à distance (architecture SASE).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
           }
         ]
       }
