@@ -531,6 +531,13 @@
           <div class="chart-card-head">
             <div><h3>Répartition</h3><p>Poids de chaque position, cash inclus</p></div>
             <div class="chart-card-actions">
+              <div class="labo-dropdown" data-dropdown="pfImgExport">
+                <button type="button" class="labo-dropdown-btn" id="portfolioImageExportBtn" title="Exporter en image (miniature vidéo)">⭳ Image ▾</button>
+                <div class="labo-dropdown-menu">
+                  <button type="button" data-portfolio-img-format="png">PNG</button>
+                  <button type="button" data-portfolio-img-format="jpeg">JPEG</button>
+                </div>
+              </div>
               <button class="zoom-btn" onclick="exportPortfolioAsPdf()" title="Exporter PDF" aria-label="Exporter PDF">🖨</button>
               <button class="zoom-btn" onclick="openPortfolioZoom()" aria-label="Agrandir">⤢</button>
             </div>

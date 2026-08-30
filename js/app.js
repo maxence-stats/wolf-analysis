@@ -3367,7 +3367,14 @@ function loadImageCorsSafe(src){
     img.src = src;
   });
 }
-async function buildPortfolioExportChartImg(holdings){
+// format 'png' (transparent, composable dans un logiciel de montage/miniature) ou
+// 'jpeg' (fond sombre du design system — JPEG ne supporte pas la transparence, sinon
+// rendu noir par défaut du navigateur). Factorisé pour servir à la fois l'incrustation
+// PDF (buildPortfolioExportChartImg, PNG) et le téléchargement direct en image demandé
+// explicitement ("il faut que tu me permettes de l'exporter en JPEG et en PNG... pour
+// mes vidéos, mes miniatures", voir downloadPortfolioChartAsImage()).
+async function buildPortfolioDonutImage(holdings, format){
+  const mime = format === 'jpeg' ? 'image/jpeg' : 'image/png';
   const canvas = document.createElement('canvas');
   canvas.width = 640; canvas.height = 480;
   const wolfImg = await loadImageCorsSafe(WOLF_LOGO_URL);
@@ -3396,10 +3403,30 @@ async function buildPortfolioExportChartImg(holdings){
     plugins:[centerLogoPlugin]
   });
   let dataUrl = '';
-  try{ dataUrl = await roundedImageDataUrl(canvas.toDataURL('image/png'), 'image/png'); }catch(e){ /* improbable ici : seule image externe = logo Wolf, CORS-safe */ }
+  try{ dataUrl = await roundedImageDataUrl(canvas.toDataURL(mime, 0.95), mime, format === 'jpeg' ? '#151A1F' : null); }catch(e){ /* improbable ici : seule image externe = logo Wolf, CORS-safe */ }
   chart.destroy();
+  return dataUrl;
+}
+async function buildPortfolioExportChartImg(holdings){
+  const dataUrl = await buildPortfolioDonutImage(holdings, 'png');
   return dataUrl ? `<img class="print-chart-img" src="${dataUrl}" alt="Répartition du portefeuille">` : '';
 }
+async function downloadPortfolioChartAsImage(format){
+  const holdings = portfolioData.holdings.filter(h => h.valorisation != null && h.valorisation > 0);
+  if (!holdings.length) return;
+  const dataUrl = await buildPortfolioDonutImage(holdings, format);
+  if (!dataUrl) return;
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = `wolf-portfolio-repartition.${format === 'jpeg' ? 'jpg' : 'png'}`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+document.querySelector('[data-dropdown="pfImgExport"] .labo-dropdown-menu').addEventListener('click', e => {
+  const btn = e.target.closest('[data-portfolio-img-format]');
+  if (btn) downloadPortfolioChartAsImage(btn.dataset.portfolioImgFormat);
+});
 
 // Panier : le donut affiché est tainté (logos de position sans crossOrigin, voir plus
 // haut), donc addChartInstanceToCart() échouerait sur portfolioDonutChart directement —
