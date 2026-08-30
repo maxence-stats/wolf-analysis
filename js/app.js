@@ -4169,11 +4169,18 @@ function renderClassement(){
   const sousValo = classementApplyTopN(rows.filter(r => r.ecartPrix != null && r.ecartPrix < 0).sort((a, b) => classementValoSortDir * (a.ecartPrix - b.ecartPrix)));
   const survalo = classementApplyTopN(rows.filter(r => r.ecartPrix != null && r.ecartPrix >= 0).sort((a, b) => classementValoSortDir * (b.ecartPrix - a.ecartPrix)));
 
+  // Couleurs demandées explicitement pour CE classement précis : négatif (sous-valorisée)
+  // en ROUGE, positif (survalorisée) en VERT — l'inverse de la convention "vert=bon"
+  // utilisée ailleurs sur le site (CAGR, dividende...), confirmé explicitement par
+  // l'utilisateur après vérification ("inverser le Classement : négatif/sous-valorisé =
+  // rouge, positif/survalorisé = vert"). classementRowHtml('neg'/'pos') pilote juste la
+  // couleur CSS, pas le sens sous-valorisé/survalorisé (qui reste correct par ailleurs,
+  // ex. dans l'export PDF) — ne pas "corriger" ce mapping en le pensant inversé par erreur.
   valoSousBox.innerHTML = sousValo.length
-    ? sousValo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartPrix), 'pos', r.inSheet ? classementRendementRowHtml(r.nom) : null, false, r.valuationSource)).join('')
+    ? sousValo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartPrix), 'neg', r.inSheet ? classementRendementRowHtml(r.nom) : null, false, r.valuationSource)).join('')
     : '<div class="objectifs-empty">Aucune entreprise sous-valorisée.</div>';
   valoSurvaloBox.innerHTML = survalo.length
-    ? survalo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartPrix), 'neg', r.inSheet ? classementRendementRowHtml(r.nom) : null, false, r.valuationSource)).join('')
+    ? survalo.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.ecartPrix), 'pos', r.inSheet ? classementRendementRowHtml(r.nom) : null, false, r.valuationSource)).join('')
     : '<div class="objectifs-empty">Aucune entreprise survalorisée.</div>';
 }
 
