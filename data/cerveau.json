@@ -1809,6 +1809,589 @@
           }
         ]
       }
+    ],
+    "energie": [
+      {
+        "id": "c-energie-complete",
+        "nom": "Énergie — du gisement à la pompe",
+        "sousSecteurPath": [],
+        "rev": 1,
+        "phases": [
+          {
+            "nom": "Exploration & Production",
+            "groupe": {
+              "num": "01",
+              "label": "EXPLORATION & PRODUCTION",
+              "tagline": "L'amont — extraction du pétrole, du gaz et du charbon bruts"
+            },
+            "entreprises": [
+              {
+                "nom": "TotalEnergies",
+                "image": "data/logos/TTE.png",
+                "legende": "France — supermajor intégré (amont, raffinage, distribution, renouvelables).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "ExxonMobil",
+                "image": "data/logos/XOM.png",
+                "legende": "US — plus gros supermajor pétrogazier occidental par capitalisation.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Chevron",
+                "image": "data/logos/CVX.png",
+                "legende": "US — deuxième supermajor américain, fort en amont (Permian, offshore).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Shell",
+                "image": "data/logos/SHEL.png",
+                "legende": "Royaume-Uni — supermajor historique, très présent dans le GNL.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "ConocoPhillips",
+                "image": "data/logos/COP.png",
+                "legende": "US — plus gros pure-player E&P (exploration-production) sans raffinage, contrairement aux supermajors intégrés.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Woodside Energy",
+                "image": "data/logos/WDS.AX.png",
+                "legende": "Australie — premier producteur pétrogazier du pays, fort positionnement GNL Asie-Pacifique.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Reliance Industries",
+                "image": "data/logos/RELIANCE.NS.png",
+                "legende": "Inde — conglomérat dont l'amont pétrogazier et le raffinage (Jamnagar, plus gros complexe au monde) restent un pilier.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Coal India",
+                "image": "data/logos/COALINDIA.NS.png",
+                "legende": "Inde — plus gros producteur de charbon au monde, quasi-monopole d'État sur l'extraction indienne.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Transport & Logistique",
+            "groupe": {
+              "num": "02",
+              "label": "TRANSPORT & LOGISTIQUE",
+              "tagline": "Le midstream — achemine bruts et gaz vers les zones de transformation"
+            },
+            "entreprises": [
+              {
+                "nom": "Enbridge",
+                "image": "data/logos/ENB.png",
+                "legende": "Canada — plus grand réseau de pipelines d'Amérique du Nord (pétrole et gaz).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Gaztransport & Technigaz",
+                "image": "data/logos/GTT.PA.png",
+                "legende": "France — technologie de cuves de confinement pour méthaniers GNL : licence sa techno à la quasi-totalité des chantiers navals mondiaux construisant des méthaniers, position de quasi-monopole rarissime dans l'énergie.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Raffinage & Distribution",
+            "groupe": {
+              "num": "03",
+              "label": "RAFFINAGE & DISTRIBUTION",
+              "tagline": "L'aval — transforme le brut en carburants et produits finis, les distribue"
+            },
+            "entreprises": [
+              {
+                "nom": "Valero Energy",
+                "image": "data/logos/VLO.png",
+                "legende": "US — premier raffineur indépendant pur au monde (aucune activité d'extraction).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Phillips 66",
+                "image": "data/logos/PSX.png",
+                "legende": "US — raffinage, midstream et distribution (essence, carburéacteur, produits chimiques).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Services Parapétroliers",
+            "groupe": {
+              "num": "04",
+              "label": "SERVICES & ÉQUIPEMENTS",
+              "tagline": "Support transversal — équipements et savoir-faire technique pour toute la chaîne"
+            },
+            "entreprises": [
+              {
+                "nom": "SLB",
+                "image": "data/logos/SLB.png",
+                "legende": "US — ex-Schlumberger, premier groupe mondial de services et équipements parapétroliers (forage, mesures, complétion).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Halliburton",
+                "image": "data/logos/HAL.png",
+                "legende": "US — deuxième groupe mondial de services parapétroliers, fort en Amérique du Nord.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Baker Hughes",
+                "image": "data/logos/BKR.png",
+                "legende": "US — services parapétroliers et équipements, positionné aussi sur le GNL et l'hydrogène.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          }
+        ]
+      }
+    ],
+    "communication": [
+      {
+        "id": "c-communication-complete",
+        "nom": "Services de communication — du réseau à l'écran",
+        "sousSecteurPath": [],
+        "rev": 1,
+        "phases": [
+          {
+            "nom": "Réseaux Télécoms",
+            "groupe": {
+              "num": "01",
+              "label": "RÉSEAUX & TÉLÉCOMMUNICATIONS",
+              "tagline": "L'infrastructure qui transporte le signal — fixe, mobile, fibre"
+            },
+            "entreprises": [
+              {
+                "nom": "Deutsche Telekom",
+                "image": "data/logos/DTE.DE.png",
+                "legende": "Allemagne — premier opérateur télécom européen, actionnaire majoritaire de T-Mobile US.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Verizon Communications",
+                "image": "data/logos/VZ.png",
+                "legende": "US — premier opérateur mobile américain par abonnés.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "AT&T",
+                "image": "data/logos/T.png",
+                "legende": "US — deuxième opérateur télécom américain, fibre et mobile.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "T-Mobile US",
+                "image": "data/logos/TMUS.png",
+                "legende": "US — filiale de Deutsche Telekom, croissance la plus rapide du marché mobile américain.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Orange",
+                "image": "data/logos/ORA.PA.png",
+                "legende": "France — opérateur historique français, fort en Europe et Afrique/Moyen-Orient.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Vodafone Group",
+                "image": "data/logos/VOD.L.png",
+                "legende": "Royaume-Uni — un des plus gros opérateurs mobiles au monde, fort en Europe et Afrique.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Nippon Telegraph and Telephone",
+                "image": "data/logos/9432.T.png",
+                "legende": "Japon — opérateur historique japonais, position dominante sur son marché domestique.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Studios & Médias",
+            "groupe": {
+              "num": "02",
+              "label": "PRODUCTION DE CONTENU",
+              "tagline": "Studios et groupes médias — créent les films, séries et émissions diffusés ensuite"
+            },
+            "entreprises": [
+              {
+                "nom": "Walt Disney",
+                "image": "data/logos/DIS.png",
+                "legende": "US — plus gros groupe de divertissement au monde (studios, parcs, streaming Disney+).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Warner Bros Discovery",
+                "image": "data/logos/WBD.png",
+                "legende": "US — HBO, Warner Bros, CNN, Discovery : un des plus gros catalogues de contenu au monde.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Comcast",
+                "image": "data/logos/CMCSA.png",
+                "legende": "US — propriétaire de NBCUniversal (studios, chaînes) et de Sky en Europe, en plus de son réseau câblé.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Plateformes Numériques",
+            "groupe": {
+              "num": "03",
+              "label": "DISTRIBUTION & PLATEFORMES",
+              "tagline": "L'aval — distribue le contenu au consommateur final et connecte les audiences"
+            },
+            "entreprises": [
+              {
+                "nom": "Netflix",
+                "image": "data/logos/NFLX.png",
+                "legende": "US — premier service de streaming vidéo par abonnement au monde, de plus en plus producteur de son propre contenu.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Alphabet",
+                "image": "data/logos/GOOGL.png",
+                "legende": "US — Google Search et YouTube, position quasi-monopolistique sur la recherche en ligne mondiale (plus de 90% de part de marché).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Meta Platforms",
+                "image": "data/logos/META.png",
+                "legende": "US — Facebook, Instagram, WhatsApp : plus gros groupe mondial de réseaux sociaux.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Spotify Technology",
+                "image": "data/logos/SPOT.png",
+                "legende": "Suède — premier service de streaming musical au monde par abonnés.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          }
+        ]
+      }
+    ],
+    "utilities": [
+      {
+        "id": "c-utilities-complete",
+        "nom": "Services publics — de la centrale au robinet",
+        "sousSecteurPath": [],
+        "rev": 1,
+        "phases": [
+          {
+            "nom": "Production d'Énergie",
+            "groupe": {
+              "num": "01",
+              "label": "PRODUCTION D'ÉNERGIE",
+              "tagline": "L'amont — génère l'électricité (nucléaire, renouvelable, gaz, charbon)"
+            },
+            "entreprises": [
+              {
+                "nom": "EDF",
+                "image": "data/logos/EDF.PA.png",
+                "legende": "France — premier parc nucléaire civil au monde, renationalisé à 100% par l'État français en 2023 (retirée de la cote).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "NextEra Energy",
+                "image": "data/logos/NEE.png",
+                "legende": "US — premier producteur mondial d'énergie éolienne et solaire, plus utility régulée en Floride.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Iberdrola",
+                "image": "data/logos/IBE.MC.png",
+                "legende": "Espagne — un des tout premiers groupes mondiaux d'énergies renouvelables (éolien notamment).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Enel",
+                "image": "data/logos/ENEL.MI.png",
+                "legende": "Italie — un des plus gros groupes électriques européens, forte présence en Amérique latine.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "RWE",
+                "image": "data/logos/RWE.DE.png",
+                "legende": "Allemagne — gros producteur d'électricité européen, en transition du charbon vers le renouvelable.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Réseaux & Distribution",
+            "groupe": {
+              "num": "02",
+              "label": "RÉSEAUX & DISTRIBUTION",
+              "tagline": "Achemine électricité et gaz du site de production jusqu'au client final"
+            },
+            "entreprises": [
+              {
+                "nom": "National Grid",
+                "image": "data/logos/NG.L.png",
+                "legende": "Royaume-Uni — gestionnaire du réseau de transport électricité/gaz britannique, aussi présent aux US (New York, Massachusetts).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "American Electric Power",
+                "image": "data/logos/AEP.png",
+                "legende": "US — un des plus gros réseaux de transport électrique américains, 11 États couverts.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "E.ON",
+                "image": "data/logos/EOAN.DE.png",
+                "legende": "Allemagne — recentré sur les réseaux de distribution après avoir cédé sa production renouvelable à RWE en 2019.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Eau & Services Essentiels",
+            "groupe": {
+              "num": "03",
+              "label": "EAU & SERVICES ESSENTIELS",
+              "tagline": "L'autre grand service public — distribution d'eau et gestion des déchets"
+            },
+            "entreprises": [
+              {
+                "nom": "Veolia",
+                "image": "data/logos/VIE.PA.png",
+                "legende": "France — leader mondial de la gestion de l'eau, des déchets et de l'énergie, a repris la majorité des activités eau de Suez en 2022.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "American Water Works",
+                "image": "data/logos/AWK.png",
+                "legende": "US — plus gros service d'eau et d'assainissement réglementé coté aux États-Unis.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          }
+        ]
+      }
+    ],
+    "immobilier": [
+      {
+        "id": "c-immobilier-complete",
+        "nom": "Immobilier — du chantier à la gestion d'actifs",
+        "sousSecteurPath": [],
+        "rev": 1,
+        "phases": [
+          {
+            "nom": "Promotion & Développement",
+            "groupe": {
+              "num": "01",
+              "label": "PROMOTION & DÉVELOPPEMENT",
+              "tagline": "L'amont — construit et vend, plutôt que détenir sur le long terme"
+            },
+            "entreprises": [
+              {
+                "nom": "D.R. Horton",
+                "image": "data/logos/DHI.png",
+                "legende": "US — premier constructeur de maisons individuelles au pays par volume.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Lennar",
+                "image": "data/logos/LEN.png",
+                "legende": "US — deuxième constructeur de maisons individuelles américain.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "PulteGroup",
+                "image": "data/logos/PHM.png",
+                "legende": "US — un des plus gros promoteurs résidentiels américains, marques multiples (Pulte, Centex, Del Webb).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Détention & Exploitation",
+            "groupe": {
+              "num": "02",
+              "label": "DÉTENTION & EXPLOITATION",
+              "tagline": "Les foncières (REIT) — possèdent et exploitent des actifs sur le long terme, par classe"
+            },
+            "entreprises": [
+              {
+                "nom": "Prologis",
+                "image": "data/logos/PLD.png",
+                "legende": "US — première foncière logistique/entrepôts au monde, portée par la croissance de l'e-commerce.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Simon Property Group",
+                "image": "data/logos/SPG.png",
+                "legende": "US — première foncière de centres commerciaux aux États-Unis.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Digital Realty Trust",
+                "image": "data/logos/DLR.png",
+                "legende": "US — une des plus grosses foncières de data centers au monde, infrastructure clé du cloud/IA.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "American Tower",
+                "image": "data/logos/AMT.png",
+                "legende": "US — première foncière de pylônes/tours télécoms au monde, loue son infrastructure aux opérateurs mobiles.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Public Storage",
+                "image": "data/logos/PSA.png",
+                "legende": "US — première foncière de self-stockage (garde-meubles) au monde.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "AvalonBay Communities",
+                "image": "data/logos/AVB.png",
+                "legende": "US — une des plus grosses foncières résidentielles (immeubles d'appartements) américaines.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Services & Gestion",
+            "groupe": {
+              "num": "03",
+              "label": "SERVICES & GESTION",
+              "tagline": "Transversal — courtage, transaction et gestion d'actifs pour toute la chaîne"
+            },
+            "entreprises": [
+              {
+                "nom": "CBRE Group",
+                "image": "data/logos/CBRE.png",
+                "legende": "US — premier groupe mondial de services et conseil en immobilier commercial.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Jones Lang LaSalle",
+                "image": "data/logos/JLL.png",
+                "legende": "US — deuxième groupe mondial de services immobiliers commerciaux et gestion d'actifs.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          }
+        ]
+      }
     ]
   },
   "notes": {},

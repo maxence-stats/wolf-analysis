@@ -468,16 +468,15 @@
       </div>
     </div>
 
-    <!-- Documents financiers : structure prête à accueillir les données (compte de
-         résultat / bilan / flux de trésorerie / synthèse de ratios) une fois l'import
-         FMP complet fait — demandé explicitement en attendant, pas de données réelles
-         pour l'instant. Les libellés de lignes reprennent le mapping déjà documenté
-         dans fmp-database/endpoints.py (income_statement/balance_sheet/cash_flow), donc
-         prêts à recevoir les vraies valeurs sans redesign. Voir renderDocumentsPage()
-         dans app.js. -->
+    <!-- Documents financiers : compte de résultat / bilan / flux de trésorerie / synthèse
+         de ratios, alimentés par l'export FMP local (data/documents-{symbol}.json, voir
+         ensureDocumentsRealData() dans app.js) pour toute entreprise déjà exportée par
+         fmp-database/export_to_app.py --batch ; retombe silencieusement sur des tirets
+         sinon (entreprise pas encore exportée). Les libellés de lignes reprennent le
+         mapping documenté dans fmp-database/endpoints.py. -->
     <div id="pageDocuments" class="page">
       <div class="section-label">🧾 Documents financiers</div>
-      <p class="valo-intro">Compte de résultat, bilan et flux de trésorerie — structure prête à accueillir les données, en attente de l'import FMP complet. La synthèse de ratios (Statistics) se construira ensemble, secteur par secteur.</p>
+      <p class="valo-intro">Compte de résultat, bilan et flux de trésorerie — données FMP (import local), secteur par secteur au fil des exports.</p>
 
       <div class="documents-header">
         <img id="documentsLogo" alt="">
