@@ -11347,17 +11347,47 @@ function renderCerveauSecteurs(box){
 // en état "confirmation en attente" après avoir navigué ailleurs (même logique que
 // analyseDeleteConfirming pour la suppression d'une fiche Analyse développée).
 let cerveauDeleteConfirmingChainId = null;
+// Navigation à PROFONDEUR LIBRE (secteur -> sous-secteur -> sous-sous-secteur -> ...)
+// demandée explicitement ("des sous-secteurs, voire des sous-sous-secteurs... il faut
+// que tu ranges un peu le tout"). Pas de taxonomie séparée à maintenir à la main :
+// chaque chaîne porte simplement un chemin optionnel chain.sousSecteurPath (tableau de
+// segments, ex. ["Électrification","Véhicules & batteries"]) et l'arborescence de
+// dossiers est entièrement DÉRIVÉE de ces chemins au rendu — une chaîne sans chemin
+// (comportement historique, tous les secteurs avant ce changement) apparaît directement
+// à la racine du secteur, aucune migration nécessaire.
+function cerveauPathStartsWith(full, prefix){
+  if (prefix.length > full.length) return false;
+  return prefix.every((seg, i) => full[i] === seg);
+}
 function renderCerveauChaines(box){
   const secteur = cerveauView.secteur;
-  const chains = cerveauData.chains[secteur] || [];
+  const path = cerveauView.path || [];
+  const allChains = cerveauData.chains[secteur] || [];
+  const inScope = allChains.filter(c => cerveauPathStartsWith(c.sousSecteurPath || [], path));
+  const directChains = inScope.filter(c => (c.sousSecteurPath || []).length === path.length);
+  const folderNames = [];
+  inScope.forEach(c => {
+    const sp = c.sousSecteurPath || [];
+    if (sp.length > path.length){
+      const seg = sp[path.length];
+      if (!folderNames.includes(seg)) folderNames.push(seg);
+    }
+  });
   const creating = !!cerveauView.creatingChain;
+
+  const crumbs = [`<a data-back="secteurs">Secteurs</a>`, `<a data-depth="0">${cerveauSectorLabel(secteur)}</a>`]
+    .concat(path.map((seg, i) => i === path.length - 1 ? seg : `<a data-depth="${i + 1}">${seg}</a>`));
+
   box.innerHTML = `
-    <div class="cerveau-breadcrumb"><a data-back="secteurs">Secteurs</a> / ${cerveauSectorLabel(secteur)}</div>
+    <div class="cerveau-breadcrumb">${crumbs.join(' / ')}</div>
     <div class="cerveau-actions">${creating ? '' : '<button class="refresh-btn" id="cerveauNewChain">+ Nouvelle chaîne de valeur</button>'}</div>
     ${creating ? `
     <div class="cerveau-new-chain-form">
       <label for="cerveauChainName">Nom de la chaîne de valeur</label>
       <input type="text" id="cerveauChainName" placeholder="ex. Équipements électriques">
+      ${path.length ? `<p class="cerveau-form-hint">Sera rangée dans : ${path.join(' › ')}</p>` : `
+      <label for="cerveauChainSubsector">Sous-secteur (optionnel, ex. Électrification &gt; Véhicules &amp; batteries)</label>
+      <input type="text" id="cerveauChainSubsector" placeholder="laisser vide pour la racine du secteur">`}
       <label for="cerveauChainPhases">Phases (séparées par des virgules)</label>
       <input type="text" id="cerveauChainPhases" value="Amont, Transformation, Distribution, Services">
       <div class="cerveau-new-chain-actions">
@@ -11365,16 +11395,30 @@ function renderCerveauChaines(box){
         <button class="cerveau-btn-cancel" id="cerveauChainCancel">Annuler</button>
       </div>
     </div>` : ''}
-    <div class="cerveau-chain-grid">${chains.length
-      ? chains.map(c => `<div class="sector-box cerveau-chain-box" data-chain="${c.id}">
+    <div class="cerveau-chain-grid">
+      ${folderNames.map(name => `<div class="sector-box cerveau-folder-box" data-folder="${name.replace(/"/g,'&quot;')}">
+          <h3>📁 ${name}</h3><div class="count">Sous-secteur</div>
+        </div>`).join('')}
+      ${directChains.map(c => `<div class="sector-box cerveau-chain-box" data-chain="${c.id}">
           <button class="cec-remove cerveau-chain-delete" data-delete-chain="${c.id}" title="Supprimer la chaîne">${cerveauDeleteConfirmingChainId === c.id ? '⚠️' : '✕'}</button>
           <h3>${c.nom}</h3><div class="count">${c.phases.length} phases</div>
-        </div>`).join('')
-      : '<div class="objectifs-empty">Aucune chaîne de valeur pour ce secteur pour l\'instant.</div>'}</div>`;
+        </div>`).join('')}
+      ${(!folderNames.length && !directChains.length) ? '<div class="objectifs-empty">Aucune chaîne de valeur ici pour l\'instant.</div>' : ''}
+    </div>`;
 
   box.querySelector('[data-back="secteurs"]').addEventListener('click', () => { cerveauView = { level:'secteurs' }; renderCerveau(); });
+  box.querySelectorAll('.cerveau-breadcrumb a[data-depth]').forEach(el => {
+    el.addEventListener('click', () => {
+      const depth = parseInt(el.dataset.depth, 10);
+      cerveauView = { level:'chaines', secteur, path: path.slice(0, depth) };
+      renderCerveau();
+    });
+  });
+  box.querySelectorAll('.cerveau-folder-box').forEach(el => {
+    el.addEventListener('click', () => { cerveauView = { level:'chaines', secteur, path: path.concat([el.dataset.folder]) }; renderCerveau(); });
+  });
   box.querySelectorAll('.cerveau-chain-box').forEach(el => {
-    el.addEventListener('click', () => { cerveauView = { level:'phases', secteur, chainId: el.dataset.chain }; renderCerveau(); });
+    el.addEventListener('click', () => { cerveauView = { level:'phases', secteur, path, chainId: el.dataset.chain }; renderCerveau(); });
   });
   box.querySelectorAll('[data-delete-chain]').forEach(btn => {
     btn.addEventListener('click', e => {
@@ -11390,7 +11434,7 @@ function renderCerveauChaines(box){
 
   if (!creating){
     document.getElementById('cerveauNewChain').addEventListener('click', () => {
-      cerveauView = { level:'chaines', secteur, creatingChain:true };
+      cerveauView = { level:'chaines', secteur, path, creatingChain:true };
       renderCerveau();
     });
     return;
@@ -11399,7 +11443,7 @@ function renderCerveauChaines(box){
   const nameInput = document.getElementById('cerveauChainName');
   nameInput.focus();
   document.getElementById('cerveauChainCancel').addEventListener('click', () => {
-    cerveauView = { level:'chaines', secteur };
+    cerveauView = { level:'chaines', secteur, path };
     renderCerveau();
   });
   const submit = () => {
@@ -11407,10 +11451,13 @@ function renderCerveauChaines(box){
     if (!nom){ nameInput.focus(); return; }
     const phasesRaw = document.getElementById('cerveauChainPhases').value;
     const phases = phasesRaw.split(',').map(p => p.trim()).filter(Boolean).map(p => ({ nom:p, entreprises:[], blocsLibres:[] }));
-    const chain = { id:'c' + Date.now(), nom, phases: phases.length ? phases : [{ nom:'Amont', entreprises:[], blocsLibres:[] }] };
+    const subsectorInput = document.getElementById('cerveauChainSubsector');
+    const sousSecteurPath = path.length ? path
+      : (subsectorInput && subsectorInput.value.trim() ? subsectorInput.value.split('>').map(s => s.trim()).filter(Boolean) : []);
+    const chain = { id:'c' + Date.now(), nom, sousSecteurPath, phases: phases.length ? phases : [{ nom:'Amont', entreprises:[], blocsLibres:[] }] };
     cerveauData.chains[secteur].push(chain);
     persistCerveauData();
-    cerveauView = { level:'phases', secteur, chainId: chain.id };
+    cerveauView = { level:'phases', secteur, path: sousSecteurPath, chainId: chain.id };
     renderCerveau();
   };
   document.getElementById('cerveauChainCreate').addEventListener('click', submit);
@@ -11436,6 +11483,7 @@ const CERVEAU_MIN_IMG_HEIGHT = 70;
 function migrateCerveauChains(){
   Object.keys(cerveauData.chains).forEach(sec => {
     (cerveauData.chains[sec] || []).forEach(chain => {
+      if (!Array.isArray(chain.sousSecteurPath)) chain.sousSecteurPath = [];
       (chain.phases || []).forEach(ph => {
         ph.entreprises = (ph.entreprises || []).map(e => typeof e === 'string' ? { nom:e, image:'', legende:'' } : e);
         ph.entreprises.forEach(e => {
@@ -11534,18 +11582,26 @@ function syncCerveauToolbarState(){
   });
 })();
 
+// Marqueur "goulot d'étranglement" (ent.bottleneck) — demande explicite : "quand tu
+// estimes que là vraiment cette entreprise est un goulot d'étranglement et sans elle
+// c'est la merde, il faut que tu l'indiques... ça peut être les entreprises sur
+// lesquelles se focus pour les analyser." Visible dans l'app (bordure + badge sur la
+// carte, cliquable pour basculer) ET dans le PDF (voir printCerveauEntityHtml()).
 function cerveauEntityCard(ent, phaseIdx, entIdx){
   const safe = ent.nom.replace(/"/g, '&quot;');
   const tracked = companies[ent.nom];
   const logo = tracked ? companies[ent.nom][companies[ent.nom].length - 1].lienImage : '';
   const noteCount = (cerveauData.notes[ent.nom] || []).length;
   const width = ent.width || 200;
-  return `<div class="cerveau-entity-card" style="width:${width}px;" data-phase="${phaseIdx}" data-ent="${entIdx}">
+  const bottleneck = !!ent.bottleneck;
+  return `<div class="cerveau-entity-card${bottleneck ? ' cerveau-entity-bottleneck' : ''}" style="width:${width}px;" data-phase="${phaseIdx}" data-ent="${entIdx}">
+    ${bottleneck ? '<div class="cerveau-bottleneck-tag" title="Goulot d\'étranglement de la chaîne">⚠ GOULOT</div>' : ''}
     ${cerveauImageZoneHtml(ent.image, 'ent', ent.imgHeight || 110)}
     <div class="cec-body">
       <div class="cec-head">
         ${logo ? `<img class="cec-mini-logo" src="${logo}" alt="">` : `<span class="cerveau-entity-initial">${ent.nom.charAt(0).toUpperCase()}</span>`}
         <span class="cec-name" title="${safe}">${ent.nom}</span>${noteCount ? `<span class="cerveau-note-badge">${noteCount}</span>` : ''}
+        <button class="cec-bottleneck-btn${bottleneck ? ' active' : ''}" data-action="ent-bottleneck" title="${bottleneck ? 'Retirer le marqueur goulot d\'étranglement' : 'Marquer comme goulot d\'étranglement'}">⚠</button>
         <button class="cec-remove" data-action="ent-delete" title="Retirer de la phase">✕</button>
       </div>
       <input type="text" class="cec-legend" data-action="ent-legend" placeholder="Légende…" value="${(ent.legende || '').replace(/"/g, '&quot;')}">
@@ -11647,7 +11703,8 @@ function printCerveauEntityHtml(ent){
   const imgs = ent.image ? `<div class="print-img-row"><img src="${ent.image}" alt=""></div>` : '';
   const logo = companyLogoUrl(ent.nom);
   const logoImg = logo ? `<img class="print-inline-logo" src="${logo}" alt="">` : '';
-  return `<div style="margin-bottom:10px">${logoImg}<strong>${ent.nom.replace(/</g, '&lt;')}</strong>${ent.legende ? `<p>${ent.legende.replace(/</g, '&lt;')}</p>` : ''}${imgs}</div>`;
+  const bottleneckTag = ent.bottleneck ? '<span class="print-bottleneck-tag">⚠ GOULOT D\'ÉTRANGLEMENT</span>' : '';
+  return `<div class="${ent.bottleneck ? 'print-cec-bottleneck' : ''}" style="margin-bottom:10px">${bottleneckTag}${logoImg}<strong>${ent.nom.replace(/</g, '&lt;')}</strong>${ent.legende ? `<p>${ent.legende.replace(/</g, '&lt;')}</p>` : ''}${imgs}</div>`;
 }
 function printCerveauFreeBlockHtml(bloc){
   const imgs = bloc.image ? `<div class="print-img-row"><img src="${bloc.image}" alt=""></div>` : '';
@@ -11666,10 +11723,11 @@ function exportChainAsPdf(chain, secteur){
 function renderCerveauPhases(box){
   const { secteur, chainId } = cerveauView;
   const chain = (cerveauData.chains[secteur] || []).find(c => c.id === chainId);
-  if (!chain){ cerveauView = { level:'chaines', secteur }; renderCerveau(); return; }
+  if (!chain){ cerveauView = { level:'chaines', secteur, path: cerveauView.path || [] }; renderCerveau(); return; }
+  const chainPath = chain.sousSecteurPath || [];
 
   box.innerHTML = `
-    <div class="cerveau-breadcrumb"><a data-back="secteurs">Secteurs</a> / <a data-back="chaines">${cerveauSectorLabel(secteur)}</a> / ${chain.nom}</div>
+    <div class="cerveau-breadcrumb"><a data-back="secteurs">Secteurs</a> / <a data-back="chaines">${cerveauSectorLabel(secteur)}</a>${chainPath.map(seg => ` / ${seg}`).join('')} / ${chain.nom}</div>
     <div class="cerveau-actions"><button class="zoom-btn objectifs-export" id="cerveauChainExportPdfBtn">🖨 Exporter PDF</button></div>
     <datalist id="cerveauCompanyList">${Object.keys(companies).map(n => `<option value="${n.replace(/"/g, '&quot;')}">`).join('')}</datalist>
     ${cerveauZoomedPhase != null ? '<div class="cerveau-phase-backdrop" data-action="phase-zoom-close"></div>' : ''}
@@ -11693,7 +11751,7 @@ function renderCerveauPhases(box){
   if (backdrop) backdrop.addEventListener('click', () => { cerveauZoomedPhase = null; renderCerveau(); });
 
   box.querySelector('[data-back="secteurs"]').addEventListener('click', () => { cerveauZoomedPhase = null; cerveauView = { level:'secteurs' }; renderCerveau(); });
-  box.querySelector('[data-back="chaines"]').addEventListener('click', () => { cerveauZoomedPhase = null; cerveauView = { level:'chaines', secteur }; renderCerveau(); });
+  box.querySelector('[data-back="chaines"]').addEventListener('click', () => { cerveauZoomedPhase = null; cerveauView = { level:'chaines', secteur, path: chainPath }; renderCerveau(); });
   document.getElementById('cerveauChainExportPdfBtn').addEventListener('click', () => exportChainAsPdf(chain, secteur));
 
   box.querySelectorAll('.cerveau-add-entity input').forEach(input => {
@@ -11731,6 +11789,11 @@ function renderCerveauPhases(box){
     card.querySelector('.cec-name').addEventListener('click', () => openFiche(ent.nom));
     card.querySelector('[data-action="ent-delete"]').addEventListener('click', () => {
       chain.phases[phaseIdx].entreprises.splice(entIdx, 1);
+      persistCerveauData();
+      renderCerveau();
+    });
+    card.querySelector('[data-action="ent-bottleneck"]').addEventListener('click', () => {
+      ent.bottleneck = !ent.bottleneck;
       persistCerveauData();
       renderCerveau();
     });

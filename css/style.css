@@ -483,9 +483,11 @@
   .cerveau-new-chain-actions{display:flex;gap:10px;margin-top:16px;}
   .cerveau-btn-cancel{background:transparent;border:1px solid var(--hair);color:var(--text-dim);border-radius:20px;padding:8px 18px;font-family:var(--font-body);font-size:13px;cursor:pointer;}
   .cerveau-btn-cancel:hover{border-color:var(--text-faint);color:var(--text);}
-  .cerveau-sector-box, .cerveau-chain-box{cursor:pointer;transition:transform .12s ease,border-color .12s ease;position:relative;}
+  .cerveau-sector-box, .cerveau-chain-box, .cerveau-folder-box{cursor:pointer;transition:transform .12s ease,border-color .12s ease;position:relative;}
   .cerveau-chain-box .cerveau-chain-delete{position:absolute;top:10px;right:10px;font-size:13px;}
-  .cerveau-sector-box:hover, .cerveau-chain-box:hover{transform:translateY(-2px);border-color:rgba(217,164,65,0.3);}
+  .cerveau-sector-box:hover, .cerveau-chain-box:hover, .cerveau-folder-box:hover{transform:translateY(-2px);border-color:rgba(217,164,65,0.3);}
+  .cerveau-folder-box{border-left:2px solid var(--gold);}
+  .cerveau-form-hint{font-size:12px;color:var(--text-dim);margin:4px 0 0;}
   .cerveau-chain-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(240px, 1fr));gap:14px;}
   .cerveau-phase-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;}
   .cerveau-phase{padding:22px;min-height:420px;display:flex;flex-direction:column;}
@@ -513,6 +515,11 @@
   .cerveau-freeblock input, .cerveau-freeblock textarea, .cerveau-freeblock button, .cerveau-freeblock a, .cerveau-freeblock .cec-free-text, .cerveau-freeblock .cec-image{touch-action:auto;}
   .cerveau-entity-card:active, .cerveau-freeblock:active{cursor:grabbing;}
   .cerveau-entity-card.cec-dragging, .cerveau-freeblock.cec-dragging{opacity:0.35;}
+  .cerveau-entity-bottleneck{position:relative;border:1px solid var(--gold);box-shadow:0 0 0 1px rgba(217,164,65,0.35);}
+  .cerveau-bottleneck-tag{position:absolute;top:8px;left:8px;z-index:2;background:rgba(9,9,9,0.82);color:var(--gold);font-family:var(--font-mono);font-size:9.5px;font-weight:700;letter-spacing:0.6px;padding:3px 7px;border-radius:6px;border:1px solid var(--gold);pointer-events:none;}
+  .cec-bottleneck-btn{background:transparent;border:none;color:var(--text-faint);cursor:pointer;font-size:12px;padding:2px;flex-shrink:0;}
+  .cec-bottleneck-btn:hover{color:var(--gold);}
+  .cec-bottleneck-btn.active{color:var(--gold);}
   .cerveau-entity-list.cec-drop-target, .cerveau-freeblock-list.cec-drop-target{outline:2px dashed var(--gold);outline-offset:4px;border-radius:8px;}
   .cec-body{display:flex;flex-direction:column;flex:1;min-width:0;}
   .cec-image{position:relative;background:var(--panel);display:flex;align-items:center;justify-content:center;cursor:pointer;}
@@ -1213,6 +1220,8 @@
     .print-header img{height:46px;width:auto;border-radius:8px;}
     .print-entity-logo{background:#fff;padding:3px;object-fit:contain;}
     .print-inline-logo{height:20px;width:20px;object-fit:contain;background:#fff;border-radius:4px;padding:2px;vertical-align:middle;margin-right:6px;}
+    .print-cec-bottleneck{border:1px solid var(--gold);border-radius:8px;padding:8px 10px;background:rgba(217,164,65,0.06);}
+    .print-bottleneck-tag{display:block;font-family:var(--font-mono);font-size:9.5px;font-weight:700;letter-spacing:0.6px;color:var(--gold);margin-bottom:4px;}
     .print-inline-logo-fallback{display:inline-flex;align-items:center;justify-content:center;height:20px;width:20px;background:var(--hair);border-radius:4px;vertical-align:middle;margin-right:6px;font-size:11px;font-weight:700;color:var(--text-dim);}
     .print-title{font-family:var(--font-display);font-size:21px;font-weight:700;color:var(--text);}
     .print-subtitle{font-size:11px;color:var(--text-dim);margin-top:3px;font-family:var(--font-mono);}

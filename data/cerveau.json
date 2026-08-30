@@ -4,14 +4,15 @@
       {
         "id": "c-electrique-batterie",
         "nom": "Véhicule électrique & chaîne batterie",
+        "sousSecteurPath": ["Électrification", "Véhicules & batteries"],
         "phases": [
           {
             "nom": "Matières premières (lithium, cobalt, nickel, recyclage)",
             "entreprises": [
-              { "nom": "Albemarle", "image": "data/logos/ALB.png", "legende": "Numéro un mondial du lithium (mines + raffinage), US/Chili/Australie.", "width": 220, "imgHeight": 120 },
+              { "nom": "Albemarle", "image": "data/logos/ALB.png", "legende": "Numéro un mondial du lithium (mines + raffinage), US/Chili/Australie.", "width": 220, "imgHeight": 120, "bottleneck": true },
               { "nom": "SQM", "image": "https://upload.wikimedia.org/wikipedia/en/thumb/7/79/Sociedad_Qu%C3%ADmica_y_Minera_logo.svg/250px-Sociedad_Qu%C3%ADmica_y_Minera_logo.svg.png", "legende": "Lithium chilien (salar d'Atacama) — 2ᵉ producteur mondial.", "width": 220, "imgHeight": 120 },
               { "nom": "Pilbara Minerals", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/39/PLS-Logo-CMYK.png/250px-PLS-Logo-CMYK.png", "legende": "Australie — un des plus gros gisements de lithium en roche dure (spodumène).", "width": 220, "imgHeight": 120 },
-              { "nom": "Glencore", "image": "data/logos/GLEN.L.png", "legende": "Négoce + extraction diversifiée, forte exposition cobalt (RDC) et nickel.", "width": 220, "imgHeight": 120 },
+              { "nom": "Glencore", "image": "data/logos/GLEN.L.png", "legende": "Négoce + extraction diversifiée, forte exposition cobalt (RDC) et nickel.", "width": 220, "imgHeight": 120, "bottleneck": true },
               { "nom": "Umicore", "image": "data/logos/UMI.BR.png", "legende": "Belgique — recyclage de batteries en fin de vie + matériaux de cathode.", "width": 220, "imgHeight": 120 }
             ],
             "blocsLibres": []
@@ -19,7 +20,7 @@
           {
             "nom": "Fabrication de cellules & packs batterie",
             "entreprises": [
-              { "nom": "CATL", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0d/Contemporary_Amperex_Technology_logo.svg/250px-Contemporary_Amperex_Technology_logo.svg.png", "legende": "1ᵉʳ fabricant mondial de cellules Li-ion, ~35-40% de part de marché.", "width": 220, "imgHeight": 120 },
+              { "nom": "CATL", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0d/Contemporary_Amperex_Technology_logo.svg/250px-Contemporary_Amperex_Technology_logo.svg.png", "legende": "1ᵉʳ fabricant mondial de cellules Li-ion, ~35-40% de part de marché.", "width": 220, "imgHeight": 120, "bottleneck": true },
               { "nom": "LG Energy Solution", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/42/LG_Energy_Solution_logo_EN.svg/250px-LG_Energy_Solution_logo_EN.svg.png", "legende": "Corée — fournisseur clé de GM, Tesla, Hyundai, Volkswagen.", "width": 220, "imgHeight": 120 },
               { "nom": "Panasonic", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/54/Panasonic_Group_logo.svg/250px-Panasonic_Group_logo.svg.png", "legende": "Partenaire batterie historique de Tesla (Gigafactory Nevada).", "width": 220, "imgHeight": 120 },
               { "nom": "Samsung SDI", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/48/Samsung_SDI_logo_%28english%29.svg/250px-Samsung_SDI_logo_%28english%29.svg.png", "legende": "Corée — cellules pour VE et électronique grand public.", "width": 220, "imgHeight": 120 },
