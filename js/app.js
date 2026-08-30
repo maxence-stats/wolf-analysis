@@ -3115,8 +3115,12 @@ function chartCanvasToImgHtml(canvasId, altLabel, chartInstance){
 }
 
 function portfolioEntityLogo(nom){
-  const match = Object.keys(companies).find(n => stripAccents(n.toLowerCase()) === stripAccents(nom.toLowerCase()));
-  return match ? companies[match][companies[match].length - 1].lienImage : null;
+  // Délègue à companyLogoUrl() (résolution locale via logosManifest en priorité, repli
+  // sur l'URL Sheet) plutôt que de relire companies[...].lienImage directement — sinon
+  // le donut Wolf Portfolio ignore la localisation des logos (download_sheet_logos.py)
+  // et reste bloqué sur d'anciennes URL distantes, dont certaines échouent en
+  // crossOrigin='anonymous' (nécessaire pour l'export image, voir buildPortfolioDonutImage).
+  return companyLogoUrl(nom);
 }
 
 // Cache d'images pour le donut (logo central Wolf + logo de chaque position, dessinés
@@ -3376,14 +3380,31 @@ function loadImageCorsSafe(src){
 async function buildPortfolioDonutImage(holdings, format){
   const mime = format === 'jpeg' ? 'image/jpeg' : 'image/png';
   const canvas = document.createElement('canvas');
-  canvas.width = 640; canvas.height = 480;
-  const wolfImg = await loadImageCorsSafe(WOLF_LOGO_URL);
+  canvas.width = 640; canvas.height = 640;
+  // Logos de position INCLUS ici (contrairement à une première version) — demande
+  // explicite : "il faut voir les logos... si je ne vois pas les logos des entreprises
+  // sur le graphique, ça ne sert à rien". Cache LOCAL à cet export (pas
+  // portfolioImageCache, partagé avec le donut affiché à l'écran) : chaque image est
+  // chargée ici en crossOrigin='anonymous' (loadImageCorsSafe) pour pouvoir être relue
+  // par toDataURL() sans tainter le canvas. Écraser le cache PARTAGÉ avec une tentative
+  // CORS qui échoue casserait l'affichage du donut LIVE pour tout hébergeur encore
+  // distant sans CORS (voir loadImageCached, pas de crossOrigin, utilisé par le donut
+  // interactif) — la plupart des logos de position sont désormais hébergés en LOCAL
+  // (voir download_sheet_logos.py) donc jamais tainté ; un logo distant sans CORS
+  // échoue juste silencieusement pour CE segment (pas de logo dessiné dessus, wedge
+  // coloré nu), plutôt que de faire échouer tout l'export.
+  const logos = holdings.map(h => portfolioEntityLogo(h.nom));
+  const exportImageCache = {};
+  const urlsToLoad = [WOLF_LOGO_URL, ...logos.filter(Boolean)];
+  await Promise.all(urlsToLoad.map(async src => {
+    exportImageCache[src] = await loadImageCorsSafe(src);
+  }));
   const centerLogoPlugin = {
     id:'exportCenterLogo',
     afterDatasetsDraw(chart){
-      if (!wolfImg) return;
+      const img = exportImageCache[WOLF_LOGO_URL];
       const meta = chart.getDatasetMeta(0);
-      if (!meta.data[0]) return;
+      if (!img || !meta.data[0]) return;
       const arc = meta.data[0];
       const size = arc.innerRadius * 1.55;
       const ctx = chart.ctx;
@@ -3391,19 +3412,62 @@ async function buildPortfolioDonutImage(holdings, format){
       ctx.beginPath();
       ctx.arc(arc.x, arc.y, arc.innerRadius * 0.92, 0, Math.PI * 2);
       ctx.clip();
-      ctx.drawImage(wolfImg, arc.x - size / 2, arc.y - size / 2, size, size);
+      ctx.drawImage(img, arc.x - size / 2, arc.y - size / 2, size, size);
       ctx.restore();
+    }
+  };
+  // Callouts logo par segment — même principe visuel que portfolioSegmentLogosPlugin()
+  // (ligne pointillée + badge rond en "contain", jamais étiré), mais lit exportImageCache
+  // au lieu de portfolioImageCache pour les raisons ci-dessus.
+  const segmentLogosPlugin = {
+    id:'exportSegmentLogos',
+    afterDatasetsDraw(chart){
+      const meta = chart.getDatasetMeta(0);
+      const dataset = chart.data.datasets[0];
+      const total = dataset.data.reduce((a, b) => a + b, 0);
+      const ctx = chart.ctx;
+      const badgeSize = 44, lineGap = 6, lineLen = 22;
+      meta.data.forEach((arc, i) => {
+        const pct = total ? dataset.data[i] / total : 0;
+        if (pct < 0.02) return;
+        const angle = (arc.startAngle + arc.endAngle) / 2;
+        const cos = Math.cos(angle), sin = Math.sin(angle);
+        const lineStartR = arc.outerRadius + lineGap;
+        const lineEndR = lineStartR + lineLen;
+        const badgeR = lineEndR + badgeSize / 2 + 2;
+        const lx1 = arc.x + cos * lineStartR, ly1 = arc.y + sin * lineStartR;
+        const lx2 = arc.x + cos * lineEndR, ly2 = arc.y + sin * lineEndR;
+        const bx = arc.x + cos * badgeR, by = arc.y + sin * badgeR;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(lx1, ly1); ctx.lineTo(lx2, ly2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(bx, by, badgeSize / 2, 0, Math.PI * 2);
+        ctx.fillStyle = '#fff'; ctx.fill();
+        ctx.restore();
+        const src = dataset._logos && dataset._logos[i];
+        const img = src && exportImageCache[src];
+        if (!img) return;
+        const ratio = Math.min((badgeSize - 8) / img.width, (badgeSize - 8) / img.height);
+        const w = img.width * ratio, h = img.height * ratio;
+        ctx.save();
+        ctx.beginPath(); ctx.arc(bx, by, badgeSize / 2 - 2, 0, Math.PI * 2); ctx.clip();
+        ctx.drawImage(img, bx - w / 2, by - h / 2, w, h);
+        ctx.restore();
+      });
     }
   };
   const chart = new Chart(canvas.getContext('2d'), {
     type:'doughnut',
-    data:{ labels: holdings.map(h => h.nom), datasets:[{ data: holdings.map(h => h.valorisation), backgroundColor: holdings.map((_, i) => PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length]), borderColor:'#151A1F', borderWidth:2 }] },
+    data:{ labels: holdings.map(h => h.nom), datasets:[{ data: holdings.map(h => h.valorisation), backgroundColor: holdings.map((_, i) => PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length]), borderColor:'#151A1F', borderWidth:2, _logos: logos }] },
     options:{ responsive:false, animation:false, cutout:'46%', devicePixelRatio:3,
-      plugins:{ legend:{ position:'right', labels:{ boxWidth:10, font:{ size:11 }, color:'#E9EBEE' } } } },
-    plugins:[centerLogoPlugin]
+      layout:{ padding:78 },
+      plugins:{ legend:{ display:false } } },
+    plugins:[centerLogoPlugin, segmentLogosPlugin]
   });
   let dataUrl = '';
-  try{ dataUrl = await roundedImageDataUrl(canvas.toDataURL(mime, 0.95), mime, format === 'jpeg' ? '#151A1F' : null); }catch(e){ /* improbable ici : seule image externe = logo Wolf, CORS-safe */ }
+  try{ dataUrl = await roundedImageDataUrl(canvas.toDataURL(mime, 0.95), mime, format === 'jpeg' ? '#151A1F' : null); }
+  catch(e){ console.warn('Export image Portfolio : canvas tainté malgré crossOrigin=anonymous', e); }
   chart.destroy();
   return dataUrl;
 }
