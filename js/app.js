@@ -56,10 +56,44 @@ const PCOL = {
   capitalInvesti:28, valorisationTotale:31,                    // AC, AF
   gainsEuros:34, gainsPct:37,                                  // AI, AL
   cashEuros:40,                                                 // AO
-  moisDate:43, moisValo:45, moisRendement:47, rendementTotal:48, // AR, AT, AV, AW
-  spxPerfMensuelle:49, spxPerfTotale:50, spxValorisation:51     // AX, AY, AZ
+  // Bloc mensuel RÉEL, vérifié par recherche directe d'une valeur exacte citée par
+  // l'utilisateur ("colonne K... rendement du S&P sur la période, colonne L... depuis
+  // la création, 14,98 actuellement") dans le CSV publié — trouvée en L86, avec un
+  // en-tête explicite en ligne 78 ("Mois / Versement € / Valeur après flux € / Valeur
+  // de part / Rendement / mois / Rendement TOTAL / (vide) / S&P 500 / Valeur de part
+  // S&P 500 / Rendement période / Rendement total"). L'ancien mapping (colonnes AR-AZ,
+  // ~43-51) pointait vers un bloc différent, plus ancien/abandonné, avec un trou sur le
+  // rendement cumulé S&P du mois courant — d'où le graphique qui semblait "ignorer" les
+  // dernières données saisies alors qu'elles étaient bien dans le Sheet, juste pas dans
+  // les colonnes lues. Mêmes noms de colonnes que PEA_COL/CTO_COL du Portefeuille Perso
+  // (même gabarit de suivi mensuel réutilisé par l'utilisateur d'un Sheet à l'autre).
+  moisDate:1, versement:2, moisValo:3, valeurPart:4, moisRendement:5, rendementTotal:6, // B, C, D, E, F, G
+  spxValorisation:8, spxValeurPart:9, spxPerfMensuelle:10, spxPerfTotale:11             // I, J, K, L
 };
 let portfolioData = { holdings:[], monthly:[], capitalInvesti:null, valorisationTotale:null, gainsEuros:null, gainsPct:null, cashEuros:null };
+// "août 2026", "mars 2026"... (CSV/gviz, texte déjà mis en forme) — voir
+// handlePortfolioRows(), distingue une vraie ligne du bloc mensuel d'une date d'achat
+// (JJ/MM/AAAA) qui partage la même colonne. La source RÉELLEMENT active aujourd'hui
+// (endpoint Apps Script, voir loadAllDataFromAppsScript) renvoie plutôt une date ISO
+// sérialisée ("2026-08-02T22:00:00.000Z", getValues() préserve le type Date natif de
+// la cellule) — d'où le 2e motif ISO_DATE_RE, les deux formats doivent être reconnus.
+const MOIS_ANNEE_RE = /^(janvier|f[ée]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|novembre|d[ée]cembre)\s+\d{4}$/i;
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}T/;
+// Piège confirmé en test direct sur l'endpoint Apps Script (payload réel inspecté) :
+// les cellules Sheets au format "Pourcentage" (Rendement / mois, Rendement TOTAL —
+// colonnes F/G du portefeuille Wolf) reviennent en fraction brute côté Apps Script
+// (0,0145 pour 1,45%, cellule.getValue() natif) MAIS déjà en texte mis à l'échelle
+// côté CSV/gviz ("1,45%", l'export respecte le formatage d'affichage) — même
+// incohérence entre sources que gainsPct/CAGR ailleurs dans ce fichier, gérée ici au
+// lieu d'être corrigée à la source (les 2 chemins CSV/gviz restent en place, même si
+// inutilisés aujourd'hui). Les colonnes S&P (K/L, "Rendement période"/"Rendement
+// total") n'ont PAS ce problème : déjà en points de pourcentage dans les deux cas
+// (nombre "Standard", pas "Pourcentage", côté Sheets) — restent sur parseNum() seul.
+function parsePctSmart(raw){
+  if (raw == null || raw === '') return null;
+  if (typeof raw === 'number') return isNaN(raw) ? null : raw * 100;
+  return parseNum(raw);
+}
 
 /* Onglet historique de prix dédié (20 ans, saisi manuellement par l'utilisateur pour
    contourner le manque de fiabilité du relais CORS Yahoo/Stooq) — même fichier publié,
@@ -594,11 +628,27 @@ function tryGvizPortfolioScript(){
 // CSV les garde telles quelles). Donc aucun numéro de ligne fixe n'est fiable ici :
 // chaque bloc est reconnu par son contenu (libellés d'en-tête connus ignorés), jamais
 // par une position dans le tableau.
+// Repère la ligne d'en-tête du bloc mensuel ("Mois" en colonne B, voir PCOL.moisDate)
+// pour ne traiter QUE les lignes qui suivent comme du bloc mensuel. Nécessaire car la
+// colonne B est PARTAGÉE avec le bloc positions plus haut dans la feuille (date d'achat,
+// ex. "28/08/2026" en CSV ou sérialisée en ISO côté Apps Script) — un simple test de
+// contenu par ligne ("ressemble à une date") ne suffit plus à les départager depuis que
+// les deux formats de date (français ET ISO) sont acceptés (voir MOIS_ANNEE_RE/
+// ISO_DATE_RE) : repéré en test réel, des lignes de positions se glissaient dans
+// `monthly` avec des valeurs aberrantes (rendement de plusieurs milliers de %) tant que
+// la reconnaissance restait uniquement basée sur le contenu de la cellule elle-même.
+function findMonthlyHeaderRowIdx(rows){
+  for (let i = 0; i < rows.length; i++){
+    if (parseStr(rows[i][PCOL.moisDate]).toUpperCase() === 'MOIS') return i;
+  }
+  return -1;
+}
 function handlePortfolioRows(rows){
   const holdings = [];
   const monthly = [];
   const summary = { capitalInvesti:null, valorisationTotale:null, gainsEuros:null, gainsPct:null, cashEuros:null };
   let summaryFound = false;
+  const monthlyHeaderRowIdx = findMonthlyHeaderRowIdx(rows);
 
   for (let i = 0; i < rows.length; i++){
     const c = rows[i];
@@ -636,15 +686,20 @@ function handlePortfolioRows(rows){
       }
     }
 
-    const moisDate = parseStr(c[PCOL.moisDate]);
-    if (moisDate && moisDate.toUpperCase() !== 'MOIS'){
-      const rendementMensuelRaw = parseNum(c[PCOL.moisRendement]);
-      const rendementTotalRaw = parseNum(c[PCOL.rendementTotal]);
+    // Uniquement après la ligne d'en-tête "Mois" repérée plus haut (voir
+    // findMonthlyHeaderRowIdx) — évite la collision avec les dates d'achat du bloc
+    // positions, qui partagent la même colonne. Le motif de contenu (français ou ISO)
+    // reste utile en complément pour ignorer d'éventuelles lignes vides intercalées.
+    const moisDateRaw = c[PCOL.moisDate];
+    const moisDate = parseStr(moisDateRaw);
+    if (monthlyHeaderRowIdx !== -1 && i > monthlyHeaderRowIdx && (MOIS_ANNEE_RE.test(moisDate) || ISO_DATE_RE.test(moisDate))){
       monthly.push({
         mois: moisDate,
-        // Même correctif ×100 que gainsPct ci-dessus, même cause (cellules "Pourcentage").
-        rendementMensuel: rendementMensuelRaw != null ? rendementMensuelRaw * 100 : null,
-        rendementTotal: rendementTotalRaw != null ? rendementTotalRaw * 100 : null,
+        // Fraction brute (Apps Script) vs texte déjà mis à l'échelle (CSV/gviz) — voir
+        // parsePctSmart() ci-dessus. Les colonnes S&P (spxPerf*) n'ont pas cette
+        // ambiguïté, parseNum() seul suffit dans les deux cas.
+        rendementMensuel: parsePctSmart(c[PCOL.moisRendement]),
+        rendementTotal: parsePctSmart(c[PCOL.rendementTotal]),
         spxPerfMensuelle: parseNum(c[PCOL.spxPerfMensuelle]),
         spxPerfTotale: parseNum(c[PCOL.spxPerfTotale])
       });
