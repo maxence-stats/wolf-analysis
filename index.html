@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<link rel="stylesheet" href="css/style.css?v=20260831t">
+<link rel="stylesheet" href="css/style.css?v=20260831v">
 </head>
 <body>
 <div class="wrap">
@@ -1389,6 +1389,18 @@
                 </div>
               </div>
             </div>
+            <!-- Superposition d'indicateurs — même mécanisme que l'onglet Analyse
+                 (stockOverlaySelected/renderStockOverlays, un seul graphique lightweight-charts
+                 partagé entre les deux pages) : macro (taux, spreads, GDP, CPI, liquidité...),
+                 secteurs ETF, une autre entreprise, ou les ratios/comptes de l'entreprise
+                 affichée ici. Demande explicite : "je veux que ça y soit aussi dans Wolf Labo". -->
+            <div class="labo-dropdown" data-dropdown="wolfLaboMacroOverlay">
+              <button type="button" class="labo-dropdown-btn" id="wolfLaboMacroOverlayBtn">🌐 Indicateurs macro ▾</button>
+              <div class="labo-dropdown-menu" id="wolfLaboMacroOverlayMenu" style="min-width:260px;max-height:360px;overflow-y:auto;">
+                <input type="text" id="wolfLaboMacroOverlaySearch" placeholder="Rechercher un indicateur…" class="search-input" style="margin-bottom:6px;">
+                <div id="wolfLaboMacroOverlayList"></div>
+              </div>
+            </div>
           </div>
 
           <div class="range-buttons" id="wolfLaboDrawToolbar">
@@ -1413,10 +1425,10 @@
           <p class="chart-hint">Les tracés (lignes, canaux) et le croquis sont sauvegardés automatiquement par entreprise — rien n'est jamais supprimé sans un clic explicite sur "✕" à côté du tracé concerné. Clique un tracé — directement sur le graphique ou dans la liste ci-dessous — pour afficher ses poignées et les régler à la souris.</p>
         </div>
 
-        <!-- Panneau de listes (propre à Wolf Labo, distinct de l'onglet Watchlist/
-             Portefeuille Perso — demande explicite, juste un raccourci de navigation
-             pendant qu'on regarde des graphiques). Une liste par secteur GICS pré-créée
-             + Watchlist + Portefeuille, l'utilisateur remplit lui-même. -->
+        <!-- Panneau de listes : une section par vraie watchlist (les 5 fixes + les
+             personnalisées, mêmes données que l'onglet Watchlist/Classement, voir
+             wolfLaboCategoryEntries) + Wolf Portfolio (lecture seule) + une liste par
+             secteur GICS restée propre à Wolf Labo (navigation manuelle, non connectée). -->
         <div class="labo-watchlist-panel" id="wolfLaboWatchlistPanel"></div>
       </div>
 
@@ -1660,7 +1672,7 @@
   </div>
 </div>
 
-<script src="js/app.js?v=20260831t"></script>
+<script src="js/app.js?v=20260831v"></script>
 </body>
 </html>
 

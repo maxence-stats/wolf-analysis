@@ -7786,6 +7786,15 @@ let stockOverlaySeries = {}; // { [`${type}:${key}`]: série lightweight-charts 
 const stockOverlayCompanyCache = {}; // { [fmpSymbol]: {dates, values} } — évite de refetcher une entreprise déjà comparée
 const STOCK_OVERLAY_COLORS = [THEME.blue, THEME.green, THEME.red, THEME.violet, THEME.yellow, THEME.white, THEME.gold, '#7DBEEA', '#E88AB0', '#6FCF97'];
 
+// Nom de l'entreprise "affichée en ce moment" pour les groupes "Cette entreprise —
+// ratios/comptes" du catalogue — dépend du CONTEXTE (Analyse vs Wolf Labo, wolfLaboChart
+// étant la MÊME instance lightweight-charts partagée entre les deux pages, voir
+// activateWolfLaboForAnalyse/wolfLaboActiveCtx). Sans ça, ouvrir "Indicateurs macro"
+// depuis Wolf Labo aurait proposé les ratios de l'entreprise affichée sur Analyse (ou
+// rien si Analyse n'a jamais été ouverte), pas celle réellement chargée dans Wolf Labo.
+function stockOverlayContextCompanyName(){
+  return wolfLaboActiveCtx === 'labo' ? (wolfLaboSampleData && wolfLaboSampleData.name) || null : activeCompany;
+}
 function buildStockOverlayCatalog(){
   const catalog = [];
   CREDIT_SERIES.forEach(s => {
@@ -7799,8 +7808,9 @@ function buildStockOverlayCatalog(){
   DOCUMENTS_BS_ROWS.forEach(r => catalog.push({ type:'statement', statement:'balanceSheet', key:r.label, label:r.label, group:'Cette entreprise — bilan' }));
   DOCUMENTS_CF_ROWS.forEach(r => catalog.push({ type:'statement', statement:'cashFlow', key:r.label, label:r.label, group:'Cette entreprise — flux de trésorerie' }));
   MACRO_ROTATION_SECTORS.forEach(s => catalog.push({ type:'sector', key:s.key, label:'Secteur : ' + s.label + ' (ETF ' + s.ticker + ')', group:'Secteurs' }));
+  const contextName = stockOverlayContextCompanyName();
   Object.keys(companies).forEach(nom => {
-    if (nom !== activeCompany) catalog.push({ type:'company', key:nom, label:nom, group:'Comparer une entreprise' });
+    if (nom !== contextName) catalog.push({ type:'company', key:nom, label:nom, group:'Comparer une entreprise' });
   });
   return catalog;
 }
@@ -7809,13 +7819,14 @@ function buildStockOverlayCatalog(){
 // (fetch à la demande d'un fichier prices-*.json pas encore en cache), synchrone sinon.
 async function resolveStockOverlaySeries(item){
   if (item.type === 'macro') return creditIndicatorsData[item.key] || null;
+  const contextName = stockOverlayContextCompanyName();
   if (item.type === 'chartsHistory'){
-    const ch = documentsRealData[activeCompany] && documentsRealData[activeCompany].chartsHistory;
+    const ch = documentsRealData[contextName] && documentsRealData[contextName].chartsHistory;
     if (!ch || !ch[item.key]) return null;
     return { dates: ch.years.map(y => `${String(y).slice(0,4)}-12-31`), values: ch[item.key] };
   }
   if (item.type === 'statement'){
-    const sd = documentsRealData[activeCompany] && documentsRealData[activeCompany][item.statement];
+    const sd = documentsRealData[contextName] && documentsRealData[contextName][item.statement];
     if (!sd) return null;
     const row = sd.rows.find(r => r.label === item.key);
     if (!row) return null;
@@ -8159,7 +8170,12 @@ function renderStockChartCandleView(){
   stockCandleChart.priceScale('right').applyOptions({ autoScale:true });
   stockCandleChart.priceScale('stockOverlay').applyOptions({ autoScale:true });
   applyStockCandleScaleMode();
-  renderStockOverlayList(document.getElementById('stockMacroOverlaySearch') ? document.getElementById('stockMacroOverlaySearch').value : '');
+  // Rafraîchit les DEUX listes (Analyse + Wolf Labo) — ce rendu de graphique est partagé
+  // entre les deux pages, pas seulement celle actuellement visible.
+  const analyseSearchEl = document.getElementById('stockMacroOverlaySearch');
+  renderStockOverlayList(analyseSearchEl ? analyseSearchEl.value : '', 'stockMacroOverlayList', 'stockMacroOverlayBtn');
+  const laboSearchEl = document.getElementById('wolfLaboMacroOverlaySearch');
+  renderStockOverlayList(laboSearchEl ? laboSearchEl.value : '', 'wolfLaboMacroOverlayList', 'wolfLaboMacroOverlayBtn');
   renderStockOverlays();
   if (activeCompany && fmpSymbols[activeCompany]){
     renderWolfLaboDrawings();
@@ -8188,14 +8204,38 @@ function applyStockCandleScaleMode(){
 // ~4% et un cours à ~90€ sur un même graphique.
 function stockOverlayId(item){ return `${item.type}:${item.key}`; }
 
+// Wolf Labo a son PROPRE graphique lightweight-charts (wolfLaboChart, distinct de
+// stockCandleChart — ne coïncident que quand wolfLaboActiveCtx==='analyse', voir le
+// commentaire détaillé sur wolfLaboActiveCtx) : la sélection d'indicateurs
+// (stockOverlaySelected) est partagée entre les deux pages, mais les SÉRIES lightweight-
+// charts elles-mêmes sont propres à chaque instance de graphique, d'où un cache séparé
+// (wolfLaboOverlaySeries) et une résolution "quel graphique/quelle donnée de prix est
+// actuellement affichée" selon le contexte, plutôt que stockCandleChart en dur partout.
+let wolfLaboOverlaySeries = {};
+function stockOverlayResolveContext(){
+  if (wolfLaboActiveCtx === 'labo'){
+    return {
+      chart: wolfLaboChart, series: wolfLaboCandleSeries,
+      minDate: (wolfLaboSampleData && wolfLaboSampleData.candles.length) ? wolfLaboSampleData.candles[0].time : null,
+      range: wolfLaboRange, cache: wolfLaboOverlaySeries
+    };
+  }
+  return {
+    chart: stockCandleChart, series: stockCandleSeries,
+    minDate: (stockCandleFull && stockCandleFull.length) ? stockCandleFull[0].t : null,
+    range: stockRange, cache: stockOverlaySeries
+  };
+}
+
 async function renderStockOverlays(){
-  if (!stockCandleChart) return;
+  const ctx = stockOverlayResolveContext();
+  if (!ctx.chart) return;
   const myToken = ++stockOverlayRenderToken;
   const activeIds = stockOverlaySelected.map(stockOverlayId);
-  Object.keys(stockOverlaySeries).forEach(id => {
+  Object.keys(ctx.cache).forEach(id => {
     if (!activeIds.includes(id)){
-      try{ stockCandleChart.removeSeries(stockOverlaySeries[id]); }catch(e){ /* déjà retirée */ }
-      delete stockOverlaySeries[id];
+      try{ ctx.chart.removeSeries(ctx.cache[id]); }catch(e){ /* déjà retirée */ }
+      delete ctx.cache[id];
     }
   });
   for (let i = 0; i < stockOverlaySelected.length; i++){
@@ -8203,16 +8243,16 @@ async function renderStockOverlays(){
     const id = stockOverlayId(item);
     const raw = await resolveStockOverlaySeries(item);
     if (myToken !== stockOverlayRenderToken) return; // sélection changée entre-temps (fetch 'company' en vol)
-    if (!stockCandleSeries) return; // graphique détruit/recréé pendant l'attente
-    if (!stockOverlaySeries[id]){
-      stockOverlaySeries[id] = stockCandleChart.addLineSeries({
+    if (!ctx.series) return; // graphique détruit/recréé pendant l'attente
+    if (!ctx.cache[id]){
+      ctx.cache[id] = ctx.chart.addLineSeries({
         color: STOCK_OVERLAY_COLORS[i % STOCK_OVERLAY_COLORS.length], lineWidth:1.5,
         priceLineVisible:false, lastValueVisible:true, title: item.label,
         priceScaleId: 'stockOverlay', crosshairMarkerVisible:false
       });
     }
-    if (!raw){ stockOverlaySeries[id].setData([]); continue; }
-    const startIdx = stockCandleRangeStartIdx(raw.dates, stockRange);
+    if (!raw){ ctx.cache[id].setData([]); continue; }
+    const startIdx = stockCandleRangeStartIdx(raw.dates, ctx.range);
     // Bug trouvé en reproduisant le signalement utilisateur ("il y a autant d'espace
     // entre 2008 et 2009 qu'entre 2009 et 1993... problème de date je pense") : une
     // superposition avec un historique plus ANCIEN que le premier chandelier dispo
@@ -8224,13 +8264,12 @@ async function renderStockOverlays(){
     // annuels antérieurs aux bougies se retrouvent compressés dans quelques cases
     // étroites, donnant l'impression que 1993-2009 tient dans le même espace qu'un
     // intervalle de 2 ans plus loin. Fix : ne jamais envoyer à la série un point
-    // antérieur à la toute première bougie chargée (candleMinDate) — la superposition
+    // antérieur à la toute première bougie chargée (ctx.minDate) — la superposition
     // reste visible sur toute la plage où il y a du prix, jamais au-delà.
-    const candleMinDate = stockCandleFull && stockCandleFull.length ? stockCandleFull[0].t : null;
     const data = raw.dates.slice(startIdx)
       .map((d, i2) => ({ time:d, value: raw.values[startIdx + i2] }))
-      .filter(p => p.value != null && isFinite(p.value) && (!candleMinDate || p.time >= candleMinDate));
-    stockOverlaySeries[id].setData(data);
+      .filter(p => p.value != null && isFinite(p.value) && (!ctx.minDate || p.time >= ctx.minDate));
+    ctx.cache[id].setData(data);
   }
 }
 let stockOverlayRenderToken = 0;
@@ -8238,8 +8277,13 @@ let stockOverlayRenderToken = 0;
 // Recherche groupée par catégorie — catalogue trop large (macro + tout Documents
 // financiers + secteurs + entreprises) pour une liste à plat sans filtre, demande
 // explicite de ne rien afficher tant qu'on n'a pas tapé au moins 2 caractères.
-function renderStockOverlayList(filterText){
-  const box = document.getElementById('stockMacroOverlayList');
+// listBoxId/btnId paramétrables : même state partagé (stockOverlaySelected) et même
+// catalogue, mais deux points d'entrée DOM distincts — Analyse (#stockMacroOverlay*) et
+// Wolf Labo (#wolfLaboMacroOverlay*), qui pilotent tous les deux le MÊME graphique
+// lightweight-charts partagé (voir stockOverlayContextCompanyName). Demande explicite :
+// "je veux que ça y soit aussi dans Wolf Labo".
+function renderStockOverlayList(filterText, listBoxId, btnId){
+  const box = document.getElementById(listBoxId || 'stockMacroOverlayList');
   if (!box) return;
   const q = stripAccents((filterText || '').trim().toLowerCase());
   // Superpositions déjà actives : toujours listées en haut avec un bouton ✕, quelle que
@@ -8269,8 +8313,8 @@ function renderStockOverlayList(filterText){
     }
   }
   box.innerHTML = activeHtml + resultsHtml;
-  const btn = document.getElementById('stockMacroOverlayBtn');
-  if (btn) btn.textContent = `🔎 Superposer (${stockOverlaySelected.length}) ▾`;
+  const btn = document.getElementById(btnId || 'stockMacroOverlayBtn');
+  if (btn) btn.textContent = `🌐 Indicateurs macro (${stockOverlaySelected.length}) ▾`;
 }
 
 async function loadStockChart(ticker, nom){
@@ -8627,39 +8671,49 @@ document.getElementById('stockCandleDrawToolbar').addEventListener('click', e =>
 // toutes les données doivent être superposables... faire une barre de recherche où on
 // recherche les données qu'on peut superposer"), reste ouvert pour en cocher/décocher
 // plusieurs d'affilée (même pattern que le menu Indicateurs techniques juste à côté).
-document.getElementById('stockMacroOverlaySearch').addEventListener('input', e => {
-  renderStockOverlayList(e.target.value);
-});
-// Bug trouvé en retour utilisateur ("je clique sur la loupe, ça s'enlève direct, je ne
-// peux pas marquer") : le clic sur le champ de recherche (juste pour lui donner le
-// focus) remontait jusqu'au document, où le gestionnaire générique de fermeture des
-// .labo-dropdown (sur l'évènement CLICK, "n'importe quel clic ailleurs = tout fermer")
-// le refermait aussitôt — AVANT d'avoir pu taper quoi que ce soit. Le clic sur un bouton
-// de la liste juste en dessous s'en sortait car il appelait déjà stopPropagation(), mais
-// seulement APRÈS avoir vérifié qu'il s'agissait bien d'un bouton [data-overlay-type] —
-// jamais atteint pour un clic sur le champ texte. stopPropagation() déplacé tout en haut
-// (avant ce test), sur l'évènement CLICK — un stopPropagation() sur mousedown n'aurait
-// rien changé, mousedown et click se propagent chacun indépendamment.
-document.getElementById('stockMacroOverlayMenu').addEventListener('click', e => {
-  e.stopPropagation();
-  const removeBtn = e.target.closest('[data-overlay-remove-type]');
-  if (removeBtn){
-    const type = removeBtn.dataset.overlayRemoveType, key = removeBtn.dataset.overlayRemoveKey;
+// Factorisé pour être branché deux fois (Analyse #stockMacroOverlay*, Wolf Labo
+// #wolfLaboMacroOverlay*) — même state partagé (stockOverlaySelected), même graphique
+// lightweight-charts partagé (renderStockOverlays), juste deux points d'entrée DOM.
+function wireStockOverlayControls(searchId, menuId, listBoxId, btnId){
+  const searchEl = document.getElementById(searchId);
+  const menuEl = document.getElementById(menuId);
+  if (!searchEl || !menuEl) return;
+  searchEl.addEventListener('input', e => {
+    renderStockOverlayList(e.target.value, listBoxId, btnId);
+  });
+  // Bug trouvé en retour utilisateur ("je clique sur la loupe, ça s'enlève direct, je ne
+  // peux pas marquer") : le clic sur le champ de recherche (juste pour lui donner le
+  // focus) remontait jusqu'au document, où le gestionnaire générique de fermeture des
+  // .labo-dropdown (sur l'évènement CLICK, "n'importe quel clic ailleurs = tout fermer")
+  // le refermait aussitôt — AVANT d'avoir pu taper quoi que ce soit. Le clic sur un bouton
+  // de la liste juste en dessous s'en sortait car il appelait déjà stopPropagation(), mais
+  // seulement APRÈS avoir vérifié qu'il s'agissait bien d'un bouton [data-overlay-type] —
+  // jamais atteint pour un clic sur le champ texte. stopPropagation() déplacé tout en haut
+  // (avant ce test), sur l'évènement CLICK — un stopPropagation() sur mousedown n'aurait
+  // rien changé, mousedown et click se propagent chacun indépendamment.
+  menuEl.addEventListener('click', e => {
+    e.stopPropagation();
+    const removeBtn = e.target.closest('[data-overlay-remove-type]');
+    if (removeBtn){
+      const type = removeBtn.dataset.overlayRemoveType, key = removeBtn.dataset.overlayRemoveKey;
+      const idx = stockOverlaySelected.findIndex(s => s.type === type && s.key === key);
+      if (idx !== -1) stockOverlaySelected.splice(idx, 1);
+      renderStockOverlayList(searchEl.value, listBoxId, btnId);
+      renderStockOverlays();
+      return;
+    }
+    const btn = e.target.closest('[data-overlay-type]');
+    if (!btn) return;
+    const type = btn.dataset.overlayType, key = btn.dataset.overlayKey;
     const idx = stockOverlaySelected.findIndex(s => s.type === type && s.key === key);
-    if (idx !== -1) stockOverlaySelected.splice(idx, 1);
-    renderStockOverlayList(document.getElementById('stockMacroOverlaySearch').value);
+    if (idx === -1) stockOverlaySelected.push({ type, key, label: btn.textContent }); else stockOverlaySelected.splice(idx, 1);
+    btn.classList.toggle('active', idx === -1);
+    renderStockOverlayList(searchEl.value, listBoxId, btnId);
     renderStockOverlays();
-    return;
-  }
-  const btn = e.target.closest('[data-overlay-type]');
-  if (!btn) return;
-  const type = btn.dataset.overlayType, key = btn.dataset.overlayKey;
-  const idx = stockOverlaySelected.findIndex(s => s.type === type && s.key === key);
-  if (idx === -1) stockOverlaySelected.push({ type, key, label: btn.textContent }); else stockOverlaySelected.splice(idx, 1);
-  btn.classList.toggle('active', idx === -1);
-  renderStockOverlayList(document.getElementById('stockMacroOverlaySearch').value);
-  renderStockOverlays();
-});
+  });
+}
+wireStockOverlayControls('stockMacroOverlaySearch', 'stockMacroOverlayMenu', 'stockMacroOverlayList', 'stockMacroOverlayBtn');
+wireStockOverlayControls('wolfLaboMacroOverlaySearch', 'wolfLaboMacroOverlayMenu', 'wolfLaboMacroOverlayList', 'wolfLaboMacroOverlayBtn');
 document.getElementById('stockCandleScaleMenu').addEventListener('click', e => {
   const btn = e.target.closest('button[data-scale-candle]');
   if (!btn) return;
@@ -15222,6 +15276,11 @@ async function selectWolfLaboSymbol(symbol, name){
   const status = document.getElementById('wolfLaboStatus');
   const fmpSymbol = (name && fmpSymbols[name]) || symbol;
   if (status){ status.textContent = `Chargement de ${name || symbol}…`; status.style.display = 'block'; }
+  // Précharge les comptes/ratios de l'entreprise (idempotent, voir ensureDocumentsRealData)
+  // pour que les groupes "Cette entreprise — ratios/comptes" du menu Superposer/
+  // Indicateurs macro aient une donnée à proposer sans avoir dû visiter Documents
+  // financiers au préalable.
+  if (name && companies[name]) ensureDocumentsRealData(name);
   const ok = await loadWolfLaboRealSymbol(fmpSymbol, name);
   if (ok){ if (status) status.style.display = 'none'; return; }
   if (symbol === 'KO'){ loadWolfLaboSample(); return; }
@@ -15367,6 +15426,9 @@ function renderWolfLaboChart(){
     Object.keys(WOLF_LABO_MA_CONFIG).forEach(period => {
       wolfLaboSmaSeries[period] = wolfLaboChart.addLineSeries({ color: WOLF_LABO_MA_CONFIG[period].color, lineWidth:1.5, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
     });
+    // Échelle dédiée aux superpositions (Indicateurs macro) — même raison/config que sur
+    // le graphique de l'Analyse, voir le commentaire détaillé à sa création.
+    wolfLaboChart.priceScale('stockOverlay').applyOptions({ visible:false, scaleMargins:{ top:0.1, bottom:0.1 }, autoScale:true });
     ensureWolfLaboBandPrimitiveOn(wolfLaboCandleSeries);
     wolfLaboChart.timeScale().subscribeVisibleTimeRangeChange(() => renderWolfLaboHandles());
     wireWolfLaboChartClicks();
@@ -15390,6 +15452,9 @@ function renderWolfLaboChart(){
   renderWolfLaboWatchlistPanel();
   renderWolfLaboChartLogo();
   renderWolfLaboAddToListMenu();
+  const laboSearchEl = document.getElementById('wolfLaboMacroOverlaySearch');
+  renderStockOverlayList(laboSearchEl ? laboSearchEl.value : '', 'wolfLaboMacroOverlayList', 'wolfLaboMacroOverlayBtn');
+  renderStockOverlays();
 }
 
 // Logo de l'entreprise actuellement affichée, à côté du titre — demande explicite
