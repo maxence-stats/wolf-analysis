@@ -886,7 +886,7 @@
         "id": "c-finance-complete",
         "nom": "Finance — du capital à la transaction quotidienne",
         "sousSecteurPath": [],
-        "rev": 2,
+        "rev": 3,
         "phases": [
           {
             "nom": "Banques US",
@@ -1265,6 +1265,41 @@
             "blocsLibres": []
           },
           {
+            "nom": "Gestion d'Actifs Alternatifs",
+            "groupe": {
+              "num": "03",
+              "label": "ÉPARGNE & MARCHÉS",
+              "tagline": "Gestion d'actifs alternatifs (private equity) - distincte de la gestion traditionnelle ci-dessus"
+            },
+            "entreprises": [
+              {
+                "nom": "Blackstone",
+                "image": "data/logos/BX.png",
+                "legende": "US - premier gestionnaire d'actifs alternatifs (private equity, immobilier) au monde.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "KKR",
+                "image": "data/logos/KKR.png",
+                "legende": "US - un des tout premiers groupes de private equity mondiaux.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Apollo Global Management",
+                "image": "data/logos/APO.png",
+                "legende": "US - un des tout premiers groupes de private equity et crédit privé mondiaux.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
             "nom": "Réseaux de paiement (rails)",
             "groupe": {
               "num": "04",
@@ -1354,6 +1389,33 @@
                 "nom": "Nu Holdings",
                 "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f7/Nubank_logo_2021.svg/250px-Nubank_logo_2021.svg.png",
                 "legende": "Brésil (Nubank) — plus grande néobanque d'Amérique latine par le nombre de clients.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Émetteurs de Cartes à Réseau Propre",
+            "groupe": {
+              "num": "04",
+              "label": "CIRCULATION DE L'ARGENT",
+              "tagline": "Émetteurs avec réseau propriétaire - modèle distinct de Visa/Mastercard, qui ne font QUE le réseau"
+            },
+            "entreprises": [
+              {
+                "nom": "American Express",
+                "image": "data/logos/AXP.png",
+                "legende": "US - émet ses propres cartes ET opère son propre réseau (contrairement à Visa/Mastercard, qui ne font que le réseau pour des banques tierces).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Discover Financial Services",
+                "image": "data/logos/DFS.png",
+                "legende": "US - même modèle intégré qu'American Express, réseau propriétaire Discover.",
                 "width": 220,
                 "imgHeight": 120,
                 "bottleneck": false
@@ -2427,16 +2489,59 @@
         "id": "c-tech-complete",
         "nom": "Technologies — du silicium à la sécurité",
         "sousSecteurPath": [],
-        "rev": 3,
+        "rev": 4,
         "phases": [
+          {
+            "nom": "Outils de Conception & Propriété Intellectuelle",
+            "groupe": {
+              "num": "01",
+              "label": "OUTILS DE CONCEPTION & PROPRIÉTÉ INTELLECTUELLE",
+              "tagline": "L'amont de l'amont - sans ces logiciels et licences, aucune puce ne peut même être dessinée"
+            },
+            "entreprises": [
+              {
+                "nom": "Synopsys",
+                "image": "data/logos/SNPS.png",
+                "legende": "US - avec Cadence, forme un duopole quasi total sur les logiciels de conception de puces (EDA) : aucun circuit moderne n'est dessiné sans l'un des deux.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "Cadence Design Systems",
+                "image": "data/logos/CDNS.png",
+                "legende": "US - l'autre moitié du duopole mondial des logiciels EDA de conception de puces.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              },
+              {
+                "nom": "ARM Holdings",
+                "image": "data/logos/ARM.png",
+                "legende": "Royaume-Uni - licence son architecture de processeur à la quasi-totalité des puces mobiles et embarquées mondiales (Apple, Qualcomm, NVIDIA en dépendent tous).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": true
+              }
+            ],
+            "blocsLibres": []
+          },
           {
             "nom": "Conception (Fabless)",
             "groupe": {
-              "num": "01",
+              "num": "02",
               "label": "CONCEPTION (FABLESS)",
               "tagline": "Dessine les puces mais ne les fabrique pas — sous-traite à une fonderie"
             },
             "entreprises": [
+              {
+                "nom": "Apple",
+                "image": "data/logos/AAPL.png",
+                "legende": "US - conçoit ses propres puces (M-series, A-series) et sous-traite leur fabrication à TSMC, exactement comme les autres fabless ci-dessous ; premier écosystème matériel/logiciel grand public au monde.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
               {
                 "nom": "NVIDIA",
                 "image": "data/logos/NVDA.png",
@@ -2475,7 +2580,7 @@
           {
             "nom": "Fonderie",
             "groupe": {
-              "num": "02",
+              "num": "03",
               "label": "FONDERIE",
               "tagline": "Fabrique physiquement les puces dessinées par les fabless"
             },
@@ -2510,7 +2615,7 @@
           {
             "nom": "Équipements de Fabrication",
             "groupe": {
-              "num": "03",
+              "num": "04",
               "label": "ÉQUIPEMENTS DE FABRICATION",
               "tagline": "Les machines sans lesquelles aucune fonderie ne peut graver une puce"
             },
@@ -2561,7 +2666,7 @@
           {
             "nom": "Matériaux & Composants Ultra-Spécifiques",
             "groupe": {
-              "num": "04",
+              "num": "05",
               "label": "MATÉRIAUX & COMPOSANTS ULTRA-SPÉCIFIQUES",
               "tagline": "Le goulot dans le goulot — des fournisseurs uniques dont dépendent les équipementiers eux-mêmes"
             },
@@ -2612,7 +2717,7 @@
           {
             "nom": "Mémoire",
             "groupe": {
-              "num": "05",
+              "num": "06",
               "label": "MÉMOIRE",
               "tagline": "Un oligopole à part — trois acteurs contrôlent environ 95% du marché mondial de la DRAM"
             },
@@ -2647,7 +2752,7 @@
           {
             "nom": "Packaging & Test",
             "groupe": {
-              "num": "06",
+              "num": "07",
               "label": "PACKAGING & TEST",
               "tagline": "Assemble et teste les puces une fois gravées — l'étape finale avant la livraison"
             },
@@ -2674,7 +2779,7 @@
           {
             "nom": "Infrastructure Data Center",
             "groupe": {
-              "num": "07",
+              "num": "08",
               "label": "INFRASTRUCTURE DATA CENTER",
               "tagline": "Alimente et refroidit les puces une fois installées dans les centres de données"
             },
@@ -2699,9 +2804,36 @@
             "blocsLibres": []
           },
           {
+            "nom": "Réseaux & Connectivité",
+            "groupe": {
+              "num": "09",
+              "label": "RÉSEAUX & CONNECTIVITÉ",
+              "tagline": "Fait circuler les données entre les serveurs et jusqu'à l'utilisateur final"
+            },
+            "entreprises": [
+              {
+                "nom": "Cisco Systems",
+                "image": "data/logos/CSCO.png",
+                "legende": "US - leader historique mondial des équipements réseau d'entreprise.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Arista Networks",
+                "image": "data/logos/ANET.png",
+                "legende": "US - leader du réseau haute performance pour data centers, fort bénéficiaire direct de la demande liée à l'IA.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
             "nom": "Conseil & Services IT",
             "groupe": {
-              "num": "08",
+              "num": "10",
               "label": "CONSEIL & SERVICES IT",
               "tagline": "Integre et deploie les logiciels/le cloud chez le client final - le dernier maillon avant l'utilisateur"
             },
@@ -2736,7 +2868,7 @@
           {
             "nom": "Cloud & logiciel d'entreprise",
             "groupe": {
-              "num": "09",
+              "num": "11",
               "label": "CLOUD & LOGICIEL",
               "tagline": "Construit sur cette infrastructure physique"
             },
@@ -2787,7 +2919,7 @@
           {
             "nom": "Cybersécurité",
             "groupe": {
-              "num": "10",
+              "num": "12",
               "label": "CYBERSÉCURITÉ",
               "tagline": "Protège l'ensemble de la pile, matériel et logiciel"
             },
@@ -3242,7 +3374,7 @@
         "id": "c-utilities-complete",
         "nom": "Services publics — de la centrale au robinet",
         "sousSecteurPath": [],
-        "rev": 1,
+        "rev": 2,
         "phases": [
           {
             "nom": "Production d'Énergie",
@@ -3288,6 +3420,14 @@
                 "nom": "RWE",
                 "image": "data/logos/RWE.DE.png",
                 "legende": "Allemagne — gros producteur d'électricité européen, en transition du charbon vers le renouvelable.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Constellation Energy",
+                "image": "data/logos/CEG.png",
+                "legende": "US - premier producteur d'énergie décarbonée/nucléaire des États-Unis, au cœur du narratif de demande électrique des data centers IA.",
                 "width": 220,
                 "imgHeight": 120,
                 "bottleneck": false
