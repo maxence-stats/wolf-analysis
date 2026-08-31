@@ -15116,6 +15116,10 @@ function wolfLaboDrawingsListKeydown(e){
   el.addEventListener('change', wolfLaboDrawingsListChange);
   el.addEventListener('keydown', wolfLaboDrawingsListKeydown);
 });
+// Renvoie vers l'onglet Comparaison existant (comparaison multi-entreprises/multi-
+// métriques déjà fonctionnelle) plutôt que de la reconstruire dans Wolf Labo — demande
+// explicite de l'utilisateur après clarification ("Relier Comparaison à Wolf Labo").
+document.getElementById('wolfLaboGoToComparaisonBtn').addEventListener('click', () => switchPage('pageComparaison'));
 document.getElementById('wolfLaboFullscreenBtn').addEventListener('click', () => {
   wolfLaboFullscreen = !wolfLaboFullscreen;
   document.getElementById('wolfLaboChartCard').classList.toggle('labo-fullscreen', wolfLaboFullscreen);
