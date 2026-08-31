@@ -11913,12 +11913,16 @@ function renderCerveau(){
 function renderCerveauSecteurs(box){
   const allSectors = GICS_SECTORS.concat([{ key:'autre', label:'Autre / non classé' }]);
   box.innerHTML = `
-    <div class="cerveau-actions"><button class="zoom-btn objectifs-export" id="cerveauExportBtn">⭳ Exporter</button></div>
+    <div class="cerveau-actions">
+      <button class="zoom-btn objectifs-export" id="cerveauExportBtn">⭳ Exporter</button>
+      <button class="zoom-btn objectifs-export" id="cerveauExportAllPdfBtn">🖨 Exporter tout en PDF</button>
+    </div>
     <div class="sector-grid">${allSectors.map(s => {
       const n = (cerveauData.chains[s.key] || []).length;
       return `<div class="sector-box cerveau-sector-box" data-secteur="${s.key}"><h3>${s.label}</h3><div class="count">${n} chaîne${n > 1 ? 's' : ''} de valeur</div></div>`;
     }).join('')}</div>`;
   document.getElementById('cerveauExportBtn').addEventListener('click', exportCerveau);
+  document.getElementById('cerveauExportAllPdfBtn').addEventListener('click', exportAllChainsAsPdf);
   box.querySelectorAll('.cerveau-sector-box').forEach(el => {
     el.addEventListener('click', () => { cerveauView = { level:'chaines', secteur: el.dataset.secteur }; renderCerveau(); });
   });
@@ -12374,6 +12378,69 @@ function exportChainAsPdf(chain, secteur){
   Promise.race([
     Promise.all(waits),
     new Promise(res => setTimeout(res, 4000))
+  ]).then(() => window.print());
+}
+
+// Export "grand PDF" — une seule chaîne unifie tous les secteurs, chacun avec ses
+// chaînes de valeur/sous-secteurs et leurs 4 phases (amont/transformation/distribution/
+// service quand la chaîne les a). Demande explicite : "je me demande s'il n'y a pas une
+// seule grand PDF qui réunit tout... T'as les onze secteurs et dans chacun des secteurs,
+// tu as les sous-secteurs et les quatre phases." Réutilise tel quel chainPdfGroups()/
+// chainPdfPanelHtml() (même charte que exportChainAsPdf, pas de nouveau style de
+// panneau) — une chaîne sans groupe explicite (la majorité, pas encore restructurées)
+// s'affiche simplement phase par phase, un panneau par phase, comme avant.
+function chainPdfSectorSectionHtml(secteurLabel, chains, isFirst){
+  const totalCompanies = chains.reduce((s, c) => s + c.phases.reduce((s2, ph) => s2 + ph.entreprises.length, 0), 0);
+  const chainsHtml = chains.map(chain => {
+    const groups = chainPdfGroups(chain);
+    const pathParts = (chain.sousSecteurPath || []);
+    const panelsHtml = groups.map(chainPdfPanelHtml).join('');
+    return `<div class="chain-pdf-chain-block">
+      <div class="chain-pdf-chain-heading">${chain.nom.replace(/</g, '&lt;')}</div>
+      ${pathParts.length ? `<div class="chain-pdf-chain-path">${pathParts.join(' › ').replace(/</g, '&lt;')}</div>` : ''}
+      ${panelsHtml}
+    </div>`;
+  }).join('');
+  return `<div class="chain-pdf-sector-section"${isFirst ? '' : ' style="page-break-before:always;"'}>
+    <div class="chain-pdf-sector-eyebrow">Secteur GICS</div>
+    <div class="chain-pdf-sector-title">${secteurLabel.replace(/</g, '&lt;')}</div>
+    <div class="chain-pdf-sector-meta">${chains.length} chaîne${chains.length > 1 ? 's' : ''} de valeur — ${totalCompanies} entreprise${totalCompanies > 1 ? 's' : ''}</div>
+    <div class="chain-pdf-rule"></div>
+    ${chainsHtml}
+  </div>`;
+}
+function exportAllChainsAsPdf(){
+  const allSectors = GICS_SECTORS.concat([{ key:'autre', label:'Autre / non classé' }]);
+  const populated = allSectors.map(s => ({ label: s.label, chains: (cerveauData.chains[s.key] || []) })).filter(s => s.chains.length);
+  if (!populated.length){ alert('Aucune chaîne de valeur enregistrée à exporter pour le moment.'); return; }
+  const totalChains = populated.reduce((s, x) => s + x.chains.length, 0);
+  const totalCompanies = populated.reduce((s, x) => s + x.chains.reduce((s2, c) => s2 + c.phases.reduce((s3, ph) => s3 + ph.entreprises.length, 0), 0), 0);
+  const sectionsHtml = populated.map((s, i) => chainPdfSectorSectionHtml(s.label, s.chains, i === 0)).join('');
+
+  const area = document.getElementById('printArea');
+  area.innerHTML = `
+    <div class="chain-pdf-topbar">
+      <img src="${WOLF_LOGO_URL}" alt="">
+      <span class="chain-pdf-topbar-wordmark">Wolf Academy Invest</span>
+      <span class="chain-pdf-topbar-sep"></span>
+      <span class="chain-pdf-topbar-label">Cerveau numérique</span>
+    </div>
+    <div class="chain-pdf-eyebrow">Cartographie complète</div>
+    <div class="chain-pdf-title">Toutes les chaînes de valeur</div>
+    <div class="chain-pdf-sector">${populated.length} secteur${populated.length > 1 ? 's' : ''} GICS</div>
+    <div class="chain-pdf-subtitle">${totalChains} chaîne${totalChains > 1 ? 's' : ''} de valeur — ${totalCompanies} entreprises au total — Cerveau numérique</div>
+    <div class="chain-pdf-rule"></div>
+    ${sectionsHtml}
+    <div class="print-footer">Wolf Analysis — Cerveau numérique — carte générée à partir des données saisies, à vérifier/compléter.</div>`;
+
+  const imgs = Array.from(area.querySelectorAll('img'));
+  const waits = imgs.map(img => img.complete ? Promise.resolve() : new Promise(res => {
+    img.addEventListener('load', res, { once:true });
+    img.addEventListener('error', res, { once:true });
+  }));
+  Promise.race([
+    Promise.all(waits),
+    new Promise(res => setTimeout(res, 6000))
   ]).then(() => window.print());
 }
 
