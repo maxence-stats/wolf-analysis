@@ -4122,7 +4122,7 @@ const GICS_SECTORS = [
   { key:'energie', label:'Énergie', match:['energ'] },
   { key:'materiaux', label:'Matériaux', match:['materia','matière'] },
   { key:'industrie', label:'Industrie', match:['industr'] },
-  { key:'conso-discretionnaire', label:'Consommation discrétionnaire', match:['discretionnaire','discrétionnaire','cyclique'] },
+  { key:'conso-discretionnaire', label:'Consommation discrétionnaire', match:['discretionnaire','discrétionnaire','cyclique','cyclical'] },
   { key:'conso-base', label:'Consommation de base', match:['base','essentiel','staple','defensive','défensive'] },
   { key:'sante', label:'Santé', match:['sant','health'] },
   { key:'finance', label:'Finance', match:['financ','bancair','banque','assurance'] },
