@@ -2054,7 +2054,7 @@ function exportCartAsPdf(){
    Position/taille de chaque bloc stockées en % de la page (0-100) — indépendant de
    toute unité écran, la même valeur pilote l'affichage ET l'impression sans aucune
    conversion (voir .pdf-editor-page / .pdf-editor-print-page dans le CSS, mêmes
-   dimensions physiques 182mm×269mm = A4 moins la marge @page déjà en place).
+   dimensions physiques 170mm×257mm = A4 moins la marge @page déjà en place).
    ============================================================ */
 const PDFEDIT_DB_NAME = 'wolfAnalysisPdfEditor';
 const PDFEDIT_STORE = 'state';
@@ -2374,7 +2374,7 @@ function renderPdfEditor(){
 }
 
 // Zoom de la page dans l'Éditeur PDF — demande explicite : sur mobile, la page fait
-// 182mm (~688px) de large, bien plus que l'écran, donc "pincer-zoomer/glisser dans le
+// 170mm (~643px) de large, bien plus que l'écran, donc "pincer-zoomer/glisser dans le
 // cadre, comme visualiser un PDF classique sur téléphone" plutôt qu'un mode liste séparé.
 // CSS `zoom` (pas transform:scale) sur .pdf-editor-page : contrairement à
 // transform:scale, `zoom` change la taille de LAYOUT réelle de l'élément, donc
