@@ -10108,10 +10108,48 @@ const SECTOR_KEY_RATIOS = {
   'conso-base': ['Marge opérationnelle', 'Rendement', 'Payout Ratio', 'CAGR Dividende 5a'],
   'sante': ['ROIC', 'Marge nette', 'P/FCF', 'R&D / CA'],
   'finance': ['ROE', 'P/B', 'Rendement', 'Payout Ratio'],
-  'tech': ['ROIC', 'Marge opérationnelle', 'Marge brute', 'Rule of 40'],
+  // "Technologies" au sens GICS mélange des modèles d'affaires totalement différents
+  // (SaaS, semi-conducteurs/matériel, conseil, cybersécurité) — Rule of 40 retiré du
+  // défaut du secteur (retour explicite : "NVIDIA vend du matériel physique... erreur
+  // de métrique", même problème pour tout fabricant de puces/équipements). P/FCF comme
+  // 4e ratio, valable pour toute la tech au sens large ; les cas SaaS/semi-conducteurs/
+  // serial acquirer précis passent par COMPANY_KEY_RATIOS_OVERRIDE ci-dessous.
+  'tech': ['ROIC', 'Marge opérationnelle', 'Marge brute', 'P/FCF'],
   'communication': ['Marge opérationnelle', 'ROIC', 'P/FCF', 'Marge EBITDA'],
   'utilities': ['Dette nette / EBITDA', 'Rendement', 'Couverture des intérêts', 'Couverture dividende (FCF)'],
   'immobilier': ['P/FCF', 'Rendement', 'Dette nette / EBITDA', 'Payout Ratio'],
+};
+// Écrase le défaut du secteur GICS pour une entreprise précise dont le modèle d'affaires
+// s'en écarte trop pour que le défaut reste pertinent — demande explicite après examen
+// détaillé ("il faut que tu reprennes chacune des entreprises... fais tes propres
+// recherches"). Pas une tentative de couvrir les ~500 entreprises une par une (hors de
+// portée sans verser dans l'approximation), seulement les cas où le modèle d'affaires
+// réel contredit clairement le défaut sectoriel automatique.
+const COMPANY_KEY_RATIOS_OVERRIDE = {
+  // Licence/royalties sur une techno de niche (cuves de confinement LNG) — pas une
+  // major pétrolière : trésorerie nette (pas de dette), capex quasi nul (pas d'usine de
+  // production propre), donc Dette nette/EBITDA et CapEx/CA (défaut "energie") n'ont
+  // aucun sens ici. Le bon signal : marge de FCF et ROIC brut.
+  'Gaztransport & Technigaz': ['ROIC', 'Marge opérationnelle', 'P/FCF', 'Marge brute'],
+  // Semi-conducteurs/matériel — Rule of 40 est un indicateur SaaS (croissance CA + marge
+  // FCF), sans rapport avec un vendeur de puces/équipements physiques. CapEx/CA prend sa
+  // place : ce sont des activités qui réinvestissent massivement en usines/R&D.
+  'NVIDIA': ['ROIC', 'Marge brute', 'Marge opérationnelle', 'CapEx / CA'],
+  'ASML': ['ROIC', 'Marge brute', 'Marge opérationnelle', 'CapEx / CA'],
+  'Taiwan Semiconductor (ADR)': ['ROIC', 'Marge brute', 'CapEx / CA', 'Dette nette / EBITDA'],
+  'AMD': ['ROIC', 'Marge brute', 'Marge opérationnelle', 'CapEx / CA'],
+  'Broadcom': ['ROIC', 'Marge brute', 'Marge opérationnelle', 'CapEx / CA'],
+  // Serial acquirer (rachète des centaines de petits logiciels de niche) — pas de
+  // croissance organique rapide à la SaaS classique, donc Rule of 40 est hors sujet ici.
+  // Ce qui compte : la discipline d'allocation du capital (ROIC), le FCF/action et la
+  // capacité à financer les acquisitions sans s'endetter.
+  'Constellation Software': ['ROIC', 'P/FCF', 'Marge opérationnelle', 'Dette nette / EBITDA'],
+  // SaaS pur (croissance organique + abonnement récurrent) — Rule of 40 pertinent ici,
+  // contrairement au défaut "tech" générique retiré ci-dessus.
+  'Salesforce': ['Rule of 40', 'Marge opérationnelle', 'ROIC', 'P/FCF'],
+  'SAP': ['Rule of 40', 'Marge opérationnelle', 'ROIC', 'P/FCF'],
+  'Microsoft': ['Rule of 40', 'ROIC', 'Marge opérationnelle', 'P/FCF'],
+  'Adobe Inc.': ['Rule of 40', 'Marge opérationnelle', 'ROIC', 'P/FCF'],
 };
 function statGroupForLabel(label){
   return DOCUMENTS_STATS_GROUPS.find(g => g.items.includes(label));
@@ -10127,21 +10165,25 @@ function findRatioValue(label, statsData, derived){
 function ratioKind(label){
   return DOCUMENTS_STATS_KIND[label] || DOCUMENTS_DERIVED_KIND[label];
 }
-function documentsKeyRatiosHtml(secteurRaw, statsData, derived){
-  const key = normalizeSector(secteurRaw);
-  const labels = SECTOR_KEY_RATIOS[key];
+// Override entreprise précise en priorité, sinon défaut du secteur GICS.
+function keyRatiosFor(nom, secteurRaw){
+  return COMPANY_KEY_RATIOS_OVERRIDE[nom] || SECTOR_KEY_RATIOS[normalizeSector(secteurRaw)];
+}
+function documentsKeyRatiosHtml(nom, secteurRaw, statsData, derived){
+  const labels = keyRatiosFor(nom, secteurRaw);
   if (!labels) return '';
-  return `<div class="section-label key-ratios-label">🔑 Ratios clés pour ce secteur</div>
+  const isOverride = !!COMPANY_KEY_RATIOS_OVERRIDE[nom];
+  return `<div class="section-label key-ratios-label">🔑 Ratios clés ${isOverride ? 'pour cette entreprise' : 'pour ce secteur'}</div>
     <div class="ratio-grid key-ratios-grid">${labels.map(label => {
       const v = findRatioValue(label, statsData, derived);
       return `<div class="ratio-card ratio-card-key"><div class="k">${label}</div><div class="v">${fmtDocStat(v, ratioKind(label))}</div></div>`;
     }).join('')}</div>`;
 }
-function documentsStatisticsHtml(growthData, statsData, growthYears, secteurRaw, real){
-  const keyLabels = new Set(SECTOR_KEY_RATIOS[normalizeSector(secteurRaw)] || []);
+function documentsStatisticsHtml(growthData, statsData, growthYears, secteurRaw, real, nom){
+  const keyLabels = new Set(keyRatiosFor(nom, secteurRaw) || []);
   const derived = computeDerivedRatios(real);
   const hasDerived = Object.keys(derived).length > 0;
-  return `${documentsKeyRatiosHtml(secteurRaw, statsData, derived)}
+  return `${documentsKeyRatiosHtml(nom, secteurRaw, statsData, derived)}
     <div class="section-label" style="margin-top:14px;">Croissance (5 ans)</div>
     ${documentsGrowthTableHtml(growthData, growthYears)}
 
@@ -10186,7 +10228,7 @@ function renderDocumentsPage(nom){
   if (documentsView === 'income') content.innerHTML = documentsStatementSectionHtml('income', 'Income Statement', DOCUMENTS_IS_ROWS, real && real.incomeStatement, real && real.incomeStatementQ);
   else if (documentsView === 'balance') content.innerHTML = documentsStatementSectionHtml('balance', 'Balance Sheet', DOCUMENTS_BS_ROWS, real && real.balanceSheet, real && real.balanceSheetQ);
   else if (documentsView === 'cashflow') content.innerHTML = documentsStatementSectionHtml('cashflow', 'Cash Flow', DOCUMENTS_CF_ROWS, real && real.cashFlow, real && real.cashFlowQ);
-  else content.innerHTML = documentsStatisticsHtml(real && real.growth, real && real.stats, real && real.growthYears, latest.secteur, real);
+  else content.innerHTML = documentsStatisticsHtml(real && real.growth, real && real.stats, real && real.growthYears, latest.secteur, real, name);
 }
 function initDocumentsTabbar(){
   const bar = document.getElementById('documentsSubnav');
@@ -10904,7 +10946,7 @@ function exportWatchlist(){
   URL.revokeObjectURL(url);
 }
 
-const WATCHLIST_LABELS = { qualite:'🐺 La Meute', achat:"Liste d'achat", idee:'Idée du moment', surveiller:'À surveiller', analyser:'À analyser' };
+const WATCHLIST_LABELS = { qualite:'🐺 Wolf Company', achat:"Liste d'achat", idee:'Idée du moment', surveiller:'À surveiller', analyser:'À analyser' };
 function exportWatchlistAsPdf(){
   const body = WATCHLIST_LISTS.map(key => {
     const noms = watchlistStore[key] || [];
