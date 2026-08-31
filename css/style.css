@@ -396,11 +396,20 @@
   .watchlist-search-wrap{max-width:360px;margin-bottom:0;flex:1;}
   .watchlist-pool{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:16px;background:var(--card-bg);border:var(--card-border);border-radius:14px;box-shadow:var(--shadow-card);margin-bottom:20px;min-height:76px;transition:background .12s ease;}
   .watchlist-pool-hint{font-size:12.5px;color:var(--text-faint);font-style:italic;}
-  .watchlist-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;}
+  /* auto-fill/minmax plutôt qu'un repeat(N,1fr) fixe : le nombre de colonnes n'est plus
+     figé à 5 depuis les watchlists personnalisées (créées/supprimées librement par
+     l'utilisateur) — la grille doit accueillir N'IMPORTE QUEL nombre de listes sans
+     nouveau point de rupture à ajouter à chaque fois. */
+  .watchlist-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px;}
   .watchlist-column{background:var(--card-bg);border:var(--card-border);border-radius:14px;padding:16px;box-shadow:var(--shadow-card);}
-  .watchlist-column h3{font-family:var(--font-display);font-size:14px;font-weight:700;margin:0 0 12px;}
+  .watchlist-column h3{font-family:var(--font-display);font-size:14px;font-weight:700;margin:0 0 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;}
   .watchlist-column-qualite{border-color:rgba(217,164,65,0.35);}
   .watchlist-column-hint{font-size:11px;color:var(--text-faint);margin:-6px 0 10px;line-height:1.4;}
+  .watchlist-column-delete{background:none;border:1px solid var(--hair);color:var(--text-faint);border-radius:6px;width:22px;height:22px;font-size:11px;line-height:1;cursor:pointer;flex-shrink:0;}
+  .watchlist-column-delete:hover{border-color:var(--red);color:var(--red);}
+  .watchlist-column-delete[data-armed="1"]{width:auto;padding:0 8px;color:var(--red);border-color:var(--red);white-space:nowrap;}
+  .watchlist-column-new{display:flex;align-items:center;justify-content:center;min-height:112px;border-style:dashed;border-color:var(--hair);background:transparent;box-shadow:none;}
+  .watchlist-column-new .cerveau-new-chain-form{width:100%;}
   .watchlist-dropzone{display:flex;flex-wrap:wrap;gap:10px;min-height:80px;border-radius:10px;transition:background .12s ease;}
   .watchlist-dropzone.dragover, .watchlist-pool.dragover{background:rgba(217,164,65,0.1);}
   .watchlist-chip{width:44px;height:44px;background:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:6px;cursor:grab;border:1px solid var(--hair);touch-action:none;}
@@ -408,9 +417,6 @@
   .watchlist-chip.dragging{opacity:0.35;}
   .watchlist-chip.drop-before{box-shadow:-3px 0 0 0 var(--gold);}
   .watchlist-chip.drop-after{box-shadow:3px 0 0 0 var(--gold);}
-  @media (max-width:1500px){ .watchlist-grid{grid-template-columns:repeat(3,1fr);} }
-  @media (max-width:1000px){ .watchlist-grid{grid-template-columns:repeat(2,1fr);} }
-  @media (max-width:600px){ .watchlist-grid{grid-template-columns:1fr;} }
 
   /* ---------- TIER LIST ---------- */
   /* Même fondation Pointer Events que la Watchlist (seuil de 4px, unifié souris/

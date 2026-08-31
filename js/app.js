@@ -4278,14 +4278,21 @@ function populateClassementSecteurFilter(){
 // <select> de index.html, on complète juste avec les 5 watchlists.
 function populateClassementWatchlistFilter(){
   const select = document.getElementById('classementWatchlistFilter');
-  if (!select || select.dataset.filled) return;
-  select.dataset.filled = '1';
-  WATCHLIST_LISTS.forEach(key => {
+  if (!select) return;
+  // Reconstruit à CHAQUE appel (pas de garde dataset.filled comme pour les secteurs,
+  // figés eux) : les watchlists personnalisées peuvent être créées/supprimées à tout
+  // moment depuis l'onglet Watchlist, ce sélecteur doit rester à jour sans reload. La
+  // sélection courante est préservée si l'option existe toujours après reconstruction.
+  const current = select.value;
+  const keep = new Set(['', 'portfolio']);
+  Array.from(select.options).forEach(o => { if (!keep.has(o.value)) o.remove(); });
+  allWatchlistKeys().forEach(key => {
     const opt = document.createElement('option');
     opt.value = 'wl:' + key;
-    opt.textContent = WATCHLIST_LABELS[key];
+    opt.textContent = watchlistLabel(key);
     select.appendChild(opt);
   });
+  if (Array.from(select.options).some(o => o.value === current)) select.value = current;
 }
 
 // Source du Classement — bug remonté ("AXA, Equasens... des chiffres bizarres") :
@@ -10933,15 +10940,57 @@ function exportObjectifs(){
 const WATCHLIST_LISTS = ['qualite', 'achat', 'idee', 'surveiller', 'analyser'];
 const WATCHLIST_BASELINE_URL = 'data/watchlist.json';
 const WATCHLIST_LS_KEY = 'wolfAnalysisWatchlist';
+const WATCHLIST_CUSTOM_LS_KEY = 'wolfAnalysisWatchlistCustom';
 let watchlistStore = { qualite:[], achat:[], idee:[], surveiller:[], analyser:[] };
+// Listes personnalisées créées librement par l'utilisateur, en plus des 5 fixes —
+// demande explicite ("je puisse créer des watchlist [...] au-delà des 5 fixes").
+// { [id]: { label } } ; id opaque (custom-<horodatage>), jamais affiché tel quel.
+let customWatchlists = {};
+function allWatchlistKeys(){ return WATCHLIST_LISTS.concat(Object.keys(customWatchlists)); }
+function watchlistLabel(key){ return WATCHLIST_LABELS[key] || (customWatchlists[key] && customWatchlists[key].label) || key; }
 
+function loadCustomWatchlists(){
+  try{
+    const raw = localStorage.getItem(WATCHLIST_CUSTOM_LS_KEY);
+    if (raw) customWatchlists = JSON.parse(raw) || {};
+  }catch(e){ customWatchlists = {}; }
+  Object.keys(customWatchlists).forEach(key => { if (!watchlistStore[key]) watchlistStore[key] = []; });
+}
+function persistCustomWatchlists(){
+  try{ localStorage.setItem(WATCHLIST_CUSTOM_LS_KEY, JSON.stringify(customWatchlists)); }catch(e){ /* quota / navigateur privé */ }
+}
+function createCustomWatchlist(label){
+  const clean = (label || '').trim();
+  if (!clean) return null;
+  const id = 'custom-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  customWatchlists[id] = { label: clean };
+  watchlistStore[id] = [];
+  persistCustomWatchlists();
+  persistWatchlistLocal();
+  return id;
+}
+function deleteCustomWatchlist(id){
+  if (!customWatchlists[id]) return;
+  delete customWatchlists[id];
+  delete watchlistStore[id];
+  persistCustomWatchlists();
+  persistWatchlistLocal();
+  renderWatchlist();
+}
+
+// Clé-agnostique (Object.keys(extra), pas WATCHLIST_LISTS) pour fusionner aussi bien le
+// socle data/watchlist.json que le blob localStorage, qui peuvent tous deux contenir des
+// listes personnalisées en plus des 5 fixes.
 function mergeWatchlist(extra){
-  WATCHLIST_LISTS.forEach(key => {
+  if (!extra || typeof extra !== 'object') return;
+  Object.keys(extra).forEach(key => {
+    if (!watchlistStore[key]) watchlistStore[key] = [];
     (extra[key] || []).forEach(nom => { if (!watchlistStore[key].includes(nom)) watchlistStore[key].push(nom); });
   });
 }
 
 async function loadWatchlistBaseline(){
+  loadCustomWatchlists();
   try{
     const res = await fetch(WATCHLIST_BASELINE_URL, { cache:'no-store' });
     if (res.ok){
@@ -10954,6 +11003,11 @@ async function loadWatchlistBaseline(){
     if (raw) mergeWatchlist(JSON.parse(raw));
   }catch(e){ /* localStorage indisponible ou JSON corrompu */ }
   renderWatchlist();
+  // Rafraîchit aussi le panneau Wolf Labo (lit désormais la même donnée, voir
+  // wolfLaboCategoryEntries) au cas où l'utilisateur serait déjà sur cet onglet pendant
+  // que ce chargement asynchrone se termine — no-op silencieux si l'élément n'existe
+  // pas encore ou si Wolf Labo n'a pas encore été initialisé.
+  if (typeof renderWolfLaboWatchlistPanel === 'function') renderWolfLaboWatchlistPanel();
 }
 
 function persistWatchlistLocal(){
@@ -10974,7 +11028,7 @@ function exportWatchlist(){
 
 const WATCHLIST_LABELS = { qualite:'🐺 Wolf Company', achat:"Liste d'achat", idee:'Idée du moment', surveiller:'À surveiller', analyser:'À analyser' };
 function exportWatchlistAsPdf(){
-  const body = WATCHLIST_LISTS.map(key => {
+  const body = allWatchlistKeys().map(key => {
     const noms = watchlistStore[key] || [];
     const rows = noms.length
       ? `<table class="print-table"><thead><tr><th>Entreprise</th></tr></thead><tbody>${noms.map(n => {
@@ -10983,13 +11037,13 @@ function exportWatchlistAsPdf(){
           return `<tr><td>${logoImg}${n.replace(/</g,'&lt;')}</td></tr>`;
         }).join('')}</tbody></table>`
       : '<p style="color:#999">Aucune entreprise dans cette liste.</p>';
-    return `<div class="print-section"><h3>${WATCHLIST_LABELS[key]} (${noms.length})</h3>${rows}</div>`;
+    return `<div class="print-section"><h3>${escapeHtml(watchlistLabel(key))} (${noms.length})</h3>${rows}</div>`;
   }).join('');
   exportSectionAsPdf('Watchlist', null, body);
 }
 
 function watchlistLocationOf(nom){
-  return WATCHLIST_LISTS.find(key => watchlistStore[key].includes(nom)) || null;
+  return allWatchlistKeys().find(key => (watchlistStore[key] || []).includes(nom)) || null;
 }
 
 // targetNom/before : position d'insertion précise dans la liste de destination — clic
@@ -10999,11 +11053,12 @@ function watchlistLocationOf(nom){
 // vais en mettre une plus en premier ou plus en deuxième". targetNom omis/absent de la
 // liste = ajout en fin (comportement d'origine, ex. dépôt sur une zone vide).
 function moveToWatchlist(nom, listKey, targetNom, before){
-  WATCHLIST_LISTS.forEach(key => {
-    const idx = watchlistStore[key].indexOf(nom);
+  allWatchlistKeys().forEach(key => {
+    const idx = (watchlistStore[key] || []).indexOf(nom);
     if (idx !== -1) watchlistStore[key].splice(idx, 1);
   });
   if (listKey){
+    if (!watchlistStore[listKey]) watchlistStore[listKey] = [];
     const arr = watchlistStore[listKey];
     const targetIdx = targetNom ? arr.indexOf(targetNom) : -1;
     if (targetIdx !== -1) arr.splice(targetIdx + (before ? 0 : 1), 0, nom);
@@ -11018,6 +11073,41 @@ function watchlistChipHtml(nom, logo){
   return `<div class="watchlist-chip" data-nom="${safe}" title="${safe}"><img src="${logo || ''}" alt=""></div>`;
 }
 
+// Grille de colonnes construite en JS (plus un bloc HTML statique fixé à 5 colonnes
+// dans index.html) — nécessaire pour que les listes personnalisées créées/supprimées
+// par l'utilisateur apparaissent/disparaissent sans toucher au HTML. Bouton de
+// suppression armé en manipulant directement le DOM du bouton cliqué (pas un flag
+// d'état qui survivrait au prochain renderWatchlist() et pourrait rester coincé
+// affiché après un ré-rendu déclenché par autre chose, ex. un glisser-déposer) —
+// jamais confirm() natif, voir "Pièges techniques" CLAUDE.md.
+function watchlistColumnHtml(key){
+  const label = watchlistLabel(key);
+  const isCustom = !!customWatchlists[key];
+  const hint = key === 'qualite' ? `<p class="watchlist-column-hint">Entreprises de qualité, pré-remplie depuis le Sheet — retire celles dont tu n'as pas besoin.</p>` : '';
+  const deleteBtn = isCustom ? `<button type="button" class="watchlist-column-delete" data-delete-list="${key}" title="Supprimer cette liste">✕</button>` : '';
+  return `<div class="watchlist-column${key === 'qualite' ? ' watchlist-column-qualite' : ''}">
+    <h3>${escapeHtml(label)}${deleteBtn}</h3>
+    ${hint}
+    <div class="watchlist-dropzone" data-list="${key}"></div>
+  </div>`;
+}
+let watchlistCreatingList = false;
+function watchlistNewListColumnHtml(){
+  if (!watchlistCreatingList){
+    return `<div class="watchlist-column watchlist-column-new"><button type="button" class="refresh-btn" id="watchlistNewListBtn">+ Nouvelle liste</button></div>`;
+  }
+  return `<div class="watchlist-column watchlist-column-new">
+    <div class="cerveau-new-chain-form" style="margin:0;">
+      <label for="watchlistNewListName">Nom de la nouvelle liste</label>
+      <input type="text" id="watchlistNewListName" placeholder="ex. Dividendes européens">
+      <div class="cerveau-new-chain-actions">
+        <button type="button" class="refresh-btn" id="watchlistNewListCreate">Créer</button>
+        <button type="button" class="cerveau-btn-cancel" id="watchlistNewListCancel">Annuler</button>
+      </div>
+    </div>
+  </div>`;
+}
+
 // Le pool affichait TOUTES les entreprises non classées en gros logos — redondant
 // depuis l'ajout de la recherche élargie (#watchlistSearch, toute la base FMP) qui
 // couvre déjà l'ajout : "ça ne sert plus à rien de me proposer toutes les entreprises
@@ -11026,9 +11116,12 @@ function watchlistChipHtml(nom, logo){
 // affiché comme une simple zone d'indication plutôt qu'une galerie de logos.
 function renderWatchlist(){
   const pool = document.getElementById('watchlistPool');
-  if (!pool) return;
+  const grid = document.getElementById('watchlistGrid');
+  if (!pool || !grid) return;
 
   pool.innerHTML = '<div class="watchlist-pool-hint">Glisse une entreprise ici pour la retirer d\'une liste — utilise la recherche ci-dessus pour en ajouter une nouvelle.</div>';
+
+  grid.innerHTML = allWatchlistKeys().map(watchlistColumnHtml).join('') + watchlistNewListColumnHtml();
 
   // Demande explicite : "je suis censé avoir toutes les entreprises qui sont
   // disponibles, plus juste celles qui étaient dans mon Excel" — les listes affichent
@@ -11037,10 +11130,10 @@ function renderWatchlist(){
   // 72 du Sheet. Auparavant, .filter(nom => companies[nom]) faisait disparaître
   // silencieusement toute entreprise FMP-only déjà présente dans watchlistStore — bug
   // dormant tant que rien ne permettait d'en ajouter une, révélé par cette extension.
-  WATCHLIST_LISTS.forEach(key => {
-    const zone = document.querySelector(`.watchlist-dropzone[data-list="${key}"]`);
+  allWatchlistKeys().forEach(key => {
+    const zone = grid.querySelector(`.watchlist-dropzone[data-list="${key}"]`);
     if (!zone) return;
-    zone.innerHTML = watchlistStore[key]
+    zone.innerHTML = (watchlistStore[key] || [])
       .map(nom => watchlistChipHtml(nom, companyLogoUrl(nom)))
       .join('');
   });
@@ -11077,12 +11170,12 @@ function renderWatchlistSuggestions(query){
     const pending = watchlistSearchPendingAdd === e.nom;
     const logo = companyLogoUrl(e.nom) || (e.symbol ? `data/logos/${e.symbol}.png` : null);
     const addRow = pending
-      ? `<div class="watchlist-suggestion-addrow">${WATCHLIST_LISTS.map(key => `<button type="button" data-watchlist-add="${key}" data-nom="${escapeHtml(e.nom)}">${WATCHLIST_LABELS[key]}</button>`).join('')}</div>`
+      ? `<div class="watchlist-suggestion-addrow">${allWatchlistKeys().map(key => `<button type="button" data-watchlist-add="${key}" data-nom="${escapeHtml(e.nom)}">${escapeHtml(watchlistLabel(key))}</button>`).join('')}</div>`
       : '';
     return `<div class="search-suggestion watchlist-suggestion${pending ? ' open' : ''}" data-watchlist-suggestion="${escapeHtml(e.nom)}">
       <img class="search-suggestion-logo" src="${logo || ''}" alt="">
       <span>${escapeHtml(e.nom)}</span>
-      ${current ? `<span class="watchlist-suggestion-current">${listLabels[current]}</span>` : ''}
+      ${current ? `<span class="watchlist-suggestion-current">${escapeHtml(watchlistLabel(current))}</span>` : ''}
       ${addRow}
     </div>`;
   }).join('');
@@ -11200,6 +11293,37 @@ function initWatchlist(){
   if (exportBtn) exportBtn.addEventListener('click', exportWatchlist);
   const exportPdfBtn = document.getElementById('watchlistExportPdfBtn');
   if (exportPdfBtn) exportPdfBtn.addEventListener('click', exportWatchlistAsPdf);
+
+  // Création/suppression de listes personnalisées — délégué sur `page` (stable), pas sur
+  // #watchlistGrid dont le innerHTML est reconstruit à chaque renderWatchlist(). Bouton
+  // de suppression armé en 2 clics via manipulation DOM directe (voir commentaire sur
+  // watchlistColumnHtml), pas un flag d'état séparé.
+  page.addEventListener('click', e => {
+    if (e.target.closest('#watchlistNewListBtn')){ watchlistCreatingList = true; renderWatchlist(); return; }
+    if (e.target.closest('#watchlistNewListCancel')){ watchlistCreatingList = false; renderWatchlist(); return; }
+    if (e.target.closest('#watchlistNewListCreate')){
+      const input = document.getElementById('watchlistNewListName');
+      if (input && input.value.trim()) createCustomWatchlist(input.value);
+      watchlistCreatingList = false;
+      renderWatchlist();
+      return;
+    }
+    const delBtn = e.target.closest('[data-delete-list]');
+    if (delBtn){
+      const key = delBtn.dataset.deleteList;
+      if (delBtn.dataset.armed === '1'){ deleteCustomWatchlist(key); return; }
+      page.querySelectorAll('[data-delete-list]').forEach(b => { b.dataset.armed = ''; b.textContent = '✕'; });
+      delBtn.dataset.armed = '1';
+      delBtn.textContent = '⚠️ Confirmer ?';
+    }
+  });
+  page.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.target.id === 'watchlistNewListName' && e.target.value.trim()){
+      createCustomWatchlist(e.target.value);
+      watchlistCreatingList = false;
+      renderWatchlist();
+    }
+  });
 }
 
 /* ============================================================
@@ -15023,18 +15147,26 @@ function initWolfLaboPen(){
   canvas.addEventListener('touchend', end);
 }
 
-/* ---- Listes (watchlist propre à Wolf Labo) — une par secteur GICS pré-créée + Watchlist
-   + Portefeuille, remplies librement par l'utilisateur. Distincte des onglets
-   Watchlist/Portefeuille Perso existants (décision explicite — juste un raccourci de
-   navigation pendant qu'on regarde des graphiques, pas une 2e source de vérité). ------ */
+/* ---- Listes du panneau Wolf Labo — un sous-groupe par vraie watchlist (les 5 fixes +
+   les personnalisées) + Wolf Portfolio + une liste par secteur GICS remplie librement.
+   Auparavant une "watchlist propre à Wolf Labo" totalement déconnectée des onglets
+   Watchlist/Classement (décision explicite ORIGINALE : "juste un raccourci de
+   navigation... pas une 2e source de vérité") — revenue explicitement sur cette
+   décision : "le problème c'est que [Wolf Labo n'est] pas connecté [...] et le reste
+   des applications". Les catégories 'watchlist' (une par clé de watchlistStore) et
+   'portefeuille' (Wolf Portfolio) lisent maintenant la MÊME donnée que l'onglet
+   Watchlist/Classement (ajout/retrait ici passe par moveToWatchlist(), donc visible
+   immédiatement dans les deux autres onglets) ; seules les catégories 'sector-*' restent
+   une liste de navigation propre à Wolf Labo (non ambiguës avec aucun autre onglet,
+   jamais réclamées comme cassées). */
 const WOLF_LABO_LISTS_LS_KEY = 'wolfAnalysisLaboLists';
-const WOLF_LABO_LIST_CATEGORIES = [
-  { key:'watchlist', label:'⭐ Watchlist' },
-  { key:'portefeuille', label:'💼 Portefeuille' },
-  ...GICS_SECTORS.map(s => ({ key:'sector-' + s.key, label:s.label }))
-];
+function wolfLaboListCategories(){
+  return allWatchlistKeys().map(key => ({ key:'wl:' + key, label:watchlistLabel(key), kind:'watchlist' }))
+    .concat([{ key:'wolfportfolio', label:'💼 Wolf Portfolio', kind:'portfolio' }])
+    .concat(GICS_SECTORS.map(s => ({ key:'sector-' + s.key, label:s.label, kind:'sector' })));
+}
 let wolfLaboLists = {};
-let wolfLaboOpenGroups = { watchlist:true };
+let wolfLaboOpenGroups = { 'wl:qualite':true };
 
 function loadWolfLaboLists(){
   try{
@@ -15096,13 +15228,30 @@ async function selectWolfLaboSymbol(symbol, name){
   document.getElementById('wolfLaboChartTitle').textContent = `${name || symbol} (${symbol})`;
   if (status){ status.textContent = `Pas encore de données pour ${name || symbol} — disponible après l'import FMP complet. Affichage de l'échantillon Coca-Cola en attendant.`; status.style.display = 'block'; }
 }
+// entries d'une catégorie 'watchlist'/'portfolio' : dérivées à la volée de
+// watchlistStore/portfolioData (mêmes sources que l'onglet Watchlist/Classement), pas
+// stockées dans wolfLaboLists — seules les catégories 'sector-*' restent propres à
+// wolfLaboLists (legacy, gestion manuelle inchangée).
+function wolfLaboCategoryEntries(cat){
+  if (cat.kind === 'watchlist'){
+    const listKey = cat.key.slice(3);
+    return (watchlistStore[listKey] || []).map(nom => ({ symbol: fmpSymbols[nom] || nom, name: nom }));
+  }
+  if (cat.kind === 'portfolio'){
+    return (portfolioData.holdings || [])
+      .filter(h => h.nom && stripAccents(h.nom.toLowerCase()) !== 'cash')
+      .map(h => ({ symbol: fmpSymbols[h.nom] || h.nom, name: h.nom }));
+  }
+  return wolfLaboLists[cat.key] || [];
+}
 function renderWolfLaboWatchlistPanel(){
   const box = document.getElementById('wolfLaboWatchlistPanel');
   if (!box) return;
   const activeSymbol = currentWolfLaboSymbol();
-  box.innerHTML = WOLF_LABO_LIST_CATEGORIES.map(cat => {
-    const entries = wolfLaboLists[cat.key] || [];
+  box.innerHTML = wolfLaboListCategories().map(cat => {
+    const entries = wolfLaboCategoryEntries(cat);
     const open = !!wolfLaboOpenGroups[cat.key];
+    const editable = cat.kind === 'sector';
     return `<div class="labo-list-group ${open ? 'open' : ''}" data-list-group="${cat.key}">
       <div class="labo-list-header" data-toggle-group="${cat.key}"><span>${escapeHtml(cat.label)}</span><span class="count">${entries.length}</span></div>
       <div class="labo-list-body">
@@ -15111,15 +15260,18 @@ function renderWolfLaboWatchlistPanel(){
           const logoHtml = logo
             ? `<img src="${escapeHtml(logo)}" alt="" onerror="this.parentElement.innerHTML='${escapeHtml((e.name || e.symbol || '?').charAt(0).toUpperCase())}';">`
             : escapeHtml((e.name || e.symbol || '?').charAt(0).toUpperCase());
+          const removeBtn = cat.kind === 'watchlist'
+            ? `<button type="button" data-remove-watchlist-entry="${escapeHtml(e.name)}" title="Retirer de cette liste">✕</button>`
+            : (editable ? `<button type="button" data-remove-entry="${escapeHtml(e.symbol)}" data-remove-cat="${cat.key}" title="Retirer">✕</button>` : '');
           return `<div class="labo-list-row ${e.symbol === activeSymbol ? 'active' : ''}" data-select-symbol="${escapeHtml(e.symbol)}" data-select-name="${escapeHtml(e.name)}">
           <span class="labo-list-entry"><span class="labo-list-logo">${logoHtml}</span>${escapeHtml(e.name)} <span style="color:var(--text-faint)">${escapeHtml(e.symbol)}</span></span>
-          <button type="button" data-remove-entry="${escapeHtml(e.symbol)}" data-remove-cat="${cat.key}" title="Retirer">✕</button>
+          ${removeBtn}
         </div>`;
         }).join('') || '<p class="chart-hint" style="margin:2px 0 6px;">Vide.</p>'}
-        <div class="labo-list-add">
+        ${editable ? `<div class="labo-list-add">
           <input type="text" placeholder="Ticker (ex. AAPL)" data-add-symbol-input="${cat.key}">
           <button type="button" data-add-symbol-btn="${cat.key}">+ Ajouter</button>
-        </div>
+        </div>` : ''}
       </div>
     </div>`;
   }).join('');
@@ -15131,7 +15283,9 @@ function initWolfLaboWatchlistPanel(){
     const toggleBtn = e.target.closest('[data-toggle-group]');
     if (toggleBtn){ const k = toggleBtn.dataset.toggleGroup; wolfLaboOpenGroups[k] = !wolfLaboOpenGroups[k]; renderWolfLaboWatchlistPanel(); return; }
     const selectRow = e.target.closest('[data-select-symbol]');
-    if (selectRow && !e.target.closest('[data-remove-entry]')){ selectWolfLaboSymbol(selectRow.dataset.selectSymbol, selectRow.dataset.selectName); renderWolfLaboWatchlistPanel(); return; }
+    if (selectRow && !e.target.closest('[data-remove-entry], [data-remove-watchlist-entry]')){ selectWolfLaboSymbol(selectRow.dataset.selectSymbol, selectRow.dataset.selectName); renderWolfLaboWatchlistPanel(); return; }
+    const removeWlBtn = e.target.closest('[data-remove-watchlist-entry]');
+    if (removeWlBtn){ moveToWatchlist(removeWlBtn.dataset.removeWatchlistEntry, null); renderWolfLaboWatchlistPanel(); return; }
     const removeBtn = e.target.closest('[data-remove-entry]');
     if (removeBtn){ removeWolfLaboListEntry(removeBtn.dataset.removeCat, removeBtn.dataset.removeEntry); return; }
     const addBtn = e.target.closest('[data-add-symbol-btn]');
@@ -15275,9 +15429,13 @@ function renderWolfLaboAddToListMenu(){
     box.innerHTML = '<div style="padding:6px;color:var(--text-faint);font-size:11px;">Aucune entreprise affichée.</div>';
     return;
   }
+  // Wolf Portfolio exclu (lecture seule, miroir du Sheet — pas de sens à "l'ajouter")
+  // — seules les vraies watchlists et les listes sectorielles sont bascul­ables ici.
   box.innerHTML = `<div style="padding:3px 6px;color:var(--text-faint);font-size:9.5px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.04em;">${escapeHtml(name)}</div>`
-    + WOLF_LABO_LIST_CATEGORIES.map(cat => {
-      const inList = (wolfLaboLists[cat.key] || []).some(e => e.symbol === symbol);
+    + wolfLaboListCategories().filter(cat => cat.kind !== 'portfolio').map(cat => {
+      const inList = cat.kind === 'watchlist'
+        ? watchlistLocationOf(name) === cat.key.slice(3)
+        : (wolfLaboLists[cat.key] || []).some(e => e.symbol === symbol);
       return `<button type="button" class="${inList ? 'active' : ''}" data-addlist-cat="${cat.key}">${inList ? '✓ ' : ''}${escapeHtml(cat.label)}</button>`;
     }).join('');
 }
@@ -15354,9 +15512,16 @@ document.getElementById('wolfLaboAddToListMenu').addEventListener('click', e => 
   if (!rawSymbol) return;
   const symbol = rawSymbol.trim().toUpperCase(); // même normalisation que addWolfLaboListEntry()
   const name = wolfLaboSampleData ? wolfLaboSampleData.name : symbol;
-  const inList = (wolfLaboLists[catKey] || []).some(en => en.symbol === symbol);
-  if (inList) removeWolfLaboListEntry(catKey, symbol); else addWolfLaboListEntry(catKey, rawSymbol, name);
+  if (catKey.startsWith('wl:')){
+    const listKey = catKey.slice(3);
+    const inList = watchlistLocationOf(name) === listKey;
+    moveToWatchlist(name, inList ? null : listKey);
+  } else {
+    const inList = (wolfLaboLists[catKey] || []).some(en => en.symbol === symbol);
+    if (inList) removeWolfLaboListEntry(catKey, symbol); else addWolfLaboListEntry(catKey, rawSymbol, name);
+  }
   renderWolfLaboAddToListMenu();
+  renderWolfLaboWatchlistPanel();
 });
 document.getElementById('wolfLaboRangeButtons').addEventListener('click', e => {
   const btn = e.target.closest('button[data-range]');
