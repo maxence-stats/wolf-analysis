@@ -4358,7 +4358,19 @@ function classementValuationFor(e){
   return { multiple, ecartPrix, source, prixJuste };
 }
 
+let classementPortfolioOnly = false;
 function classementRankingRows(secteurFiltre){
+  // Mon portefeuille : demande explicite ("je puisse filtrer par les entreprises de mon
+  // portefeuille... au moins parmi les opportunités que je considère déjà, ça me les
+  // filtre") — noms tels qu'ils apparaissent dans le Wolf Portfolio (portfolioData.holdings,
+  // voir handlePortfolioRows), comparaison directe car les deux viennent de la même base
+  // FMP élargie (rankingSummaryData) plutôt que des 72 du Sheet uniquement.
+  // Casse différente entre les deux sources (le Sheet saisit les actifs en MAJUSCULES,
+  // ex. "KINSALE CAPITAL GROUP", contre "Kinsale Capital Group" côté rankingSummaryData)
+  // — normalisation avant comparaison, jamais une égalité stricte.
+  const portfolioNames = classementPortfolioOnly
+    ? new Set((portfolioData.holdings || []).map(h => stripAccents(h.nom.toLowerCase())))
+    : null;
   return rankingSummaryData.map(e => {
     const v = classementValuationFor(e);
     return {
@@ -4368,7 +4380,8 @@ function classementRankingRows(secteurFiltre){
       inSheet: !!companies[e.nom],
       secteurKey: normalizeSector(e.secteur) || 'autre'
     };
-  }).filter(r => !secteurFiltre || r.secteurKey === secteurFiltre);
+  }).filter(r => !secteurFiltre || r.secteurKey === secteurFiltre)
+    .filter(r => !portfolioNames || portfolioNames.has(stripAccents(r.nom.toLowerCase())));
 }
 function classementApplyTopN(list){
   return classementTopN === 'all' ? list : list.slice(0, classementTopN);
@@ -4485,6 +4498,12 @@ function initClassement(){
   });
   const filter = document.getElementById('classementSecteurFilter');
   if (filter) filter.addEventListener('change', renderClassement);
+  const portfolioBtn = document.getElementById('classementPortfolioFilterBtn');
+  if (portfolioBtn) portfolioBtn.addEventListener('click', () => {
+    classementPortfolioOnly = !classementPortfolioOnly;
+    portfolioBtn.classList.toggle('active', classementPortfolioOnly);
+    renderClassement();
+  });
   const exportPdfBtn = document.getElementById('classementExportPdfBtn');
   if (exportPdfBtn) exportPdfBtn.addEventListener('click', exportClassementAsPdf);
   const valoSortBtn = document.getElementById('classementValoSortBtn');
