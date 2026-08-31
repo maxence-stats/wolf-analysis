@@ -9927,6 +9927,56 @@ const DOCUMENTS_STATS_KIND = {
   'Dette nette / EBITDA':'x', 'Current Ratio':'x', 'Quick Ratio':'x', 'Couverture des intérêts':'x',
   'Rendement':'pct', 'Payout Ratio':'pct', 'CAGR Dividende 5a':'pct'
 };
+// Ratios dérivés des ÉTATS FINANCIERS BRUTS déjà importés (income/balance/cashflow —
+// voir documentsRealData), demande explicite après une grille de ratios par sous-
+// industrie fournie par l'utilisateur (ROTCE/CET1/Combined Ratio/FFO/RAB...) : la
+// majorité de cette grille n'est PAS dans l'export FMP actuel (données réglementaires
+// bancaires/assurance, disclosures de baux immobiliers...) et nécessiterait un nouveau
+// mapping côté fmp-database/export_to_app.py — pas fait ici. Ce sous-ensemble EST par
+// contre calculable dès maintenant à partir des lignes déjà présentes (Capital
+// Expenditure, R&D Expenses, EBITDA, Inventory, Dividends Paid...), donc ajouté en
+// premier plutôt que d'attendre le reste.
+const DOCUMENTS_DERIVED_KIND = {
+  'CapEx / CA':'pct', 'R&D / CA':'pct', 'Marge EBITDA':'pct',
+  'Rotation des stocks':'x', 'Couverture dividende (FCF)':'x', 'Rule of 40':'pct'
+};
+function statementLatestValue(statementData, label){
+  if (!statementData) return null;
+  const row = statementData.rows.find(r => r.label === label);
+  if (!row) return null;
+  for (let i = row.values.length - 1; i >= 0; i--){
+    if (row.values[i] != null) return row.values[i];
+  }
+  return null;
+}
+function computeDerivedRatios(real){
+  if (!real) return {};
+  const is = real.incomeStatement, cf = real.cashFlow, bs = real.balanceSheet;
+  const revenue = statementLatestValue(is, 'Revenue');
+  const capex = statementLatestValue(cf, 'Capital Expenditure');
+  const rd = statementLatestValue(is, 'R&D Expenses');
+  const ebitda = statementLatestValue(is, 'EBITDA');
+  const cogs = statementLatestValue(is, 'Cost of Revenue');
+  const inventory = statementLatestValue(bs, 'Inventory');
+  const fcf = statementLatestValue(cf, 'Free Cash Flow');
+  const divPaid = statementLatestValue(cf, 'Dividends Paid');
+  const out = {};
+  if (revenue){
+    if (capex != null) out['CapEx / CA'] = Math.abs(capex) / revenue * 100;
+    if (rd != null) out['R&D / CA'] = rd / revenue * 100;
+    if (ebitda != null) out['Marge EBITDA'] = ebitda / revenue * 100;
+    if (fcf != null){
+      const fcfMargin = fcf / revenue * 100;
+      const g = real.growth && real.growth.find(x => x.label === "Chiffre d'affaires");
+      const growthLatestYoy = g && g.yoy && g.yoy.length ? g.yoy[g.yoy.length - 1] : null;
+      // Rule of 40 = croissance CA (%) + marge FCF (%), demande explicite (SaaS/logiciel)
+      if (growthLatestYoy != null) out['Rule of 40'] = growthLatestYoy * 100 + fcfMargin;
+    }
+  }
+  if (cogs != null && inventory) out['Rotation des stocks'] = Math.abs(cogs) / inventory;
+  if (divPaid != null && Math.abs(divPaid) > 0 && fcf != null) out['Couverture dividende (FCF)'] = fcf / Math.abs(divPaid);
+  return out;
+}
 // Ratios les plus pertinents PAR SECTEUR GICS, parmi ceux déjà calculés (voir
 // DOCUMENTS_STATS_GROUPS) — demande explicite : "des ratios qui sont vraiment
 // pertinents à avoir... en pastille en or... pour que ça me saute directement aux
@@ -9936,38 +9986,65 @@ const DOCUMENTS_STATS_KIND = {
 // l'existant, sans prétendre couvrir les métriques 100% propres à chaque secteur.
 // Choix guidés par le modèle économique de chaque secteur (ex. le rendement/payout
 // prime sur la marge brute pour un utility, l'inverse pour un logiciel).
+// Un ratio dérivé (voir DOCUMENTS_DERIVED_KIND ci-dessus) ajouté par secteur, en plus
+// des 4 déjà en place — celui qui se rapproche le plus du modèle d'affaires dominant du
+// secteur parmi ce qui est calculable aujourd'hui (CapEx lourd pour l'industrie lourde/
+// l'énergie/les matériaux, R&D pour la santé, Rule of 40 pour la tech, rotation des
+// stocks pour la conso discrétionnaire où le luxe pèse, couverture du dividende par le
+// FCF pour les utilities, marge EBITDA pour la communication où les infra pèsent).
 const SECTOR_KEY_RATIOS = {
-  'energie': ['ROIC', 'Dette nette / EBITDA', 'P/FCF', 'Rendement'],
-  'materiaux': ['ROIC', 'Marge opérationnelle', 'Dette nette / EBITDA', 'P/FCF'],
-  'industrie': ['ROIC', 'Marge opérationnelle', 'Couverture des intérêts', 'P/FCF'],
-  'conso-discretionnaire': ['Marge nette', 'ROE', 'ROIC', 'P/E'],
+  'energie': ['ROIC', 'Dette nette / EBITDA', 'P/FCF', 'CapEx / CA'],
+  'materiaux': ['ROIC', 'Marge opérationnelle', 'Dette nette / EBITDA', 'CapEx / CA'],
+  'industrie': ['ROIC', 'Marge opérationnelle', 'Couverture des intérêts', 'CapEx / CA'],
+  'conso-discretionnaire': ['Marge nette', 'ROE', 'ROIC', 'Rotation des stocks'],
   'conso-base': ['Marge opérationnelle', 'Rendement', 'Payout Ratio', 'CAGR Dividende 5a'],
-  'sante': ['ROIC', 'Marge nette', 'P/FCF', 'Dette nette / EBITDA'],
+  'sante': ['ROIC', 'Marge nette', 'P/FCF', 'R&D / CA'],
   'finance': ['ROE', 'P/B', 'Rendement', 'Payout Ratio'],
-  'tech': ['ROIC', 'Marge opérationnelle', 'Marge brute', 'P/FCF'],
-  'communication': ['Marge opérationnelle', 'ROIC', 'P/FCF', 'Dette nette / EBITDA'],
-  'utilities': ['Dette nette / EBITDA', 'Rendement', 'Couverture des intérêts', 'Payout Ratio'],
+  'tech': ['ROIC', 'Marge opérationnelle', 'Marge brute', 'Rule of 40'],
+  'communication': ['Marge opérationnelle', 'ROIC', 'P/FCF', 'Marge EBITDA'],
+  'utilities': ['Dette nette / EBITDA', 'Rendement', 'Couverture des intérêts', 'Couverture dividende (FCF)'],
   'immobilier': ['P/FCF', 'Rendement', 'Dette nette / EBITDA', 'Payout Ratio'],
 };
 function statGroupForLabel(label){
   return DOCUMENTS_STATS_GROUPS.find(g => g.items.includes(label));
 }
-function documentsKeyRatiosHtml(secteurRaw, statsData){
+// Cherche une valeur soit dans les stats FMP pré-calculées (statsData, groupées par
+// DOCUMENTS_STATS_GROUPS), soit dans les ratios dérivés des états bruts (derived, plat)
+// — les deux familles de ratios se mélangent librement dans SECTOR_KEY_RATIOS.
+function findRatioValue(label, statsData, derived){
+  const g = statGroupForLabel(label);
+  if (g) return statsData && statsData[g.title] ? statsData[g.title][label] : undefined;
+  return derived ? derived[label] : undefined;
+}
+function ratioKind(label){
+  return DOCUMENTS_STATS_KIND[label] || DOCUMENTS_DERIVED_KIND[label];
+}
+function documentsKeyRatiosHtml(secteurRaw, statsData, derived){
   const key = normalizeSector(secteurRaw);
   const labels = SECTOR_KEY_RATIOS[key];
   if (!labels) return '';
   return `<div class="section-label key-ratios-label">🔑 Ratios clés pour ce secteur</div>
     <div class="ratio-grid key-ratios-grid">${labels.map(label => {
-      const g = statGroupForLabel(label);
-      const v = statsData && g && statsData[g.title] ? statsData[g.title][label] : undefined;
-      return `<div class="ratio-card ratio-card-key"><div class="k">${label}</div><div class="v">${fmtDocStat(v, DOCUMENTS_STATS_KIND[label])}</div></div>`;
+      const v = findRatioValue(label, statsData, derived);
+      return `<div class="ratio-card ratio-card-key"><div class="k">${label}</div><div class="v">${fmtDocStat(v, ratioKind(label))}</div></div>`;
     }).join('')}</div>`;
 }
-function documentsStatisticsHtml(growthData, statsData, growthYears, secteurRaw){
+function documentsStatisticsHtml(growthData, statsData, growthYears, secteurRaw, real){
   const keyLabels = new Set(SECTOR_KEY_RATIOS[normalizeSector(secteurRaw)] || []);
-  return `${documentsKeyRatiosHtml(secteurRaw, statsData)}
+  const derived = computeDerivedRatios(real);
+  const hasDerived = Object.keys(derived).length > 0;
+  return `${documentsKeyRatiosHtml(secteurRaw, statsData, derived)}
     <div class="section-label" style="margin-top:14px;">Croissance (5 ans)</div>
     ${documentsGrowthTableHtml(growthData, growthYears)}
+
+    <div class="section-label" style="margin-top:14px;">Ratios Avancés (dérivés des états financiers)</div>
+    ${hasDerived
+      ? `<div class="ratio-grid">${Object.keys(DOCUMENTS_DERIVED_KIND).map(label => {
+          const v = derived[label];
+          const isKey = keyLabels.has(label);
+          return `<div class="ratio-card${isKey ? ' ratio-card-key' : ''}">${isKey ? '<span class="ratio-card-key-star" title="Ratio clé pour ce secteur">🔑</span>' : ''}<div class="k">${label}</div><div class="v">${fmtDocStat(v, DOCUMENTS_DERIVED_KIND[label])}</div></div>`;
+        }).join('')}</div>`
+      : '<div class="documents-empty-banner">🧮 Ratios avancés en attente de l\'import FMP (états financiers) pour cette entreprise.</div>'}
 
     ${DOCUMENTS_STATS_GROUPS.map(g => `
     <div class="section-label" style="margin-top:14px;">${g.title}</div>
@@ -10001,7 +10078,7 @@ function renderDocumentsPage(nom){
   if (documentsView === 'income') content.innerHTML = documentsStatementSectionHtml('income', 'Income Statement', DOCUMENTS_IS_ROWS, real && real.incomeStatement, real && real.incomeStatementQ);
   else if (documentsView === 'balance') content.innerHTML = documentsStatementSectionHtml('balance', 'Balance Sheet', DOCUMENTS_BS_ROWS, real && real.balanceSheet, real && real.balanceSheetQ);
   else if (documentsView === 'cashflow') content.innerHTML = documentsStatementSectionHtml('cashflow', 'Cash Flow', DOCUMENTS_CF_ROWS, real && real.cashFlow, real && real.cashFlowQ);
-  else content.innerHTML = documentsStatisticsHtml(real && real.growth, real && real.stats, real && real.growthYears, latest.secteur);
+  else content.innerHTML = documentsStatisticsHtml(real && real.growth, real && real.stats, real && real.growthYears, latest.secteur, real);
 }
 function initDocumentsTabbar(){
   const bar = document.getElementById('documentsSubnav');
