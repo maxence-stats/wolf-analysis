@@ -9852,21 +9852,60 @@ const DOCUMENTS_STATS_KIND = {
   'Dette nette / EBITDA':'x', 'Current Ratio':'x', 'Quick Ratio':'x', 'Couverture des intérêts':'x',
   'Rendement':'pct', 'Payout Ratio':'pct', 'CAGR Dividende 5a':'pct'
 };
-function documentsStatisticsHtml(growthData, statsData, growthYears){
-  return `<div class="section-label">Croissance (5 ans)</div>
+// Ratios les plus pertinents PAR SECTEUR GICS, parmi ceux déjà calculés (voir
+// DOCUMENTS_STATS_GROUPS) — demande explicite : "des ratios qui sont vraiment
+// pertinents à avoir... en pastille en or... pour que ça me saute directement aux
+// yeux". Pas de nouveaux ratios inventés ici (NIM bancaire, Tier 1, FFO foncière ne
+// sont pas dans l'export FMP actuel — nécessiteraient un nouveau mapping côté
+// fmp-database/export_to_app.py, pas fait ici) : on sélectionne/met en avant parmi
+// l'existant, sans prétendre couvrir les métriques 100% propres à chaque secteur.
+// Choix guidés par le modèle économique de chaque secteur (ex. le rendement/payout
+// prime sur la marge brute pour un utility, l'inverse pour un logiciel).
+const SECTOR_KEY_RATIOS = {
+  'energie': ['ROIC', 'Dette nette / EBITDA', 'P/FCF', 'Rendement'],
+  'materiaux': ['ROIC', 'Marge opérationnelle', 'Dette nette / EBITDA', 'P/FCF'],
+  'industrie': ['ROIC', 'Marge opérationnelle', 'Couverture des intérêts', 'P/FCF'],
+  'conso-discretionnaire': ['Marge nette', 'ROE', 'ROIC', 'P/E'],
+  'conso-base': ['Marge opérationnelle', 'Rendement', 'Payout Ratio', 'CAGR Dividende 5a'],
+  'sante': ['ROIC', 'Marge nette', 'P/FCF', 'Dette nette / EBITDA'],
+  'finance': ['ROE', 'P/B', 'Rendement', 'Payout Ratio'],
+  'tech': ['ROIC', 'Marge opérationnelle', 'Marge brute', 'P/FCF'],
+  'communication': ['Marge opérationnelle', 'ROIC', 'P/FCF', 'Dette nette / EBITDA'],
+  'utilities': ['Dette nette / EBITDA', 'Rendement', 'Couverture des intérêts', 'Payout Ratio'],
+  'immobilier': ['P/FCF', 'Rendement', 'Dette nette / EBITDA', 'Payout Ratio'],
+};
+function statGroupForLabel(label){
+  return DOCUMENTS_STATS_GROUPS.find(g => g.items.includes(label));
+}
+function documentsKeyRatiosHtml(secteurRaw, statsData){
+  const key = normalizeSector(secteurRaw);
+  const labels = SECTOR_KEY_RATIOS[key];
+  if (!labels) return '';
+  return `<div class="section-label key-ratios-label">🔑 Ratios clés pour ce secteur</div>
+    <div class="ratio-grid key-ratios-grid">${labels.map(label => {
+      const g = statGroupForLabel(label);
+      const v = statsData && g && statsData[g.title] ? statsData[g.title][label] : undefined;
+      return `<div class="ratio-card ratio-card-key"><div class="k">${label}</div><div class="v">${fmtDocStat(v, DOCUMENTS_STATS_KIND[label])}</div></div>`;
+    }).join('')}</div>`;
+}
+function documentsStatisticsHtml(growthData, statsData, growthYears, secteurRaw){
+  const keyLabels = new Set(SECTOR_KEY_RATIOS[normalizeSector(secteurRaw)] || []);
+  return `${documentsKeyRatiosHtml(secteurRaw, statsData)}
+    <div class="section-label" style="margin-top:14px;">Croissance (5 ans)</div>
     ${documentsGrowthTableHtml(growthData, growthYears)}
 
     ${DOCUMENTS_STATS_GROUPS.map(g => `
     <div class="section-label" style="margin-top:14px;">${g.title}</div>
     <div class="ratio-grid">${g.items.map(label => {
       const v = statsData && statsData[g.title] ? statsData[g.title][label] : undefined;
-      return `<div class="ratio-card"><div class="k">${label}</div><div class="v">${fmtDocStat(v, DOCUMENTS_STATS_KIND[label])}</div></div>`;
+      const isKey = keyLabels.has(label);
+      return `<div class="ratio-card${isKey ? ' ratio-card-key' : ''}">${isKey ? '<span class="ratio-card-key-star" title="Ratio clé pour ce secteur">🔑</span>' : ''}<div class="k">${label}</div><div class="v">${fmtDocStat(v, DOCUMENTS_STATS_KIND[label])}</div></div>`;
     }).join('')}</div>
   `).join('')}
     ${statsData ? '' : '<div class="documents-empty-banner">🧮 Ratios en attente de l\'import FMP pour cette entreprise.</div>'}
 
-    <div class="section-label" style="margin-top:14px;">Indicateurs spécifiques au secteur</div>
-    <div class="documents-empty-banner">🏦 Banques, foncières, "serial acquirers"... certains secteurs ont leurs propres ratios clés (ex. NIM et ratio Tier 1 pour une banque, FFO pour une foncière, ROIC sur capital déployé pour un serial acquirer). Section prête, à remplir une fois qu'on aura défini ensemble lesquels suivre pour chaque secteur.</div>`;
+    <div class="section-label" style="margin-top:14px;">Indicateurs 100% propres au secteur</div>
+    <div class="documents-empty-banner">🏦 Certains ratios sont propres à un modèle d'affaires et n'existent dans aucun autre secteur (ex. NIM et ratio Tier 1 pour une banque, FFO pour une foncière) — ceux-ci ne sont pas encore dans l'export FMP local, contrairement aux ratios mis en avant ci-dessus qui, eux, sont déjà calculés pour toutes les entreprises et simplement sélectionnés/priorisés par secteur. Nécessiterait un nouveau mapping de données pour être ajouté.</div>`;
 }
 function renderDocumentsPage(nom){
   const name = nom || activeCompany;
@@ -9887,7 +9926,7 @@ function renderDocumentsPage(nom){
   if (documentsView === 'income') content.innerHTML = documentsStatementSectionHtml('income', 'Income Statement', DOCUMENTS_IS_ROWS, real && real.incomeStatement, real && real.incomeStatementQ);
   else if (documentsView === 'balance') content.innerHTML = documentsStatementSectionHtml('balance', 'Balance Sheet', DOCUMENTS_BS_ROWS, real && real.balanceSheet, real && real.balanceSheetQ);
   else if (documentsView === 'cashflow') content.innerHTML = documentsStatementSectionHtml('cashflow', 'Cash Flow', DOCUMENTS_CF_ROWS, real && real.cashFlow, real && real.cashFlowQ);
-  else content.innerHTML = documentsStatisticsHtml(real && real.growth, real && real.stats, real && real.growthYears);
+  else content.innerHTML = documentsStatisticsHtml(real && real.growth, real && real.stats, real && real.growthYears, latest.secteur);
 }
 function initDocumentsTabbar(){
   const bar = document.getElementById('documentsSubnav');
