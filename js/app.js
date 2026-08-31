@@ -4154,7 +4154,7 @@ function normalizeSector(raw){
 // 72 du Sheet + tout ce que l'utilisateur a rangé dans une des 4 listes Watchlist
 // (souvent hors des 72, base FMP élargie) — secteur/logo résolus par
 // normalizeSector()/companyLogoUrl(), qui savent déjà lire les deux sources.
-const WATCHLIST_LIST_COLOR = { achat:'#4FD1A5', idee:'#D9A441', surveiller:'#4A9FE0', analyser:'#8B7FE8' };
+const WATCHLIST_LIST_COLOR = { qualite:'#F0C877', achat:'#4FD1A5', idee:'#D9A441', surveiller:'#4A9FE0', analyser:'#8B7FE8' };
 function sectorEntrySecteurRaw(nom){
   const hist = companies[nom];
   if (hist) return hist[hist.length - 1].secteur;
@@ -10674,10 +10674,13 @@ function exportObjectifs(){
    Même pattern de persistance que l'historique des objectifs :
    localStorage + export JSON + socle data/watchlist.json optionnel.
    ============================================================ */
-const WATCHLIST_LISTS = ['achat', 'idee', 'surveiller', 'analyser'];
+// "qualite" ("La Meute") en premier - demande explicite : pool d'entreprises de
+// qualité pré-rempli depuis les 72 du Sheet, distinct des 4 listes d'action existantes
+// (aucune des 4 ne correspondait sémantiquement à "à garder à l'oeil sur le long terme").
+const WATCHLIST_LISTS = ['qualite', 'achat', 'idee', 'surveiller', 'analyser'];
 const WATCHLIST_BASELINE_URL = 'data/watchlist.json';
 const WATCHLIST_LS_KEY = 'wolfAnalysisWatchlist';
-let watchlistStore = { achat:[], idee:[], surveiller:[], analyser:[] };
+let watchlistStore = { qualite:[], achat:[], idee:[], surveiller:[], analyser:[] };
 
 function mergeWatchlist(extra){
   WATCHLIST_LISTS.forEach(key => {
@@ -10716,7 +10719,7 @@ function exportWatchlist(){
   URL.revokeObjectURL(url);
 }
 
-const WATCHLIST_LABELS = { achat:"Liste d'achat", idee:'Idée du moment', surveiller:'À surveiller', analyser:'À analyser' };
+const WATCHLIST_LABELS = { qualite:'🐺 La Meute', achat:"Liste d'achat", idee:'Idée du moment', surveiller:'À surveiller', analyser:'À analyser' };
 function exportWatchlistAsPdf(){
   const body = WATCHLIST_LISTS.map(key => {
     const noms = watchlistStore[key] || [];
@@ -10816,13 +10819,12 @@ function renderWatchlistSuggestions(query){
     box.classList.add('open');
     return;
   }
-  const listLabels = { achat:'Liste d\'achat', idee:'Idée du moment', surveiller:'À surveiller', analyser:'À analyser' };
   box.innerHTML = matches.map(e => {
     const current = watchlistLocationOf(e.nom);
     const pending = watchlistSearchPendingAdd === e.nom;
     const logo = companyLogoUrl(e.nom) || (e.symbol ? `data/logos/${e.symbol}.png` : null);
     const addRow = pending
-      ? `<div class="watchlist-suggestion-addrow">${WATCHLIST_LISTS.map(key => `<button type="button" data-watchlist-add="${key}" data-nom="${escapeHtml(e.nom)}">${listLabels[key]}</button>`).join('')}</div>`
+      ? `<div class="watchlist-suggestion-addrow">${WATCHLIST_LISTS.map(key => `<button type="button" data-watchlist-add="${key}" data-nom="${escapeHtml(e.nom)}">${WATCHLIST_LABELS[key]}</button>`).join('')}</div>`
       : '';
     return `<div class="search-suggestion watchlist-suggestion${pending ? ' open' : ''}" data-watchlist-suggestion="${escapeHtml(e.nom)}">
       <img class="search-suggestion-logo" src="${logo || ''}" alt="">
