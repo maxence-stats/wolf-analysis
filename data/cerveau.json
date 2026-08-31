@@ -1866,16 +1866,16 @@
     "materiaux": [
       {
         "id": "c-materiaux-complete",
-        "nom": "Matériaux — de la mine au produit fini",
+        "nom": "Matériaux — de la mine aux usages finaux",
         "sousSecteurPath": [],
-        "rev": 3,
+        "rev": 4,
         "phases": [
           {
             "nom": "Métaux & mines",
             "groupe": {
               "num": "01",
-              "label": "EXTRACTION",
-              "tagline": "Métaux & mines — la matière première brute"
+              "label": "AMONT",
+              "tagline": "Extrait la matière première brute — mines, carrières, terres rares"
             },
             "entreprises": [
               {
@@ -1932,9 +1932,9 @@
           {
             "nom": "Équipements d'Extraction",
             "groupe": {
-              "num": "02",
-              "label": "ÉQUIPEMENTS D'EXTRACTION",
-              "tagline": "Le concassage et le broyage — sans ces machines, aucun minerai extrait ne devient utilisable"
+              "num": "01",
+              "label": "AMONT",
+              "tagline": "Extrait la matière première brute — mines, carrières, terres rares"
             },
             "entreprises": [
               {
@@ -1959,9 +1959,9 @@
           {
             "nom": "Chimie & gaz industriels",
             "groupe": {
-              "num": "03",
+              "num": "02",
               "label": "TRANSFORMATION",
-              "tagline": "Chimie — transforme la matière première en composés utilisables"
+              "tagline": "Transforme le minerai brut en matériaux et composés utilisables"
             },
             "entreprises": [
               {
@@ -2002,9 +2002,9 @@
           {
             "nom": "Materiaux de Construction",
             "groupe": {
-              "num": "04",
-              "label": "MATERIAUX DE CONSTRUCTION",
-              "tagline": "Ciment et granulats - la sous-industrie qui construit villes et infrastructures, jamais couverte ici"
+              "num": "02",
+              "label": "TRANSFORMATION",
+              "tagline": "Transforme le minerai brut en matériaux et composés utilisables"
             },
             "entreprises": [
               {
@@ -2035,11 +2035,11 @@
             "blocsLibres": []
           },
           {
-            "nom": "Emballage",
+            "nom": "Distribution Classique",
             "groupe": {
-              "num": "05",
-              "label": "CONDITIONNEMENT",
-              "tagline": "Emballage — dernier maillon avant le produit fini"
+              "num": "03",
+              "label": "DISTRIBUTION",
+              "tagline": "Un même matériau transformé irrigue plusieurs usages finaux, y compris hors du secteur"
             },
             "entreprises": [
               {
@@ -2062,6 +2062,106 @@
                 "nom": "Ball Corporation",
                 "image": "data/logos/BALL.png",
                 "legende": "US — leader mondial des canettes aluminium.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Vers la Transition Énergétique",
+            "groupe": {
+              "num": "03",
+              "label": "DISTRIBUTION",
+              "tagline": "Un même matériau transformé irrigue plusieurs usages finaux, y compris hors du secteur"
+            },
+            "entreprises": [
+              {
+                "nom": "Umicore",
+                "image": "data/logos/UMI.BR.png",
+                "legende": "Belgique — transforme les métaux (cobalt, nickel, lithium recyclé) en matériaux de cathode pour batteries : le pont direct entre extraction/transformation et la chaîne Véhicule Électrique (secteur Industrie).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Vers le Câblage Souterrain",
+            "groupe": {
+              "num": "03",
+              "label": "DISTRIBUTION",
+              "tagline": "Un même matériau transformé irrigue plusieurs usages finaux, y compris hors du secteur"
+            },
+            "entreprises": [
+              {
+                "nom": "Nexans",
+                "image": "data/logos/NEX.PA.png",
+                "legende": "France — leader mondial des câbles électriques (cuivre, aluminium transformés en infrastructure).",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Prysmian",
+                "image": "data/logos/PRY.MI.png",
+                "legende": "Italie — premier câblier mondial, fort sur les interconnexions électriques sous-marines.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Vers les Semi-conducteurs",
+            "groupe": {
+              "num": "03",
+              "label": "DISTRIBUTION",
+              "tagline": "Un même matériau transformé irrigue plusieurs usages finaux, y compris hors du secteur"
+            },
+            "entreprises": [
+              {
+                "nom": "Shin-Etsu Chemical",
+                "image": "data/logos/4063.T.png",
+                "legende": "Japon — transforme le silicium en wafers de qualité semi-conducteur : le pont direct vers la chaîne Technologies (secteur Tech), déjà présent là-bas côté équipementiers.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "SUMCO",
+                "image": "data/logos/3436.T.png",
+                "legende": "Japon — l'autre moitié du duopole mondial des wafers de silicium, même pont vers la chaîne Technologies.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              }
+            ],
+            "blocsLibres": []
+          },
+          {
+            "nom": "Négoce & Certification",
+            "groupe": {
+              "num": "04",
+              "label": "SERVICE",
+              "tagline": "Transversal — contrôle qualité, certification et négoce pour toute la chaîne"
+            },
+            "entreprises": [
+              {
+                "nom": "SGS",
+                "image": "data/logos/SGSN.SW.png",
+                "legende": "Suisse — premier groupe mondial d'inspection, de contrôle et de certification, y compris pour les matériaux bruts et transformés.",
+                "width": 220,
+                "imgHeight": 120,
+                "bottleneck": false
+              },
+              {
+                "nom": "Bureau Veritas",
+                "image": "data/logos/BVI.PA.png",
+                "legende": "France — un des tout premiers groupes mondiaux de certification et d'inspection, même rôle que SGS.",
                 "width": 220,
                 "imgHeight": 120,
                 "bottleneck": false
