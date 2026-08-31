@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<link rel="stylesheet" href="css/style.css?v=20260831q">
+<link rel="stylesheet" href="css/style.css?v=20260831r">
 </head>
 <body>
 <div class="wrap">
@@ -750,7 +750,10 @@
         <select id="classementSecteurFilter">
           <option value="">Tous les secteurs</option>
         </select>
-        <button type="button" class="labo-toggle-btn" id="classementPortfolioFilterBtn" title="Ne montrer que les entreprises déjà dans le Wolf Portfolio">💼 Mon portefeuille</button>
+        <select id="classementWatchlistFilter" title="Filtrer par une liste de suivi">
+          <option value="">Toutes les entreprises</option>
+          <option value="portfolio">💼 Wolf Portfolio</option>
+        </select>
         <div class="range-buttons" id="classementTopNButtons">
           <button type="button" data-topn="50" class="active">Top 50</button>
           <button type="button" data-topn="100">Top 100</button>
@@ -1663,7 +1666,7 @@
   </div>
 </div>
 
-<script src="js/app.js?v=20260831q"></script>
+<script src="js/app.js?v=20260831r"></script>
 </body>
 </html>
 

@@ -4270,6 +4270,23 @@ function populateClassementSecteurFilter(){
     select.appendChild(opt);
   });
 }
+// Demande explicite : remplace le bouton "Mon portefeuille" (toggle unique) par un
+// sélecteur — l'utilisateur veut filtrer le Classement par N'IMPORTE QUELLE watchlist
+// de l'onglet Watchlist (dont "🐺 Wolf Company"), pas seulement le Wolf Portfolio.
+// Options ajoutées dynamiquement (WATCHLIST_LABELS n'existe pas encore côté HTML) —
+// mêmes 2 options statiques ("Toutes les entreprises"/"Wolf Portfolio") déjà dans le
+// <select> de index.html, on complète juste avec les 5 watchlists.
+function populateClassementWatchlistFilter(){
+  const select = document.getElementById('classementWatchlistFilter');
+  if (!select || select.dataset.filled) return;
+  select.dataset.filled = '1';
+  WATCHLIST_LISTS.forEach(key => {
+    const opt = document.createElement('option');
+    opt.value = 'wl:' + key;
+    opt.textContent = WATCHLIST_LABELS[key];
+    select.appendChild(opt);
+  });
+}
 
 // Source du Classement — bug remonté ("AXA, Equasens... des chiffres bizarres") :
 // rendementDiv/ecartValeur venaient du Sheet, dont le prixActuel peut être obsolète
@@ -4436,19 +4453,28 @@ async function ensureSyntheticCompanyData(nom){
   return true;
 }
 
-let classementPortfolioOnly = false;
+// classementWatchlistFilter : '' (aucun filtre) | 'portfolio' (Wolf Portfolio) |
+// 'wl:<key>' (une des 5 watchlists de l'onglet Watchlist, key ∈ WATCHLIST_LISTS).
+// Remplace l'ancien toggle classementPortfolioOnly (demande explicite : "au lieu de
+// [bouton] mon portefeuille, tu mets plutôt la watchlist à sélectionner... je peux
+// sélectionner la watchlist que je veux, tu vas me proposer les watchlist qui sont
+// dans l'onglet Watchlist").
+let classementWatchlistFilter = '';
 function classementRankingRows(secteurFiltre){
-  // Mon portefeuille : demande explicite ("je puisse filtrer par les entreprises de mon
-  // portefeuille... au moins parmi les opportunités que je considère déjà, ça me les
-  // filtre") — noms tels qu'ils apparaissent dans le Wolf Portfolio (portfolioData.holdings,
-  // voir handlePortfolioRows), comparaison directe car les deux viennent de la même base
+  // Wolf Portfolio : noms tels qu'ils apparaissent dans portfolioData.holdings (voir
+  // handlePortfolioRows), comparaison directe car les deux viennent de la même base
   // FMP élargie (rankingSummaryData) plutôt que des 72 du Sheet uniquement.
   // Casse différente entre les deux sources (le Sheet saisit les actifs en MAJUSCULES,
   // ex. "KINSALE CAPITAL GROUP", contre "Kinsale Capital Group" côté rankingSummaryData)
-  // — normalisation avant comparaison, jamais une égalité stricte.
-  const portfolioNames = classementPortfolioOnly
-    ? new Set((portfolioData.holdings || []).map(h => stripAccents(h.nom.toLowerCase())))
-    : null;
+  // — normalisation avant comparaison, jamais une égalité stricte. Même normalisation
+  // réutilisée pour les watchlists par prudence (casse non garantie là non plus).
+  let filterNames = null;
+  if (classementWatchlistFilter === 'portfolio'){
+    filterNames = new Set((portfolioData.holdings || []).map(h => stripAccents(h.nom.toLowerCase())));
+  } else if (classementWatchlistFilter.startsWith('wl:')){
+    const key = classementWatchlistFilter.slice(3);
+    filterNames = new Set((watchlistStore[key] || []).map(n => stripAccents(n.toLowerCase())));
+  }
   return rankingSummaryData.map(e => {
     const v = classementValuationFor(e);
     return {
@@ -4459,7 +4485,7 @@ function classementRankingRows(secteurFiltre){
       secteurKey: normalizeSector(e.secteur) || 'autre'
     };
   }).filter(r => !secteurFiltre || r.secteurKey === secteurFiltre)
-    .filter(r => !portfolioNames || portfolioNames.has(stripAccents(r.nom.toLowerCase())));
+    .filter(r => !filterNames || filterNames.has(stripAccents(r.nom.toLowerCase())));
 }
 function classementApplyTopN(list){
   return classementTopN === 'all' ? list : list.slice(0, classementTopN);
@@ -4473,6 +4499,7 @@ function renderClassement(){
   const valoSurvaloBox = document.getElementById('classementValoSurvalo');
   if (!divLeftBox || !valoSousBox) return;
   populateClassementSecteurFilter();
+  populateClassementWatchlistFilter();
 
   const secteurFiltre = document.getElementById('classementSecteurFilter').value;
   const rows = classementRankingRows(secteurFiltre);
@@ -4576,10 +4603,9 @@ function initClassement(){
   });
   const filter = document.getElementById('classementSecteurFilter');
   if (filter) filter.addEventListener('change', renderClassement);
-  const portfolioBtn = document.getElementById('classementPortfolioFilterBtn');
-  if (portfolioBtn) portfolioBtn.addEventListener('click', () => {
-    classementPortfolioOnly = !classementPortfolioOnly;
-    portfolioBtn.classList.toggle('active', classementPortfolioOnly);
+  const watchlistFilter = document.getElementById('classementWatchlistFilter');
+  if (watchlistFilter) watchlistFilter.addEventListener('change', () => {
+    classementWatchlistFilter = watchlistFilter.value;
     renderClassement();
   });
   const exportPdfBtn = document.getElementById('classementExportPdfBtn');
@@ -12409,10 +12435,19 @@ function chainPdfSectorSectionHtml(secteurLabel, chains, isFirst){
     ${chainsHtml}
   </div>`;
 }
+// Document dense (des centaines d'images de logo, ~20 pages) : le clic peut sembler
+// "ne rien faire" pendant la génération (chargement des images + rendu de l'aperçu
+// d'impression natif du navigateur, potentiellement plusieurs secondes) — remonté par
+// l'utilisateur comme "ça n'a pas fonctionné". Le bouton se désactive et change de
+// libellé pendant l'attente pour donner un retour visuel explicite, plutôt que de
+// laisser l'utilisateur sans aucun signal entre le clic et l'ouverture du dialogue
+// d'impression.
 function exportAllChainsAsPdf(){
+  const btn = document.getElementById('cerveauExportAllPdfBtn');
   const allSectors = GICS_SECTORS.concat([{ key:'autre', label:'Autre / non classé' }]);
   const populated = allSectors.map(s => ({ label: s.label, chains: (cerveauData.chains[s.key] || []) })).filter(s => s.chains.length);
   if (!populated.length){ alert('Aucune chaîne de valeur enregistrée à exporter pour le moment.'); return; }
+  if (btn){ btn.disabled = true; btn.textContent = '⏳ Génération du PDF...'; }
   const totalChains = populated.reduce((s, x) => s + x.chains.length, 0);
   const totalCompanies = populated.reduce((s, x) => s + x.chains.reduce((s2, c) => s2 + c.phases.reduce((s3, ph) => s3 + ph.entreprises.length, 0), 0), 0);
   const sectionsHtml = populated.map((s, i) => chainPdfSectorSectionHtml(s.label, s.chains, i === 0)).join('');
@@ -12441,7 +12476,10 @@ function exportAllChainsAsPdf(){
   Promise.race([
     Promise.all(waits),
     new Promise(res => setTimeout(res, 6000))
-  ]).then(() => window.print());
+  ]).then(() => {
+    window.print();
+    if (btn){ btn.disabled = false; btn.textContent = '🖨 Exporter tout en PDF'; }
+  });
 }
 
 function renderCerveauPhases(box){

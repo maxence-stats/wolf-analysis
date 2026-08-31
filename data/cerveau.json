@@ -4,10 +4,7 @@
       {
         "id": "c-electrique-batterie",
         "nom": "Véhicule électrique & chaîne batterie",
-        "sousSecteurPath": [
-          "Électrification",
-          "Véhicules & batteries"
-        ],
+        "sousSecteurPath": [],
         "phases": [
           {
             "nom": "Matières premières (lithium, cobalt, nickel, recyclage)",
@@ -266,14 +263,12 @@
             }
           }
         ],
-        "rev": 2
+        "rev": 3
       },
       {
         "id": "c-robotique-automatisation",
         "nom": "Robotique & automatisation",
-        "sousSecteurPath": [
-          "Robotique & automatisation"
-        ],
+        "sousSecteurPath": [],
         "phases": [
           {
             "nom": "Composants de précision (réducteurs, actionneurs, capteurs)",
@@ -453,7 +448,7 @@
             }
           }
         ],
-        "rev": 2
+        "rev": 3
       },
       {
         "id": "c-defense-electronique",
