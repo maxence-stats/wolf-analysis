@@ -4211,9 +4211,7 @@ function classementRowHtml(nom, logo, rank, valueText, cls, rendHtml, sourceLabe
   // censé prendre mes résultats qui ont été enregistrés"), utile de voir laquelle des
   // deux sources s'applique sans avoir à rouvrir la fiche entreprise.
   const badge = sourceLabel === 'objectif' ? '<span class="classement-source-badge" title="Basé sur ton objectif enregistré en Valorisation">Mon objectif</span>' : '';
-  // classement-row-nolink : entreprise hors des 72 du Sheet (base FMP élargie) — pas
-  // de fiche Analyse complète pour l'instant, curseur normal plutôt qu'un clic mort.
-  return `<div class="classement-row${rendHtml ? ' classement-row-valo' : ''}${inSheet ? '' : ' classement-row-nolink'}" data-nom="${safe}">
+  return `<div class="classement-row${rendHtml ? ' classement-row-valo' : ''}" data-nom="${safe}">
     <div class="classement-row-main">
       <span class="classement-rank">${rank}</span>
       <div class="classement-logo"><img src="${logo || ''}" alt=""></div>
@@ -4289,6 +4287,13 @@ async function loadRankingSummary(){
   try{
     const res = await fetch('data/ranking-summary.json', { cache:'no-store' });
     if (res.ok) rankingSummaryData = await res.json();
+    // Étend fmpSymbols (jusqu'ici limité aux 72 du Sheet, voir loadFmpSymbols()) à toute
+    // la base FMP élargie — condition nécessaire pour que l'onglet Analyse et tout ce qui
+    // en dépend (Documents financiers, cours de bourse, clic Classement...) fonctionnent
+    // au-delà des 72 (demande explicite, voir ensureSyntheticCompanyData()). Fusion
+    // seulement (jamais d'écrasement) : une résolution Sheet déjà en place reste
+    // prioritaire sur le symbole brut FMP pour le même nom.
+    rankingSummaryData.forEach(e => { if (e.symbol && !fmpSymbols[e.nom]) fmpSymbols[e.nom] = e.symbol; });
   }catch(e){ /* pas encore généré — non bloquant, page vide en attendant */ }
   if (document.getElementById('pageClassement') && document.getElementById('pageClassement').classList.contains('active')) renderClassement();
 }
@@ -4340,6 +4345,15 @@ function classementValuationFor(e){
   }
   if (multiple == null || multiple <= 0) return { multiple:null, ecartPrix:null, source, prixJuste:null };
   let prixJuste = fcfBase * multiple;
+  // fcfBase négatif (entreprise en FCF négatif sur la période de référence, ex.
+  // Volkswagen en plein cycle d'investissement) × un multiple historique POSITIF donne
+  // un prixJuste négatif — un prix ne peut jamais être négatif, peu importe la formule.
+  // Trouvé en testant l'extension de l'onglet Analyse à la base FMP élargie (ratio
+  // affiché en clair sur la fiche, pas juste un écart déjà silencieusement filtré comme
+  // c'était le cas ici) : Classement ne montrait jamais ce cas de façon visible
+  // (ecartPrix devient déjà null via le ternaire juste en dessous), mais rien n'empêchait
+  // prixJuste lui-même de rester négatif pour un appelant qui l'affiche directement.
+  if (prixJuste <= 0) return { multiple, ecartPrix:null, source, prixJuste:null };
   // Dénominateur prixJuste (pas prixActuel) : borne la sous-valorisation à -100% au
   // maximum (une entreprise ne peut pas valoir moins que zéro — retour explicite,
   // "-214%... ce n'est pas possible"), la survalorisation reste non bornée.
@@ -4356,6 +4370,70 @@ function classementValuationFor(e){
     prixJuste = null; // même filet de sécurité : ne pas afficher un prix juste sur une donnée jugée incohérente
   }
   return { multiple, ecartPrix, source, prixJuste };
+}
+
+// Étend l'onglet Analyse (et tout ce qui en dépend : Documents financiers, cours de
+// bourse, Valorisation, clic depuis Classement, colonnes détaillées de Comparaison) à
+// toute la base FMP élargie (rankingSummaryData, ~500 entreprises) au lieu des 72 du
+// Sheet uniquement — demande explicite après avoir constaté que DocuSign/Volkswagen
+// (données FMP déjà exportées : documents-{symbol}.json ET prices-{symbol}.json
+// existent) restaient invisibles dans l'appli malgré un logo déjà affiché ailleurs.
+//
+// Stratégie : construire un tableau `hist` synthétique dans la MÊME FORME que
+// companies[nom] (issu du Sheet) et l'assigner à companies[nom] une seule fois — tout
+// le reste du site (renderCompany, renderDocumentsPage, renderValorisation,
+// loadStockChart...) continue de fonctionner SANS modification, puisqu'il ne fait que
+// lire companies[nom] par son nom de champ, jamais en supposant sa provenance.
+// Champs non disponibles pour une entreprise FMP-only (CAGR 10/20 ans, dette nette/OCF,
+// trésorerie...) restés `null`/absents plutôt qu'inventés — l'affichage existant gère
+// déjà proprement l'absence de donnée (tirets/N-D) partout où c'est utilisé.
+function buildSyntheticCompanyRows(nom, rankingEntry){
+  const real = documentsRealData[nom];
+  const ch = real && real.chartsHistory;
+  const rows = ch && ch.years && ch.years.length ? chartsHistoryToRows(ch) : [{ annee: new Date().getFullYear() }];
+  const v = classementValuationFor(rankingEntry);
+  const logo = companyLogoUrl(nom) || (rankingEntry.symbol ? `data/logos/${rankingEntry.symbol}.png` : null);
+  const growthCagr5 = (label) => {
+    const g = real && real.growth && real.growth.find(x => x.label === label);
+    return g && g.cagr != null ? g.cagr * 100 : null;
+  };
+  const medPfcf10 = medianOfLastYears(rows, 'pFcf', 10);
+  const medPfcf20 = medianOfLastYears(rows, 'pFcf', 20);
+  const medPocf10 = medianOfLastYears(rows, 'pOcf', 10);
+  const medPocf20 = medianOfLastYears(rows, 'pOcf', 20);
+  rows.forEach(r => {
+    r.nom = nom;
+    r.ticker = rankingEntry.symbol || '';
+    r.secteur = rankingEntry.secteur || '';
+    r.sousSecteur = '';
+    r.lienImage = logo;
+    r.medianePFCF = medPfcf10;
+    r.medianePFCF20 = medPfcf20;
+    r.medianePOcf = medPocf10;
+    r.medianePOcf20 = medPocf20;
+  });
+  const latest = rows[rows.length - 1];
+  latest.prixActuel = rankingEntry.prixActuel;
+  latest.prixJuste = v.prixJuste;
+  latest.prixCible = v.prixJuste != null ? v.prixJuste * 0.8 : null;
+  latest.ecartValeur = (v.prixJuste != null && latest.prixCible) ? (v.prixJuste / latest.prixCible) - 1 : null;
+  latest.rendementDiv = rankingEntry.rendementDiv;
+  latest.cagrDiv5 = growthCagr5('Dividende par action');
+  latest.cagrCA5 = growthCagr5("Chiffre d'affaires");
+  latest.cagrFcf5 = growthCagr5('Free Cash Flow');
+  return rows;
+}
+// true si companies[nom] est prêt à être utilisé (déjà réel, ou synthèse réussie) ;
+// false si nom est vraiment inconnu (ni Sheet, ni base FMP élargie). Idempotent —
+// n'écrase jamais une entrée déjà là (Sheet réelle, ou synthèse déjà construite).
+async function ensureSyntheticCompanyData(nom){
+  if (companies[nom]) return true;
+  const rankingEntry = rankingSummaryData.find(e => e.nom === nom);
+  if (!rankingEntry) return false;
+  try{ await ensureDocumentsRealData(nom); }catch(e){ /* export FMP absent pour cette entreprise — non bloquant, synthèse partielle */ }
+  if (companies[nom]) return true; // race : une autre navigation a déjà rempli entre-temps
+  companies[nom] = buildSyntheticCompanyRows(nom, rankingEntry);
+  return true;
 }
 
 let classementPortfolioOnly = false;
@@ -4489,11 +4567,11 @@ function initClassement(){
     const box = document.getElementById(id);
     if (!box) return;
     box.addEventListener('click', e => {
-      // Entreprise hors des 72 du Sheet (base FMP élargie) : pas de fiche Analyse
-      // complète pour elle pour l'instant (celle-ci reste construite sur les données
-      // Sheet) — clic sans effet plutôt que goToAnalyse() silencieusement no-op.
+      // Fonctionne maintenant aussi pour une entreprise hors des 72 du Sheet (voir
+      // ensureSyntheticCompanyData) — plus de gate ici, goToAnalyse() gère elle-même
+      // l'entreprise vraiment inconnue (ni Sheet, ni base FMP élargie).
       const row = e.target.closest('.classement-row[data-nom]');
-      if (row && companies[row.dataset.nom]) goToAnalyse(row.dataset.nom);
+      if (row) goToAnalyse(row.dataset.nom);
     });
   });
   const filter = document.getElementById('classementSecteurFilter');
@@ -5306,9 +5384,9 @@ function initSectorGrid(){
   });
 }
 
-function goToAnalyse(nom){
+async function goToAnalyse(nom){
   switchPage('pageAnalyse');
-  selectCompany(nom);
+  await selectCompany(nom);
 }
 
 const PORTFOLIO_GROUP_PAGES = ['pagePortfolio', 'pageDividende', 'pagePerso', 'pageConstruction'];
@@ -5439,8 +5517,11 @@ function initMobileNav(){
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMobileNav(); });
 }
 
-function selectCompany(nom){
-  if (!companies[nom]) return;
+async function selectCompany(nom){
+  if (!companies[nom]){
+    const ok = await ensureSyntheticCompanyData(nom);
+    if (!ok) return;
+  }
   activeCompany = nom;
   const label = document.getElementById('activeCompanyLabel');
   if (label) label.innerHTML = 'Entreprise sélectionnée : <b>' + nom + '</b>';
@@ -5455,7 +5536,11 @@ function initSearch(){
   input.addEventListener('input', () => {
     const q = input.value.trim().toLowerCase();
     if (!q){ box.classList.remove('open'); box.innerHTML = ''; return; }
-    const matches = Object.keys(companies).filter(n => n.toLowerCase().includes(q)).slice(0, 8);
+    // Étendu à toute la base FMP élargie (voir ensureSyntheticCompanyData) — plus
+    // seulement les 72 du Sheet, demande explicite (DocuSign/Volkswagen introuvables ici
+    // alors que déjà exportés/utilisables ailleurs sur le site).
+    const allNames = [...new Set([...Object.keys(companies), ...rankingSummaryData.map(e => e.nom)])];
+    const matches = allNames.filter(n => n.toLowerCase().includes(q)).slice(0, 8);
     if (matches.length === 0){
       box.innerHTML = '<div class="search-suggestion" style="color:var(--text-faint);cursor:default;">Aucun résultat</div>';
     } else {
@@ -7635,7 +7720,11 @@ let fmpSymbols = {}; // nom Sheet -> symbole FMP, voir data/fmp-symbols.json (g�
 async function loadFmpSymbols(){
   try{
     const res = await fetch('data/fmp-symbols.json', { cache:'no-store' });
-    if (res.ok) fmpSymbols = await res.json();
+    // Fusion (jamais réaffectation) : loadRankingSummary() peut avoir déjà commencé à
+    // peupler fmpSymbols avant que CETTE requête ne revienne — l'ordre des deux fetch
+    // n'est pas garanti, une réaffectation aurait pu effacer ce que l'autre venait
+    // d'ajouter selon qui répond en dernier.
+    if (res.ok) Object.assign(fmpSymbols, await res.json());
   }catch(e){ /* absent en local, non bloquant — toutes les entreprises retombent sur l'ancien système */ }
 }
 
@@ -9072,7 +9161,7 @@ function comparisonColumnHtml(colId, nom){
     </div>`;
 }
 
-function renderComparisonDetailColumns(){
+async function renderComparisonDetailColumns(){
   const box = document.getElementById('comparaisonDetailColumns');
   if (!box) return;
   COMPARISON_DETAIL_COLS.forEach(c => {
@@ -9080,13 +9169,13 @@ function renderComparisonDetailColumns(){
     comparisonColumnCharts[c] = {};
   });
 
-  // Volontairement limité aux 72 du Sheet, contrairement au picker/graphique du haut
-  // (voir renderComparaisonPicker()/mapAnnualSeriesToWeeklyLabels()) : la jauge de
-  // valorisation a besoin de prixJuste/prixCible, qui n'existent que dans le Sheet — pas
-  // une restriction arbitraire, dictée par la donnée réellement disponible. Une
-  // entreprise FMP-only sélectionnée apparaît dans le graphique indexé base 100 du haut
-  // mais n'a simplement pas de colonne détaillée ici.
-  const selection = comparaisonSelected.filter(nom => companies[nom]).slice(0, 4);
+  // Étendu à toute la base FMP élargie (voir ensureSyntheticCompanyData) — n'était
+  // volontairement limité qu'aux 72 du Sheet jusqu'ici (la jauge de valorisation a
+  // besoin de prixJuste/prixCible, désormais aussi calculés pour une entreprise
+  // FMP-only via classementValuationFor, même mécanisme que Classement).
+  const candidates = comparaisonSelected.slice(0, 4);
+  await Promise.all(candidates.map(nom => ensureSyntheticCompanyData(nom)));
+  const selection = candidates.filter(nom => companies[nom]);
   box.innerHTML = selection.map((nom, i) => comparisonColumnHtml(COMPARISON_DETAIL_COLS[i], nom)).join('');
 
   selection.forEach((nom, i) => {
