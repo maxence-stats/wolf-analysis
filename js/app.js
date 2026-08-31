@@ -4396,6 +4396,46 @@ function classementValuationFor(e){
   return { multiple, ecartPrix, source, prixJuste };
 }
 
+// V2 "goulots d'étranglement" (plan wild-seeking-clover.md, §2) — Quality/Valuation
+// calculés, jamais saisis à la main : réutilisent le MÊME moteur que Classement/
+// Documents financiers plutôt qu'une seconde méthodologie, pour qu'une entreprise ne
+// soit jamais "attractive" au Classement et "chère" dans la fiche Cerveau numérique.
+function clampScore01(v, lo, hi){
+  if (v == null || !isFinite(v)) return null;
+  return Math.max(0, Math.min(100, ((v - lo) / (hi - lo)) * 100));
+}
+// Pondération simple, documentée ici (pas de sous-scores séparés stockés — voir plan
+// §2, un seul chiffre global) : ROIC/marge/CAGR CA/CAGR FCF bornés sur des seuils
+// usuels "excellent" pour ce type de ratio, dette/OCF inversée (moins de dette = mieux).
+// Moyenne sur les seules métriques disponibles (au moins 1) — null seulement si hist
+// est totalement absent ou vide (aucune donnée du tout).
+function computeQualityScore(nom){
+  const hist = companies[nom];
+  if (!hist || !hist.length) return { value:null, rationale:'Donnée insuffisante — entreprise non trouvée dans la base.' };
+  const latest = hist[hist.length - 1];
+  const parts = [
+    clampScore01(latest.roic, 0, 25),
+    clampScore01(latest.margeOp, 0, 35),
+    clampScore01(latest.cagrCA10, -5, 15),
+    clampScore01(latest.cagrFcf10, -5, 20),
+    latest.detteOCF != null ? clampScore01(-latest.detteOCF, -6, 0) : null
+  ].filter(p => p != null);
+  if (!parts.length) return { value:null, rationale:'Donnée insuffisante — ratios manquants pour cette entreprise.' };
+  const value = Math.round(parts.reduce((s, p) => s + p, 0) / parts.length);
+  return { value, rationale:`Calculé depuis ROIC ${fmtPct(latest.roic)}, marge op. ${fmtPct(latest.margeOp)}, CAGR CA 10a ${fmtPct(latest.cagrCA10)}, CAGR FCF 10a ${fmtPct(latest.cagrFcf10)}, dette/OCF ${latest.detteOCF != null ? latest.detteOCF.toFixed(1) + 'x' : '—'}.` };
+}
+// écart de valeur négatif = sous-valorisée = plus attractive (même sens que Classement/
+// classementValuationFor) — score inversé et borné sur ±60% (au-delà, déjà extrême).
+function computeValuationScore(nom){
+  const e = rankingSummaryData.find(r => r.nom === nom);
+  if (!e) return { value:null, rationale:'Donnée insuffisante — entreprise hors de la base FMP suivie.' };
+  const v = classementValuationFor(e);
+  if (v.ecartPrix == null) return { value:null, rationale:'Donnée insuffisante — prix juste non calculable (FCF/multiple manquant).' };
+  const clamped = Math.max(-60, Math.min(60, v.ecartPrix));
+  const value = Math.round(50 - (clamped / 60) * 50);
+  return { value, rationale:`Écart de valeur ${fmtPct(v.ecartPrix)} vs prix juste (${v.source === 'objectif' ? 'objectif enregistré' : 'médiane P/FCF historique'}) — même calcul que l'onglet Classement.` };
+}
+
 // Étend l'onglet Analyse (et tout ce qui en dépend : Documents financiers, cours de
 // bourse, Valorisation, clic depuis Classement, colonnes détaillées de Comparaison) à
 // toute la base FMP élargie (rankingSummaryData, ~500 entreprises) au lieu des 72 du
@@ -12111,6 +12151,7 @@ function renderCerveau(){
   if (!box) return;
   if (cerveauView.level === 'chaines') return renderCerveauChaines(box);
   if (cerveauView.level === 'phases') return renderCerveauPhases(box);
+  if (cerveauView.level === 'goulots') return renderCerveauGoulots(box);
   renderCerveauSecteurs(box);
 }
 
@@ -12120,6 +12161,7 @@ function renderCerveauSecteurs(box){
     <div class="cerveau-actions">
       <button class="zoom-btn objectifs-export" id="cerveauExportBtn">⭳ Exporter</button>
       <button class="zoom-btn objectifs-export" id="cerveauExportAllPdfBtn">🖨 Exporter tout en PDF</button>
+      <button class="zoom-btn objectifs-export" id="cerveauGoulotsBtn">🎯 Goulots d'étranglement</button>
     </div>
     <div class="sector-grid">${allSectors.map(s => {
       const n = (cerveauData.chains[s.key] || []).length;
@@ -12127,8 +12169,122 @@ function renderCerveauSecteurs(box){
     }).join('')}</div>`;
   document.getElementById('cerveauExportBtn').addEventListener('click', exportCerveau);
   document.getElementById('cerveauExportAllPdfBtn').addEventListener('click', exportAllChainsAsPdf);
+  document.getElementById('cerveauGoulotsBtn').addEventListener('click', () => { cerveauView = { level:'goulots' }; renderCerveau(); });
   box.querySelectorAll('.cerveau-sector-box').forEach(el => {
     el.addEventListener('click', () => { cerveauView = { level:'chaines', secteur: el.dataset.secteur }; renderCerveau(); });
+  });
+}
+
+// V2 "goulots d'étranglement" (plan wild-seeking-clover.md, §3) — vue transverse
+// réunissant les "vues" 2/3/4/5 du brief en une seule table filtrable/triable plutôt
+// que 4 pages séparées. Dédoublonne par NOM (une entreprise peut apparaître dans
+// plusieurs chaînes/secteurs, ex. Shin-Etsu Chemical dans Matériaux ET Technologies) —
+// garde le tier le plus élevé rencontré et liste tous les secteurs d'apparition.
+const CERVEAU_GOULOTS_FILTERS = [
+  { key:'all', label:'Tous' },
+  { key:'goulot', label:'Goulots' },
+  { key:'systemique', label:'Goulots systémiques' },
+  { key:'qualite-haute', label:'Haute qualité' },
+  { key:'attractif', label:'Combinaison attractive' }
+];
+let cerveauGoulotsSort = { key:'bottleneckValue', dir:-1 };
+let cerveauGoulotsFilterKey = 'all';
+function cerveauGoulotsCollect(){
+  const sectorLabels = {};
+  GICS_SECTORS.concat([{ key:'autre', label:'Autre / non classé' }]).forEach(s => { sectorLabels[s.key] = s.label; });
+  const byName = new Map();
+  Object.keys(cerveauData.chains).forEach(secKey => {
+    (cerveauData.chains[secKey] || []).forEach(chain => {
+      (chain.phases || []).forEach(ph => {
+        (ph.entreprises || []).forEach(e => {
+          const tier = e.tier || 'participante';
+          if (tier === 'participante') return;
+          const secLabel = sectorLabels[secKey] || secKey;
+          const existing = byName.get(e.nom);
+          if (existing){
+            if (!existing.sectors.includes(secLabel)) existing.sectors.push(secLabel);
+            if (CERVEAU_TIER_ORDER.indexOf(tier) > CERVEAU_TIER_ORDER.indexOf(existing.tier)) existing.tier = tier;
+          } else {
+            byName.set(e.nom, { nom:e.nom, tier, sectors:[secLabel] });
+          }
+        });
+      });
+    });
+  });
+  return Array.from(byName.values()).map(row => {
+    const versions = cerveauData.analyses[row.nom];
+    const latest = versions && versions.length ? versions[versions.length - 1] : null;
+    const bottleneck = (latest && latest.scores && latest.scores.bottleneck) || { value:null, confidence:null };
+    const scope = latest ? latest.bottleneckScope : null;
+    const quality = computeQualityScore(row.nom);
+    const valuation = computeValuationScore(row.nom);
+    return {
+      nom: row.nom, tier: row.tier, sectors: row.sectors.join(', '), scope,
+      bottleneckValue: bottleneck.value, confidence: bottleneck.confidence,
+      qualityValue: quality.value, valuationValue: valuation.value
+    };
+  });
+}
+function cerveauGoulotsApplyFilter(rows, key){
+  if (key === 'goulot') return rows.filter(r => r.tier === 'goulot');
+  if (key === 'systemique') return rows.filter(r => r.scope === 'systemique');
+  if (key === 'qualite-haute') return rows.filter(r => r.qualityValue != null && r.qualityValue >= 70);
+  if (key === 'attractif') return rows.filter(r => r.bottleneckValue != null && r.bottleneckValue >= 70 && r.qualityValue != null && r.qualityValue >= 70 && r.valuationValue != null && r.valuationValue >= 60);
+  return rows;
+}
+function cerveauGoulotsScoreCell(val){
+  return val == null ? '<span class="analyse-score-nd">—</span>' : String(val);
+}
+function renderCerveauGoulots(box){
+  const all = cerveauGoulotsCollect();
+  const filtered = cerveauGoulotsApplyFilter(all, cerveauGoulotsFilterKey);
+  const { key: sortKey, dir: sortDir } = cerveauGoulotsSort;
+  filtered.sort((a, b) => {
+    if (sortKey === 'nom' || sortKey === 'sectors') return sortDir * a[sortKey].localeCompare(b[sortKey]);
+    if (sortKey === 'tier') return sortDir * (CERVEAU_TIER_ORDER.indexOf(a.tier) - CERVEAU_TIER_ORDER.indexOf(b.tier));
+    const av = a[sortKey], bv = b[sortKey];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1; // valeurs manquantes toujours en fin, quel que soit le sens
+    if (bv == null) return -1;
+    return sortDir === 1 ? (av - bv) : (bv - av);
+  });
+  const cols = [
+    { key:'nom', label:'Entreprise' }, { key:'sectors', label:'Secteur(s)' },
+    { key:'tier', label:'Tier' }, { key:'scope', label:'Portée' },
+    { key:'bottleneckValue', label:'Bottleneck' }, { key:'qualityValue', label:'Quality' }, { key:'valuationValue', label:'Valuation' }
+  ];
+  box.innerHTML = `
+    <div class="cerveau-breadcrumb"><a data-back="secteurs">Secteurs</a> / Goulots d'étranglement</div>
+    <p class="valo-intro">Vue transverse — toute entreprise classée qualité/dominante/goulot dans au moins une chaîne, tous secteurs confondus. Watchlist analytique, pas un signal d'achat automatique.</p>
+    <div class="range-buttons" id="cerveauGoulotsFilters">${CERVEAU_GOULOTS_FILTERS.map(f => `<button type="button" data-filter="${f.key}" class="${cerveauGoulotsFilterKey === f.key ? 'active' : ''}">${f.label}</button>`).join('')}</div>
+    ${filtered.length ? `<div class="macro-power-table-wrap" style="margin-top:12px;"><table class="macro-fund-table cerveau-goulots-table">
+      <thead><tr>${cols.map(c => `<th data-sort="${c.key}" class="${sortKey === c.key ? 'active' : ''}">${c.label}${sortKey === c.key ? (sortDir === 1 ? ' ▲' : ' ▼') : ''}</th>`).join('')}</tr></thead>
+      <tbody>${filtered.map(r => `<tr class="cerveau-goulots-row" data-nom="${escapeHtml(r.nom)}">
+        <td style="text-align:left;">${escapeHtml(r.nom)}</td>
+        <td style="text-align:left;">${escapeHtml(r.sectors)}</td>
+        <td><span class="cec-tier-${r.tier}">${CERVEAU_TIER_LABELS[r.tier]}</span></td>
+        <td>${r.scope ? (r.scope === 'systemique' ? '🌐 Systémique' : 'Local') : '—'}</td>
+        <td>${cerveauGoulotsScoreCell(r.bottleneckValue)}${r.confidence ? ` <span class="analyse-score-nd">(${r.confidence})</span>` : ''}</td>
+        <td>${cerveauGoulotsScoreCell(r.qualityValue)}</td>
+        <td>${cerveauGoulotsScoreCell(r.valuationValue)}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>` : '<div class="objectifs-empty">Aucune entreprise dans ce filtre pour le moment.</div>'}`;
+  box.querySelector('[data-back="secteurs"]').addEventListener('click', () => { cerveauView = { level:'secteurs' }; renderCerveau(); });
+  document.getElementById('cerveauGoulotsFilters').addEventListener('click', e => {
+    const btn = e.target.closest('[data-filter]');
+    if (!btn) return;
+    cerveauGoulotsFilterKey = btn.dataset.filter;
+    renderCerveau();
+  });
+  box.querySelectorAll('[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.sort;
+      cerveauGoulotsSort = cerveauGoulotsSort.key === key ? { key, dir: -cerveauGoulotsSort.dir } : { key, dir: -1 };
+      renderCerveau();
+    });
+  });
+  box.querySelectorAll('.cerveau-goulots-row').forEach(row => {
+    row.addEventListener('click', () => openAnalyse(row.dataset.nom));
   });
 }
 
@@ -12283,6 +12439,14 @@ function migrateCerveauChains(){
             e.imgHeight = e.imgHeight || d.imgHeight;
           }
           delete e.taille;
+          // V2 "goulots d'étranglement" (voir plan wild-seeking-clover) : grandfathering
+          // one-shot — toute entité déjà marquée bottleneck:true AVANT ce champ tier
+          // devient tier:'goulot' (c'était déjà un jugement posé explicitement au fil de
+          // la session, sert de LISTE DE CANDIDATS à réévaluer, pas une confirmation
+          // définitive — voir §4 du plan). Idempotent : ne touche jamais un tier déjà
+          // présent, jamais ne rétrograde une entité déjà reclassée après recherche.
+          if (!e.tier) e.tier = e.bottleneck ? 'goulot' : 'participante';
+          syncBottleneckFlag(e);
         });
         if (!Array.isArray(ph.blocsLibres)) ph.blocsLibres = [];
         ph.blocsLibres.forEach(b => {
@@ -12310,6 +12474,39 @@ function migrateCerveauChains(){
       });
     });
   });
+  cerveauCheckTierConsistency();
+}
+
+// ---- V2 "goulots d'étranglement" — voir plan wild-seeking-clover.md -------------------
+// tier === 'goulot' est LE statut canonique ; bottleneck (booléen historique, gardé pour
+// chainPdfChipHtml()/chainPdfPanelHtml()/le badge doré déjà en place) en est TOUJOURS
+// dérivé, jamais réglé indépendamment — appelé à chaque écriture de tier pour qu'un état
+// incohérent (tier:'dominante', bottleneck:true) ne puisse jamais exister.
+const CERVEAU_TIER_ORDER = ['participante', 'qualite', 'dominante', 'goulot'];
+const CERVEAU_TIER_LABELS = { participante:'Participante', qualite:'Entreprise de qualité', dominante:'Entreprise dominante', goulot:"Goulot d'étranglement" };
+function syncBottleneckFlag(ent){
+  ent.bottleneck = ent.tier === 'goulot';
+}
+// Signale (console, non bloquant) plutôt que de laisser une incohérence tier/bottleneck
+// ou un bottleneckScope invalide se propager silencieusement — demande explicite.
+function cerveauCheckTierConsistency(){
+  const issues = [];
+  Object.keys(cerveauData.chains).forEach(sec => {
+    (cerveauData.chains[sec] || []).forEach(chain => {
+      (chain.phases || []).forEach(ph => {
+        (ph.entreprises || []).forEach(e => {
+          if ((e.tier === 'goulot') !== !!e.bottleneck){
+            issues.push(`${e.nom} (${chain.nom}) : tier=${e.tier} mais bottleneck=${e.bottleneck}`);
+          }
+          if (e.bottleneckScope != null && e.bottleneckScope !== 'local' && e.bottleneckScope !== 'systemique'){
+            issues.push(`${e.nom} (${chain.nom}) : bottleneckScope invalide (${e.bottleneckScope})`);
+          }
+        });
+      });
+    });
+  });
+  if (issues.length) console.warn('Cerveau numérique — incohérences tier/bottleneck détectées :', issues);
+  return issues;
 }
 
 function cerveauImageZoneHtml(image, actionPrefix, imgHeight){
@@ -12377,21 +12574,34 @@ function syncCerveauToolbarState(){
 // c'est la merde, il faut que tu l'indiques... ça peut être les entreprises sur
 // lesquelles se focus pour les analyser." Visible dans l'app (bordure + badge sur la
 // carte, cliquable pour basculer) ET dans le PDF (voir chainPdfChipHtml()).
+// tier cyclable (participante → qualité → dominante → goulot → participante) —
+// remplace l'ancien toggle binaire bottleneck. Ne touche JAMAIS bottleneckScope (réglé
+// séparément dans la fiche, voir §3 du plan) — un passage à "goulot" ici ne le rend pas
+// automatiquement "systémique".
+const CERVEAU_TIER_BADGE = {
+  qualite: { cls:'cerveau-entity-qualite', label:'Q', title:'Entreprise de qualité' },
+  dominante: { cls:'cerveau-entity-dominante', label:'D', title:'Entreprise dominante' }
+};
 function cerveauEntityCard(ent, phaseIdx, entIdx){
   const safe = ent.nom.replace(/"/g, '&quot;');
   const tracked = companies[ent.nom];
   const logo = tracked ? companies[ent.nom][companies[ent.nom].length - 1].lienImage : '';
   const noteCount = (cerveauData.notes[ent.nom] || []).length;
   const width = ent.width || 200;
-  const bottleneck = !!ent.bottleneck;
-  return `<div class="cerveau-entity-card${bottleneck ? ' cerveau-entity-bottleneck' : ''}" style="width:${width}px;" data-phase="${phaseIdx}" data-ent="${entIdx}">
+  const tier = ent.tier || 'participante';
+  const bottleneck = tier === 'goulot';
+  const tierBadge = CERVEAU_TIER_BADGE[tier];
+  const cardTierCls = bottleneck ? ' cerveau-entity-bottleneck' : (tierBadge ? ' ' + tierBadge.cls : '');
+  const nextTier = CERVEAU_TIER_ORDER[(CERVEAU_TIER_ORDER.indexOf(tier) + 1) % CERVEAU_TIER_ORDER.length];
+  const tierBtnLabel = bottleneck ? '⚠' : (tierBadge ? tierBadge.label : '·');
+  return `<div class="cerveau-entity-card${cardTierCls}" style="width:${width}px;" data-phase="${phaseIdx}" data-ent="${entIdx}">
     ${bottleneck ? '<div class="cerveau-bottleneck-tag" title="Goulot d\'étranglement de la chaîne">⚠ GOULOT</div>' : ''}
     ${cerveauImageZoneHtml(ent.image, 'ent', ent.imgHeight || 110)}
     <div class="cec-body">
       <div class="cec-head">
         ${logo ? `<img class="cec-mini-logo" src="${logo}" alt="">` : `<span class="cerveau-entity-initial">${ent.nom.charAt(0).toUpperCase()}</span>`}
         <span class="cec-name" title="${safe}">${ent.nom}</span>${noteCount ? `<span class="cerveau-note-badge">${noteCount}</span>` : ''}
-        <button class="cec-bottleneck-btn${bottleneck ? ' active' : ''}" data-action="ent-bottleneck" title="${bottleneck ? 'Retirer le marqueur goulot d\'étranglement' : 'Marquer comme goulot d\'étranglement'}">⚠</button>
+        <button class="cec-tier-btn cec-tier-${tier}" data-action="ent-tier" title="${CERVEAU_TIER_LABELS[tier]} — cliquer pour passer à « ${CERVEAU_TIER_LABELS[nextTier]} »">${tierBtnLabel}</button>
         <button class="cec-remove" data-action="ent-delete" title="Retirer de la phase">✕</button>
       </div>
       <input type="text" class="cec-legend" data-action="ent-legend" placeholder="Légende…" value="${(ent.legende || '').replace(/"/g, '&quot;')}">
@@ -12509,10 +12719,23 @@ function chainPdfGroups(chain){
   });
   return groups;
 }
+// V2 "goulots d'étranglement" — point de couleur tier + 🌐 systémique, additifs à côté
+// du badge doré "goulot" déjà en place, ne touche pas la charte PDF déjà validée.
+function chainPdfTierDotHtml(ent){
+  const tier = ent.tier || 'participante';
+  if (tier === 'goulot' || tier === 'participante') return ''; // goulot déjà porté par chain-pdf-chip-bottleneck
+  const color = tier === 'qualite' ? 'var(--blue)' : 'var(--violet)';
+  return `<span class="chain-pdf-tier-dot" style="background:${color};" title="${escapeHtml(CERVEAU_TIER_LABELS[tier])}"></span>`;
+}
+function chainPdfScopeMarkHtml(ent){
+  const versions = cerveauData.analyses[ent.nom];
+  const latest = versions && versions.length ? versions[versions.length - 1] : null;
+  return (latest && latest.bottleneckScope === 'systemique') ? '<span class="chain-pdf-scope-mark" title="Goulot systémique">🌐</span>' : '';
+}
 function chainPdfChipHtml(ent){
   const logo = companyLogoUrl(ent.nom) || ent.image;
   const logoHtml = `<span class="chain-pdf-chip-logo">${logo ? `<img src="${logo}" alt="">` : ''}</span>`;
-  return `<span class="chain-pdf-chip${ent.bottleneck ? ' chain-pdf-chip-bottleneck' : ''}">${logoHtml}${ent.nom.replace(/</g, '&lt;')}</span>`;
+  return `<span class="chain-pdf-chip${ent.bottleneck ? ' chain-pdf-chip-bottleneck' : ''}">${logoHtml}${chainPdfTierDotHtml(ent)}${ent.nom.replace(/</g, '&lt;')}${chainPdfScopeMarkHtml(ent)}</span>`;
 }
 function chainPdfFreeBlockText(bloc){
   if (bloc.texteHtml != null) return bloc.texteHtml;
@@ -12732,8 +12955,10 @@ function renderCerveauPhases(box){
       persistCerveauData();
       renderCerveau();
     });
-    card.querySelector('[data-action="ent-bottleneck"]').addEventListener('click', () => {
-      ent.bottleneck = !ent.bottleneck;
+    card.querySelector('[data-action="ent-tier"]').addEventListener('click', () => {
+      const cur = ent.tier || 'participante';
+      ent.tier = CERVEAU_TIER_ORDER[(CERVEAU_TIER_ORDER.indexOf(cur) + 1) % CERVEAU_TIER_ORDER.length];
+      syncBottleneckFlag(ent);
       persistCerveauData();
       renderCerveau();
     });
@@ -13240,7 +13465,16 @@ const CERVEAU_ANALYSE_SECTIONS_BOTTOM = [
   { key:'ratios', label:'Ratios financiers', hint:"Captures d'écran de l'application" },
   { key:'conclusion', label:'Conclusion', hint:'Business model, synthèse, datée automatiquement' }
 ];
-const CERVEAU_ANALYSE_SECTIONS_ALL = CERVEAU_ANALYSE_SECTIONS_TOP.concat(CERVEAU_ANALYSE_SECTIONS_MID_A, CERVEAU_ANALYSE_SECTIONS_MID_B, CERVEAU_ANALYSE_SECTIONS_BOTTOM);
+// V2 "goulots d'étranglement" (voir plan wild-seeking-clover.md) — 3 sections texte
+// libre, même mécanisme que les autres (analyseSectionHtml, aucun rendu spécifique),
+// juste après le moat (MID_A) et avant le bloc concurrents : le goulot est une
+// extension du moat, pas un sujet séparé.
+const CERVEAU_ANALYSE_SECTIONS_GOULOT = [
+  { key:'positionChaine', label:'Position dans la chaîne de valeur', hint:"Ce qu'elle fournit, qui dépend d'elle" },
+  { key:'substituabilite', label:'Substituts & remplaçabilité', hint:'Substituts crédibles, temps/coût de remplacement, barrières à l\'entrée, concentration du marché' },
+  { key:'profondeurGoulot', label:'Profondeur, centralité & durabilité', hint:'Ses propres fournisseurs critiques ("goulot dans le goulot"), goulot direct/indirect, local ou systémique, durabilité à 5/10/20 ans — et une conclusion explicite : pourquoi est-elle (ou non) un véritable goulot, et ce qui casserait si elle disparaissait' }
+];
+const CERVEAU_ANALYSE_SECTIONS_ALL = CERVEAU_ANALYSE_SECTIONS_TOP.concat(CERVEAU_ANALYSE_SECTIONS_MID_A, CERVEAU_ANALYSE_SECTIONS_GOULOT, CERVEAU_ANALYSE_SECTIONS_MID_B, CERVEAU_ANALYSE_SECTIONS_BOTTOM);
 
 let analyseEntite = null;
 let analyseVersionId = null;
@@ -13248,11 +13482,22 @@ let analyseCharts = {};
 let analyseDeleteConfirming = false;
 let draggedImageRef = null; // { arr, idx } — référence directe au tableau d'images en cours de glisser-déposer
 
+// V2 "goulots d'étranglement" — scores structurés (pas du texte+images, voir plan) :
+// value:null + rationale plutôt qu'un chiffre inventé quand la donnée manque.
+// confidence/sources uniquement pertinents pour bottleneck (jugement manuel) — quality/
+// valuation sont calculés (voir computeQualityScore/computeValuationScore), jamais saisis.
+function blankAnalyseScores(){
+  return {
+    bottleneck: { value:null, rationale:'', confidence:null, verified:false, sources:[] },
+    quality: { value:null, rationale:'' },
+    valuation: { value:null, rationale:'', updatedAt:null }
+  };
+}
 function blankAnalyseVersion(label){
   const today = new Date().toISOString().slice(0, 10);
   const sections = {};
   CERVEAU_ANALYSE_SECTIONS_ALL.forEach(s => { sections[s.key] = { texte:'', images:[] }; });
-  return { id:'v' + Date.now() + Math.random().toString(36).slice(2), label, dateCreated:today, dateModified:today, sections, revenusPays:[], revenusSecteurs:[], actionnariat:[], concurrents:[] };
+  return { id:'v' + Date.now() + Math.random().toString(36).slice(2), label, dateCreated:today, dateModified:today, sections, revenusPays:[], revenusSecteurs:[], actionnariat:[], concurrents:[], scores:blankAnalyseScores(), bottleneckScope:null };
 }
 
 function currentAnalyseVersion(){
@@ -13348,6 +13593,100 @@ function analyseConcurrentsHtml(list){
       </div>`).join('')}</div>
     <button class="cerveau-btn-cancel" id="analyseAddCompetitor">+ Ajouter un concurrent</button>
   </div>`;
+}
+
+// V2 "goulots d'étranglement" (plan wild-seeking-clover.md, §1/§3) — bloc structuré
+// (pas analyseSectionHtml, ce sont des champs numériques/select + texte, pas texte+
+// images). Bottleneck = jugement manuel éditable (valeur/confiance/portée/sources) ;
+// Quality/Valuation = calculés (computeQualityScore/computeValuationScore), lecture
+// seule ici — jamais saisis à la main, voir §2 du plan.
+function analyseScoreValueHtml(val){
+  return val == null ? '<span class="analyse-score-nd">Donnée insuffisante</span>' : `<span class="analyse-score-value">${val}/100</span>`;
+}
+function analyseScoresHtml(v){
+  const s = v.scores;
+  const quality = computeQualityScore(analyseEntite);
+  const valuation = computeValuationScore(analyseEntite);
+  return `<div class="analyse-section analyse-scores-section">
+    <h4>Scores — Bottleneck / Quality / Valuation</h4>
+    <p class="analyse-hint">Bottleneck : jugement qualitatif à saisir et sourcer ci-dessous — un score de conviction analytique, pas une mesure précise au point près. Quality/Valuation : calculés automatiquement depuis les mêmes données que l'onglet Classement, non modifiables ici.</p>
+    <div class="analyse-scores-grid">
+      <div class="analyse-score-card">
+        <div class="analyse-score-head"><span class="analyse-score-label">🎯 Bottleneck</span>${analyseScoreValueHtml(s.bottleneck.value)}</div>
+        <div class="analyse-score-row">
+          <input type="number" min="0" max="100" class="analyse-score-input" data-score-field="bottleneck-value" placeholder="0-100" value="${s.bottleneck.value != null ? s.bottleneck.value : ''}">
+          <select class="analyse-score-select" data-score-field="bottleneck-confidence">
+            <option value="">Confiance…</option>
+            <option value="faible"${s.bottleneck.confidence === 'faible' ? ' selected' : ''}>Confiance faible</option>
+            <option value="moyenne"${s.bottleneck.confidence === 'moyenne' ? ' selected' : ''}>Confiance moyenne</option>
+            <option value="forte"${s.bottleneck.confidence === 'forte' ? ' selected' : ''}>Confiance forte</option>
+          </select>
+          <select class="analyse-score-select" data-score-field="bottleneck-scope">
+            <option value="">Portée du goulot…</option>
+            <option value="local"${v.bottleneckScope === 'local' ? ' selected' : ''}>Local (limité à sa chaîne)</option>
+            <option value="systemique"${v.bottleneckScope === 'systemique' ? ' selected' : ''}>Systémique (transversal)</option>
+          </select>
+        </div>
+        <textarea class="analyse-score-textarea" data-score-field="bottleneck-rationale" placeholder="Justification (indispensabilité, substituts, barrières à l'entrée, durabilité...)">${escapeHtml(s.bottleneck.rationale || '')}</textarea>
+        <div class="analyse-score-sources">
+          ${(s.bottleneck.sources || []).map((src, i) => `<div class="analyse-score-source-row">
+            <a href="${escapeHtml(src.url || '#')}" target="_blank" rel="noopener">${escapeHtml(src.title || src.url || 'Source')}</a>
+            <span class="analyse-score-source-claim">${escapeHtml(src.claim || '')}</span>
+            <button type="button" data-remove-source="${i}" title="Retirer">✕</button>
+          </div>`).join('') || '<p class="chart-hint" style="margin:4px 0;">Aucune source enregistrée.</p>'}
+          <div class="analyse-score-source-add">
+            <input type="text" placeholder="Titre" data-source-input="title">
+            <input type="text" placeholder="URL" data-source-input="url">
+            <input type="text" placeholder="Affirmation vérifiée (ex. « part de marché 92% »)" data-source-input="claim">
+            <button type="button" data-action="add-source">+ Source</button>
+          </div>
+        </div>
+      </div>
+      <div class="analyse-score-card analyse-score-card-readonly">
+        <div class="analyse-score-head"><span class="analyse-score-label">💎 Quality</span>${analyseScoreValueHtml(quality.value)}</div>
+        <p class="analyse-score-rationale">${escapeHtml(quality.rationale || '')}</p>
+      </div>
+      <div class="analyse-score-card analyse-score-card-readonly">
+        <div class="analyse-score-head"><span class="analyse-score-label">💰 Valuation</span>${analyseScoreValueHtml(valuation.value)}</div>
+        <p class="analyse-score-rationale">${escapeHtml(valuation.rationale || '')}</p>
+      </div>
+    </div>
+  </div>`;
+}
+function wireAnalyseScoresEvents(){
+  const box = document.getElementById('analyseBody');
+  const v = currentAnalyseVersion();
+  const valueInput = box.querySelector('[data-score-field="bottleneck-value"]');
+  if (valueInput) valueInput.addEventListener('change', () => {
+    const n = parseInt(valueInput.value, 10);
+    v.scores.bottleneck.value = (valueInput.value === '' || isNaN(n)) ? null : Math.max(0, Math.min(100, n));
+    saveAnalyseVersion();
+  });
+  const confSel = box.querySelector('[data-score-field="bottleneck-confidence"]');
+  if (confSel) confSel.addEventListener('change', () => { v.scores.bottleneck.confidence = confSel.value || null; saveAnalyseVersion(); });
+  const scopeSel = box.querySelector('[data-score-field="bottleneck-scope"]');
+  if (scopeSel) scopeSel.addEventListener('change', () => { v.bottleneckScope = scopeSel.value || null; saveAnalyseVersion(); });
+  const rationale = box.querySelector('[data-score-field="bottleneck-rationale"]');
+  if (rationale) rationale.addEventListener('blur', () => { v.scores.bottleneck.rationale = rationale.value; saveAnalyseVersion(); });
+  const addSrcBtn = box.querySelector('.analyse-score-source-add [data-action="add-source"]');
+  if (addSrcBtn) addSrcBtn.addEventListener('click', () => {
+    const wrap = addSrcBtn.closest('.analyse-score-source-add');
+    const title = wrap.querySelector('[data-source-input="title"]').value.trim();
+    const url = wrap.querySelector('[data-source-input="url"]').value.trim();
+    const claim = wrap.querySelector('[data-source-input="claim"]').value.trim();
+    if (!title && !url) return;
+    v.scores.bottleneck.sources.push({ title, url, claim, date: new Date().toISOString().slice(0, 10) });
+    v.scores.bottleneck.verified = true;
+    saveAnalyseVersion();
+    renderAnalyse();
+  });
+  box.querySelectorAll('[data-remove-source]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      v.scores.bottleneck.sources.splice(parseInt(btn.dataset.removeSource, 10), 1);
+      saveAnalyseVersion();
+      renderAnalyse();
+    });
+  });
 }
 
 function renderAnalyseCharts(v){
@@ -13505,6 +13844,13 @@ function wireAnalyseSectionEvents(){
 function renderAnalyse(){
   renderAnalyseVersionSelect();
   const v = currentAnalyseVersion();
+  // Rétro-compatibilité : une fiche créée avant les sections/scores V2 n'a ni les 3
+  // nouvelles clés dans v.sections ni v.scores/v.bottleneckScope — backfill défensif
+  // plutôt que de planter sur data.texte undefined (même logique que les autres
+  // migrations du fichier, ex. migrateCerveauChains()).
+  CERVEAU_ANALYSE_SECTIONS_ALL.forEach(s => { if (!v.sections[s.key]) v.sections[s.key] = { texte:'', images:[] }; });
+  if (!v.scores) v.scores = blankAnalyseScores();
+  if (v.bottleneckScope === undefined) v.bottleneckScope = null;
   document.getElementById('analyseUpdatedLabel').textContent = 'Dernière modification : ' + v.dateModified;
   analyseDeleteConfirming = false;
   const delBtn = document.getElementById('analyseDeleteBtn');
@@ -13515,11 +13861,14 @@ function renderAnalyse(){
   box.innerHTML = CERVEAU_ANALYSE_SECTIONS_TOP.map(s => analyseSectionHtml(s, v.sections[s.key])).join('')
     + `<div class="analyse-charts-row">${analyseChartSectionHtml('revenusPays', v.revenusPays)}${analyseChartSectionHtml('revenusSecteurs', v.revenusSecteurs)}</div>`
     + CERVEAU_ANALYSE_SECTIONS_MID_A.map(s => analyseSectionHtml(s, v.sections[s.key])).join('')
+    + CERVEAU_ANALYSE_SECTIONS_GOULOT.map(s => analyseSectionHtml(s, v.sections[s.key])).join('')
     + analyseConcurrentsHtml(v.concurrents)
     + CERVEAU_ANALYSE_SECTIONS_MID_B.map(s => analyseSectionHtml(s, v.sections[s.key])).join('')
+    + analyseScoresHtml(v)
     + analyseChartSectionHtml('actionnariat', v.actionnariat)
     + CERVEAU_ANALYSE_SECTIONS_BOTTOM.map(s => analyseSectionHtml(s, v.sections[s.key])).join('');
   wireAnalyseSectionEvents();
+  wireAnalyseScoresEvents();
   renderAnalyseCharts(v);
 }
 

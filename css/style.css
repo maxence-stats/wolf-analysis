@@ -550,9 +550,16 @@
   .cerveau-entity-card.cec-dragging, .cerveau-freeblock.cec-dragging{opacity:0.35;}
   .cerveau-entity-bottleneck{position:relative;border:1px solid var(--gold);box-shadow:0 0 0 1px rgba(217,164,65,0.35);}
   .cerveau-bottleneck-tag{position:absolute;top:8px;left:8px;z-index:2;background:rgba(9,9,9,0.82);color:var(--gold);font-family:var(--font-mono);font-size:9.5px;font-weight:700;letter-spacing:0.6px;padding:3px 7px;border-radius:6px;border:1px solid var(--gold);pointer-events:none;}
-  .cec-bottleneck-btn{background:transparent;border:none;color:var(--text-faint);cursor:pointer;font-size:12px;padding:2px;flex-shrink:0;}
-  .cec-bottleneck-btn:hover{color:var(--gold);}
-  .cec-bottleneck-btn.active{color:var(--gold);}
+  /* Tiers "qualité"/"dominante" (V2 goulots d'étranglement, voir plan wild-seeking-clover) —
+     mêmes anneaux de couleur que le tier cyclable de la carte, "goulot" reste le style
+     doré déjà en place ci-dessus, inchangé. */
+  .cerveau-entity-qualite{border:1px solid var(--blue);box-shadow:0 0 0 1px rgba(74,159,224,0.3);}
+  .cerveau-entity-dominante{border:1px solid var(--violet);box-shadow:0 0 0 1px rgba(139,127,232,0.3);}
+  .cec-tier-btn{background:transparent;border:none;color:var(--text-faint);cursor:pointer;font-size:11px;font-weight:700;font-family:var(--font-mono);padding:2px 4px;flex-shrink:0;border-radius:4px;}
+  .cec-tier-btn:hover{color:var(--text);}
+  .cec-tier-qualite{color:var(--blue);}
+  .cec-tier-dominante{color:var(--violet);}
+  .cec-tier-goulot{color:var(--gold);font-size:12px;}
   .cerveau-entity-list.cec-drop-target, .cerveau-freeblock-list.cec-drop-target{outline:2px dashed var(--gold);outline-offset:4px;border-radius:8px;}
   .cec-body{display:flex;flex-direction:column;flex:1;min-width:0;}
   .cec-image{position:relative;background:var(--panel);display:flex;align-items:center;justify-content:center;cursor:pointer;}
@@ -695,6 +702,35 @@
   .analyse-competitor-del{margin-top:8px;background:none;border:1px solid var(--hair);color:var(--text-faint);border-radius:8px;padding:5px 10px;font-size:11px;cursor:pointer;}
   .analyse-competitor-del:hover{border-color:var(--red);color:var(--red);}
   @media (max-width:1100px){ .analyse-charts-row{grid-template-columns:1fr;} }
+
+  /* ---------- SCORES V2 "goulots d'étranglement" (plan wild-seeking-clover) ---------- */
+  .analyse-scores-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;}
+  .analyse-score-card{background:var(--panel);border:1px solid var(--hair);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px;}
+  .analyse-score-card-readonly{opacity:0.92;}
+  .analyse-score-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .analyse-score-label{font-family:var(--font-display);font-size:13px;font-weight:700;color:var(--text);}
+  .analyse-score-value{font-family:var(--font-mono);font-size:15px;font-weight:700;color:var(--gold);}
+  .analyse-score-nd{font-family:var(--font-mono);font-size:10.5px;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.04em;}
+  .analyse-score-row{display:flex;flex-wrap:wrap;gap:6px;}
+  .analyse-score-input{width:70px;background:var(--panel-2);border:1px solid var(--hair);border-radius:6px;padding:6px 8px;color:var(--text);font-size:12.5px;outline:none;}
+  .analyse-score-select{flex:1;min-width:130px;background:var(--panel-2);border:1px solid var(--hair);border-radius:6px;padding:6px 8px;color:var(--text-dim);font-size:11.5px;outline:none;}
+  .analyse-score-textarea{width:100%;min-height:60px;background:var(--panel-2);border:1px solid var(--hair);border-radius:6px;padding:8px;color:var(--text);font-size:12px;resize:vertical;outline:none;}
+  .analyse-score-rationale{margin:0;font-size:12px;color:var(--text-dim);line-height:1.5;}
+  .analyse-score-sources{display:flex;flex-direction:column;gap:4px;}
+  .analyse-score-source-row{display:flex;align-items:center;gap:6px;font-size:11px;background:var(--panel-2);border-radius:6px;padding:4px 8px;}
+  .analyse-score-source-row a{color:var(--gold-2);flex-shrink:0;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .analyse-score-source-claim{color:var(--text-faint);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .analyse-score-source-row button{background:none;border:none;color:var(--text-faint);cursor:pointer;flex-shrink:0;}
+  .analyse-score-source-row button:hover{color:var(--red);}
+  .analyse-score-source-add{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;}
+  .analyse-score-source-add input{flex:1;min-width:100px;background:var(--panel-2);border:1px solid var(--hair);border-radius:6px;padding:6px 8px;color:var(--text);font-size:11.5px;outline:none;}
+  .analyse-score-source-add button{background:var(--panel-2);border:1px solid var(--hair);color:var(--text-dim);border-radius:6px;padding:6px 10px;font-size:11px;cursor:pointer;}
+  .analyse-score-source-add button:hover{border-color:var(--gold);color:var(--text);}
+  .cerveau-goulots-table th[data-sort]{cursor:pointer;user-select:none;}
+  .cerveau-goulots-table th[data-sort]:hover{color:var(--text);}
+  .cerveau-goulots-table th.active{color:var(--gold-2);}
+  .cerveau-goulots-row{cursor:pointer;}
+  .cerveau-goulots-row:hover td{background:rgba(255,255,255,0.05);}
 
   /* ---------- ZOOM IMAGE (lightbox léger, distinct de #zoomModal Chart.js) ---------- */
   #imageZoomModal{display:none;position:fixed;inset:0;background:rgba(4,5,7,0.88);z-index:1001;align-items:center;justify-content:center;padding:30px;}
@@ -1332,6 +1368,8 @@
     .chain-pdf-subphase-label::before{content:'';position:absolute;left:0;top:5px;width:4px;height:4px;border-radius:50%;background:var(--gold);}
     .chain-pdf-chips{display:flex;flex-wrap:wrap;gap:7px;}
     .chain-pdf-chip{display:inline-flex;align-items:center;gap:6px;background:#1a1a1a;border:1px solid #3a3a3a;border-radius:14px;padding:4px 10px 4px 4px;font-family:var(--font-body);font-size:10.5px;color:var(--text);}
+    .chain-pdf-tier-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+    .chain-pdf-scope-mark{font-size:9px;margin-left:2px;}
     .chain-pdf-chip-bottleneck{background:var(--gold);border-color:var(--gold);color:#171717;font-weight:600;}
     .chain-pdf-chip-logo{width:18px;height:18px;border-radius:5px;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;}
     .chain-pdf-chip-logo img{max-width:15px;max-height:15px;object-fit:contain;}
