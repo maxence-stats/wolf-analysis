@@ -4093,6 +4093,19 @@ function normalizeSector(raw){
   return null;
 }
 
+// Étendue à la Watchlist de l'utilisateur (au-delà des 72 entreprises du Sheet) —
+// demande explicite : "j'ai des entreprises, mais il n'y en a pas beaucoup... il faut
+// que ma watchlist d'entreprises de qualité soit classée par secteur, ici". Union des
+// 72 du Sheet + tout ce que l'utilisateur a rangé dans une des 4 listes Watchlist
+// (souvent hors des 72, base FMP élargie) — secteur/logo résolus par
+// normalizeSector()/companyLogoUrl(), qui savent déjà lire les deux sources.
+const WATCHLIST_LIST_COLOR = { achat:'#4FD1A5', idee:'#D9A441', surveiller:'#4A9FE0', analyser:'#8B7FE8' };
+function sectorEntrySecteurRaw(nom){
+  const hist = companies[nom];
+  if (hist) return hist[hist.length - 1].secteur;
+  const r = rankingSummaryData.find(e => e.nom === nom);
+  return r ? r.secteur : null;
+}
 function renderSectorView(){
   const grid = document.getElementById('sectorGrid');
   if (!grid) return;
@@ -4101,20 +4114,27 @@ function renderSectorView(){
   GICS_SECTORS.forEach(s => buckets[s.key] = []);
   buckets['autre'] = [];
 
-  Object.keys(companies).forEach(nom => {
-    const hist = companies[nom];
-    const latest = hist[hist.length - 1];
-    const key = normalizeSector(latest.secteur) || 'autre';
-    buckets[key].push({ nom, logo: latest.lienImage, secteurBrut: latest.secteur });
+  const names = new Set(Object.keys(companies));
+  WATCHLIST_LISTS.forEach(key => (watchlistStore[key] || []).forEach(nom => names.add(nom)));
+
+  names.forEach(nom => {
+    const secteurRaw = sectorEntrySecteurRaw(nom);
+    const listKey = watchlistLocationOf(nom);
+    const bucketKey = normalizeSector(secteurRaw) || 'autre';
+    buckets[bucketKey].push({ nom, logo: companyLogoUrl(nom), listKey });
   });
 
   const allBuckets = GICS_SECTORS.concat([{ key:'autre', label:'Autre / non classé' }]);
 
   grid.innerHTML = allBuckets.map(sec => {
-    const list = buckets[sec.key];
+    const list = buckets[sec.key].sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
     const logosHtml = list.length === 0
       ? '<div class="sector-empty">Aucune entreprise</div>'
-      : list.map(c => `<div class="sector-logo" title="${c.nom.replace(/"/g,'&quot;')}" data-nom="${c.nom.replace(/"/g,'&quot;')}"><img src="${c.logo || ''}" alt="${c.nom.replace(/"/g,'&quot;')}"></div>`).join('');
+      : list.map(c => {
+          const ring = c.listKey ? `box-shadow:0 0 0 2px ${WATCHLIST_LIST_COLOR[c.listKey]};` : '';
+          const listLabel = c.listKey ? ` · ${WATCHLIST_LABELS[c.listKey] || c.listKey}` : '';
+          return `<div class="sector-logo" style="${ring}" title="${c.nom.replace(/"/g,'&quot;')}${listLabel}" data-nom="${c.nom.replace(/"/g,'&quot;')}"><img src="${c.logo || ''}" alt="${c.nom.replace(/"/g,'&quot;')}"></div>`;
+        }).join('');
     return `<div class="sector-box"><h3>${sec.label}</h3><div class="count">${list.length} entreprise${list.length>1?'s':''}</div><div class="sector-companies">${logosHtml}</div></div>`;
   }).join('');
 }
@@ -14874,7 +14894,7 @@ function renderWolfLaboAddToListMenu(){
 }
 
 async function loadWolfLaboSample(){
-  document.getElementById('wolfLaboChartTitle').textContent = 'Coca-Cola (KO) — échantillon de test';
+  document.getElementById('wolfLaboChartTitle').textContent = 'Coca-Cola (KO)';
   try{
     if (!wolfLaboSampleData){
       const res = await fetch('data/labo-sample-ko.json', { cache:'no-store' });

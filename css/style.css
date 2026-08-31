@@ -952,6 +952,13 @@
   .labo-layout{display:grid;grid-template-columns:1fr 280px;gap:16px;align-items:start;}
   @media (max-width:1100px){ .labo-layout{grid-template-columns:1fr;} }
   .labo-chart-card.labo-fullscreen{position:fixed;inset:0;z-index:1200;border-radius:0;overflow-y:auto;max-height:100vh;}
+  /* Le conteneur du graphique restait figé à sa hauteur normale (440px, fixée en dur
+     dans le HTML) même une fois la carte passée en plein écran — le reste de l'écran
+     restait vide en dessous (bug remonté : "près de la moitié de l'écran qui n'est pas
+     utilisé"). Même mécanisme que .chart-fullscreen .chart-holder ci-dessous (déjà en
+     place et fonctionnel pour les autres graphiques) : !important nécessaire pour
+     l'emporter sur le style inline height:440px posé sur #wolfLaboChartHolder. */
+  .labo-chart-card.labo-fullscreen #wolfLaboChartHolder{height:calc(100vh - 240px) !important;min-height:320px;}
   /* Réutilisable pour n'importe quelle .chart-card (demande explicite : "il faut que
      j'ai la possibilité d'agrandir... déjà le graphique de cours" — même mécanisme
      que .labo-fullscreen ci-dessus, nom générique pour pouvoir l'étendre à d'autres
