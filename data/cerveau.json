@@ -2584,7 +2584,7 @@
         "id": "c-tech-complete",
         "nom": "Technologies — du silicium à la sécurité",
         "sousSecteurPath": [],
-        "rev": 4,
+        "rev": 5,
         "phases": [
           {
             "nom": "Outils de Conception & Propriété Intellectuelle",
@@ -2681,7 +2681,7 @@
             },
             "entreprises": [
               {
-                "nom": "Taiwan Semiconductor",
+                "nom": "Taiwan Semiconductor (ADR)",
                 "image": "data/logos/TSM.png",
                 "legende": "Taïwan — fabrique plus de 90% des puces les plus avancées au monde (moins de 5 nanomètres) : le vrai goulot d'étranglement géopolitique de toute l'industrie tech.",
                 "width": 220,
@@ -3736,5 +3736,444 @@
     ]
   },
   "notes": {},
-  "analyses": {}
+  "analyses": {
+    "ASML": [
+      {
+        "id": "v-goulot-pilot-version-1",
+        "label": "Version 1",
+        "dateCreated": "2026-08-31",
+        "dateModified": "2026-08-31",
+        "sections": {
+          "presentation": {
+            "texte": "ASML (Pays-Bas) conçoit et fabrique les machines de lithographie qui gravent les circuits sur les plaquettes de silicium — l'équipement le plus critique de toute la chaîne de fabrication des semi-conducteurs. Depuis 2019, ASML est seule au monde à produire des scanners EUV (extrême ultraviolet) en volume, la seule technologie capable de graver les transistors les plus fins (5nm, 3nm, 2nm) utilisés par TSMC, Samsung et Intel pour leurs puces les plus avancées.",
+            "images": []
+          },
+          "secteursActivite": {
+            "texte": "Deux familles de machines : DUV (lithographie ultraviolet profond, technologie plus ancienne mais toujours utilisée pour les nœuds moins avancés et la mémoire) et EUV (extrême ultraviolet, réservée aux nœuds les plus fins). L'EUV est le moteur de croissance : chaque nouvelle génération de puce plus fine nécessite plus de machines EUV, et la prochaine génération (High-NA EUV) est déjà en cours de déploiement chez les plus gros clients.",
+            "images": []
+          },
+          "marche": {
+            "texte": "ASML détient 100% du marché de la lithographie EUV et environ 83% de l'ensemble du marché de la lithographie (DUV+EUV combinés) en 2025 — un quasi-monopole absolu sur l'équipement le plus stratégique de toute l'industrie des semi-conducteurs.",
+            "images": []
+          },
+          "moat": {
+            "texte": "Barrière technologique considérée comme l'une des plus profondes de l'industrie mondiale : plus de 20 ans de R&D cumulée, des milliers de brevets, et une machine EUV assemble des centaines de milliers de composants avec une précision inférieure au nanomètre. Nikon et Canon, les deux autres grands fabricants historiques de lithographie, sont restés sur la technologie DUV et n'ont jamais réussi à commercialiser un système EUV viable.",
+            "images": []
+          },
+          "positionChaine": {
+            "texte": "ASML vend directement aux fonderies de pointe (TSMC, Samsung, Intel) — sans ses machines EUV, aucune de ces fonderies ne peut graver un nœud plus fin que ce que permet la lithographie DUV (~7nm). Toute la chaîne avale/aval (fabless → fonderie → assemblage → produit fini) dépend in fine de la disponibilité de ces machines. Position la plus en amont possible de la chaîne des semi-conducteurs de pointe.",
+            "images": []
+          },
+          "substituabilite": {
+            "texte": "Aucun substitut crédible n'existe pour l'EUV — c'est un monopole technologique, pas seulement commercial. Le coût de changement pour un client est en réalité une impossibilité : il n'y a nulle part où aller. Concentration du marché : 100% sur l'EUV. Coût et temps de remplacement d'ASML elle-même par un nouvel entrant : des dizaines de milliards de dollars et probablement plus d'une décennie de R&D, sans certitude de succès — Intel et d'autres ont tenté par le passé de développer des approches alternatives sans jamais atteindre la maturité commerciale de l'EUV ASML.",
+            "images": []
+          },
+          "profondeurGoulot": {
+            "texte": "« Goulot dans le goulot » : ASML dépend elle-même de Zeiss SMT (Allemagne, filiale privée de Carl Zeiss AG), seul fournisseur mondial des systèmes optiques de précision extrême sans lesquels un scanner EUV ne peut pas être assemblé — voir la fiche Zeiss SMT et la chaîne Technologies du Cerveau numérique. Goulot direct (vente directe aux fonderies) ET systémique : les puces gravées grâce aux machines ASML irriguent l'IA, les data centers, les smartphones, l'automobile haut de gamme et la défense — pas un seul secteur. Durabilité estimée à au moins toute la décennie 2020-2030 : la feuille de route High-NA EUV est déjà engagée sans concurrent visible à l'horizon. Conclusion : goulot d'étranglement confirmé, parmi les plus purs de l'économie mondiale. Si ASML disparaissait demain, la production de toute puce de pointe (IA en tête) s'arrêterait net en quelques mois — le temps des stocks existants — sans alternative crédible avant probablement une décennie.",
+            "images": []
+          },
+          "perspectives": {
+            "texte": "Portefeuille de commandes de 38,8 Md€ fin 2025 (dont 7,4 Md€ rien qu'en commandes EUV), guidance 2026 relevée à 36-40 Md€ de chiffre d'affaires malgré les restrictions d'exportation vers la Chine — la demande liée à l'IA et au calcul avancé reste le principal moteur de croissance des prochaines années.",
+            "images": []
+          },
+          "risques": {
+            "texte": "Concentration extrême de la base clients (TSMC, Samsung, Intel, Micron, SK Hynix, Samsung représentent l'essentiel du chiffre d'affaires) — un ralentissement cyclique du secteur des semi-conducteurs affecte directement ASML. Restrictions géopolitiques (export de l'EUV vers la Chine interdit depuis 2019, DUV avancé restreint depuis) : risque politique/réglementaire réel, mais qui renforce plutôt qu'il n'affaiblit la position de goulot vis-à-vis du reste du monde occidental. Concurrence émergente évoquée fin 2025 par certains analystes (24/7 Wall St., déc. 2025) — non confirmée à ce stade, à surveiller plutôt qu'à intégrer comme un fait acquis.",
+            "images": []
+          },
+          "ratios": {
+            "texte": "",
+            "images": []
+          },
+          "conclusion": {
+            "texte": "Goulot d'étranglement confirmé et systémique. Position structurelle exceptionnelle (monopole technologique vérifié, pas juste une domination commerciale), moat parmi les plus profonds de l'économie mondiale, durabilité estimée à au moins une décennie. Reste à croiser avec la qualité financière (déjà excellente, voir Quality Score calculé) et surtout la valorisation — le marché price déjà largement cette position, l'attractivité dépendra du point d'entrée.",
+            "images": []
+          }
+        },
+        "revenusPays": [],
+        "revenusSecteurs": [],
+        "actionnariat": [],
+        "concurrents": [],
+        "bottleneckScope": "systemique",
+        "scores": {
+          "bottleneck": {
+            "value": 98,
+            "rationale": "Monopole technologique vérifié (100% EUV, ~83% lithographie totale), pas commercial — aucun substitut n'existe, pas seulement aucun concurrent moins cher. Barrières à l'entrée quasi-infranchissables (20+ ans de R&D, dizaines de milliards de $ nécessaires pour rattraper). Goulot systémique : irrigue IA, data centers, smartphones, automobile, défense. Seul point d'incertitude (d'où confiance forte plutôt que maximale) : une concurrence émergente évoquée fin 2025, non confirmée.",
+            "confidence": "forte",
+            "verified": true,
+            "sources": [
+              {
+                "title": "ASML Is the Silent Monopoly Behind the Entire Tech Industry — The Motley Fool",
+                "url": "https://www.fool.com/investing/2025/12/12/asml-is-the-silent-monopoly-behind-the-entire-tech/",
+                "claim": "ASML holds 100% of the EUV equipment market for 5nm/3nm/2nm production, sole supplier of EUV scanners.",
+                "date": "2026-08-31"
+              },
+              {
+                "title": "ASML: The Machine That Powers the AI Economy — LongYield",
+                "url": "https://longyield.substack.com/p/asml-the-machine-that-powers-the",
+                "claim": "ASML controls ~83% of all worldwide lithography sales as of 2025; backlog EUR 38.8B, EUV bookings EUR 7.4B.",
+                "date": "2026-08-31"
+              }
+            ]
+          },
+          "quality": {
+            "value": null,
+            "rationale": ""
+          },
+          "valuation": {
+            "value": null,
+            "rationale": "",
+            "updatedAt": null
+          }
+        }
+      }
+    ],
+    "Taiwan Semiconductor (ADR)": [
+      {
+        "id": "v-goulot-pilot-version-1",
+        "label": "Version 1",
+        "dateCreated": "2026-08-31",
+        "dateModified": "2026-08-31",
+        "sections": {
+          "presentation": {
+            "texte": "TSMC (Taiwan Semiconductor Manufacturing Company) est le premier fondeur mondial de semi-conducteurs — elle fabrique physiquement les puces conçues par les entreprises « fabless » qui ne possèdent pas leurs propres usines (Apple, NVIDIA, AMD, Qualcomm, Broadcom...). La quasi-totalité des puces de pointe utilisées dans les GPU d'intelligence artificielle et les smartphones haut de gamme sont fabriquées chez TSMC.",
+            "images": []
+          },
+          "secteursActivite": {
+            "texte": "Fonderie pure (ne conçoit aucune puce en propre, ne vend qu'à des clients fabless) sur toute la gamme de nœuds, du matures aux plus avancés (2nm en montée en production). Les nœuds avancés (7nm et en-dessous) représentaient 74% du chiffre d'affaires wafer en 2025 et devraient dépasser 75% en 2026 avec la montée en puissance du 2nm.",
+            "images": []
+          },
+          "marche": {
+            "texte": "TSMC contrôle environ 70-72% du marché mondial de la fonderie pure (Samsung loin derrière, ~7%), et plus de 90% du marché sur les nœuds les plus avancés (3nm/2nm) — une dominance quasi-totale sur la frontière technologique, même si sa part « toutes générations confondues » est moins extrême.",
+            "images": []
+          },
+          "moat": {
+            "texte": "Décennies d'avance en rendement de production (yield) sur les nœuds avancés — l'écart avec Samsung Foundry et Intel Foundry reste significatif malgré leurs investissements massifs. Économies d'échelle considérables et relation de confiance construite sur des décennies avec les plus gros clients fabless mondiaux (Apple en particulier).",
+            "images": []
+          },
+          "positionChaine": {
+            "texte": "Position centrale entre les concepteurs fabless (amont) et l'assemblage/test puis les produits finis (aval) — sans capacité de fonderie de pointe, un concepteur fabless ne peut tout simplement pas produire sa puce la plus avancée. NVIDIA, Apple, AMD, Qualcomm dépendent tous directement de TSMC pour leurs produits phares.",
+            "images": []
+          },
+          "substituabilite": {
+            "texte": "Sur les nœuds les plus avancés, seuls Samsung Foundry et Intel Foundry sont théoriquement capables de produire à cette finesse, mais avec des rendements historiquement inférieurs et une confiance moindre des plus gros clients fabless. Coût de changement très élevé : une puce est co-conçue avec le procédé précis du fondeur, migrer nécessite souvent un re-design partiel, plusieurs années, sans garantie de rendement équivalent. Barrières à l'entrée massives : une seule usine de pointe coûte plusieurs dizaines de milliards de dollars et des années de montée en rendement.",
+            "images": []
+          },
+          "profondeurGoulot": {
+            "texte": "TSMC dépend elle-même de goulots en amont — ASML pour la lithographie EUV (voir sa fiche), et un petit nombre de fournisseurs de matériaux ultra-spécifiques (wafers de silicium, photoresist EUV — voir la chaîne Technologies du Cerveau numérique). Goulot direct et systémique : irrigue à la fois le calcul haute performance/IA, les smartphones, l'automobile et la défense. Durabilité estimée à au moins la fin de la décennie compte tenu du retard persistant de Samsung/Intel et des investissements continus de TSMC (extensions aux États-Unis, R&D 2nm/1.4nm). Conclusion : goulot d'étranglement confirmé, quasi-monopolistique sur les nœuds de pointe (>90% à 3nm/2nm) même si sa part toutes générations confondues (~70-72%) est moins extrême que celle d'ASML — la dépendance mondiale à TSMC pour tout calcul avancé, IA en tête, reste structurellement critique.",
+            "images": []
+          },
+          "perspectives": {
+            "texte": "2nm en montée en production depuis le second semestre 2025, hausses de prix de 3-5% annoncées sur le sub-5nm pour 2026 répercutées sur l'ensemble des clients (NVIDIA, AMD, Apple, Qualcomm) sans perte de volume signalée — signe direct de pricing power.",
+            "images": []
+          },
+          "risques": {
+            "texte": "Concentration géographique majeure à Taïwan — risque géopolitique (tensions avec la Chine) identifié comme le principal risque structurel, en partie adressé par la diversification des sites de production (Arizona, Japon). Cyclicité du secteur des semi-conducteurs. Dépendance envers un nombre réduit de très gros clients (Apple, NVIDIA représentent une part significative du chiffre d'affaires).",
+            "images": []
+          },
+          "ratios": {
+            "texte": "",
+            "images": []
+          },
+          "conclusion": {
+            "texte": "Goulot d'étranglement confirmé sur les nœuds de pointe, moins extrême qu'ASML (part de marché élevée mais pas un monopole technologique pur — Samsung et Intel existent, même en retard). Position structurelle très forte et pricing power démontré. À croiser avec Quality/Valuation calculés pour juger du point d'entrée.",
+            "images": []
+          }
+        },
+        "revenusPays": [],
+        "revenusSecteurs": [],
+        "actionnariat": [],
+        "concurrents": [],
+        "bottleneckScope": "systemique",
+        "scores": {
+          "bottleneck": {
+            "value": 95,
+            "rationale": "Part de marché vérifiée >90% sur les nœuds 3nm/2nm (frontière technologique), ~70-72% toutes générations confondues. Substituts (Samsung, Intel) existent mais avec un retard de rendement documenté — d'où un score légèrement inférieur à ASML plutôt qu'un monopole pur. Coût/temps de changement de fondeur très élevé pour un client fabless (co-conception puce/procédé). Goulot systémique : IA, calcul haute performance, smartphones, automobile, défense.",
+            "confidence": "forte",
+            "verified": true,
+            "sources": [
+              {
+                "title": "TSMC 2025 Update: Riding the AI Wave — Semiwiki / Counterpoint Research",
+                "url": "https://counterpointresearch.com/en/insights/global-semiconductor-foundry-market-share",
+                "claim": "TSMC captured ~70-72% of the global pure-foundry market in 2025; Samsung trails at ~7%.",
+                "date": "2026-08-31"
+              },
+              {
+                "title": "TSMC, Samsung, and Intel: Who's Leading the Semiconductor Race? — PatentPC",
+                "url": "https://patentpc.com/blog/tsmc-samsung-and-intel-whos-leading-the-semiconductor-race-latest-market-share-data",
+                "claim": "TSMC's market share at 3nm and 2nm is upwards of 90%.",
+                "date": "2026-08-31"
+              }
+            ]
+          },
+          "quality": {
+            "value": null,
+            "rationale": ""
+          },
+          "valuation": {
+            "value": null,
+            "rationale": "",
+            "updatedAt": null
+          }
+        }
+      }
+    ],
+    "Synopsys": [
+      {
+        "id": "v-goulot-pilot-version-1",
+        "label": "Version 1",
+        "dateCreated": "2026-08-31",
+        "dateModified": "2026-08-31",
+        "sections": {
+          "presentation": {
+            "texte": "Synopsys (États-Unis) est, avec Cadence, l'un des deux leaders mondiaux des logiciels EDA (Electronic Design Automation) — les outils sans lesquels aucune puce moderne ne peut être conçue. Toute entreprise fabless (NVIDIA, Apple, AMD, Qualcomm...) et toute fonderie de pointe utilisent ces logiciels pour dessiner, simuler et vérifier un circuit avant sa fabrication.",
+            "images": []
+          },
+          "secteursActivite": {
+            "texte": "Outils de conception (synthèse logique, placement-routage), vérification (simulation avant fabrication, une erreur non détectée coûte des dizaines de millions de $ en masques de fabrication perdus), et propriété intellectuelle de conception réutilisable. Acquisition d'Ansys (35 Md$, finalisée juillet 2025) pour étendre vers la simulation multiphysique.",
+            "images": []
+          },
+          "marche": {
+            "texte": "Synopsys et Cadence détiennent ensemble environ 85% du marché mondial de l'EDA (Synopsys et Cadence à environ 30-38% chacun selon les segments mesurés, Siemens EDA loin derrière avec ~13%) — un duopole avec un troisième acteur réel mais nettement plus petit, pas un monopole pur.",
+            "images": []
+          },
+          "moat": {
+            "texte": "Taux de rétention client proche de 100% — un client qui arrête d'utiliser Synopsys, c'est presque toujours parce qu'il a cessé d'exister, pas parce qu'il est parti chez un concurrent. Le logiciel est imbriqué dans le processus de conception sur des décennies (durée de vie client estimée à 20 ans et plus), avec un modèle d'abonnement représentant 80-85% du chiffre d'affaires.",
+            "images": []
+          },
+          "positionChaine": {
+            "texte": "Position tout en amont de la chaîne des semi-conducteurs — avant même la conception physique d'une puce : sans ces logiciels, un fabless ne peut tout simplement pas dessiner sa puce. Vend à la quasi-totalité des entreprises fabless et des fonderies mondiales.",
+            "images": []
+          },
+          "substituabilite": {
+            "texte": "Un troisième acteur crédible existe (Siemens EDA, ~13% du marché) — donc pas un monopole absolu comme ASML, mais un duopole dominant. Le coût de changement est néanmoins considérable : migrer un flux de conception de puce vers un autre outil EDA en cours de route représente un risque massif (re-vérification complète, risque de bug non détecté) que peu de clients acceptent de prendre. D'où la rétention quasi totale malgré l'existence d'une alternative sur le papier.",
+            "images": []
+          },
+          "profondeurGoulot": {
+            "texte": "Goulot direct, transversal à toute l'industrie des semi-conducteurs (logique, mémoire, analogique) et donc indirectement à l'IA, aux data centers, à l'automobile. Durabilité élevée compte tenu de la rétention quasi parfaite et de l'imbrication du logiciel dans des flux de conception longs. Conclusion : goulot d'étranglement confirmé mais moins extrême qu'un monopole pur — un duopole avec Cadence, chacun bénéficiant individuellement d'une très forte rétention plutôt que d'une exclusivité totale.",
+            "images": []
+          },
+          "perspectives": {
+            "texte": "Marché EDA total estimé à 18 Md$ en 2025, croissance attendue vers 28-30 Md$ d'ici 2030, tiré par la complexité croissante des puces IA. L'acquisition d'Ansys élargit l'empreinte vers la simulation multiphysique (au-delà du seul silicium).",
+            "images": []
+          },
+          "risques": {
+            "texte": "Cyclicité indirecte liée aux investissements R&D des clients semi-conducteurs. Risque réglementaire (export vers la Chine, déjà restreint par le passé). Concurrence de Siemens EDA, plus significative que sur le marché d'ASML.",
+            "images": []
+          },
+          "ratios": {
+            "texte": "",
+            "images": []
+          },
+          "conclusion": {
+            "texte": "Goulot d'étranglement confirmé, duopole avec Cadence (~85% cumulés), rétention quasi parfaite. Moins extrême qu'ASML (troisième acteur réel, Siemens EDA) — score en conséquence légèrement inférieur.",
+            "images": []
+          }
+        },
+        "revenusPays": [],
+        "revenusSecteurs": [],
+        "actionnariat": [],
+        "concurrents": [],
+        "bottleneckScope": "systemique",
+        "scores": {
+          "bottleneck": {
+            "value": 88,
+            "rationale": "Duopole vérifié (~85% cumulé avec Cadence), rétention client quasi-totale (quasi-100%), switching cost élevé malgré l'existence d'un 3e acteur réel (Siemens EDA ~13%) — d'où un score fort mais pas maximal, à la différence d'un monopole pur comme ASML.",
+            "confidence": "forte",
+            "verified": true,
+            "sources": [
+              {
+                "title": "Synopsys vs Cadence (SNPS vs CDNS): Inside the EDA Duopoly — heygotrade",
+                "url": "https://www.heygotrade.com/en/blog/synopsys-vs-cadence-snps-vs-cdns-eda-duopoly-ai-chip-boom/",
+                "claim": "Synopsys and Cadence together own roughly 85% of the global EDA software market.",
+                "date": "2026-08-31"
+              },
+              {
+                "title": "Cadence & Synopsys: The duopoly that never loses a client — arvy's weekly",
+                "url": "https://arvy.ch/en/cadence-and-synopsys-the-duopoly-that-never-loses-a-client/",
+                "claim": "Near-100% retention rates, 80-85% recurring revenue; customers leave only by going out of business.",
+                "date": "2026-08-31"
+              }
+            ]
+          },
+          "quality": {
+            "value": null,
+            "rationale": ""
+          },
+          "valuation": {
+            "value": null,
+            "rationale": "",
+            "updatedAt": null
+          }
+        }
+      }
+    ],
+    "Cadence Design Systems": [
+      {
+        "id": "v-goulot-pilot-version-1",
+        "label": "Version 1",
+        "dateCreated": "2026-08-31",
+        "dateModified": "2026-08-31",
+        "sections": {
+          "presentation": {
+            "texte": "Cadence Design Systems (États-Unis) est, avec Synopsys, l'autre moitié du duopole mondial des logiciels EDA (Electronic Design Automation) — mêmes outils indispensables à la conception de toute puce moderne.",
+            "images": []
+          },
+          "secteursActivite": {
+            "texte": "Outils de conception et de vérification de circuits, IP réutilisable, et extension vers la simulation multiphysique (acquisition Hexagon, 3,16 Md$, annoncée 2025) en réponse directe au rachat d'Ansys par Synopsys.",
+            "images": []
+          },
+          "marche": {
+            "texte": "~85% du marché EDA mondial cumulé avec Synopsys (répartition proche entre les deux selon le segment mesuré), Siemens EDA troisième acteur réel avec ~13%.",
+            "images": []
+          },
+          "moat": {
+            "texte": "Même dynamique de rétention quasi parfaite que Synopsys — un logiciel EDA imbriqué dans un flux de conception sur des décennies, modèle d'abonnement récurrent, coût de migration prohibitif pour le client.",
+            "images": []
+          },
+          "positionChaine": {
+            "texte": "Même position que Synopsys : tout en amont de la chaîne des semi-conducteurs, avant la fabrication physique — indispensable à la quasi-totalité des fabless et fonderies mondiales.",
+            "images": []
+          },
+          "substituabilite": {
+            "texte": "Mêmes caractéristiques que Synopsys : un vrai troisième acteur existe (Siemens EDA), donc pas un monopole absolu, mais un coût de changement très élevé qui maintient une rétention quasi totale en pratique.",
+            "images": []
+          },
+          "profondeurGoulot": {
+            "texte": "Goulot direct et transversal à toute l'industrie des semi-conducteurs. Durabilité élevée pour les mêmes raisons que Synopsys (rétention quasi parfaite, imbrication longue durée). Conclusion : goulot d'étranglement confirmé, au même niveau que Synopsys — les deux forment ensemble un duopole structurel, pas juste deux concurrents parmi d'autres.",
+            "images": []
+          },
+          "perspectives": {
+            "texte": "Même dynamique de marché que Synopsys — croissance tirée par la complexité des puces IA, marché total 18 Md$ en 2025 vers 28-30 Md$ en 2030.",
+            "images": []
+          },
+          "risques": {
+            "texte": "Mêmes risques que Synopsys : cyclicité indirecte, risque réglementaire à l'export, concurrence de Siemens EDA.",
+            "images": []
+          },
+          "ratios": {
+            "texte": "",
+            "images": []
+          },
+          "conclusion": {
+            "texte": "Goulot d'étranglement confirmé, duopole avec Synopsys, même profil de risque/score.",
+            "images": []
+          }
+        },
+        "revenusPays": [],
+        "revenusSecteurs": [],
+        "actionnariat": [],
+        "concurrents": [],
+        "bottleneckScope": "systemique",
+        "scores": {
+          "bottleneck": {
+            "value": 88,
+            "rationale": "Identique à Synopsys : duopole vérifié (~85% cumulé), rétention quasi-totale, 3e acteur réel (Siemens EDA) empêchant un score maximal.",
+            "confidence": "forte",
+            "verified": true,
+            "sources": [
+              {
+                "title": "Synopsys vs Cadence (SNPS vs CDNS): Inside the EDA Duopoly — heygotrade",
+                "url": "https://www.heygotrade.com/en/blog/synopsys-vs-cadence-snps-vs-cdns-eda-duopoly-ai-chip-boom/",
+                "claim": "Synopsys and Cadence together own roughly 85% of the global EDA software market.",
+                "date": "2026-08-31"
+              }
+            ]
+          },
+          "quality": {
+            "value": null,
+            "rationale": ""
+          },
+          "valuation": {
+            "value": null,
+            "rationale": "",
+            "updatedAt": null
+          }
+        }
+      }
+    ],
+    "Zeiss SMT": [
+      {
+        "id": "v-goulot-pilot-version-1",
+        "label": "Version 1",
+        "dateCreated": "2026-08-31",
+        "dateModified": "2026-08-31",
+        "sections": {
+          "presentation": {
+            "texte": "Carl Zeiss SMT (Allemagne, filiale du groupe privé Carl Zeiss AG) fabrique les systèmes optiques de précision extrême qui équipent les scanners EUV d'ASML — sans ces optiques, ASML elle-même ne peut pas construire ses machines. C'est l'exemple le plus pur de « goulot dans le goulot » de toute la chaîne des semi-conducteurs.",
+            "images": []
+          },
+          "secteursActivite": {
+            "texte": "Systèmes optiques ultra-précis (miroirs multicouches réfléchissant la lumière EUV avec une tolérance inférieure au nanomètre) — un domaine où la précision requise dépasse ce que la quasi-totalité des fabricants d'optique au monde savent produire.",
+            "images": []
+          },
+          "marche": {
+            "texte": "Fournisseur externe unique des systèmes optiques principaux d'ASML pour l'EUV — un monopole vérifié, pas une estimation. ASML détient d'ailleurs une participation de 24,9% dans Carl Zeiss SMT (accord de 1 Md€), signe du degré de dépendance mutuelle structurelle entre les deux entreprises.",
+            "images": []
+          },
+          "moat": {
+            "texte": "Savoir-faire optique accumulé sur des décennies, développé en partenariat exclusif avec ASML depuis les accords initiaux de 1997 — une barrière technologique renforcée par une relation contractuelle et capitalistique verrouillée dans la durée.",
+            "images": []
+          },
+          "positionChaine": {
+            "texte": "Fournisseur direct d'ASML (donc indirect de TSMC, Samsung, Intel, et de toute puce de pointe mondiale) — la position la plus en amont possible de toute la chaîne des semi-conducteurs, un cran avant même ASML.",
+            "images": []
+          },
+          "substituabilite": {
+            "texte": "Aucun autre fabricant au monde ne produit ce niveau d'optique de précision pour l'EUV à l'échelle industrielle — un monopole technologique confirmé, analogue à celui d'ASML elle-même. Le lien contractuel et capitalistique avec ASML (participation de 24,9%) rend un changement de fournisseur d'autant plus improbable.",
+            "images": []
+          },
+          "profondeurGoulot": {
+            "texte": "Le goulot le plus profond identifié dans toute la chaîne Technologies du Cerveau numérique : ASML (déjà un goulot quasi-pur) dépend elle-même entièrement de Zeiss SMT pour l'optique EUV. Goulot indirect (ne vend pas directement aux fonderies) mais systémique par transitivité — tout ce qui dépend d'ASML dépend, un cran plus loin, de Zeiss SMT. Durabilité très élevée : la relation ASML-Zeiss est verrouillée contractuellement et capitalistiquement depuis près de 30 ans. Conclusion : goulot d'étranglement confirmé et rarissime — position quasi-monopolistique sur une brique technologique elle-même indispensable à un autre quasi-monopole.",
+            "images": []
+          },
+          "perspectives": {
+            "texte": "Croissance directement liée à celle d'ASML et à la demande de scanners EUV et High-NA EUV — filiale privée, pas de communication financière séparée publique détaillée (Carl Zeiss AG reste une fondation privée).",
+            "images": []
+          },
+          "risques": {
+            "texte": "Filiale privée d'un groupe non coté — pas d'exposition actions directe possible pour un investisseur (à noter explicitement : Zeiss SMT n'est pas investissable en bourse, contrairement aux autres entités de cette liste — sa valeur se reflète indirectement dans celle d'ASML). Concentration extrême du client final (ASML représente l'essentiel de son activité EUV).",
+            "images": []
+          },
+          "ratios": {
+            "texte": "",
+            "images": []
+          },
+          "conclusion": {
+            "texte": "Goulot d'étranglement confirmé et exceptionnellement profond — mais NON investissable directement (filiale privée, non cotée). À garder dans la cartographie pour la compréhension de la chaîne de dépendance, pas comme candidate directe de watchlist actions.",
+            "images": []
+          }
+        },
+        "revenusPays": [],
+        "revenusSecteurs": [],
+        "actionnariat": [],
+        "concurrents": [],
+        "bottleneckScope": "systemique",
+        "scores": {
+          "bottleneck": {
+            "value": 97,
+            "rationale": "Fournisseur unique vérifié des optiques EUV d'ASML, relation verrouillée contractuellement/capitalistiquement depuis 1997. Goulot indirect mais systémique par transitivité (tout ce qui dépend d'ASML en dépend). Non investissable directement (filiale privée) — n'affecte pas le score structurel mais limite l'usage pratique pour une watchlist actions.",
+            "confidence": "forte",
+            "verified": true,
+            "sources": [
+              {
+                "title": "ZEISS and ASML Strengthen Partnership for Next Generation of EUV Lithography — ASML",
+                "url": "https://www.asml.com/en/news/press-releases/2016/zeiss-and-asml-strengthen-partnership-for-next-generation-of-euv-lithography",
+                "claim": "Zeiss is the sole external supplier of ASML's main optical systems; ASML holds a 24.9% stake in Carl Zeiss SMT.",
+                "date": "2026-08-31"
+              }
+            ]
+          },
+          "quality": {
+            "value": null,
+            "rationale": ""
+          },
+          "valuation": {
+            "value": null,
+            "rationale": "",
+            "updatedAt": null
+          }
+        }
+      }
+    ]
+  }
 }

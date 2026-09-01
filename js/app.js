@@ -12286,6 +12286,17 @@ function renderCerveauGoulots(box){
   box.querySelectorAll('.cerveau-goulots-row').forEach(row => {
     row.addEventListener('click', () => openAnalyse(row.dataset.nom));
   });
+  // Quality/Valuation dépendent de companies[nom] (hist Sheet OU synthétisé depuis FMP,
+  // voir ensureSyntheticCompanyData) — jamais peuplé pour une entreprise FMP-only jamais
+  // visitée via l'onglet Analyse, d'où "Donnée insuffisante" au premier passage ici.
+  // Charge en arrière-plan puis re-rend une seule fois prêt (idempotent : le prochain
+  // rendu ne retentera que ce qui manque encore).
+  const missing = filtered.filter(r => r.qualityValue == null && !companies[r.nom] && rankingSummaryData.some(e => e.nom === r.nom));
+  if (missing.length){
+    Promise.all(missing.map(r => ensureSyntheticCompanyData(r.nom))).then(results => {
+      if (results.some(Boolean) && cerveauView.level === 'goulots') renderCerveau();
+    });
+  }
 }
 
 // Confirmation en 2 clics inline (jamais confirm() natif, voir "Pièges techniques"
@@ -13870,6 +13881,12 @@ function renderAnalyse(){
   wireAnalyseSectionEvents();
   wireAnalyseScoresEvents();
   renderAnalyseCharts(v);
+  // Même lazy-load que la vue Goulots (voir son commentaire) — sans ça, Quality reste
+  // "Donnée insuffisante" pour toute entreprise FMP-only jamais visitée via Analyse.
+  if (!companies[analyseEntite] && rankingSummaryData.some(e => e.nom === analyseEntite)){
+    const openedFor = analyseEntite;
+    ensureSyntheticCompanyData(openedFor).then(ok => { if (ok && analyseEntite === openedFor) renderAnalyse(); });
+  }
 }
 
 function saveAnalyseVersion(){
