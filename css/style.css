@@ -1052,6 +1052,11 @@
   .labo-dropdown-menu button:hover{border-color:var(--gold);color:var(--text);}
   .labo-dropdown-menu button.active{background:linear-gradient(135deg, var(--gold-2) 0%, var(--gold) 100%);color:#1a1305;border-color:var(--gold);box-shadow:none;}
   .labo-dropdown-menu button.labo-chip-remove{background:rgba(229,99,107,0.08);border-color:rgba(229,99,107,0.35);color:var(--text-dim);}
+  .stock-overlay-active-row{display:flex;align-items:center;gap:4px;margin-bottom:2px;}
+  .stock-overlay-active-row .labo-chip-remove{flex:1;text-align:left;}
+  .stock-overlay-shift-input{width:44px;background:var(--panel);border:1px solid var(--hair);border-radius:6px;padding:3px 4px;color:var(--text);font-size:11px;text-align:right;}
+  .stock-overlay-shift-unit{font-size:10px;color:var(--text-faint);}
+  .stock-overlay-shift-preset{background:var(--panel);border:1px solid var(--hair);border-radius:6px;color:var(--text-dim);font-size:10px;padding:3px 2px;max-width:78px;}
   .labo-dropdown-menu button.labo-chip-remove:hover{background:rgba(229,99,107,0.18);border-color:var(--red);color:var(--text);}
   .labo-toggle-btn{font-family:var(--font-mono);font-size:11px;font-weight:600;padding:6px 12px;border-radius:14px;border:1px solid var(--hair);background:var(--panel-2);color:var(--text-dim);cursor:pointer;white-space:nowrap;}
   .labo-toggle-btn:hover{border-color:var(--gold);color:var(--text);}

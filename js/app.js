@@ -8347,13 +8347,27 @@ async function renderStockOverlays(){
     // intervalle de 2 ans plus loin. Fix : ne jamais envoyer à la série un point
     // antérieur à la toute première bougie chargée (ctx.minDate) — la superposition
     // reste visible sur toute la plage où il y a du prix, jamais au-delà.
+    // Décalage temporel optionnel (item.shiftDays, voir renderStockOverlayList/
+    // wireStockOverlayControls) : positif = la donnée apparaît plus TARD sur le
+    // graphique (aligne un indicateur avancé — ex. taux, liquidité — avec son effet
+    // différé sur le prix), négatif = plus TÔT. Décalage APPLIQUÉ avant le filtre
+    // ctx.minDate pour que l'alignement se juge dans l'espace de temps affiché, pas
+    // dans le calendrier d'origine de la donnée.
+    const shiftDays = item.shiftDays || 0;
     const data = raw.dates.slice(startIdx)
-      .map((d, i2) => ({ time:d, value: raw.values[startIdx + i2] }))
+      .map((d, i2) => ({ time: shiftDays ? shiftDateStr(d, shiftDays) : d, value: raw.values[startIdx + i2] }))
       .filter(p => p.value != null && isFinite(p.value) && (!ctx.minDate || p.time >= ctx.minDate));
     ctx.cache[id].setData(data);
   }
 }
 let stockOverlayRenderToken = 0;
+// Décale une date "AAAA-MM-JJ" de N jours (N peut être négatif) — utilisé pour l'étude
+// de délai/latence d'un indicateur macro sur le cours (voir renderStockOverlays()).
+function shiftDateStr(dateStr, days){
+  const d = new Date(dateStr + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
 
 // Recherche groupée par catégorie — catalogue trop large (macro + tout Documents
 // financiers + secteurs + entreprises) pour une liste à plat sans filtre, demande
@@ -8371,9 +8385,31 @@ function renderStockOverlayList(filterText, listBoxId, btnId){
   // soit la recherche en cours — demande explicite ("il faudrait que je puisse les
   // enlever") : avant ça, retirer une superposition obligeait à retaper exactement la
   // même recherche pour retomber sur l'entrée surlignée dans le catalogue.
+  // Décalage temporel par superposition (stockOverlayId, en jours, +/-) — demande
+  // explicite : "je puisse décaler de tant de jours... pour voir à quel moment la
+  // liquidité peut se déverser sur les marchés, à quel moment le taux d'intérêt se
+  // répercute sur les entreprises". Positif = la donnée apparaît plus TARD sur le
+  // graphique (aligne un indicateur avancé avec son effet différé sur le prix) ;
+  // négatif = plus TÔT. Appliqué dans renderStockOverlays() (voir shiftDateStr()).
   const activeHtml = stockOverlaySelected.length ? `
-    <div style="padding:3px 6px;color:var(--text-faint);font-size:9.5px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.04em;">Actives — cliquer pour retirer</div>
-    ${stockOverlaySelected.map(i => `<button type="button" class="labo-chip-remove" data-overlay-remove-type="${i.type}" data-overlay-remove-key="${escapeHtml(i.key)}">${escapeHtml(i.label)} ✕</button>`).join('')}
+    <div style="padding:3px 6px;color:var(--text-faint);font-size:9.5px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.04em;">Actives — décale/retire</div>
+    ${stockOverlaySelected.map(i => `
+      <div class="stock-overlay-active-row">
+        <button type="button" class="labo-chip-remove" data-overlay-remove-type="${i.type}" data-overlay-remove-key="${escapeHtml(i.key)}">${escapeHtml(i.label)} ✕</button>
+        <input type="number" class="stock-overlay-shift-input" data-shift-type="${i.type}" data-shift-key="${escapeHtml(i.key)}" value="${i.shiftDays || 0}" title="Décalage en jours (positif = apparaît plus tard, négatif = plus tôt)">
+        <span class="stock-overlay-shift-unit">j</span>
+        <select class="stock-overlay-shift-preset" data-shift-preset-type="${i.type}" data-shift-preset-key="${escapeHtml(i.key)}">
+          <option value="">Préréglage…</option>
+          <option value="7">+1 semaine</option>
+          <option value="30">+1 mois</option>
+          <option value="90">+1 trimestre</option>
+          <option value="180">+6 mois</option>
+          <option value="365">+1 an</option>
+          <option value="-7">-1 semaine</option>
+          <option value="-30">-1 mois</option>
+          <option value="-90">-1 trimestre</option>
+        </select>
+      </div>`).join('')}
     <div style="border-top:1px solid var(--hair);margin:4px 0;"></div>
   ` : '';
   let resultsHtml;
@@ -8789,6 +8825,26 @@ function wireStockOverlayControls(searchId, menuId, listBoxId, btnId){
     const idx = stockOverlaySelected.findIndex(s => s.type === type && s.key === key);
     if (idx === -1) stockOverlaySelected.push({ type, key, label: btn.textContent }); else stockOverlaySelected.splice(idx, 1);
     btn.classList.toggle('active', idx === -1);
+    renderStockOverlayList(searchEl.value, listBoxId, btnId);
+    renderStockOverlays();
+  });
+  // Décalage temporel (jours) par superposition active — champ libre + préréglages
+  // rapides (semaine/mois/trimestre/an), voir renderStockOverlayList() pour le HTML et
+  // renderStockOverlays()/shiftDateStr() pour l'application du décalage aux données.
+  menuEl.addEventListener('change', e => {
+    const shiftInput = e.target.closest('[data-shift-key]');
+    const presetSelect = e.target.closest('[data-shift-preset-key]');
+    if (!shiftInput && !presetSelect) return;
+    const type = (shiftInput || presetSelect).dataset.shiftType || (shiftInput || presetSelect).dataset.shiftPresetType;
+    const key = (shiftInput || presetSelect).dataset.shiftKey || (shiftInput || presetSelect).dataset.shiftPresetKey;
+    const item = stockOverlaySelected.find(s => s.type === type && s.key === key);
+    if (!item) return;
+    if (presetSelect && presetSelect.value !== ''){
+      item.shiftDays = parseInt(presetSelect.value, 10);
+    } else if (shiftInput){
+      const n = parseInt(shiftInput.value, 10);
+      item.shiftDays = isNaN(n) ? 0 : n;
+    }
     renderStockOverlayList(searchEl.value, listBoxId, btnId);
     renderStockOverlays();
   });
@@ -15939,20 +15995,36 @@ function exportWolfLaboExperiments(){
   URL.revokeObjectURL(url);
 }
 
+// Demande explicite : même charte que les autres exports (Cerveau numérique, panier de
+// graphiques, fiche entreprise) — voir brandedPdfHeader()/chainPdfPanelWrap(), pas le
+// print-section générique utilisé avant.
+function wolfLaboExperimentFieldHtml(label, value){
+  if (!value) return '';
+  return `<div class="chain-pdf-subphase">
+    <div class="chain-pdf-subphase-label">${label}</div>
+    <p style="margin:0;font-family:var(--font-body);font-size:11.5px;color:var(--text);line-height:1.5;">${escapeHtml(value)}</p>
+  </div>`;
+}
 function exportWolfLaboExperimentsAsPdf(){
-  const body = wolfLaboExperiments.map(exp => {
+  const panelsHtml = wolfLaboExperiments.map((exp, i) => {
     const ctx = exp.contexte || {};
     const overlaysLabel = (ctx.overlays || []).map(o => o.label).join(', ') || 'aucun';
-    return `<div class="print-section">
-      <h3>${escapeHtml(exp.titre)} — ${exp.date}</h3>
-      <p style="color:var(--text-dim);font-size:11px;">${escapeHtml(ctx.name || ctx.symbol || '—')} · Indicateurs : ${escapeHtml(overlaysLabel)} · ${escapeHtml(ctx.timeframe || '')}/${escapeHtml(ctx.range || '')}</p>
-      ${exp.chartImage ? `<img class="print-chart-img" src="${exp.chartImage}" alt="">` : ''}
-      ${exp.hypothese ? `<p><b>Hypothèse —</b> ${escapeHtml(exp.hypothese)}</p>` : ''}
-      ${exp.observation ? `<p><b>Observation —</b> ${escapeHtml(exp.observation)}</p>` : ''}
-      ${exp.conclusion ? `<p><b>Conclusion —</b> ${escapeHtml(exp.conclusion)}</p>` : ''}
-    </div>`;
+    const inner = `
+      <div class="chain-pdf-panel-tagline">${escapeHtml(ctx.name || ctx.symbol || '—')} · Indicateurs superposés : ${escapeHtml(overlaysLabel)} · ${escapeHtml(ctx.timeframe || '')}/${escapeHtml(ctx.range || '')} · ${exp.date}</div>
+      ${exp.chartImage ? `<img class="chain-pdf-chart-img" src="${exp.chartImage}" alt="">` : ''}
+      ${wolfLaboExperimentFieldHtml('Hypothèse', exp.hypothese)}
+      ${wolfLaboExperimentFieldHtml('Observation', exp.observation)}
+      ${wolfLaboExperimentFieldHtml('Conclusion', exp.conclusion)}`;
+    return chainPdfPanelWrap(exp.titre, inner, String(i + 1).padStart(2, '0'));
   }).join('');
-  exportSectionAsPdf("Wolf Labo — Journal d'expériences", null, body || '<p>Aucune expérience enregistrée.</p>');
+  const area = document.getElementById('printArea');
+  area.innerHTML = brandedPdfHeader(
+    'Wolf Labo — Recherche',
+    "Journal d'expériences",
+    `${wolfLaboExperiments.length} expérience${wolfLaboExperiments.length > 1 ? 's' : ''} enregistrée${wolfLaboExperiments.length > 1 ? 's' : ''} — Wolf Analysis`,
+    'Wolf Labo'
+  ) + (panelsHtml || '<p style="color:var(--text-dim);">Aucune expérience enregistrée.</p>') + brandedPdfFooter("Wolf Analysis — Wolf Labo, journal d'expériences généré automatiquement.");
+  printAreaAfterImagesLoad(area);
 }
 
 function initWolfLaboExperiments(){
