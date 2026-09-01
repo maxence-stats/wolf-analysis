@@ -6425,7 +6425,48 @@ const CREDIT_SERIES = [
   { key:'rate2y', shortLabel:'Taux 2 ans', seriesId:'DGS2', hidden:true, group:'taux' },
   { key:'rate10y', shortLabel:'Taux 10 ans', seriesId:'DGS10', hidden:true, group:'taux' },
   { key:'rateSpread', shortLabel:'Spread 10-2 ans', seriesId:'T10Y2Y', hidden:true, group:'taux' },
-  { key:'cpi', shortLabel:'Inflation (CPI, GA)', seriesId:'CPIAUCSL', deriveYoY:true, hidden:true, group:'taux' } // inflation en glissement annuel
+  { key:'cpi', shortLabel:'Inflation (CPI, GA)', seriesId:'CPIAUCSL', deriveYoY:true, hidden:true, group:'taux' }, // inflation en glissement annuel
+  // Wolf Labo — demande explicite ("WTI, gold, DXY, EUR/USD, spread 2-10 ans [déjà
+  // dispo, voir rateSpread ci-dessus], taux 30 ans, CPI [déjà dispo], core CPI, PCE,
+  // taux de chômage, ISM manuf./services, retail sales, industrial production, Fed
+  // Funds, bilan Fed [déjà dispo, voir fedAssets/netLiquidity], attentes de taux/Fed
+  // Funds Futures") pour superposer au cours dans Wolf Labo (stockOverlayContext...).
+  // Même infrastructure Apps Script que le reste de CREDIT_SERIES — nécessite d'ajouter
+  // ces series ID côté Apps Script (fourni séparément à l'utilisateur, ce fichier ne
+  // peut pas éditer son script Google, voir fetchFredSeriesViaAppsScript()).
+  // NON ajoutés ici, à traiter séparément :
+  //  - Gold : FRED a retiré ses séries de fixing LBMA (GOLD*GBD228NLBM) vers 2021, plus
+  //    de source FRED gratuite fiable identifiée — passerait plutôt par Stooq (même
+  //    mécanisme que le repli cours de bourse, fetchStooqWeekly), pas encore fait.
+  //  - DXY (ICE) : indice propriétaire, jamais sur FRED. DTWEXBGS (indice dollar
+  //    pondéré par les échanges, Fed) ci-dessous est le proxy gratuit le plus proche,
+  //    pas identique à l'ICE DXY que suivent les traders.
+  //  - ISM Manufacturing/Services PMI : disponibilité FRED gratuite non confirmée avec
+  //    certitude au moment de l'ajout (licence ISM déjà source de restrictions par le
+  //    passé) — à vérifier avant d'ajouter pour de vrai plutôt que de promettre une
+  //    série qui échouerait silencieusement côté Apps Script.
+  //  - Fed Funds Futures / attentes de marché sur les taux : donnée de marché à terme
+  //    (CME), pas une série FRED — nécessiterait une source de données différente,
+  //    hors périmètre de cet ajout.
+  { key:'wti', label:'Pétrole WTI (Crude Oil, $/baril)', shortLabel:'WTI', seriesId:'DCOILWTICO', suffix:' $', decimals:2, color:THEME.gold, group:'macro-labo',
+    note:'Prix au comptant du pétrole brut West Texas Intermediate (EIA, via FRED) — référence US du prix du pétrole.' },
+  { key:'eurusd', label:'EUR/USD', shortLabel:'EUR/USD', seriesId:'DEXUSEU', suffix:'', decimals:4, color:THEME.blue, group:'macro-labo',
+    note:'Taux de change euro contre dollar américain, cours du jour (Federal Reserve H.10, via FRED).' },
+  { key:'dxyProxy', label:'Indice dollar pondéré par les échanges (proxy DXY, Fed Broad Index)', shortLabel:'Dollar (proxy DXY)', seriesId:'DTWEXBGS', suffix:'', decimals:2, color:THEME.violet, group:'macro-labo',
+    note:"L'indice ICE DXY est propriétaire, jamais publié sur FRED — proxy retenu : indice dollar pondéré par les échanges commerciaux au sens large (Federal Reserve), même lecture directionnelle mais panier de devises différent de l'ICE DXY." },
+  { key:'rate30y', shortLabel:'Taux 30 ans', seriesId:'DGS30', hidden:true, group:'taux' },
+  { key:'coreCpi', label:'Inflation cœur (Core CPI, hors alimentation/énergie, GA)', shortLabel:'Core CPI (GA)', seriesId:'CPILFESL', deriveYoY:true, suffix:' %', decimals:1, color:THEME.gold, group:'macro-labo',
+    note:'CPI hors alimentation et énergie, glissement annuel (BLS, via FRED) — mesure d\'inflation sous-jacente, moins volatile que le CPI headline.' },
+  { key:'corePce', label:'Inflation cœur PCE (jauge préférée de la Fed, GA)', shortLabel:'Core PCE (GA)', seriesId:'PCEPILFE', deriveYoY:true, suffix:' %', decimals:1, color:THEME.red, group:'macro-labo',
+    note:"Indice des prix des dépenses de consommation personnelle hors alimentation/énergie, glissement annuel (BEA, via FRED) — la jauge d'inflation officiellement ciblée par la Fed (objectif 2%), distincte du CPI." },
+  { key:'unemployment', label:'Taux de chômage US', shortLabel:'Chômage US', seriesId:'UNRATE', suffix:' %', decimals:1, color:THEME.blue, group:'macro-labo',
+    note:'Taux de chômage américain (BLS, via FRED), mensuel.' },
+  { key:'retailSales', label:'Ventes au détail US (Retail Sales, GA)', shortLabel:'Retail Sales (GA)', seriesId:'RSAFS', deriveYoY:true, suffix:' %', decimals:1, color:THEME.green, group:'macro-labo',
+    note:'Ventes au détail, commerce et restauration, glissement annuel (Census Bureau, via FRED) — indicateur direct de la consommation des ménages.' },
+  { key:'indProd', label:'Production industrielle US (GA)', shortLabel:'Prod. industrielle (GA)', seriesId:'INDPRO', deriveYoY:true, suffix:' %', decimals:1, color:THEME.gold, group:'macro-labo',
+    note:"Indice de production industrielle, glissement annuel (Federal Reserve, via FRED) — activité manufacturière/minière/énergétique, un des indicateurs coïncidents classiques du cycle économique." },
+  { key:'fedFunds', label:'Taux Fed Funds effectif', shortLabel:'Fed Funds', seriesId:'DFF', suffix:' %', decimals:2, color:THEME.violet, group:'macro-labo',
+    note:'Taux effectif des fonds fédéraux (Federal Reserve, via FRED), quotidien — le taux directeur réellement pratiqué sur le marché interbancaire, pas la simple fourchette cible annoncée.' }
 ];
 let creditIndicatorsData = {}; // key -> { dates:[...], values:[...] }
 
@@ -15741,6 +15782,204 @@ function initWolfLaboWatchlistPanel(){
   });
 }
 
+// ---- Journal d'expériences (Wolf Labo) ------------------------------------------------
+// Demande explicite : "mener comme un physicien des expériences... structurées comme des
+// expériences scientifiques, mais en finance... que ce soit stocké, bien mis en page".
+// Chaque entrée fige le CONTEXTE exact du graphique (entreprise, indicateurs superposés —
+// stockOverlaySelected, partagé avec le menu "Indicateurs macro" — et période/timeframe)
+// + une image du graphique (wolfLaboChart.takeScreenshot()) sous une hypothèse à tester,
+// pour pouvoir y revenir exactement plus tard et voir si elle tient toujours. Persistance
+// identique aux autres onglets : localStorage + data/labo-experiments.json en socle +
+// Export JSON/PDF (réutilise exportSectionAsPdf, même charte que les autres exports).
+const WOLF_LABO_EXPERIMENTS_LS_KEY = 'wolfAnalysisLaboExperiments';
+const WOLF_LABO_EXPERIMENTS_BASELINE_URL = 'data/experiments.json'; // pas "data/labo-*.json" : ce préfixe est réservé aux échantillons FMP sous licence (gitignored), ceci est le contenu de l'utilisateur, à committer comme watchlist.json/cerveau.json
+let wolfLaboExperiments = [];
+let wolfLaboExperimentFormOpen = false;
+
+function loadWolfLaboExperimentsLocal(){
+  try{
+    const raw = localStorage.getItem(WOLF_LABO_EXPERIMENTS_LS_KEY);
+    if (raw) wolfLaboExperiments = JSON.parse(raw) || [];
+  }catch(e){ wolfLaboExperiments = []; }
+}
+function persistWolfLaboExperiments(){
+  try{ localStorage.setItem(WOLF_LABO_EXPERIMENTS_LS_KEY, JSON.stringify(wolfLaboExperiments)); }catch(e){ /* quota / navigateur privé */ }
+}
+async function loadWolfLaboExperimentsBaseline(){
+  loadWolfLaboExperimentsLocal();
+  try{
+    const res = await fetch(WOLF_LABO_EXPERIMENTS_BASELINE_URL, { cache:'no-store' });
+    if (res.ok){
+      const json = await res.json();
+      if (Array.isArray(json)) json.forEach(exp => { if (!wolfLaboExperiments.some(e => e.id === exp.id)) wolfLaboExperiments.push(exp); });
+    }
+  }catch(e){ /* socle absent ou fetch bloqué (ex. file://) — non bloquant */ }
+  wolfLaboExperiments.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || ''));
+  renderWolfLaboExperiments();
+}
+
+function wolfLaboExperimentFormHtml(){
+  return `<div class="labo-experiment-form">
+    <label>Titre / hypothèse à tester</label>
+    <input type="text" id="wolfLaboExpTitre" placeholder="ex. « Le cours réagit-il systématiquement au franchissement de la SMA 200 ? »">
+    <label>Hypothèse (ce que je m'attends à observer)</label>
+    <textarea id="wolfLaboExpHypothese" placeholder="Ce que je m'attends à voir…"></textarea>
+    <label>Observation (ce que je vois réellement sur ce graphique)</label>
+    <textarea id="wolfLaboExpObservation" placeholder="Ce que le graphique montre concrètement…"></textarea>
+    <label>Conclusion / déduction</label>
+    <textarea id="wolfLaboExpConclusion" placeholder="Ce que j'en déduis, à revérifier plus tard…"></textarea>
+    <p class="chart-hint">Le contexte du graphique (entreprise, indicateurs superposés, période) et une image sont capturés automatiquement à l'enregistrement.</p>
+    <div class="cerveau-new-chain-actions">
+      <button type="button" class="refresh-btn" id="wolfLaboExpSaveBtn">Enregistrer l'expérience</button>
+      <button type="button" class="cerveau-btn-cancel" id="wolfLaboExpCancelBtn">Annuler</button>
+    </div>
+  </div>`;
+}
+
+function saveWolfLaboExperiment(){
+  const titreInput = document.getElementById('wolfLaboExpTitre');
+  const titre = titreInput ? titreInput.value.trim() : '';
+  if (!titre) return;
+  const hypothese = document.getElementById('wolfLaboExpHypothese').value;
+  const observation = document.getElementById('wolfLaboExpObservation').value;
+  const conclusion = document.getElementById('wolfLaboExpConclusion').value;
+  const symbol = currentWolfLaboSymbol();
+  const name = wolfLaboSampleData ? wolfLaboSampleData.name : symbol;
+  let chartImage = null;
+  try{
+    if (wolfLaboChart && wolfLaboChart.takeScreenshot) chartImage = wolfLaboChart.takeScreenshot().toDataURL('image/png');
+  }catch(e){ /* capture non bloquante — l'expérience reste enregistrée sans image */ }
+  const entry = {
+    id: 'exp' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    date: new Date().toISOString().slice(0, 10),
+    titre, hypothese, observation, conclusion,
+    contexte: {
+      symbol, name,
+      overlays: stockOverlaySelected.map(o => ({ type:o.type, key:o.key, label:o.label })),
+      range: wolfLaboRange, timeframe: wolfLaboTimeframe
+    },
+    chartImage
+  };
+  wolfLaboExperiments.unshift(entry);
+  persistWolfLaboExperiments();
+  wolfLaboExperimentFormOpen = false;
+  renderWolfLaboExperiments();
+}
+
+function deleteWolfLaboExperiment(id){
+  wolfLaboExperiments = wolfLaboExperiments.filter(e => e.id !== id);
+  persistWolfLaboExperiments();
+  renderWolfLaboExperiments();
+}
+
+// Remet le graphique EXACTEMENT dans le contexte enregistré (même entreprise, mêmes
+// indicateurs superposés, même période/timeframe) — pour vérifier si l'hypothèse tient
+// toujours, ou continuer une expérience commencée précédemment. Passe par les boutons
+// réels (click()) plutôt que de dupliquer leur logique de libellé/état actif.
+async function reloadWolfLaboExperimentContext(id){
+  const exp = wolfLaboExperiments.find(e => e.id === id);
+  if (!exp || !exp.contexte) return;
+  const ctx = exp.contexte;
+  if (ctx.symbol) await selectWolfLaboSymbol(ctx.symbol, ctx.name);
+  if (ctx.timeframe){
+    const tfBtn = document.querySelector(`#wolfLaboTimeframeButtons [data-tf="${ctx.timeframe}"]`);
+    if (tfBtn) tfBtn.click();
+  }
+  if (ctx.range){
+    const rangeBtn = document.querySelector(`#wolfLaboRangeButtons [data-range="${ctx.range}"]`);
+    if (rangeBtn) rangeBtn.click();
+  }
+  stockOverlaySelected = (ctx.overlays || []).map(o => ({ type:o.type, key:o.key, label:o.label }));
+  renderStockOverlays();
+  renderStockOverlayList('', 'wolfLaboMacroOverlayList', 'wolfLaboMacroOverlayBtn');
+}
+
+function wolfLaboExperimentCardHtml(exp){
+  const ctx = exp.contexte || {};
+  const overlaysLabel = (ctx.overlays || []).map(o => o.label).join(', ') || 'aucun';
+  return `<div class="labo-experiment-card" data-exp-id="${exp.id}">
+    ${exp.chartImage ? `<img class="labo-experiment-thumb" src="${exp.chartImage}" alt="">` : '<div class="labo-experiment-thumb labo-experiment-thumb-empty">Pas d\'image</div>'}
+    <div class="labo-experiment-body">
+      <div class="labo-experiment-head">
+        <span class="labo-experiment-titre">${escapeHtml(exp.titre)}</span>
+        <span class="labo-experiment-date">${exp.date}</span>
+      </div>
+      <div class="labo-experiment-context">${escapeHtml(ctx.name || ctx.symbol || '—')} · ${escapeHtml(overlaysLabel)} · ${escapeHtml(ctx.timeframe || '')}/${escapeHtml(ctx.range || '')}</div>
+      ${exp.hypothese ? `<p class="labo-experiment-field"><b>Hypothèse —</b> ${escapeHtml(exp.hypothese)}</p>` : ''}
+      ${exp.observation ? `<p class="labo-experiment-field"><b>Observation —</b> ${escapeHtml(exp.observation)}</p>` : ''}
+      ${exp.conclusion ? `<p class="labo-experiment-field"><b>Conclusion —</b> ${escapeHtml(exp.conclusion)}</p>` : ''}
+      <div class="labo-experiment-actions">
+        <button type="button" data-action="reload-exp" data-id="${exp.id}">↻ Recharger ce contexte</button>
+        <button type="button" data-action="delete-exp" data-id="${exp.id}">✕ Supprimer</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderWolfLaboExperiments(){
+  const formBox = document.getElementById('wolfLaboExperimentForm');
+  const listBox = document.getElementById('wolfLaboExperimentList');
+  if (!formBox || !listBox) return;
+  formBox.style.display = wolfLaboExperimentFormOpen ? 'block' : 'none';
+  if (wolfLaboExperimentFormOpen) formBox.innerHTML = wolfLaboExperimentFormHtml();
+  listBox.innerHTML = wolfLaboExperiments.length
+    ? wolfLaboExperiments.map(wolfLaboExperimentCardHtml).join('')
+    : '<p class="chart-hint">Aucune expérience enregistrée pour le moment.</p>';
+}
+
+function exportWolfLaboExperiments(){
+  const blob = new Blob([JSON.stringify(wolfLaboExperiments, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'wolf-analysis-labo-experiments.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function exportWolfLaboExperimentsAsPdf(){
+  const body = wolfLaboExperiments.map(exp => {
+    const ctx = exp.contexte || {};
+    const overlaysLabel = (ctx.overlays || []).map(o => o.label).join(', ') || 'aucun';
+    return `<div class="print-section">
+      <h3>${escapeHtml(exp.titre)} — ${exp.date}</h3>
+      <p style="color:var(--text-dim);font-size:11px;">${escapeHtml(ctx.name || ctx.symbol || '—')} · Indicateurs : ${escapeHtml(overlaysLabel)} · ${escapeHtml(ctx.timeframe || '')}/${escapeHtml(ctx.range || '')}</p>
+      ${exp.chartImage ? `<img class="print-chart-img" src="${exp.chartImage}" alt="">` : ''}
+      ${exp.hypothese ? `<p><b>Hypothèse —</b> ${escapeHtml(exp.hypothese)}</p>` : ''}
+      ${exp.observation ? `<p><b>Observation —</b> ${escapeHtml(exp.observation)}</p>` : ''}
+      ${exp.conclusion ? `<p><b>Conclusion —</b> ${escapeHtml(exp.conclusion)}</p>` : ''}
+    </div>`;
+  }).join('');
+  exportSectionAsPdf("Wolf Labo — Journal d'expériences", null, body || '<p>Aucune expérience enregistrée.</p>');
+}
+
+function initWolfLaboExperiments(){
+  const newBtn = document.getElementById('wolfLaboExperimentNewBtn');
+  if (newBtn) newBtn.addEventListener('click', () => { wolfLaboExperimentFormOpen = true; renderWolfLaboExperiments(); });
+  const exportBtn = document.getElementById('wolfLaboExperimentExportBtn');
+  if (exportBtn) exportBtn.addEventListener('click', exportWolfLaboExperiments);
+  const exportPdfBtn = document.getElementById('wolfLaboExperimentExportPdfBtn');
+  if (exportPdfBtn) exportPdfBtn.addEventListener('click', exportWolfLaboExperimentsAsPdf);
+  const formBox = document.getElementById('wolfLaboExperimentForm');
+  if (formBox){
+    formBox.addEventListener('click', e => {
+      if (e.target.closest('#wolfLaboExpSaveBtn')){ saveWolfLaboExperiment(); return; }
+      if (e.target.closest('#wolfLaboExpCancelBtn')){ wolfLaboExperimentFormOpen = false; renderWolfLaboExperiments(); }
+    });
+  }
+  const listBox = document.getElementById('wolfLaboExperimentList');
+  if (listBox){
+    listBox.addEventListener('click', e => {
+      const reloadBtn = e.target.closest('[data-action="reload-exp"]');
+      if (reloadBtn){ reloadWolfLaboExperimentContext(reloadBtn.dataset.id); return; }
+      const delBtn = e.target.closest('[data-action="delete-exp"]');
+      if (delBtn){ deleteWolfLaboExperiment(delBtn.dataset.id); }
+    });
+  }
+}
+
 // Recherche d'entreprise du dashboard graphique — même mécanique que initSearch() (barre
 // principale du site), sur la même source (l'objet global companies, "DATA BASE 20 ans")
 // — demande explicite ("inspire-toi de TradingView"). La plupart n'ont pas encore de
@@ -15913,6 +16152,8 @@ async function ensureWolfLaboChart(){
   loadWolfLaboLists();
   initWolfLaboPen();
   initWolfLaboWatchlistPanel();
+  initWolfLaboExperiments();
+  loadWolfLaboExperimentsBaseline();
   initWolfLaboSymbolSearch();
   loadWolfLaboStylePresets();
   const magnetBtn = document.getElementById('wolfLaboMagnetBtn');

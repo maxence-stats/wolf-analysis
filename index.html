@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<link rel="stylesheet" href="css/style.css?v=20260831x">
+<link rel="stylesheet" href="css/style.css?v=20260831z">
 </head>
 <body>
 <div class="wrap">
@@ -1432,6 +1432,27 @@
         <div class="labo-watchlist-panel" id="wolfLaboWatchlistPanel"></div>
       </div>
 
+      <!-- Journal d'expériences — demande explicite : "mener comme un physicien des
+           expériences... structurées comme des expériences scientifiques, mais en
+           finance... que ce soit stocké, bien mis en page". Chaque entrée fige le
+           CONTEXTE exact du graphique au moment de l'expérience (entreprise,
+           indicateurs superposés, période) + une image du graphique lui-même
+           (wolfLaboChart.takeScreenshot()), pour pouvoir revenir exactement au même
+           état plus tard et vérifier si l'hypothèse tient toujours. -->
+      <div class="section-label" style="margin-top:14px;">🧪 Journal d'expériences</div>
+      <div class="chart-card">
+        <div class="chart-card-head">
+          <div><h3>Protocole expérimental</h3><p class="chart-subtitle">Fige le graphique actuel (entreprise, indicateurs superposés, période) sous une hypothèse à tester — reviens dessus plus tard pour voir si elle tient.</p></div>
+          <div class="chart-card-actions">
+            <button type="button" class="refresh-btn" id="wolfLaboExperimentNewBtn">+ Nouvelle expérience</button>
+            <button type="button" class="zoom-btn" id="wolfLaboExperimentExportBtn">⭳ Exporter</button>
+            <button type="button" class="zoom-btn" id="wolfLaboExperimentExportPdfBtn">🖨 Exporter PDF</button>
+          </div>
+        </div>
+        <div id="wolfLaboExperimentForm" style="display:none;"></div>
+        <div id="wolfLaboExperimentList"></div>
+      </div>
+
       <div class="section-label" style="margin-top:14px;">Backtest — moteur de règles</div>
       <div class="chart-card" style="opacity:0.7;">
         <div class="chart-card-head">
@@ -1440,10 +1461,6 @@
         <p class="chart-hint">Exemples visés : "quand une action/un secteur monte de X% sur une semaine" (motif de prix) ou "quand le taux 10 ans dépasse X%" (seuil macro) — un seul moteur pour les deux, pas construit séparément. Les règles basées sur les fondamentaux (ex. "entreprises à dividendes pendant une hausse de taux") s'activeront une fois l'import FMP complet fait — squelette pour l'instant, en attendant.</p>
       </div>
 
-      <div class="section-label" style="margin-top:14px;">Expérimentations sauvegardées</div>
-      <div class="chart-card" style="opacity:0.7;">
-        <p class="chart-hint">Bibliothèque à venir : classer, sauvegarder et exporter tes recherches en PDF (paysage pour vidéo/présentation, portrait pour newsletter) — réutilise le système d'export déjà en place sur le site (voir Éditeur PDF).</p>
-      </div>
     </div>
 
     <!-- Éditeur PDF : composition libre (glisser-déposer, texte) d'un document
@@ -1672,7 +1689,7 @@
   </div>
 </div>
 
-<script src="js/app.js?v=20260831x"></script>
+<script src="js/app.js?v=20260831z"></script>
 </body>
 </html>
 
