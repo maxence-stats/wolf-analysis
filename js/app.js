@@ -12180,12 +12180,18 @@ function renderCerveauSecteurs(box){
 // que 4 pages séparées. Dédoublonne par NOM (une entreprise peut apparaître dans
 // plusieurs chaînes/secteurs, ex. Shin-Etsu Chemical dans Matériaux ET Technologies) —
 // garde le tier le plus élevé rencontré et liste tous les secteurs d'apparition.
+// Retour utilisateur : "j'ai l'impression que tu as mis quatre fois la même chose" —
+// vrai constat tant que le pilote reste limité à quelques entreprises TOUTES tier=goulot
+// (rien encore reclassé en qualité/dominante) : "Tous" et "Goulots" affichent alors
+// mécaniquement la même liste. Pas un bug — juste un jeu de données encore incomplet.
+// Compteur par filtre + description courte (title=) pour que ce soit visible plutôt que
+// de deviner en cliquant.
 const CERVEAU_GOULOTS_FILTERS = [
-  { key:'all', label:'Tous' },
-  { key:'goulot', label:'Goulots' },
-  { key:'systemique', label:'Goulots systémiques' },
-  { key:'qualite-haute', label:'Haute qualité' },
-  { key:'attractif', label:'Combinaison attractive' }
+  { key:'all', label:'Tous', title:'Toute entreprise classée qualité, dominante OU goulot (hors simple participante)' },
+  { key:'goulot', label:'Goulots', title:'Uniquement le tier le plus fort : goulot d\'étranglement confirmé' },
+  { key:'systemique', label:'Goulots systémiques', title:'Goulots dont la portée transversale (bottleneckScope) a été explicitement renseignée' },
+  { key:'qualite-haute', label:'Haute qualité', title:'Quality Score calculé ≥ 70/100, quel que soit le tier' },
+  { key:'attractif', label:'Combinaison attractive', title:'Bottleneck ≥ 70 ET Quality ≥ 70 ET Valuation ≥ 60 simultanément — rare par construction' }
 ];
 let cerveauGoulotsSort = { key:'bottleneckValue', dir:-1 };
 let cerveauGoulotsFilterKey = 'all';
@@ -12253,10 +12259,17 @@ function renderCerveauGoulots(box){
     { key:'tier', label:'Tier' }, { key:'scope', label:'Portée' },
     { key:'bottleneckValue', label:'Bottleneck' }, { key:'qualityValue', label:'Quality' }, { key:'valuationValue', label:'Valuation' }
   ];
+  const emptyMessages = {
+    all: "Aucune entreprise classée qualité/dominante/goulot pour le moment — utilise le bouton tier (·/Q/D/⚠) sur une carte d'entreprise dans une chaîne.",
+    goulot: "Aucun goulot confirmé pour le moment.",
+    systemique: "Aucun goulot avec une portée « systémique » renseignée pour le moment — se règle dans la fiche Analyse développée, à côté du score Bottleneck.",
+    'qualite-haute': "Aucune entreprise avec un Quality Score calculé ≥ 70 dans cette sélection pour le moment.",
+    attractif: "Aucune entreprise ne combine actuellement Bottleneck ≥ 70, Quality ≥ 70 ET Valuation ≥ 60 en même temps — normal et attendu : les meilleurs goulots recherchés jusqu'ici (ASML, Synopsys, Cadence...) sont aussi les plus chers (Valuation basse). C'est justement ce que cette vue doit aider à repérer LE JOUR où ça change."
+  };
   box.innerHTML = `
     <div class="cerveau-breadcrumb"><a data-back="secteurs">Secteurs</a> / Goulots d'étranglement</div>
     <p class="valo-intro">Vue transverse — toute entreprise classée qualité/dominante/goulot dans au moins une chaîne, tous secteurs confondus. Watchlist analytique, pas un signal d'achat automatique.</p>
-    <div class="range-buttons" id="cerveauGoulotsFilters">${CERVEAU_GOULOTS_FILTERS.map(f => `<button type="button" data-filter="${f.key}" class="${cerveauGoulotsFilterKey === f.key ? 'active' : ''}">${f.label}</button>`).join('')}</div>
+    <div class="range-buttons" id="cerveauGoulotsFilters">${CERVEAU_GOULOTS_FILTERS.map(f => `<button type="button" data-filter="${f.key}" title="${escapeHtml(f.title)}" class="${cerveauGoulotsFilterKey === f.key ? 'active' : ''}">${f.label} (${cerveauGoulotsApplyFilter(all, f.key).length})</button>`).join('')}</div>
     ${filtered.length ? `<div class="macro-power-table-wrap" style="margin-top:12px;"><table class="macro-fund-table cerveau-goulots-table">
       <thead><tr>${cols.map(c => `<th data-sort="${c.key}" class="${sortKey === c.key ? 'active' : ''}">${c.label}${sortKey === c.key ? (sortDir === 1 ? ' ▲' : ' ▼') : ''}</th>`).join('')}</tr></thead>
       <tbody>${filtered.map(r => `<tr class="cerveau-goulots-row" data-nom="${escapeHtml(r.nom)}">
@@ -12268,7 +12281,7 @@ function renderCerveauGoulots(box){
         <td>${cerveauGoulotsScoreCell(r.qualityValue)}</td>
         <td>${cerveauGoulotsScoreCell(r.valuationValue)}</td>
       </tr>`).join('')}</tbody>
-    </table></div>` : '<div class="objectifs-empty">Aucune entreprise dans ce filtre pour le moment.</div>'}`;
+    </table></div>` : `<div class="objectifs-empty">${escapeHtml(emptyMessages[cerveauGoulotsFilterKey] || 'Aucune entreprise dans ce filtre pour le moment.')}</div>`}`;
   box.querySelector('[data-back="secteurs"]').addEventListener('click', () => { cerveauView = { level:'secteurs' }; renderCerveau(); });
   document.getElementById('cerveauGoulotsFilters').addEventListener('click', e => {
     const btn = e.target.closest('[data-filter]');
