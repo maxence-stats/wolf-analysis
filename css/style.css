@@ -738,6 +738,7 @@
   .labo-experiment-form input, .labo-experiment-form textarea{width:100%;background:var(--panel-2);border:1px solid var(--hair);border-radius:8px;padding:8px 10px;color:var(--text);font-family:var(--font-body);font-size:13px;outline:none;}
   .labo-experiment-form textarea{min-height:60px;resize:vertical;}
   .labo-experiment-card{display:flex;gap:14px;background:var(--panel);border:1px solid var(--hair);border-radius:12px;padding:14px;margin-bottom:12px;}
+  .labo-experiment-thumbs{display:flex;flex-direction:column;gap:6px;flex-shrink:0;}
   .labo-experiment-thumb{width:180px;height:120px;object-fit:cover;border-radius:8px;flex-shrink:0;background:#0a0a0a;}
   .labo-experiment-thumb-empty{display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:11px;}
   .labo-experiment-body{flex:1;min-width:0;}

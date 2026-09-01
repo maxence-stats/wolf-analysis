@@ -15874,22 +15874,78 @@ async function loadWolfLaboExperimentsBaseline(){
   renderWolfLaboExperiments();
 }
 
+// Demande explicite : "il faut que je puisse y mettre des graphiques à l'intérieur...
+// idéalement les graphiques que j'ai générés juste au-dessus" — capture explicite (visible
+// dans le formulaire, pas juste automatique et invisible à l'enregistrement comme avant),
+// PLUSIEURS graphiques possibles par expérience, + upload fichier/URL comme partout
+// ailleurs sur le site (mêmes composants que la fiche Analyse développée — voir
+// analyseImagesHtml()/analyseImageAddRowHtml() — wiring dédié ci-dessous, pas le wiring
+// générique de ces fonctions qui est propre à cerveauData.analyses).
+let wolfLaboExperimentFormImages = [];
+// Persiste le texte saisi À TRAVERS les re-rendus déclenchés par les actions sur les
+// graphiques (capture/upload/URL/suppression) — sans ça, ajouter une image après avoir
+// commencé à taper l'hypothèse effaçait tout (formBox.innerHTML reconstruit à chaque
+// action). Synchronisé en direct par wireWolfLaboExperimentFormImages() (évènement
+// 'input' sur chaque champ), pas juste lu une fois à l'ouverture.
+let wolfLaboExperimentFormDraft = { titre:'', hypothese:'', observation:'', conclusion:'' };
 function wolfLaboExperimentFormHtml(){
+  const d = wolfLaboExperimentFormDraft;
   return `<div class="labo-experiment-form">
     <label>Titre / hypothèse à tester</label>
-    <input type="text" id="wolfLaboExpTitre" placeholder="ex. « Le cours réagit-il systématiquement au franchissement de la SMA 200 ? »">
+    <input type="text" id="wolfLaboExpTitre" placeholder="ex. « Le cours réagit-il systématiquement au franchissement de la SMA 200 ? »" value="${escapeHtml(d.titre)}">
     <label>Hypothèse (ce que je m'attends à observer)</label>
-    <textarea id="wolfLaboExpHypothese" placeholder="Ce que je m'attends à voir…"></textarea>
+    <textarea id="wolfLaboExpHypothese" placeholder="Ce que je m'attends à voir…">${escapeHtml(d.hypothese)}</textarea>
     <label>Observation (ce que je vois réellement sur ce graphique)</label>
-    <textarea id="wolfLaboExpObservation" placeholder="Ce que le graphique montre concrètement…"></textarea>
+    <textarea id="wolfLaboExpObservation" placeholder="Ce que le graphique montre concrètement…">${escapeHtml(d.observation)}</textarea>
     <label>Conclusion / déduction</label>
-    <textarea id="wolfLaboExpConclusion" placeholder="Ce que j'en déduis, à revérifier plus tard…"></textarea>
-    <p class="chart-hint">Le contexte du graphique (entreprise, indicateurs superposés, période) et une image sont capturés automatiquement à l'enregistrement.</p>
+    <textarea id="wolfLaboExpConclusion" placeholder="Ce que j'en déduis, à revérifier plus tard…">${escapeHtml(d.conclusion)}</textarea>
+    <label>Graphiques</label>
+    <button type="button" class="refresh-btn" id="wolfLaboExpCaptureBtn" style="align-self:flex-start;">📊 Ajouter le graphique actuel</button>
+    ${analyseImagesHtml(wolfLaboExperimentFormImages, 'data-exp-form-image="1"')}
+    ${analyseImageAddRowHtml('data-exp-form-image="1"')}
+    <p class="chart-hint">Le contexte (entreprise, indicateurs superposés, période) est enregistré automatiquement avec l'expérience.</p>
     <div class="cerveau-new-chain-actions">
       <button type="button" class="refresh-btn" id="wolfLaboExpSaveBtn">Enregistrer l'expérience</button>
       <button type="button" class="cerveau-btn-cancel" id="wolfLaboExpCancelBtn">Annuler</button>
     </div>
   </div>`;
+}
+function wireWolfLaboExperimentFormImages(formBox){
+  [['wolfLaboExpTitre', 'titre'], ['wolfLaboExpHypothese', 'hypothese'], ['wolfLaboExpObservation', 'observation'], ['wolfLaboExpConclusion', 'conclusion']].forEach(([id, field]) => {
+    const el = formBox.querySelector('#' + id);
+    if (el) el.addEventListener('input', () => { wolfLaboExperimentFormDraft[field] = el.value; });
+  });
+  const captureBtn = formBox.querySelector('#wolfLaboExpCaptureBtn');
+  if (captureBtn) captureBtn.addEventListener('click', () => {
+    try{
+      if (wolfLaboChart && wolfLaboChart.takeScreenshot){
+        wolfLaboExperimentFormImages.push(wolfLaboChart.takeScreenshot().toDataURL('image/png'));
+        renderWolfLaboExperiments();
+      }
+    }catch(e){ /* graphique pas encore prêt — non bloquant */ }
+  });
+  formBox.querySelectorAll('.analyse-image-del[data-exp-form-image]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      wolfLaboExperimentFormImages.splice(parseInt(btn.dataset.idx, 10), 1);
+      renderWolfLaboExperiments();
+    });
+  });
+  const fileInput = formBox.querySelector('.analyse-image-input[data-exp-form-image]');
+  if (fileInput) fileInput.addEventListener('change', () => {
+    Array.from(fileInput.files || []).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => { wolfLaboExperimentFormImages.push(reader.result); renderWolfLaboExperiments(); };
+      reader.readAsDataURL(file);
+    });
+  });
+  const urlBtn = formBox.querySelector('.analyse-image-url-btn[data-exp-form-image]');
+  const urlInput = formBox.querySelector('.analyse-image-url[data-exp-form-image]');
+  if (urlBtn && urlInput) urlBtn.addEventListener('click', () => {
+    const url = urlInput.value.trim();
+    if (!url) return;
+    wolfLaboExperimentFormImages.push(url);
+    renderWolfLaboExperiments();
+  });
 }
 
 function saveWolfLaboExperiment(){
@@ -15901,10 +15957,6 @@ function saveWolfLaboExperiment(){
   const conclusion = document.getElementById('wolfLaboExpConclusion').value;
   const symbol = currentWolfLaboSymbol();
   const name = wolfLaboSampleData ? wolfLaboSampleData.name : symbol;
-  let chartImage = null;
-  try{
-    if (wolfLaboChart && wolfLaboChart.takeScreenshot) chartImage = wolfLaboChart.takeScreenshot().toDataURL('image/png');
-  }catch(e){ /* capture non bloquante — l'expérience reste enregistrée sans image */ }
   const entry = {
     id: 'exp' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     date: new Date().toISOString().slice(0, 10),
@@ -15914,11 +15966,13 @@ function saveWolfLaboExperiment(){
       overlays: stockOverlaySelected.map(o => ({ type:o.type, key:o.key, label:o.label })),
       range: wolfLaboRange, timeframe: wolfLaboTimeframe
     },
-    chartImage
+    images: wolfLaboExperimentFormImages.slice()
   };
   wolfLaboExperiments.unshift(entry);
   persistWolfLaboExperiments();
   wolfLaboExperimentFormOpen = false;
+  wolfLaboExperimentFormDraft = { titre:'', hypothese:'', observation:'', conclusion:'' };
+  wolfLaboExperimentFormImages = [];
   renderWolfLaboExperiments();
 }
 
@@ -15953,8 +16007,12 @@ async function reloadWolfLaboExperimentContext(id){
 function wolfLaboExperimentCardHtml(exp){
   const ctx = exp.contexte || {};
   const overlaysLabel = (ctx.overlays || []).map(o => o.label).join(', ') || 'aucun';
+  const images = exp.images || (exp.chartImage ? [exp.chartImage] : []); // rétro-compat champ chartImage (unique, ancien format)
+  const thumbsHtml = images.length
+    ? `<div class="labo-experiment-thumbs">${images.map(src => `<img class="labo-experiment-thumb" src="${src}" alt="">`).join('')}</div>`
+    : '<div class="labo-experiment-thumb labo-experiment-thumb-empty">Pas d\'image</div>';
   return `<div class="labo-experiment-card" data-exp-id="${exp.id}">
-    ${exp.chartImage ? `<img class="labo-experiment-thumb" src="${exp.chartImage}" alt="">` : '<div class="labo-experiment-thumb labo-experiment-thumb-empty">Pas d\'image</div>'}
+    ${thumbsHtml}
     <div class="labo-experiment-body">
       <div class="labo-experiment-head">
         <span class="labo-experiment-titre">${escapeHtml(exp.titre)}</span>
@@ -15977,7 +16035,10 @@ function renderWolfLaboExperiments(){
   const listBox = document.getElementById('wolfLaboExperimentList');
   if (!formBox || !listBox) return;
   formBox.style.display = wolfLaboExperimentFormOpen ? 'block' : 'none';
-  if (wolfLaboExperimentFormOpen) formBox.innerHTML = wolfLaboExperimentFormHtml();
+  if (wolfLaboExperimentFormOpen){
+    formBox.innerHTML = wolfLaboExperimentFormHtml();
+    wireWolfLaboExperimentFormImages(formBox);
+  }
   listBox.innerHTML = wolfLaboExperiments.length
     ? wolfLaboExperiments.map(wolfLaboExperimentCardHtml).join('')
     : '<p class="chart-hint">Aucune expérience enregistrée pour le moment.</p>';
@@ -16009,9 +16070,10 @@ function exportWolfLaboExperimentsAsPdf(){
   const panelsHtml = wolfLaboExperiments.map((exp, i) => {
     const ctx = exp.contexte || {};
     const overlaysLabel = (ctx.overlays || []).map(o => o.label).join(', ') || 'aucun';
+    const images = exp.images || (exp.chartImage ? [exp.chartImage] : []); // rétro-compat champ chartImage (unique, ancien format)
     const inner = `
       <div class="chain-pdf-panel-tagline">${escapeHtml(ctx.name || ctx.symbol || '—')} · Indicateurs superposés : ${escapeHtml(overlaysLabel)} · ${escapeHtml(ctx.timeframe || '')}/${escapeHtml(ctx.range || '')} · ${exp.date}</div>
-      ${exp.chartImage ? `<img class="chain-pdf-chart-img" src="${exp.chartImage}" alt="">` : ''}
+      ${images.map(src => `<img class="chain-pdf-chart-img" src="${src}" alt="" style="margin-bottom:8px;">`).join('')}
       ${wolfLaboExperimentFieldHtml('Hypothèse', exp.hypothese)}
       ${wolfLaboExperimentFieldHtml('Observation', exp.observation)}
       ${wolfLaboExperimentFieldHtml('Conclusion', exp.conclusion)}`;
@@ -16029,7 +16091,12 @@ function exportWolfLaboExperimentsAsPdf(){
 
 function initWolfLaboExperiments(){
   const newBtn = document.getElementById('wolfLaboExperimentNewBtn');
-  if (newBtn) newBtn.addEventListener('click', () => { wolfLaboExperimentFormOpen = true; renderWolfLaboExperiments(); });
+  if (newBtn) newBtn.addEventListener('click', () => {
+    wolfLaboExperimentFormOpen = true;
+    wolfLaboExperimentFormDraft = { titre:'', hypothese:'', observation:'', conclusion:'' };
+    wolfLaboExperimentFormImages = [];
+    renderWolfLaboExperiments();
+  });
   const exportBtn = document.getElementById('wolfLaboExperimentExportBtn');
   if (exportBtn) exportBtn.addEventListener('click', exportWolfLaboExperiments);
   const exportPdfBtn = document.getElementById('wolfLaboExperimentExportPdfBtn');
@@ -16038,7 +16105,12 @@ function initWolfLaboExperiments(){
   if (formBox){
     formBox.addEventListener('click', e => {
       if (e.target.closest('#wolfLaboExpSaveBtn')){ saveWolfLaboExperiment(); return; }
-      if (e.target.closest('#wolfLaboExpCancelBtn')){ wolfLaboExperimentFormOpen = false; renderWolfLaboExperiments(); }
+      if (e.target.closest('#wolfLaboExpCancelBtn')){
+        wolfLaboExperimentFormOpen = false;
+        wolfLaboExperimentFormDraft = { titre:'', hypothese:'', observation:'', conclusion:'' };
+        wolfLaboExperimentFormImages = [];
+        renderWolfLaboExperiments();
+      }
     });
   }
   const listBox = document.getElementById('wolfLaboExperimentList');
