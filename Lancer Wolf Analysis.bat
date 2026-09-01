@@ -5,7 +5,7 @@ REM servait une ancienne version de l'appli malgre les mises a jour. Le serveur
 REM envoie Cache-Control: no-cache sur chaque reponse.
 setlocal
 set ROOT=%~dp0
-set PORT=8091
+set PORT=8137
 
 powershell -NoProfile -Command "try { (New-Object Net.Sockets.TcpClient).Connect('localhost', %PORT%); exit 0 } catch { exit 1 }" >nul 2>&1
 if errorlevel 1 (

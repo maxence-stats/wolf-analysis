@@ -12,9 +12,9 @@ agressif" dans Pièges techniques) — `file://` n'a aucun mécanisme HTTP de ca
 donc aucun fix embarqué dans la page elle-même ne peut garantir un contenu frais. Fix
 définitif : un raccourci Bureau **« Wolf Analysis »** (créé via PowerShell/WScript.Shell,
 pointe vers `Lancer Wolf Analysis.bat` à la racine du dépôt) lance un petit serveur HTTP
-local (`.claude/static-server.ps1`, port 8091, démarré en arrière-plan s'il ne tourne pas
+local (`.claude/static-server.ps1`, port 8137, démarré en arrière-plan s'il ne tourne pas
 déjà — vérifié par un test de connexion TCP avant de le relancer) puis ouvre
-`http://localhost:8091/` dans le navigateur par défaut. Le serveur envoie
+`http://localhost:8137/` dans le navigateur par défaut. Le serveur envoie
 `Cache-Control: no-cache, no-store, must-revalidate` sur CHAQUE réponse : une version
 périmée devient structurellement impossible tant que ce raccourci est utilisé.
 **L'utilisateur doit désormais toujours utiliser ce raccourci, plus jamais `index.html`

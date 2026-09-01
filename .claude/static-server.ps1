@@ -1,5 +1,10 @@
 $root = (Resolve-Path "$PSScriptRoot\..").Path
-$port = 8091
+# Port change 2026-09-01 : 8091 est passe dans les plages de ports exclues par Windows
+# (Hyper-V/WSL2 reservent dynamiquement des plages, verifiable via
+# `netsh interface ipv4 show excludedportrange protocol=tcp`) - un nouveau
+# processus ne peut plus s'y binder tant que Windows ne liberera pas la plage
+# (souvent apres redemarrage). 8137 verifie libre au moment du changement.
+$port = 8137
 $listener = New-Object System.Net.HttpListener
 $listener.Prefixes.Add("http://localhost:$port/")
 $listener.Start()
