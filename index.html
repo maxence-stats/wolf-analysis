@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<link rel="stylesheet" href="css/style.css?v=20260901b">
+<link rel="stylesheet" href="css/style.css?v=20260901c">
 </head>
 <body>
 <div class="wrap">
@@ -1333,6 +1333,7 @@
                 <button type="button" class="labo-dropdown-btn" id="wolfLaboAddToListBtn" title="Enregistrer dans une ou plusieurs listes">➕ Listes</button>
                 <div class="labo-dropdown-menu" id="wolfLaboAddToListMenu"></div>
               </div>
+              <button class="zoom-btn" id="wolfLaboDownloadChartBtn" title="Télécharger le graphique actuel en PNG">⭳ PNG</button>
               <button class="zoom-btn" id="wolfLaboFullscreenBtn" aria-label="Plein écran" title="Plein écran">⤢</button>
             </div>
           </div>
@@ -1450,6 +1451,7 @@
           </div>
         </div>
         <div id="wolfLaboExperimentForm" style="display:none;"></div>
+        <div class="range-buttons" id="wolfLaboExperimentFilterRow" style="display:none;margin-bottom:12px;"></div>
         <div id="wolfLaboExperimentList"></div>
       </div>
 
@@ -1689,7 +1691,7 @@
   </div>
 </div>
 
-<script src="js/app.js?v=20260901b"></script>
+<script src="js/app.js?v=20260901c"></script>
 </body>
 </html>
 
