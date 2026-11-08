@@ -1,0 +1,391 @@
+/* Diaporama 16:9 "Wolf Academy Invest" — feuille de style AUTONOME, chargée
+   uniquement par le document généré dynamiquement par exportAnalyseSlidesAsPdf()
+   (js/app.js), jamais par index.html. Volontairement séparée de css/style.css :
+   @page n'est pas scopable par sélecteur, donc un format d'impression différent
+   (1920x1080 paysage, sans marge) ne peut pas cohabiter avec @page{size:A4} du
+   PDF portrait dans le même document — voir le plan pour le détail. */
+
+@font-face-fallback-note { }
+
+/* CRITIQUE : sans ça, un vrai navigateur (contrairement au rendu headless de test)
+   imprime les fonds de couleur en blanc par défaut — c'est la cause du "fond de
+   diapo blanc" rapporté (déjà rencontré et corrigé sur l'export portrait, voir
+   css/style.css). */
+*{box-sizing:border-box;margin:0;padding:0;print-color-adjust:exact;-webkit-print-color-adjust:exact;color-adjust:exact;}
+html,body{background:#090909;}
+
+:root{
+  --ws-bg:#090909;
+  --ws-white:#FFFFFF;
+  --ws-gray:#8A929C;
+  --ws-gold:#D8A341;
+  --ws-gold-light:#E7C67A;
+  --ws-body:#D6DADF;
+  --ws-box-bg:#171310;
+  --ws-box-border:#5A4726;
+  --ws-footer:#5C6470;
+  --ws-font-title:'Roboto Slab', serif;
+  --ws-font-body:'Lora', serif;
+  --ws-font-label:'JetBrains Mono', monospace;
+  --ws-font-ui:'Plus Jakarta Sans', sans-serif;
+  --ws-font-num:'Space Grotesk', sans-serif;
+}
+
+/* 1920x1080 à 96dpi = 20in x 11.25in. size en unités absolues (pas px, non valide
+   dans la spec @page) pour un rendu fiable en impression navigateur. */
+@page{size:20in 11.25in;margin:0;background:var(--ws-bg);}
+
+.wolf-slide{
+  width:1920px;height:1080px;position:relative;overflow:hidden;
+  background:var(--ws-bg);page-break-after:always;break-after:page;
+}
+.wolf-slide:last-child{page-break-after:auto;break-after:auto;}
+
+/* ---------- Photo loup plein bord + fondu ----------
+   width:auto (avec height:100%) — la boîte de l'image suit le ratio NATUREL de la
+   photo à hauteur pleine, donc object-fit ne recadre plus rien (contrairement à une
+   v1 qui forçait une largeur fixe de 44%, recadrant lourdement des photos au format
+   1536×1024 et coupant des éléments importants — "les photos... sont coupées, elles
+   sortent du cadre"). Le loup est donc TOUJOURS entier, jamais rogné. Le dégradé
+   commence tôt (voir ci-dessous) pour ne recouvrir que légèrement son bord gauche,
+   demande explicite ("un dégradé qui recouvre légèrement le début du loup, que le
+   loup reste bien visible, pas de contour bizarre"). */
+.wolf-slide-hero{
+  position:absolute;top:0;right:0;height:100%;width:auto;max-width:none;
+  object-fit:contain;object-position:right top;z-index:0;
+}
+.wolf-slide-fade{
+  position:absolute;inset:0;z-index:1;
+  /* 3 couches : le dégradé gauche→droite habituel (texte lisible), une bande sombre
+     tout en haut (le bandeau d'en-tête reste lisible quel que soit le sujet derrière),
+     et une bande sombre tout en bas (le pied de page "Support pédagogique..." était
+     illisible sur un fond de photo clair — demande explicite). */
+  background:
+    linear-gradient(to top, rgba(9,9,9,0.6) 0%, transparent 9%),
+    linear-gradient(to bottom, rgba(9,9,9,0.55) 0%, transparent 11%),
+    linear-gradient(to right,
+      var(--ws-bg) 0%, var(--ws-bg) 14%,
+      rgba(9,9,9,0.75) 26%, rgba(9,9,9,0.35) 38%,
+      rgba(9,9,9,0.08) 50%, transparent 62%);
+}
+.wolf-slide-noimg .wolf-slide-hero,
+.wolf-slide-noimg .wolf-slide-fade{display:none;}
+.wolf-slide-noimg .wolf-slide-content{max-width:1400px;}
+
+/* ---------- En-tête (logo + wordmark + repère de diapo + numéro doré) ---------- */
+.wolf-slide-header{
+  position:absolute;top:0;left:0;right:0;z-index:2;
+  display:flex;align-items:center;gap:14px;
+  padding:46px 70px 0 90px;
+}
+.wolf-slide-logo{height:38px;width:38px;border-radius:50%;object-fit:cover;flex-shrink:0;}
+.wolf-slide-wordmark{
+  font-family:var(--ws-font-label);font-size:15px;font-weight:500;letter-spacing:0.14em;
+  color:var(--ws-gray);text-transform:uppercase;white-space:nowrap;
+}
+.wolf-slide-header-sep{color:var(--ws-gray);opacity:0.5;font-family:var(--ws-font-label);}
+.wolf-slide-eyebrow-mini{
+  font-family:var(--ws-font-label);font-size:15px;font-weight:600;letter-spacing:0.1em;
+  color:var(--ws-gold);text-transform:uppercase;white-space:nowrap;
+}
+.wolf-slide-pagenum{
+  margin-left:auto;font-family:var(--ws-font-num);font-size:34px;font-weight:700;
+  color:var(--ws-gold);
+}
+
+/* ---------- Colonne de contenu ----------
+   padding-top et taille de titre réduits — demande explicite : "le titre y prend
+   toujours un peu trop de plage", pour laisser plus de place au contenu (graphiques,
+   tableaux) en dessous. */
+.wolf-slide-content{
+  position:relative;z-index:2;max-width:1080px;
+  padding:100px 40px 0 90px;
+}
+.wolf-slide-eyebrow{
+  font-family:var(--ws-font-label);font-size:18px;font-weight:600;letter-spacing:0.16em;
+  color:var(--ws-gold);text-transform:uppercase;margin-bottom:12px;
+}
+.wolf-slide-title{
+  font-family:var(--ws-font-title);font-weight:700;font-size:44px;line-height:1.1;
+  color:var(--ws-white);margin-bottom:12px;
+}
+.wolf-slide-title.wolf-slide-title-sm{font-size:36px;}
+/* Diapo de transition (loup + titre de partie, pas de corps) — titre plus grand, la
+   diapo n'a rien d'autre à porter. */
+.wolf-slide-divider .wolf-slide-content{padding-top:0;display:flex;flex-direction:column;justify-content:center;height:100%;}
+.wolf-slide-divider .wolf-slide-title{font-size:64px;}
+.wolf-slide-divider .wolf-slide-rule{display:none;}
+.wolf-slide-subtitle{
+  font-family:var(--ws-font-body);font-style:italic;font-size:22px;
+  color:var(--ws-gold-light);margin-bottom:16px;
+}
+.wolf-slide-rule{width:56px;height:4px;background:var(--ws-gold);border-radius:2px;margin-bottom:24px;}
+/* Corps centré verticalement dans l'espace restant sous le titre (demande explicite
+   répétée : "il faut les centrer au milieu de la page", pour les 2 camemberts revenus
+   et la grille de 4 graphiques) — eyebrow/titre/règle restent en haut, seul le bloc
+   de données est centré grâce aux marges auto dans une colonne flex de hauteur fixe. */
+.wolf-slide-centered-body .wolf-slide-content{display:flex;flex-direction:column;height:990px;}
+.wolf-slide-centered-body .wolf-slide-charts-pair,
+.wolf-slide-centered-body .wolf-slide-chart-grid,
+.wolf-slide-centered-body .wolf-slide-stats,
+.wolf-slide-centered-body .wolf-slide-competitors,
+.wolf-slide-centered-body .wolf-slide-chart-full{margin-top:auto;margin-bottom:auto;}
+.wolf-slide-body{
+  font-family:var(--ws-font-body);font-size:24px;line-height:1.55;color:var(--ws-body);
+  max-width:920px;
+}
+.wolf-slide-body p{margin-bottom:16px;}
+.wolf-slide-body p:last-child{margin-bottom:0;}
+/* Images propres à la section (mêmes que le portrait, data.images/g.images) —
+   demande explicite : "les visuels qui sont mis dans le PDF vertical, ils doivent
+   aussi se mettre dans le PDF de présentation", en plus grand qu'une 1ère version
+   jugée trop petite ("il n'y a que la moitié de la page qui est utilisée"), avec
+   légende ("il faut remettre les légendes des images"). Une image seule (classe
+   -solo) est nettement plus grande que plusieurs côte à côte. */
+/* Diapo dédiée (voir wolfSlideImagesOnlyHtml) — jamais partagée avec du texte long,
+   donc peut utiliser toute la hauteur disponible sans risque de débordement. */
+.wolf-slide-body-images{display:flex;flex-wrap:wrap;gap:24px;margin-top:24px;max-width:1700px;}
+.wolf-slide-body-figure{margin:0;}
+.wolf-slide-body-img{width:360px;height:260px;object-fit:cover;border-radius:12px;background:#121212;border:1px solid #262626;display:block;}
+.wolf-slide-body-images-solo .wolf-slide-body-img{width:900px;height:640px;}
+.wolf-slide-body-figure figcaption{
+  font-family:var(--ws-font-ui);font-size:16px;color:var(--ws-gray);margin-top:10px;max-width:360px;
+}
+.wolf-slide-body-images-solo .wolf-slide-body-figure figcaption{max-width:900px;font-size:19px;}
+
+/* ---------- Texte + images sur la même diapo (2 colonnes) ---------- */
+/* align-items:center (pas flex-start) — un texte court à côté d'une grande image
+   partait du haut en laissant un grand vide sous le texte ("c'est bancal, la page
+   est presque vide") ; centrer verticalement les 2 colonnes l'une par rapport à
+   l'autre équilibre la diapo quelle que soit la différence de hauteur. */
+.wolf-slide-split{display:flex;gap:44px;align-items:center;margin-top:4px;}
+.wolf-slide-split-text{flex:0 0 560px;}
+.wolf-slide-split-text .wolf-slide-body{font-size:19px;line-height:1.5;max-width:560px;}
+.wolf-slide-split-images{display:flex;flex-wrap:wrap;gap:18px;flex:1;align-content:flex-start;}
+.wolf-slide-split-images .wolf-slide-body-img{width:280px;height:200px;}
+.wolf-slide-split-images .wolf-slide-body-figure figcaption{max-width:280px;font-size:14px;}
+.wolf-slide-split-images-solo .wolf-slide-body-img{width:100%;max-width:640px;height:440px;}
+.wolf-slide-split-images-solo .wolf-slide-body-figure figcaption{max-width:640px;font-size:16px;}
+
+/* ---------- Pied de page ---------- */
+.wolf-slide-footer{
+  position:absolute;left:90px;right:70px;bottom:44px;z-index:2;
+  font-family:var(--ws-font-ui);font-size:13px;color:var(--ws-footer);
+}
+
+/* ---------- Diapo de couverture (gabarit à part, sans en-tête standard) ---------- */
+.wolf-slide-cover .wolf-slide-content{padding-top:120px;}
+.wolf-slide-cover-eyebrow{
+  font-family:var(--ws-font-label);font-size:18px;font-weight:600;letter-spacing:0.16em;
+  color:var(--ws-gold);text-transform:uppercase;margin-bottom:22px;
+}
+.wolf-slide-cover-logo{
+  display:block;margin:0 auto 24px;
+  height:130px;width:130px;border-radius:50%;background:#fff;padding:14px;object-fit:contain;
+  box-shadow:0 0 0 1px rgba(255,255,255,0.06);
+}
+.wolf-slide-cover-title{
+  font-family:var(--ws-font-title);font-weight:700;font-size:78px;line-height:1.05;
+  color:var(--ws-white);margin-bottom:22px;
+}
+.wolf-slide-cover-ticker{
+  display:inline-block;font-family:var(--ws-font-label);font-size:18px;font-weight:600;
+  color:var(--ws-gold-light);letter-spacing:0.05em;background:rgba(216,163,65,0.12);
+  border:1px solid rgba(216,163,65,0.3);border-radius:26px;padding:6px 20px;margin-bottom:16px;
+}
+.wolf-slide-cover-sector{
+  font-family:var(--ws-font-ui);font-size:20px;color:var(--ws-gray);margin-bottom:30px;
+}
+.wolf-slide-cover-wordmark{
+  display:flex;align-items:center;gap:12px;
+  font-family:var(--ws-font-label);font-size:16px;font-weight:500;letter-spacing:0.16em;
+  color:var(--ws-gray);text-transform:uppercase;margin-bottom:60px;
+}
+.wolf-slide-cover-wordmark img{height:30px;width:30px;border-radius:50%;object-fit:cover;}
+
+/* ---------- Sommaire ----------
+   Bascule en 2 colonnes au-delà de 9 entrées (voir wolfSlideSommaireHtml) — une
+   longue liste à une seule colonne finissait par recouvrir le pied de page en bas de
+   diapo, qui lui ne bouge jamais. Padding par ligne réduit en même temps pour laisser
+   une vraie marge d'air au-dessus du pied de page, pas juste éviter la collision de
+   justesse. */
+.wolf-slide-sommaire-list{display:flex;flex-direction:column;margin-top:8px;}
+.wolf-slide-sommaire-columns{display:flex;gap:36px;margin-top:8px;}
+.wolf-slide-sommaire-columns .wolf-slide-sommaire-list{flex:1;min-width:0;margin-top:0;}
+.wolf-slide-sommaire-row{
+  display:grid;grid-template-columns:60px 1fr;align-items:center;gap:20px;
+  padding:14px 16px;border-radius:10px;
+}
+.wolf-slide-sommaire-row:nth-child(even){background:rgba(255,255,255,0.035);}
+.wolf-slide-sommaire-num{font-family:var(--ws-font-label);font-size:20px;color:var(--ws-gold);}
+.wolf-slide-sommaire-title{font-family:var(--ws-font-ui);font-size:22px;font-weight:700;color:var(--ws-white);}
+
+/* ---------- Bloc statistiques (3-4 colonnes) — même module gris/liseré or que
+   l'export portrait (.chain-pdf-panel de css/style.css), demande explicite : "il
+   faut tout remettre un peu comme tu as fait sur l'export en vertical". ---------- */
+.wolf-slide-stats{display:flex;gap:22px;margin-top:8px;flex-wrap:wrap;}
+.wolf-slide-stat{
+  background:#121212;border:1px solid #262626;border-left:5px solid var(--ws-gold);
+  border-radius:14px;padding:32px 30px;min-width:280px;flex:1;
+}
+.wolf-slide-stat-k{
+  font-family:var(--ws-font-label);font-size:17px;letter-spacing:0.06em;text-transform:uppercase;
+  color:var(--ws-gray);margin-bottom:16px;
+}
+.wolf-slide-stat-v{font-family:var(--ws-font-title);font-weight:700;font-size:54px;color:var(--ws-white);}
+.wolf-slide-stat-v.pos{color:#4FD1A5;}
+.wolf-slide-stat-v.neg{color:#E5636B;}
+
+/* ---------- Tip box ---------- */
+.wolf-slide-tip{
+  background:var(--ws-box-bg);border:1px solid var(--ws-box-border);border-radius:24px;
+  padding:26px 30px;margin-top:34px;max-width:920px;
+}
+.wolf-slide-tip-head{display:flex;align-items:center;gap:12px;margin-bottom:16px;}
+.wolf-slide-tip-head img{height:28px;width:28px;border-radius:50%;object-fit:cover;}
+.wolf-slide-tip-label{
+  font-family:var(--ws-font-label);font-size:15px;font-weight:600;letter-spacing:0.06em;
+  color:var(--ws-gold);text-transform:uppercase;
+}
+.wolf-slide-tip-body{font-family:var(--ws-font-body);font-size:20px;line-height:1.5;color:var(--ws-body);}
+
+/* ---------- Graphiques : 2 côte à côte (revenus pays/secteur), ou 1 en plein ----------
+   Même module gris/liseré or que le portrait (.chain-pdf-panel), image centrée dedans
+   (mêmes demandes déjà validées sur le portrait : "les mettre en grand", "les
+   centrer"). ---------- */
+.wolf-slide-charts-pair{display:flex;gap:36px;margin-top:12px;align-items:stretch;}
+.wolf-slide-chart-col{
+  flex:1;text-align:center;background:#121212;border:1px solid #262626;
+  border-left:4px solid var(--ws-gold);border-radius:12px;padding:22px 26px;
+}
+.wolf-slide-chart-col-title{
+  font-family:var(--ws-font-ui);font-size:22px;font-weight:700;color:var(--ws-white);
+  margin-bottom:16px;
+}
+.wolf-slide-chart-col img{width:100%;max-width:420px;height:auto;display:block;margin:0 auto;}
+/* Descriptif chiffré (couleur + libellé + %) sous chaque camembert — la légende
+   native du graphique est trop petite pour être lisible en vidéo. */
+.wolf-slide-chart-legend{margin-top:16px;text-align:left;display:inline-block;}
+.wolf-slide-chart-legend-row{display:flex;align-items:center;gap:10px;padding:5px 0;}
+.wolf-slide-chart-legend-swatch{width:14px;height:14px;border-radius:4px;flex-shrink:0;}
+.wolf-slide-chart-legend-label{font-family:var(--ws-font-ui);font-size:16px;color:var(--ws-body);flex:1;}
+.wolf-slide-chart-legend-pct{font-family:var(--ws-font-title);font-weight:700;font-size:16px;color:var(--ws-gold-light);margin-left:14px;}
+/* height fixe + flex/object-fit:contain — jamais height:auto seul ici : une image de
+   graphique demandée large (ex. cours de bourse 1600×900) déborderait sinon largement
+   de la diapo (débordement réel constaté : le bas du graphique sortait du cadre).
+   margin-bottom généreux — demande explicite : "support pédagogique... tu l'as collé
+   au graphique", il faut un vrai espace avant le pied de page. */
+.wolf-slide-chart-full{
+  text-align:center;margin:16px 0 30px;background:#121212;border:1px solid #262626;
+  border-left:4px solid var(--ws-gold);border-radius:12px;padding:26px 30px;
+  height:640px;display:flex;align-items:center;justify-content:center;
+}
+.wolf-slide-chart-full img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;}
+/* Variante avec descriptif chiffré (actionnariat) — colonne au lieu du centrage
+   image seule, pour laisser la place à la légende sous le graphique. */
+.wolf-slide-chart-full-legend{flex-direction:column;height:auto;min-height:500px;padding:32px 40px;}
+.wolf-slide-chart-full-legend img{max-height:360px;}
+.wolf-slide-chart-full-legend .wolf-slide-chart-legend{margin-top:20px;max-width:420px;}
+/* Cours de bourse : diapo seule mais BEAUCOUP plus grande — demande explicite répétée
+   ("tu peux te débrouiller pour le mettre encore un peu plus grand"). Élargit la
+   colonne de contenu ET la hauteur disponible, padding réduit pour maximiser l'image. */
+.wolf-slide-stock .wolf-slide-content{max-width:1780px;padding-top:90px;}
+.wolf-slide-stock .wolf-slide-chart-full{height:790px;padding:18px 22px;}
+
+/* Jusqu'à 4 graphiques historiques par diapo (grille 2×2) — demande explicite :
+   condenser les ratios financiers, moins de pages. Hauteur de grille fixe (2 rangées
+   tenant dans la diapo) + chaque cellule en flex/object-fit:contain, même raison que
+   .wolf-slide-chart-full ci-dessus (éviter tout débordement). Marge basse généreuse
+   pour ne jamais toucher le pied de page (demande explicite : "support pédagogique...
+   tu l'as collé au graphique"). */
+.wolf-slide-chart-grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:22px;margin:8px 0 40px;height:700px;width:100%;}
+.wolf-slide-chart-grid-cell{
+  background:#121212;border:1px solid #262626;border-left:4px solid var(--ws-gold);
+  border-radius:12px;padding:16px 18px;text-align:center;
+  display:flex;flex-direction:column;min-height:0;
+}
+.wolf-slide-chart-grid-title{font-family:var(--ws-font-ui);font-size:16px;font-weight:700;color:var(--ws-white);margin-bottom:8px;flex-shrink:0;}
+.wolf-slide-chart-grid-img-wrap{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;}
+.wolf-slide-chart-grid-cell img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;}
+
+/* ---------- Concurrents ---------- */
+/* Au plus 2 par diapo (chunké côté JS) — chacun occupe donc une bonne moitié de la
+   largeur, en grand, logos à une taille lisible ("on les voit à peine"). */
+.wolf-slide-competitors{display:flex;flex-wrap:wrap;gap:30px;margin-top:10px;}
+.wolf-slide-competitor{
+  background:#121212;border:1px solid #262626;border-left:4px solid var(--ws-gold);
+  border-radius:14px;padding:30px 34px;min-width:420px;flex:1;max-width:780px;
+}
+.wolf-slide-competitor-name{font-family:var(--ws-font-ui);font-weight:700;font-size:30px;color:var(--ws-white);margin-bottom:14px;}
+.wolf-slide-competitor-text{font-family:var(--ws-font-body);font-size:20px;color:var(--ws-body);line-height:1.5;margin-bottom:16px;}
+/* object-fit:contain (pas cover, hérité de .wolf-slide-body-img) — demande explicite :
+   les logos de concurrents importés par URL se retrouvaient recadrés/coupés dans le
+   diaporama. Un logo doit toujours apparaître entier, quitte à être un peu plus petit
+   dans son cadre. Pas de fond blanc (essayé puis retiré — jugé "moche" par
+   l'utilisateur) : l'espace vide éventuel laisse voir le fond sombre de la carte.
+   Scopé à .wolf-slide-competitor uniquement : les VRAIES photos des autres diapos
+   (secteurs, perspectives...) gardent volontairement le cadrage plein cadre (cover). */
+.wolf-slide-competitor .wolf-slide-body-img{width:340px;height:240px;object-fit:contain;}
+
+/* ---------- Diapo "verdict" (Wolf Score / Conclusion) ---------- */
+.wolf-slide-verdict-label{
+  display:flex;align-items:center;gap:14px;margin-bottom:26px;
+}
+.wolf-slide-verdict-bar{width:5px;height:38px;background:var(--ws-gold);border-radius:3px;}
+.wolf-slide-verdict-tag{
+  font-family:var(--ws-font-label);font-size:18px;font-weight:600;letter-spacing:0.14em;
+  color:var(--ws-gold);text-transform:uppercase;
+}
+.wolf-slide-verdict-quote{
+  font-family:var(--ws-font-title);font-weight:700;font-size:46px;line-height:1.28;
+  color:var(--ws-gold-light);max-width:980px;
+}
+.wolf-slide-verdict-score{
+  margin-top:20px;display:flex;align-items:baseline;gap:10px;
+}
+.wolf-slide-verdict-score-value{font-family:var(--ws-font-num);font-weight:700;font-size:64px;color:var(--ws-white);}
+.wolf-slide-verdict-score-sub{font-family:var(--ws-font-ui);font-size:22px;color:var(--ws-gray);}
+.wolf-slide-verdict-sign{
+  margin-top:56px;font-family:var(--ws-font-title);font-weight:700;font-size:24px;color:var(--ws-white);
+}
+
+/* ---------- Wolf Score complet sur UNE diapo (score global + les 5 modules avec
+   chaque critère) — demande explicite : "en une page, je dois tout avoir", remplace
+   une 1ère version en 6 diapos séparées jugée "trop décomposée". Colonne élargie
+   (comme .wolf-slide-stock) + grille compacte 3 colonnes pour que tout tienne. ---------- */
+.wolf-slide-score-full .wolf-slide-content{max-width:1780px;padding-top:90px;}
+/* Rectangle englobant unique (en-tête + grille) — même structure que
+   .analyse-section/.analyse-score-card-head du PDF portrait (demande explicite :
+   "je veux la même chose sur le PDF paysage"). */
+.wolf-slide-score-card{background:#171b20;border:1px solid rgba(255,255,255,0.08);border-radius:18px;padding:32px 36px;}
+.wolf-slide-score-card-head{display:flex;align-items:center;gap:18px;margin-bottom:24px;}
+.wolf-slide-score-wolf{width:52px;height:52px;border-radius:50%;object-fit:cover;box-shadow:0 0 0 2px rgba(216,163,65,0.4);flex-shrink:0;}
+.wolf-slide-score-card-head > div:nth-child(2){flex:1;font-family:var(--ws-font-title);font-weight:700;font-size:26px;color:var(--ws-white);}
+.wolf-slide-score-global{display:flex;align-items:baseline;gap:4px;background:linear-gradient(135deg, rgba(216,163,65,0.16), rgba(231,198,122,0.06));border:1px solid rgba(216,163,65,0.35);border-radius:12px;padding:10px 20px;}
+.wolf-slide-score-global-value{font-family:var(--ws-font-title);font-size:32px;font-weight:700;color:var(--ws-gold-light);}
+.wolf-slide-score-global-sub{font-family:var(--ws-font-label);font-size:15px;color:var(--ws-gray);}
+.wolf-slide-score-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+/* Carte PLATE, sans liseré or — demande explicite : même style que le module Wolf
+   Score du PDF portrait (.analyse-score-module dans css/style.css, un fond uni sans
+   accent doré, volontairement différent des autres modules "chain-pdf-panel"). */
+.wolf-slide-score-mini{
+  background:#171b20;border:1px solid rgba(255,255,255,0.06);
+  border-radius:10px;padding:16px 18px;
+}
+.wolf-slide-score-mini-head{
+  display:flex;justify-content:space-between;gap:10px;
+  font-family:var(--ws-font-ui);font-size:16px;font-weight:700;color:var(--ws-white);
+  margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #262626;
+}
+.wolf-slide-score-mini-total{color:var(--ws-gold-light);white-space:nowrap;}
+.wolf-slide-score-mini-row{
+  display:flex;justify-content:space-between;gap:10px;
+  font-family:var(--ws-font-ui);font-size:13.5px;color:var(--ws-body);padding:4px 0;
+}
+.wolf-slide-score-mini-row b{color:var(--ws-gold-light);font-weight:700;white-space:nowrap;margin-left:8px;}
+/* Scénarios de valorisation — liseré coloré sémantique (vert/bleu/rouge, mêmes teintes
+   que le reste du site pour Optimiste/Réaliste/Pessimiste), contrairement aux modules
+   Wolf Score qui restent neutres. */
+.wolf-slide-scenario-green{border-left:4px solid #4FD1A5;}
+.wolf-slide-scenario-blue{border-left:4px solid #4A9FE0;}
+.wolf-slide-scenario-red{border-left:4px solid #E5636B;}

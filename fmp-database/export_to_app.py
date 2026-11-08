@@ -19,6 +19,7 @@ Usage :
                                           # all_symbols_with_data() — pas de liste séparée
                                           # à tenir à jour, lu directement depuis la base)
 """
+import datetime
 import json
 import sys
 import pathlib
@@ -230,28 +231,41 @@ def growth_series_from_annual(values):
     return yoy, total, cagr
 
 
-def dividend_per_share_by_year(conn, symbol, n_years=5):
-    """Somme des dividendes versés (adjDividend) par année calendaire — les dividendes
-    n'ont pas de "fiscalYear" propre comme les états financiers, seulement des dates de
-    versement, donc regroupés par année civile plutôt que par exercice fiscal."""
+def dividend_ttm_series(conn, symbol, cutoff_dates):
+    """Pour chaque date de référence, somme les dividendes réellement VERSÉS
+    (adjDividend) sur les 365 jours qui précèdent — méthode TTM (trailing twelve
+    months), la même que celle utilisée par les sites financiers pour le "rendement du
+    dividende" actuel. cutoff_dates est plafonné à aujourd'hui (jamais de versement
+    futur/simplement annoncé inclus).
+
+    Remplace un calcul par ANNÉE CIVILE (regroupement par date[:4]), qui se révèle FAUX
+    pour toute entreprise ayant changé de rythme de versement en cours de route — cas
+    trouvé et vérifié sur BNP Paribas (signalé par l'utilisateur : "2,5% de rendement,
+    je ne te crois pas") : passée à un acompte + solde en 2025, l'ANNÉE CIVILE 2025
+    contenait à la fois le solde de l'exercice 2024 (4,79€, "ancien régime") ET le tout
+    premier acompte du nouveau régime (2,59€) — somme 7,38€, ni juste ni représentative
+    du rythme réel. Le champ FMP ratios.dividendPerShare (période "FY") utilisé avant ce
+    correctif donnait, lui, 2,58€ — moitié du vrai montant. Seule une fenêtre glissante
+    de 365 jours ancrée à AUJOURD'HUI isole correctement les deux BONS versements
+    (acompte 2025 + solde 2026 = 5,16€), vérifié auprès de plusieurs sites financiers
+    (rendementbourse.com, ledividende.fr) au moment du correctif."""
     cur = conn.cursor()
-    cur.execute(
-        "SELECT payload FROM raw_data WHERE category='dividends' AND symbol=? ORDER BY item_date ASC",
-        (symbol,),
-    )
-    by_year = {}
+    cur.execute("SELECT payload FROM raw_data WHERE category='dividends' AND symbol=?", (symbol,))
+    payments = []
     for (payload,) in cur.fetchall():
         item = json.loads(payload)
         date = item.get("date") or ""
-        if len(date) < 4:
-            continue
-        year = date[:4]
         amount = item.get("adjDividend", item.get("dividend"))
-        if amount is None:
-            continue
-        by_year[year] = by_year.get(year, 0) + amount
-    years = sorted(by_year.keys())[:-1]  # écarte l'année en cours (probablement incomplète)
-    return [by_year[y] for y in years[-n_years:]]
+        if len(date) == 10 and amount is not None:
+            payments.append((date, amount))
+    today_str = datetime.date.today().isoformat()
+    out = []
+    for cutoff in cutoff_dates:
+        cutoff = min(cutoff, today_str) if cutoff else today_str
+        start = (datetime.date.fromisoformat(cutoff) - datetime.timedelta(days=365)).isoformat()
+        total = sum(amt for d, amt in payments if start < d <= cutoff)
+        out.append(round(total, 4) if total > 0 else None)
+    return out
 
 
 def build_growth(conn, symbol):
@@ -284,9 +298,15 @@ def build_growth(conn, symbol):
         rows.append({"label": label, "yoy": yoy, "total": total, "cagr": cagr})
 
     # Dividende par action : reconstruit depuis les versements bruts (voir docstring de
-    # dividend_per_share_by_year), pas depuis un champ "growth" FMP au niveau du flux
-    # total signé — voir commentaire sur GROWTH_FIELD_MAP.
-    div_values = dividend_per_share_by_year(conn, symbol)
+    # dividend_ttm_series), pas depuis un champ "growth" FMP au niveau du flux total
+    # signé (voir commentaire sur GROWTH_FIELD_MAP), ni depuis une année civile — TTM
+    # (365 jours glissants), même méthode et mêmes dates de référence que
+    # build_charts_history() pour que ce tableau et le graphique/ratio "Dividende"
+    # affichent toujours la même valeur.
+    div_cutoffs = [r.get("date") for r in ref_rows]
+    if div_cutoffs:
+        div_cutoffs[-1] = datetime.date.today().isoformat()
+    div_values = [v for v in dividend_ttm_series(conn, symbol, div_cutoffs) if v is not None]
     div_yoy, div_total, div_cagr = growth_series_from_annual(div_values)
     rows.append({"label": "Dividende par action", "yoy": div_yoy, "total": div_total, "cagr": div_cagr})
     return rows, years
@@ -390,19 +410,65 @@ def build_charts_history(conn, symbol):
         ocf = (cf_by_year.get(y) or {}).get("netCashProvidedByOperatingActivities")
         dette_ocf.append(nd / ocf if (nd is not None and ocf not in (None, 0)) else None)
 
+    # ROIC = NOPAT / Capital investi MOYEN — formule explicite de l'utilisateur, PAS
+    # km_by_year["returnOnInvestedCapital"] (le ratio FMP tout fait, dont la définition du
+    # capital investi diverge — confirmé sur VINCI 2025 : FMP donne 7,35%, cette formule
+    # donne 10,6%). NOPAT = EBIT x (1 - taux d'impot effectif de l'annee, repli 25% si
+    # incomeBeforeTax <= 0 ou manquant). Capital investi = Capitaux propres + Dette
+    # financière nette (Total Debt - Cash) ; "moyen" = moyenne du capital investi de
+    # l'année et de l'année précédente (repli sur la seule valeur de fin d'année si pas
+    # d'année précédente disponible, ex. premier exercice importé).
+    def invested_capital(y):
+        bs = bs_by_year.get(y) or {}
+        debt, equity, cash = bs.get("totalDebt"), bs.get("totalEquity"), bs.get("cashAndCashEquivalents")
+        if debt is None or equity is None:
+            return None
+        return debt + equity - (cash or 0)
+
+    roic = []
+    for i, y in enumerate(years):
+        # is_rows est déjà dans le même ordre que `years` (voir `years = [year_of(r) ...]`
+        # juste au-dessus) — accès positionnel direct, pas besoin d'un dict par année ici.
+        ir = is_rows[i]
+        ebit = ir.get("ebit")
+        if ebit is None:
+            roic.append(None)
+            continue
+        pretax, tax_exp = ir.get("incomeBeforeTax"), ir.get("incomeTaxExpense")
+        tax_rate = (tax_exp / pretax) if (pretax is not None and pretax > 0 and tax_exp is not None) else 0.25
+        tax_rate = max(0.0, min(1.0, tax_rate))
+        nopat = ebit * (1 - tax_rate)
+        ic_now = invested_capital(y)
+        ic_prev = invested_capital(years[i - 1]) if i > 0 else None
+        ic_avg = ((ic_now + ic_prev) / 2) if (ic_now is not None and ic_prev is not None) else ic_now
+        roic.append((nopat / ic_avg * 100) if (ic_avg not in (None, 0)) else None)
+
     cash_investi = []
     for y in years:
         r = bs_by_year.get(y) or {}
         st, lt = r.get("shortTermInvestments"), r.get("longTermInvestments")
         cash_investi.append((st or 0) + (lt or 0) if (st is not None or lt is not None) else None)
 
+    # Dividende par action : TTM (365 jours glissants, voir dividend_ttm_series) plutôt
+    # que le champ FMP ratios.dividendPerShare (période "FY") utilisé avant ce correctif
+    # — confirmé FAUX (moitié du vrai montant) pour toute entreprise ayant changé de
+    # rythme de versement en cours de route, voir docstring de dividend_ttm_series.
+    # Chaque point de l'historique est ancré à la date de fin d'exercice CORRESPONDANTE
+    # (is_rows[i]["date"]), sauf le DERNIER point : plafonné à aujourd'hui plutôt que la
+    # fin du dernier exercice clos, pour refléter le dividende/rendement ACTUEL (même
+    # convention que "TTM" utilisée par les sites financiers), pas figé à une date de
+    # clôture parfois vieille de plusieurs mois.
+    dividend_cutoffs = [r.get("date") for r in is_rows]
+    if dividend_cutoffs:
+        dividend_cutoffs[-1] = datetime.date.today().isoformat()
+
     return {
         "years": years,
-        "dividende": pick(ratios_by_year, "dividendPerShare"),
+        "dividende": dividend_ttm_series(conn, symbol, dividend_cutoffs),
         "payoutRatio": pick(ratios_by_year, "dividendPayoutRatio", 100),
         "ca": [(r.get("revenue") / 1e6) if r.get("revenue") is not None else None for r in is_rows],
         "margeOp": pick(ratios_by_year, "operatingProfitMargin", 100),
-        "roic": pick(km_by_year, "returnOnInvestedCapital", 100),
+        "roic": roic,
         "fcfParAction": pick(ratios_by_year, "freeCashFlowPerShare"),
         "pFcf": pick(ratios_by_year, "priceToFreeCashFlowRatio"),
         "ocfParAction": pick(ratios_by_year, "operatingCashFlowPerShare"),
@@ -443,8 +509,37 @@ def export_symbol(conn, symbol):
     growth_rows, growth_years = build_growth(conn, symbol)
     div_row = next((r for r in growth_rows if r["label"] == "Dividende par action"), None)
 
+    # Devise de reporting REELLE de l'entreprise (reportedCurrency, deja presente sur
+    # chaque ligne income_statement FMP) - ne jamais supposer USD, l'app.js affichait
+    # jusqu'ici systematiquement "$" meme pour TotalEnergies (EUR), Samsung (KRW) etc.
+    # (retour utilisateur explicite). ~61% des 1469 symboles importes ne reportent PAS
+    # en USD (verifie en base avant ce correctif).
+    # Bug trouve ensuite (retour utilisateur tres direct sur TotalEnergies) : le
+    # reportedCurrency de FMP peut differer de la devise REELE de cotation (ex. TTE.PA
+    # tague en USD alors que le titre se traite en EUR a Paris - deja vu ailleurs dans ce
+    # projet pour le meme genre de decalage prix/fondamentaux, voir export_ranking.py sur
+    # Londres/pence ou Tencent/TSMC ADR). La devise deduite du SUFFIXE de bourse du ticker
+    # prime donc quand elle est connue et differe du tag FMP (89 symboles concernes,
+    # verifie en confrontant les deux sources avant d'ecrire ce correctif) - voir
+    # fix_currency_mismatches.py pour la meme table, reutilisee ici a la source pour que
+    # ca ne regresse jamais au prochain export_to_app.py --batch.
+    SUFFIX_CURRENCY = {
+        ".PA": "EUR", ".DE": "EUR", ".AS": "EUR", ".MC": "EUR", ".MI": "EUR", ".BR": "EUR",
+        ".HE": "EUR", ".LS": "EUR",
+        ".L": "GBP", ".SW": "CHF", ".T": "JPY", ".HK": "HKD", ".KS": "KRW", ".KQ": "KRW",
+        ".SS": "CNY", ".SZ": "CNY", ".ST": "SEK", ".OL": "NOK", ".CO": "DKK", ".SI": "SGD",
+        ".AX": "AUD", ".TO": "CAD", ".NS": "INR", ".WA": "PLN", ".IL": "ILS", ".TW": "TWD",
+        ".BK": "THB", ".JK": "IDR", ".KL": "MYR", ".NZ": "NZD",
+    }
+    currency = income_rows[-1].get("reportedCurrency") if income_rows else None
+    for suf, cur in sorted(SUFFIX_CURRENCY.items(), key=lambda x: -len(x[0])):
+        if symbol.endswith(suf):
+            currency = cur
+            break
+
     out = {
         "symbol": symbol,
+        "currency": currency,
         "incomeStatement": build_statement(income_rows, FIELD_MAP_IS),
         "balanceSheet": build_statement(balance_rows, FIELD_MAP_BS),
         "cashFlow": build_statement(cashflow_rows, FIELD_MAP_CF),

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><title>Tests mes portefeuilles</title>
+<style>body{font-family:system-ui,sans-serif;background:#0D1013;color:#E9EBEE;padding:20px}.ok{color:#4FD1A5}.ko{color:#E5636B}li{margin:3px 0}</style>
+</head><body>
+<h1>Tests — Mes portefeuilles (moteur pur, données synthétiques)</h1>
+<p id="summary"></p><ul id="out"></ul>
+<div id="pageMesPortefeuilles"></div>
+<script src="../js/mes-portefeuilles.js"></script>
+<script>
+const E = window.MP_ENGINE, out = document.getElementById('out');
+let pass = 0, fail = 0;
+const near = (a, b, eps = 1e-6) => typeof a === 'number' && Math.abs(a - b) < eps;
+function t(name, cond, detail){ cond ? pass++ : fail++; out.insertAdjacentHTML('beforeend', '<li class="' + (cond ? 'ok' : 'ko') + '">' + (cond ? '✔ ' : '✖ ') + name + (cond ? '' : ' — ' + JSON.stringify(detail)) + '</li>'); }
+const ser = (pts, ccy) => ({ ccy, d: pts.map(p => p[0]), c: pts.map(p => p[1]) });
+
+// Compte synthétique : 1 000 € versés, achat de 10 TESTCO à 50 € + 2 € de frais, vente à 60 € − 2 €, dividende 5 €
+const ops = [
+  { id: 'a', date: '2026-01-02', type: 'DEPOT', eur: 1000 },
+  { id: 'b', date: '2026-01-05', type: 'BUY', symbol: 'X:TESTCO', qty: 10, px: 50, fee: 2, eur: -502 },
+  { id: 'c', date: '2026-02-10', type: 'DIV', symbol: 'X:TESTCO', eur: 5 },
+  { id: 'd', date: '2026-03-10', type: 'SELL', symbol: 'X:TESTCO', qty: 10, px: 60, fee: 2, eur: 598 },
+];
+let r = E.replay(ops);
+t('Liquidités = 1000 − 502 + 5 + 598 = 1101', near(r.cash, 1101), r);
+t('Une transaction fermée : résultat 598 + 5 − 502 = 101 €', r.trades.length === 1 && near(r.trades[0].pnl, 101), r.trades);
+t('… soit +20,12 % en 64 jours', near(r.trades[0].pct, 101 / 502 * 100) && r.trades[0].days === 64, r.trades[0]);
+t('Plus aucune position ouverte', Object.keys(r.pos).length === 0, r.pos);
+t('Flux externes : le seul versement', r.flows.length === 1 && r.flows[0].amt === 1000, r.flows);
+
+// Vente partielle : le prix de revient restant baisse au prorata, la position reste ouverte
+r = E.replay([ops[0], ops[1], { id: 'e', date: '2026-02-01', type: 'SELL', symbol: 'X:TESTCO', qty: 4, px: 55, fee: 0, eur: 220 }]);
+t('Vente partielle : 6 titres, coût restant 301,20 €', near(r.pos['X:TESTCO'].qty, 6) && near(r.pos['X:TESTCO'].cost, 301.2), r.pos);
+
+// Validation : vente supérieure à la quantité détenue refusée
+t('Vente de 11 titres sur 10 refusée', E.validate([ops[0], ops[1], { id: 'f', date: '2026-03-01', type: 'SELL', symbol: 'X:TESTCO', qty: 11, px: 60, eur: 660 }]).ok === false);
+
+// Valorisation en euros avec change : 10 titres à 110 USD, EURUSD = 1,10 -> 1 000 €
+const S = { 'X:US': ser([['2026-01-01', 100], ['2026-01-31', 110]], 'USD'), 'FX_IDC:EURUSD': ser([['2026-01-01', 1.0], ['2026-01-31', 1.1]], 'USD') };
+t('Cours converti en euros : 110 / 1,10 = 100 €', near(E.priceEur(S, 'X:US', '2026-01-31'), 100));
+t('Cours d\'un jour sans séance = dernière clôture connue', near(E.priceEur(S, 'X:US', '2026-01-15'), 100));
+const S2 = { 'X:P': ser([['2026-01-01', 2000]], 'GBX'), 'FX_IDC:EURGBP': ser([['2026-01-01', 0.8]], 'GBP') };
+t('Titre en pence : 2 000 GBX = 20 £ = 25 €', near(E.priceEur(S2, 'X:P', '2026-01-02'), 25));
+
+// TWR insensible aux apports : +10 % en janvier puis 1 000 € versés et 0 % en février -> TWR +10 %
+const S3 = { 'X:T': ser([['2025-12-31', 100], ['2026-01-02', 100], ['2026-01-31', 110], ['2026-02-28', 110]], 'EUR') };
+const ops3 = [{ id: 1, date: '2026-01-02', type: 'DEPOT', eur: 1000 }, { id: 2, date: '2026-01-02', type: 'BUY', symbol: 'X:T', qty: 10, px: 100, eur: -1000 },
+              { id: 3, date: '2026-02-01', type: 'DEPOT', eur: 1000 }];
+const rows = E.monthly(ops3, S3, { today: '2026-02-28' });
+t('Janvier : +10 %', near(rows[0].r, 0.1, 1e-3), rows);
+t('Février : 0 % malgré 1 000 € versés', near(rows[1].r, 0, 1e-9), rows);
+t('TWR cumulé +10 %', near(E.chain(rows), 0.1, 1e-3), rows);
+
+// Position de départ (INIT) : comptée comme apport à sa valeur ; sans prix de revient -> marquée « depuis début suivi »
+r = E.replay([{ id: 'i', date: '2026-01-01', type: 'INIT', symbol: 'X:T', qty: 10, eur: 1000 }, { id: 'j', date: '2026-02-01', type: 'SELL', symbol: 'X:T', qty: 10, eur: 1100 }]);
+t('INIT vendu : +10 % mesuré depuis le début du suivi', r.trades.length === 1 && near(r.trades[0].pct, 10) && r.trades[0].fromInit === true, r.trades);
+t('INIT = flux externe de 1 000 €', r.flows[0].amt === 1000, r.flows);
+
+// XIRR : 1 000 € investis, 1 100 € un an plus tard -> 10 %
+t('TRI sur un an = 10 %', near(E.xirr([{ d: '2025-01-01', a: -1000 }, { d: '2026-01-01', a: 1100 }]), 0.1, 1e-4));
+
+// Statistiques : 2 gagnantes (+10 %, +30 %), 1 perdante (−20 %)
+const st = E.tradeStats([{ pct: 10, pnl: 10, days: 10 }, { pct: 30, pnl: 30, days: 30 }, { pct: -20, pnl: -20, days: 50 }]);
+t('Taux de réussite 66,7 %', near(st.winRate, 200 / 3), st);
+t('Gain moyen +20 %, perte moyenne −20 %', near(st.avgWinPct, 20) && near(st.avgLossPct, -20), st);
+t('Durée moyenne des gagnantes 20 j, des perdantes 50 j', near(st.avgDaysWin, 20) && near(st.avgDaysLoss, 50), st);
+
+// Montant net et miroir Wolf Portfolio × 0,70
+t('Achat net = 3 × 600 USD × 0,9 € + 1,20 € = 1 621,20 €', near(E.netAmount('BUY', 3, 600, 0.9, 1.2), -1621.2));
+const buy = { id: 'p1', date: '2026-03-01', type: 'BUY', symbol: 'X:T', qty: 10, px: 100, ccy: 'EUR', fx: 1, fee: 1, eur: -1001 };
+const m = E.mirrorOp(buy, 0.7, [], null);
+t('Miroir Wolf : 7 titres, frais 0,70 €, 700,70 €', m && near(m.qty, 7) && near(m.fee, 0.7) && near(m.eur, -700.7) && m.linkedTo === 'p1', m);
+const wolfOps = [{ id: 'w0', date: '2026-01-01', type: 'DEPOT', eur: 5000 }, Object.assign({}, m, { id: 'w1' })];
+const sellAll = E.mirrorOp({ id: 'p2', date: '2026-04-01', type: 'SELL', symbol: 'X:T', qty: 10, px: 120, fx: 1, fee: 0 }, 0.7, wolfOps, 10);
+t('Vente totale perso -> vente totale Wolf (7 titres)', sellAll && near(sellAll.qty, 7), sellAll);
+const sellPart = E.mirrorOp({ id: 'p3', date: '2026-04-01', type: 'SELL', symbol: 'X:T', qty: 2, px: 120, fx: 1, fee: 0 }, 0.7, wolfOps, 10);
+t('Vente partielle perso (2) -> 1,4 titre sur le Wolf', sellPart && near(sellPart.qty, 1.4), sellPart);
+
+document.getElementById('summary').innerHTML = '<b class="' + (fail ? 'ko' : 'ok') + '">' + pass + ' réussis, ' + fail + ' échoués</b>';
+window.__testResult = { pass, fail };
+</script>
+</body></html>

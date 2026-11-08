@@ -12,14 +12,69 @@ agressif" dans Pièges techniques) — `file://` n'a aucun mécanisme HTTP de ca
 donc aucun fix embarqué dans la page elle-même ne peut garantir un contenu frais. Fix
 définitif : un raccourci Bureau **« Wolf Analysis »** (créé via PowerShell/WScript.Shell,
 pointe vers `Lancer Wolf Analysis.bat` à la racine du dépôt) lance un petit serveur HTTP
-local (`.claude/static-server.ps1`, port 8137, démarré en arrière-plan s'il ne tourne pas
-déjà — vérifié par un test de connexion TCP avant de le relancer) puis ouvre
-`http://localhost:8137/` dans le navigateur par défaut. Le serveur envoie
+local (`.claude/static-server.ps1`, port préféré 8189, démarré en arrière-plan s'il ne
+tourne pas déjà — vérifié par un test de connexion TCP avant de le relancer) puis ouvre
+`http://localhost:<port>/` dans le navigateur par défaut. Le serveur envoie
 `Cache-Control: no-cache, no-store, must-revalidate` sur CHAQUE réponse : une version
 périmée devient structurellement impossible tant que ce raccourci est utilisé.
 **L'utilisateur doit désormais toujours utiliser ce raccourci, plus jamais `index.html`
 en direct.** Si le raccourci Bureau disparaît, le recréer avec le même script
 PowerShell (`WshShell.CreateShortcut`, cible = `Lancer Wolf Analysis.bat`).
+**Port auto-réparant (ne plus coder un port en dur "en espérant qu'il tienne") :**
+Windows exclut périodiquement certaines plages de ports (réservées dynamiquement,
+notamment par Hyper-V/WSL NAT — vérifiable via `netsh interface ipv4 show
+excludedportrange protocol=tcp`), ce qui a déjà rendu 3 ports fixes successifs
+injoignables (8091 le 2026-09-01, 8137 le 2026-09-05, 8189 le 2026-09-06 — même
+symptôme à chaque fois : le raccourci "ne fonctionne plus" car `HttpListener.Start()`
+lève une exception silencieuse dans une fenêtre cachée). `static-server.ps1` tente
+maintenant son port préféré (8189) puis, si le bind échoue, demande à l'OS un port
+libre garanti (`TcpListener` sur le port 0) et bascule dessus automatiquement — le
+port RÉELLEMENT utilisé est toujours écrit dans `.claude/server-port.txt`, relu par
+`Lancer Wolf Analysis.bat` avant d'ouvrir le navigateur. Si ce bug se reproduit encore
+(port 8189 à son tour exclu), **le raccourci de l'utilisateur continuera de
+fonctionner tout seul** grâce à ce mécanisme, sans qu'un nouveau port soit codé en dur
+par Claude. Seul `.claude/launch.json` (utilisé par l'outil de prévisualisation
+navigateur de Claude, qui a besoin d'un port fixe connu à l'avance) devra être bumpé
+manuellement si son port déclaré (8189) devient exclu un jour — cas rare et sans
+impact pour l'utilisateur, qui passe toujours par le `.bat` auto-réparant.
+
+## RÈGLE ABSOLUE (2026-10-27) — données d'actions = TRADINGVIEW, jamais le Google Sheet
+
+L'utilisateur paie un abonnement TradingView et a interdit de prendre les données d'actions (cours, ratios, valorisation,
+onglet Analyse...) sur le Google Sheet, jugé périmé. **Le Sheet ne sert plus que pour les transactions des portefeuilles**
+(Wolf Portfolio, Perso PEA/CTO) et la macro. Le chargement de l'onglet Analyse lit `data/tv-analyse.json`
+(`loadTvAnalyse()` dans `js/app.js`, appelé depuis `loadAllDataFromAppsScript()` ; `handleCsvRows()` ne sert plus à rien pour les
+entreprises). Détails, sources, formules et procédure de mise à jour hebdomadaire : **`tv-data/README.md`**.
+- Les lignes TradingView portent `tvSource:true` : `applyFmpRatioOverrides()` ne les écrase jamais (`isTvCompany()`).
+- **Temps réel** : à CHAQUE affichage d'une entreprise (`renderCompany` -> `tvLiveRefresh`, 1 fois/30 s/entreprise), cours et ratios
+  ACTUELS sont relus sur TradingView via le serveur local, y compris pour les entreprises de la base FMP (symbole TradingView trouvé
+  par recherche de nom puis mémorisé dans `localStorage wolfTvSymbolMap`) ; prix juste/cible/écart recalculés avec la médiane P/FCF de la fiche.
+- **Valorisation par multiples (2026-11-07)** : dans l'onglet **VALORISATION** (PAS Analyse — l'utilisateur l'a exigé),
+  boutons « Valoriser avec l'EV/EBITDA » / « … le P/B » à côté de FCF/OCF/PER. **EV/EBITDA (refait le 2026-11-08, méthode de
+  l'utilisateur)** : base = EBITDA 12 MOIS par action (plus la moyenne 5 ans, qui sous-estimait la projection) ; valeur actuelle =
+  EBITDA/action × multiple − dette nette/action ; 5 ans = EBITDA×(1+CAGR)^5 × multiple − dette nette FUTURE/action (champ par
+  scénario, vide = dette actuelle, sauvée dans l'objectif) ; cartes : prix théorique actuel / 5 ans / potentiel total / rendement
+  annualisé (pas de « −20 % »). Moteur unique `VALO_MULTIPLES.evEbitdaScenario` (computeScenario y délègue quand on lui passe
+  `{actuelle, future}` via `evDetteArg()`). Calculatrice (EV/EBITDA + calcul libre) sous les scénarios.
+  **EV/EBITDA historique** : saisi année par année (plage libre, relevé dans l'appli TradingView car ni l'EV ni la trésorerie
+  historiques ne sont dans le scanner public), stocké dans `data/mes-portefeuilles/multiples.json` (serveur). Moyennes 5/10/15/20 ans ;
+  scénarios par défaut : pessimiste = plus basse des moyennes, réaliste = MÉDIANE DES MOYENNES (pas la médiane des années, qui
+  peut tomber sous le pessimiste quand le multiple monte), optimiste = plus haute (`evHistoryStats`). EBITDA/action = EBITDA 12 mois
+  TradingView ÷ actions (vérifié Schneider : 9 311 M€ / 588,8 M = 15,81 €, identique au connecteur TradingView).
+  **EV/EBITDA actuel (TTM)** = champ scanner `enterprise_value_ebitda_current` (EV du jour ÷ EBITDA 12 mois, identique à l'appli
+  TradingView : Schneider 16,27x) — PAS `enterprise_value_ebitda_ttm` (16,00x, mélange deux taux de change), gardé en repli.
+  Affiché dans la tuile du résumé, dans le tableau historique (écart vs réaliste) et en bouton « Actuel » des scénarios. Ping v=10. P/B : projette l'actif
+  net par action (`multiplesValoInputs()`, `renderMultiplesSummaryTiles()`, `renderMultiplesHistory()` dans app.js ;
+  moteur pur `js/valo-multiples.js`, tests `tests/valo-multiples.test.html` à ouvrir via le serveur). Données TradingView
+  EN DIRECT uniquement (jamais FMP) via `/api/tv/snapshot` (`row.tvMultiples`). Le multiple MOYEN historique n'existe pas
+  en série dans le scanner public : l'utilisateur le relève dans l'appli TradingView et le colle dans la 4e tuile (un
+  nombre ou la liste des valeurs annuelles, moyenne automatique), localStorage `wolfMultiplesHisto` ; à défaut, multiple
+  actuel. Seul un objectif enregistré avec la MÊME méthode est rechargé en EV/EBITDA ou P/B. **Devise vérifiée** : les séries `_fy_h` sont DÉJÀ
+  dans la devise de cotation (livres, pas pence : ×100 pour GBX), les champs `_ttm/_fq` en devise « fondamentale »
+  (convertis par `TV_MONEY_FIELDS`). Le scanner n'a PAS d'historique des fonds propres, de la trésorerie ni des multiples.
+- Entreprise hors liste : suggestions et ratios actuels via le serveur local (`/api/tv/search`, `/api/tv/snapshot`, ping v=7),
+  fiche mise en cache (`localStorage wolfTvOnDemand`). **Après modif de `static-server.ps1` l'utilisateur relance le raccourci.**
+- Données TradingView git-ignorées (`data/tv-*.json`, `tv-data/raw*/`) : licence personnelle, dépôt public.
 
 ## Structure du projet
 
@@ -526,6 +581,186 @@ sous-bloc évolution mensuelle + un sous-bloc positions.
   cet onglet est en lecture seule depuis le Sheet (comme le Wolf Portfolio), pas de
   `localStorage` ni de `data/perso.json`.
 
+### Onglet « Mes portefeuilles » — PEA, CTO, PEA + CTO, Wolf Portfolio (fait, 2026-11-08)
+Remplace la saisie des transactions dans le Google Sheet (l'utilisateur ne veut plus s'en servir pour ses portefeuilles).
+Sous-onglet « 📒 Mes portefeuilles » de 💼 Portefeuille (`#pageMesPortefeuilles`, `js/mes-portefeuilles.js`, CSS `.mp-*`).
+Les anciennes pages Sheet (Wolf Portfolio, Perso) sont conservées telles quelles pour l'instant.
+- **Données = un FICHIER** `data/mes-portefeuilles/portefeuilles.json` (git-ignoré : données perso, dépôt public), écrit par
+  le serveur (`POST /api/store/save?name=portefeuilles`, lu par `GET /api/store/load`), mêmes protections que le Portefeuille IA :
+  révision/409, écriture atomique, copies datées `backups/` (1/10 min, 300), copie dans `Documents\Wolf Analysis -
+  sauvegardes\mes-portefeuilles`, refus de toute opération disparue non déclarée dans `deleted`. Le GET direct du dossier est
+  interdit (403). **Règle absolue : ne jamais écrire/écraser ce fichier à la main ni le tester en vrai** — instance jetable
+  `static-server.ps1 -Port <libre> -IaDir <tmp> -StoreDir <tmp>` sur une COPIE. `multiples.json` (même dossier) = EV/EBITDA saisis.
+- **Modèle** : `{version, revision, config:{wolfRatio:0.70, debut, cac:'EURONEXT:PX1', spx:'SP:SPX'}, symbols:{'BOURSE:SYM':{nom,ccy}},
+  accounts:{pea|cto|wolf:{label, ops:[...]}}}`. Op : `{id, date, type, symbol?, qty?, px? (devise de cotation), ccy?, fx? (€ pour
+  1 unité, comme le « taux de change » Saxo), fee? €, eur (effet signé sur les liquidités, AUTORITAIRE), note?, linkedTo?}`.
+  Types : DEPOT, RETRAIT, INIT (position au début du suivi : `eur` = valeur à cette date = flux externe, `pruEur` facultatif),
+  BUY, SELL, DIV (net reçu), FRAIS, ATTRIB (actions gratuites).
+- **Cours** : TradingView uniquement, clôtures quotidiennes **non ajustées** via `GET /api/tv/history?symbols=&from=`
+  (`tv-data/tv_history.py`, websocket public, cache `cache-prix/` 30 min, `fresh=1` pour forcer). Non ajusté car les quantités
+  réelles sont rejouées (une attribution ou un split est une opération). Change `FX_IDC:EUR<CCY>`, GBX ÷ 100.
+- **Calculs** (`window.MP_ENGINE`, tests `tests/mes-portefeuilles.test.html`) : TWR = Modified Dietz par mois chaîné (apport pondéré
+  depuis le début de sa journée) ; TRI = XIRR (ramené à la période) ; CAC 40 et S&P 500 converti en € sur les mêmes bornes ;
+  statistiques = une POSITION = une transaction (première entrée → sortie complète, dividendes inclus) : % gagnantes, gain moyen,
+  perte moyenne, durées, ratio gain/perte, espérance ; option « inclure les positions ouvertes ». Filtre par année.
+- **Wolf Portfolio = copie à 70 %** (`config.wolfRatio`) : tout achat/vente saisi en PEA/CTO propose « Reproduire sur le Wolf
+  Portfolio » (quantité × 0,70, fractionnée ; vente totale perso = vente totale Wolf). La copie porte `linkedTo` et est supprimée
+  avec l'original. Le Wolf est public ; PEA/CTO restent derrière le même verrou que l'onglet Perso (`persoUnlocked`).
+- **Interface (refonte du 2026-11-08 après retour « pas ergonomique, moche »)** : 4 cartes de comptes cliquables en tête (PEA /
+  CTO / PEA + CTO / Wolf, valeur + performance), boutons rapides « Achat / Vente / Dividende / Versement / Autre… », puis grilles
+  2 colonnes : graphique vs indices | indicateurs ; positions avec LOGOS | camembert de répartition ; mois par mois (avec les
+  opérations du mois en pastilles à logos) | statistiques (anneau % gagnantes) ; journal groupé par mois. Saisie dans une FENÊTRE :
+  type en pastilles, formulaire à gauche, récapitulatif en direct à droite (montant, PRU, plus-value réalisée, copie Wolf).
+  Recherche de titres `/api/tv/search?all=1` (actions ET ETF, avec `logoid`). Logos = `symbols[sym].logoid` TradingView
+  (`s3-symbol-logo.tradingview.com/<logoid>--big.svg`). Un cours manquant affiche un bandeau d'alerte (jamais de chiffre faux muet).
+- **Historique TradingView : UNE seule connexion websocket** pour tous les symboles (6 connexions parallèles = 429 Too Many
+  Requests, constaté) ; repli sur le dernier cache connu. Serveur ping v=9.
+- `INIT.achatDate` = vraie date du premier achat (durée de détention dans les statistiques).
+- **Import initial (2026-11-08)** : CTO depuis le relevé Saxo (86 opérations, liquidités = 2 038,46 € au centime ; essais SRD à
+  découvert Saint-Gobain / Dassault Systèmes / Dassault Aviation exclus à la demande de l'utilisateur, leur résultat net
+  −232,49 € passé en un RETRAIT daté du 03/08) ; PEA depuis captures Crédit Agricole + positions au 01/01/2026 valorisées au
+  31/12/2025 (vente Stoxx 600 du 28/08 comptée comme un versement de 711,03 €, à la demande de l'utilisateur ; liquidités de
+  départ 695,22 € DÉDUITES du Sheet, à vérifier) ; Wolf depuis le journal du Sheet (cash 6 936,05 € vs 6 933,12 € au Sheet).
+
+### Onglet Portefeuille IA (fait, 2026-09-19)
+Sous-onglet de « 💼 Portefeuille » : 4 portefeuilles simulés (ChatGPT, Claude, Gemini, Grok, logos
+dans `data/ai-logos/`), 10 000 € chacun, l'utilisateur y enregistre à la main les achats/ventes que
+chaque IA propose (routine hebdo, ~100 €), n'importe quelle entreprise des ~2 300 de la base FMP.
+Tout est valorisé en EUROS, dividendes crédités au cash, comparaison des 4 IA + S&P 500 converti en €.
+Code : `js/portefeuille-ia.js` (chargé après `app.js`, expose `window.IA_ENGINE` = moteur pur testable,
+`window.IA_UI`), CSS préfixé `.ia-` en fin de `style.css`, page `#pagePortefeuilleIA`.
+
+- **Source de vérité = un FICHIER** `data/portefeuille-ia/portefeuilles.json`, écrit par le serveur
+  local (`POST /api/ia/save` dans `.claude/static-server.ps1`) — **jamais localStorage/IndexedDB**
+  (cloisonnés par origine/port : c'est l'incident VINCI). **Anti-perte** : le serveur refuse toute
+  sauvegarde qui ferait disparaître un `id` d'opération SAUF si le client le déclare dans `deleted:[ids]`
+  (suppression voulue par l'utilisateur, « 🗑 Supprimer » en 2 clics) ; toute suppression force une copie
+  datée dans `backups/`. Un onglet périmé ou un bug ne peut donc pas effacer d'opérations. Suppression
+  refusée côté client si d'autres opérations en dépendent (ex. vente ultérieure).
+  Contrôle de concurrence par `revision`/`baseRevision` (409 si un autre onglet a écrit), écriture
+  atomique, copie datée dans `backups/` (1 / 10 min, 300 conservées). Si le serveur est injoignable
+  (page ouverte en `file://`, ancien serveur non redémarré) : bandeau rouge et achats/ventes/
+  actualisation désactivés — jamais de données seulement en mémoire. **Après toute modif de
+  `static-server.ps1`, l'utilisateur doit fermer le serveur et relancer le raccourci** (il tourne
+  en fenêtre cachée avec l'ancien script tant qu'il n'est pas redémarré).
+- **Endpoints** (`Test-WriteGuards` : POST, `Content-Type: application/json`, en-tête `X-Wolf-IA: 1`,
+  `Origin` = `http://localhost:<port>`, corps ≤ 2 Mo, UTF-8 strict) : `GET /api/ia/ping`,
+  `POST /api/ia/save`, `POST /api/ia/refresh` (lance `fmp-database/refresh_portfolio_ia.py`, progression
+  dans `refresh-status.json`, 409 si déjà en cours, 429 si fini depuis < 60 s). Le GET est durci
+  (chemin canonique sous la racine, `.git`/`fmp-database/data`/`.sqlite`/`.env` refusés) et
+  `/data/portefeuille-ia/*` est TOUJOURS servi depuis le dossier de l'instance (`-IaDir`).
+  **Tests : instance jetable `powershell -File .claude/static-server.ps1 -Port <libre> -IaDir <dossier
+  temporaire>`** (n'écrit pas `server-port.txt`), données synthétiques, jamais le vrai dossier.
+- **Modèle** : `{version:1, revision, config:{capitalInitial, montantHebdo, dateDepart, strategie},
+  portfolios:{chatgpt|claude|gemini|grok:{label, modele, trades:[{id,type:'BUY'|'SELL',date,symbol,nom,
+  eur,qty,px,ccy,fx,source:'live'|'cloture'|'manuel',note,fee?,createdAt,void?,all?}]}}}`. Type
+  `DIV` (dividende saisi à la main) : `{id,type:'DIV',date,symbol,nom,qty,perShare,ccy,fx,eur,refEx?,note}`.
+  **Frais** (`fee`, € par opération, défaut = `config.fraisFixes` + `config.fraisPct` % du montant,
+  modifiable dans le formulaire) : achat = débité EN PLUS du montant et inclus dans le prix de revient ;
+  vente = déduit du produit. `eur` est
+  autoritaire ; `qty = eur·fx/px` (6 décimales) ; `px` en devise de BASE (livres, pas pence) ; `fx` =
+  unités de `ccy` pour 1 €. `all:true` = vente de toute la position (pas de reliquat d'arrondi).
+  **Les dividendes ne sont PAS stockés** : dérivés à chaque calcul du calendrier FMP (quantité
+  détenue à la clôture de la veille de l'ex-date, change à la date de paiement ; écart > 25 % du
+  cours = ignoré et listé « à vérifier »).
+- **Conventions de données (vérifiées, ne pas régresser)** : `data/prices-*.json` = cours ajustés des
+  SPLITS mais pas des dividendes, en devise de cotation native (pence pour `.L`) → les quantités sont
+  ramenées en « actions courantes » (× splits POSTÉRIEURS à l'opération) ; un cours FMP passé saisi
+  dans un achat est reconverti en unités de l'époque (`× splitFactorAfter`). **La devise de cotation
+  vient de `profile.currency` (`data/symbols-meta.json`, champs `c` base + `d` diviseur de sous-unité),
+  JAMAIS du suffixe du ticker** (CPG.L, J36.SI, KAP.IL cotent en USD) **ni de `documents-*.json`**
+  (devise de reporting). Change = `data/fx-{CCY}.json` (unités de CCY pour 1 €).
+- **Données dérivées de FMP, git-ignorées** (CGU, dépôt public) : `data/symbols-meta.json`,
+  `data/events-*.json` (dividendes + splits), `data/fx-*.json`, `data/bench-sp500.json`, générées par
+  `fmp-database/export_symbols_meta.py`, `export_events.py --batch`, `export_fx.py`,
+  `export_benchmarks.py`. Le bouton « Actualiser les données » ne rafraîchit que les titres détenus
+  (`refresh_portfolio_ia.py`, met à jour la BASE SQLite puis ré-exporte les JSON, jamais l'inverse,
+  comme `refresh_prices_only.py` ; une réponse FMP vide/en erreur ne remplace rien). Nécessite
+  `FMP_API_KEY` visible par le serveur. `portefeuilles.json` et `data/ai-logos/` sont, eux, versionnés
+  (journal d'opérations : visible publiquement si commité — à ignorer dans `.gitignore` sinon).
+- **Cours en direct** : Yahoo via les relais CORS (`fetchWithRetry`), lit `meta.regularMarketPrice/
+  currency/regularMarketTime` ; attente max 8 s puis repli sur la dernière clôture du fichier
+  (badge « clôture du JJ/MM ») puis saisie manuelle. Un cours live à plus de 40 % de la dernière
+  clôture (split probable) est ignoré avec avertissement. Change live `EUR{CCY}=X`, repli fichier.
+- **Hypothèses de calcul** : 0 frais, dividendes bruts (pas de retenue à la source), actions
+  fractionnaires, pas de versement après le départ, cash jamais négatif (validé chronologiquement
+  avant chaque enregistrement, y compris pour une annulation).
+- **SIMPLICITÉ (décision de l'utilisateur, ne pas re-complexifier) : AUCUN dividende.** Ni pour les IA
+  ni pour le S&P 500 (indice de cours distribuant `^GSPC`, `data/bench-sp500.json`). `config.dividendes`
+  est FORCÉ à `false` au chargement (`iaLoad`) : le moteur ignore le calendrier FMP et les entrées `DIV`
+  (code dormant conservé : `makeDiv`, `pendingDividends`, mode `auto`/`manuel` — l'utilisateur a jugé la
+  saisie manuelle pénible et le calcul automatique risqué). Les dividendes font sous-estimer les
+  performances (surtout banques/valeurs à rendement) mais la comparaison reste équitable. Un ancien
+  `bench-sp500tr.json` (^SP500TR) est exporté mais non utilisé.
+- **5e PORTEFEUILLE « S&P 500 » (clé `sp500`, `SP_KEY`)** : un VRAI portefeuille alimenté à la main, comme
+  les 4 IA (mêmes formulaires, frais, modifier/supprimer, performance sur l'argent investi), sur un ETF
+  DISTRIBUANT (`SPY`, `SP_SYMBOL`, données ajoutées par `fmp-database/add_ia_symbol.py SPY`) : les
+  dividendes ne sont pas comptés. Bouton « + Verser 1 000 € (SPY) » (`config.sp500Mensuel`, défaut 1 000 ;
+  l'ancien défaut 100 est corrigé en mémoire au chargement) ; pastille « ✔/✖ S&P 500 (ce mois-ci) » dans le
+  comparatif. Remplace l'ancien S&P « calculé » (`sp500Dca`, code dormant). Tant qu'il n'a rien investi, la
+  courbe montre l'indice `^GSPC` en repère. Le fichier peut n'avoir que 4 portefeuilles (le 5e est créé en
+  mémoire, écrit au premier enregistrement) : le serveur EXIGE les 4 IA et ACCEPTE `sp500` en plus
+  (`$iaRequiredKeys`/`$iaAllowedKeys`, ping v=5). Pour ajouter un autre ETF au sélecteur : `python
+  add_ia_symbol.py SYMBOLE` (profil + cours + dividendes + splits + `symbols-meta.json`).
+- **Enregistrer les 4 achats d'un COUP, sans les saisir d'un coup** (décision de l'utilisateur : un formulaire
+  unique à 4 lignes a été REFUSÉ) : chaque IA se remplit dans SON onglet comme d'habitude ; le bouton « Mettre
+  de côté » (à côté de « Enregistrer l'achat ») valide l'achat sans l'écrire (`submitForm(true)`, un brouillon
+  par portefeuille dans `ui.drafts`, gardé en localStorage `wolfIaAchatsEnAttente` = simple confort,
+  PAS dans le fichier de données) ; une barre « 📥 N achats en attente » (`draftsBarHtml`) propose
+  « Enregistrer les N achats d'un coup » (`commitDrafts`) = UN `iaSave`, TOUT OU RIEN (chaque portefeuille
+  validé avant toute écriture). « ✕ » retire un brouillon.
+- **Origine des courbes = lundi de la semaine de la PREMIÈRE transaction** (les 5 portefeuilles), ou lundi
+  de la semaine en cours sans transaction (JAMAIS un « aperçu » sur des mois passés : jugé faux).
+- **PERFORMANCE = SUR L'ARGENT INVESTI, JAMAIS SUR LA RÉSERVE DE CASH** (décision de l'utilisateur : sur
+  12 000 € de réserve, un achat de 100 € donnait des pourcentages absurdes). `config.capitalInitial`
+  (défaut 12 000 €) n'est qu'une RÉSERVE qui finance les achats (éditable à tout moment). Formule :
+  `perfInv = (valeur des positions + produit net des ventes − argent investi cumulé) / argent investi
+  cumulé`, frais inclus (`computeMetrics`: `investedTotal`, `proceeds`, `gainInv`, `perfInv`). Courbes =
+  cette même performance cumulée en % (`buildSeries` renvoie aussi `.pos/.inv/.proc`), classement trié
+  dessus. S&P de référence : même formule (`sp500Dca` : `pos`/`contrib`, MÊMES frais que les IA,
+  `config.sp500Mensuel` défaut 1 000 €/mois = budget mensuel de l'utilisateur, plafonné par la réserve).
+  Défauts pour une NOUVELLE installation : réserve 12 000 €, frais 1 % (`fraisPct`), S&P 1 000 €/mois ;
+  un fichier existant garde ses propres valeurs (réglages ⚙, jamais modifiés d'office : les données de
+  l'utilisateur ne sont pas réécrites par une mise à jour).
+- **Miniature YouTube** (bouton « 🖼 Miniature YouTube », `buildThumbnail(dark)`/`exportThumbnail()`) : visuel COMPACT
+  2000x1200 à poser dans un COIN d'une miniature (décision de l'utilisateur : il ne prend pas toute la place) — une seule
+  courbe (4 IA, pas de S&P), sans axes ni date ni tableau, courbes épaisses + gros logos + gros pourcentages lisibles réduits.
+  PNG à fond transparent (aperçu sur damier) ou panneau sombre arrondi. Même plage que le Comparatif.
+- **Frais** : voir modèle ; un achat démarre à -frais € de P&L (attendu : un frais de 1,70 € avait été
+  pris pour un bug « perdu 1,70 € dès l'achat »).
+- **Modifier / supprimer** : « ✏ Modifier » sur un ACHAT (formulaire prérempli, même `id`, même `createdAt`,
+  validé sur tout le journal ; les ventes ne se modifient pas : supprimer puis refaire), « 🗑 Supprimer »
+  en 2 clics (voir anti-perte).
+- **Sauvegardes (l'utilisateur exige zéro perte, y compris lors des mises à jour de l'appli)** :
+  1) fichier principal `data/portefeuille-ia/portefeuilles.json` ; 2) copies datées `backups/` (≤ 1/10 min,
+  300 conservées, TOUJOURS une avant suppression) ; 3) copie HORS projet `Documents\Wolf Analysis -
+  sauvegardes\portefeuille-ia\` (`portefeuilles-derniere.json` à chaque enregistrement + une par jour,
+  300 jours) écrite par le serveur (paramètre `-ExtBackupDir` pour tester) ; 4) bouton « 💾 Sauvegarde »
+  de l'onglet (chemins + téléchargement d'une copie .json). **Règle absolue pour Claude : ne jamais
+  écrire, écraser, supprimer ni `git checkout/clean/stash` dans `data/portefeuille-ia/` ; tests
+  uniquement sur copie dans un dossier jetable (`-IaDir`).**
+- **Prix d'un achat « aujourd'hui »** : direct via le serveur ; si indisponible et dernière clôture du
+  fichier FMP > 4 jours, le prix N'EST PAS prérempli (saisie obligatoire) — un prix périmé faisait
+  afficher -10 % sur un achat neuf (constaté). Jamais de repli silencieux sur un vieux cours.
+- **Pertinence par achat** (`analyzePurchases`) : chaque achat valorisé « comme s'il était détenu »
+  au cours actuel (hors dividendes), écart avec le même montant placé dans l'indice le même jour
+  (« pt / achat vs S&P »), performance moyenne / pondérée / médiane, achats gagnants, durée de
+  détention, lignes rachetées. « + Renforcer » sur une ligne = nouvel achat séparé (deux
+  transactions dans l'historique, deux lots dans l'analyse). Suppression = « 🗑 Supprimer » en 2 clics
+  (définitive, sauvegardée dans backups/). Les anciennes opérations `void:true` restent lisibles.
+- **Cours en direct** : `GET /api/ia/quote?symbol=` (le serveur interroge Yahoo lui-même, ~100-400 ms,
+  symbole validé par regex) ; repli sur les relais CORS gratuits du navigateur. Les fichiers
+  `prices-*.json` datent de la dernière ingestion FMP (souvent 1 à 2 semaines) : après un achat sur
+  un titre dont la dernière clôture a plus de 5 jours, l'actualisation des titres détenus est
+  lancée automatiquement. `GET /api/ia/ping` renvoie `v` (version du serveur) : le lanceur
+  `Lancer Wolf Analysis.bat` compare et REMPLACE un serveur périmé (sinon il ne relançait rien
+  quand le port répondait déjà). **Incrémenter `v` (ping + `v.:N` dans le .bat) à chaque changement du serveur** (v=5 : portefeuille sp500 facultatif). v=8 (2026-11-08) : /api/store/*, /api/tv/history.
+- Le moteur a été vérifié à la main sur cas synthétiques (100 € d'une action à 200 $ à 1,10 → 0,55 ;
+  GBp ÷ 100 ; split 10:1 après achat ; dividende ex-date/veille/change de paiement ; achat le jour de
+  l'ex-date sans dividende ; vente partielle PRU inchangé ; vente totale après split ; cash
+  insuffisant ; annulation refusée si une vente en dépend). À rejouer si le moteur change
+  (`window.IA_ENGINE.replay/valueNow/buildSeries`, sans DOM).
+
 ### Onglet Secteur (fait, fonctionnel)
 - 11 secteurs GICS + bucket "Autre / non classé"
 - Regroupement automatique des entreprises par secteur (normalisation par mots-clés
@@ -733,6 +968,73 @@ pas par simple concaténation) + bouton Exporter (JSON).
   les objectifs de valorisation. L'utilisateur peut aussi ajouter/retirer des fiches
   lui-même directement depuis l'onglet à tout moment, indépendamment de ce flux.
 
+### Cerveau numérique — architecture anti-perte de données (incident du 2026-09-06)
+**Contexte** : un après-midi entier a été perdu à tort à croire la fiche VINCI
+détruite. Cause réelle, en cascade : (1) un bug dans la fusion socle/local
+(`mergeAnalysesGapFill`) ajoutait une version quasi vide en fin de tableau, et
+`openAnalyse()` ouvre toujours la DERNIÈRE version par défaut — la vraie fiche
+existait, juste masquée ; (2) **changer le port du serveur local change l'origine
+(`http://localhost:PORT`), et IndexedDB est strictement partitionné PAR ORIGINE** —
+un changement de port (8091→8137→8189, à chaque fois pour contourner une plage de
+ports exclue par Windows) a rendu tout le travail accumulé sur l'ancienne origine
+invisible depuis la nouvelle, alors qu'il n'a jamais été supprimé (retrouvé intact
+via lecture directe des fichiers LevelDB du profil Edge). **Le port du serveur local
+ne doit plus JAMAIS être changé à la légère** — voir `.claude/static-server.ps1`
+(port préféré 8189 + repli automatique sur un port libre choisi par l'OS si exclu,
+écrit dans `.claude/server-port.txt`, relu par `Lancer Wolf Analysis.bat`) : ce
+mécanisme rend le raccourci de l'utilisateur auto-réparant précisément pour ne plus
+jamais avoir à re-choisir un port manuellement.
+
+**Architecture de sécurité mise en place suite à cet incident** (demande explicite de
+l'utilisateur : "que ça ne se reproduise jamais... plusieurs systèmes de backup") —
+plusieurs couches indépendantes, aucune n'étant le seul rempart :
+1. **Sauvegardes locales à générations multiples** (`backupThenWrite()`, appelée par
+   `persistCerveauData()` ET au chargement dans `loadCerveauData()`) — avant CHAQUE
+   écriture de la clé `'state'`, l'ancienne valeur est d'abord recopiée sous une clé
+   datée `backup-<horodatage ISO>` dans le MÊME object store IndexedDB. Jusqu'à
+   `CERVEAU_BACKUP_MAX_GENERATIONS` (40) générations conservées, les plus anciennes
+   purgées automatiquement (purge de la sauvegarde, jamais des données réelles).
+   Restauration via `restaurerSauvegardeCerveau(key)` + un sélecteur dans la vue
+   racine du Cerveau numérique (`listCerveauBackups()`, affiche pour chaque
+   génération le nombre de fiches/chaînes pour reconnaître laquelle choisir, jamais
+   à l'aveugle).
+2. **Sauvegarde sur disque, indépendante du navigateur** (`setupCerveauDiskBackup()`/
+   `writeCerveauDiskBackup()`, File System Access API — Chrome/Edge uniquement) —
+   bouton "🔒 Sauvegarde sur disque" : l'utilisateur choisit un fichier `.json` une
+   fois, le handle est persisté dans IndexedDB, et CHAQUE sauvegarde écrit aussi
+   silencieusement l'état complet dans ce vrai fichier. Protège spécifiquement contre
+   la classe de bug "changement d'origine" ci-dessus, puisqu'un fichier disque ne
+   dépend d'aucune origine navigateur. Écriture best-effort (jamais de popup de
+   permission intrusif à chaque sauvegarde ; si la permission a expiré, l'écriture
+   est silencieusement ignorée cette fois-ci, l'utilisateur peut recliquer le bouton).
+3. **Fusion socle/local strictement gap-fill, jamais par ajout de version** — le bug
+   d'origine dans `mergeAnalysesGapFill()` est corrigé : une version du socle dont
+   l'id ne correspond à AUCUNE version locale existante n'est plus jamais ajoutée au
+   tableau (elle est ignorée) tant que l'entité existe déjà localement ; seul un
+   gap-fill champ par champ sur une version DÉJÀ présente (même id) est appliqué.
+   Seule une entité totalement absente en local adopte le socle tel quel.
+4. **Déduplication des entités par variante de casse** (`mergeCaseVariantAnalyses()`,
+   appelée à chaque chargement) — empêche la fragmentation type "VINCI" / "Vinci"
+   observée pendant l'incident (recherche/sélection ayant créé une fiche quasi vide
+   sous une casse différente de la vraie). Fusionne vers le nom exact du Sheet
+   (`companies`) si connu, sinon vers la plus remplie ; ne retire une clé doublon
+   qu'après avoir confirmé qu'elle est totalement vide — si les deux variantes ont du
+   contenu propre non fusionnable automatiquement, les deux sont conservées intactes.
+5. **Indicateur de sauvegarde visible en temps réel** (`updateCerveauSaveStatusLabel()`,
+   "💾 Sauvegardé à HH:MM:SS") — affiché à la fois dans la vue racine du Cerveau
+   numérique et dans l'en-tête de la fiche Analyse développée elle-même, mis à jour à
+   chaque sauvegarde (bouton "Enregistrer" ET autosave continu existant,
+   `scheduleAnalyseAutosave()`, 1,5s après la dernière frappe) — pour que l'utilisateur
+   ait une confirmation immédiate sans avoir à re-cliquer "Enregistrer" par doute.
+
+**Règle impérative pour toute future session** : ne jamais tester une fonctionnalité
+en manipulant directement `cerveauData`/`saveAnalyseVersion()`/`persistCerveauData()`
+dans le navigateur partagé avec l'utilisateur (voir mémoire `feedback-shared-browser-pane`)
+— utiliser exclusivement des noms d'entité synthétiques et manifestement factices
+(ex. `TESTCO_SAFETY_CHECK`), jamais un nom d'entreprise réel, même pour "annuler" un
+test ensuite : un `revert` basé sur un état supposé plutôt que vérifié en direct est
+exactement ce qui a déclenché cet incident.
+
 ### Onglet Cerveau numérique (fait, fonctionnel)
 Base de connaissances visuelle : 11 secteurs GICS (+ "Autre") navigables → chaînes de
 valeur créées librement par l'utilisateur (nom + phases personnalisées, ex. Amont/
@@ -937,6 +1239,14 @@ travail nativement). **Ne pas réintroduire de librairie PDF sans en rediscuter.
   l'impression des fonds de couleur (sans quoi certains navigateurs les ignorent par
   défaut pour économiser l'encre) — la case « graphismes d'arrière-plan » de la boîte
   de dialogue d'impression doit rester cochée côté utilisateur, hors de portée du CSS.
+  **Piège confirmé (2026-09-06)** : dans la boîte de dialogue d'impression, la
+  **destination** doit être « Enregistrer au format PDF » (le générateur PDF natif du
+  navigateur), PAS « Microsoft Print to PDF » (un pilote d'impression Windows séparé,
+  au niveau OS) — ce dernier gère mal les mises en page complexes de ce projet (taille
+  de page personnalisée via `@page`, polices web, images en data URL) et produit un
+  PDF quasi vide, symptôme identique à un vrai bug de rendu. Si l'utilisateur rapporte
+  un export "vide" alors que l'aperçu écran est correct, vérifier ce point AVANT de
+  chercher un bug dans le code — poser la question de la destination choisie en premier.
 - **Graphiques Chart.js capturés en image** (`chartCanvasToImgHtml(canvasId)`, via
   `canvas.toDataURL('image/png')`) — un `<canvas>` ne peut pas être déplacé/cloné dans
   `#printArea` sans perdre son rendu (Chart.js dessine sur un contexte précis).
@@ -949,6 +1259,19 @@ travail nativement). **Ne pas réintroduire de librairie PDF sans en rediscuter.
 - **JSON reste le format de synchronisation multi-appareils** (voir "Conventions de
   code") — le PDF est un format de lecture/partage en plus, jamais un remplacement :
   ne pas faire dépendre `data/*.json` d'un export PDF.
+- **Photos loup en JPEG, jamais en PNG** (`data/wolf-slides/*.jpg` + `data/
+  cover-hero-wolf.jpg`) — constaté le 2026-09-08 : ces 15 photos étaient en PNG
+  (~2 Mo chacune, ~30 Mo au total) alors que c'est du contenu photographique (portrait
+  IA généré, texture/dégradés continus) où le PNG compresse très mal. Un diaporama
+  complet (jusqu'à 15 photos en full-bleed) produisait un PDF de 30-50 Mo, très lent à
+  charger — y compris/surtout sur mobile. Reconverties en JPEG qualité 85
+  (`Pillow`, `img.save(path, 'JPEG', quality=85, optimize=True)`) : ~200 Ko chacune,
+  ~10x plus léger, aucune perte visible (vérifié côte à côte). Le code n'a pas eu
+  besoin de changer pour `data/wolf-slides/*` (la résolution `WOLF_SLIDES_EXTS =
+  ['.png','.jpg','.jpeg']` essaie déjà les trois extensions) — seule la constante
+  `WOLF_COVER_HERO_URL` (codée en dur) a dû être mise à jour. **Toute future photo
+  ajoutée dans `data/wolf-slides/` ou remplaçant `cover-hero-wolf` doit être déposée
+  directement en JPEG**, jamais en PNG brut.
 - **Logo de l'entreprise concernée** (`companyLogoUrl(nom)`, résolution dynamique par
   nom comme `portfolioEntityLogo()` — jamais mise en cache en dur, donc apparaît
   automatiquement dès qu'une entreprise est ajoutée au Sheet, sans changement de code) :

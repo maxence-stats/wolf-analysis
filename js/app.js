@@ -274,19 +274,12 @@ async function loadAllDataFromAppsScript(retried){
     const data = await res.json();
     if (typeof data !== 'object' || data === null) throw new Error('réponse invalide');
     setDebug('Connecté via la méthode alternative (script).');
-    handleCsvRows(data['DATA BASE 20 ans'] || []);
+    // Entreprises, ratios, valorisation : TradingView (data/tv-analyse.json), PAS le Sheet.
+    // Le Sheet n'apporte plus que les portefeuilles (transactions) et la macro ci-dessous.
+    await loadTvAnalyse();
     if (data['WOLF Portefeuille']) handlePortfolioRows(data['WOLF Portefeuille']);
-    if (data['PRIX ACTION 20 ANS']){
-      handlePriceHistoryRows(data['PRIX ACTION 20 ANS']);
-      // handleCsvRows() ci-dessus a déjà rendu le Portefeuille Dividende une 1re fois
-      // (via renderDividendPortfolio() en fin de fonction) — à ce moment-là,
-      // priceHistoryData était encore vide, donc medianAnnualReturn() renvoyait null
-      // pour tout le monde : les positions déjà enregistrées (baseline/localStorage)
-      // affichaient "N/D" partout jusqu'à la prochaine interaction utilisateur (retour
-      // explicite : "je vois... mais il y a marqué ND"). Un second rendu ici, une fois
-      // priceHistoryData réellement peuplé, corrige l'affichage dès le chargement.
-      renderDividendPortfolio();
-    }
+    // L'ancien onglet "PRIX ACTION 20 ANS" (cours par action saisis dans le Sheet) n'est plus lu :
+    // le cours de bourse vient des fichiers de prix locaux + repli en ligne (voir loadStockChart()).
     if (data['DATA SECTORIELS US']){
       handleMacroRotationRows(data['DATA SECTORIELS US']);
       handleMacroCycleRowsFromSectoriels(data['DATA SECTORIELS US']);
@@ -518,11 +511,277 @@ function handleCsvRows(rows){
     companies[nom].push(row);
   }
 
+  finishCompaniesLoad();
+}
+
+/* ============================================================
+   DONNÉES DE VALORISATION = TRADINGVIEW (règle absolue de l'utilisateur : plus AUCUNE donnée
+   d'action/ratio ne vient du Google Sheet, qui reste réservé aux transactions des portefeuilles).
+   `data/tv-analyse.json` est produit par tv-data/build_tv_analyse.py à partir des données
+   récupérées via le connecteur TradingView (voir tv-data/README.md) ; le fichier est git-ignoré
+   (licence personnelle). Même structure que l'ancien parsing du Sheet : companies[nom] = lignes
+   par année, triées, avec exactement les mêmes champs — le reste de l'appli n'a pas changé.
+   ============================================================ */
+const TV_ROW_FIELDS = ['annee','lienImage','ticker','secteur','sousSecteur','prixActuel','prixJuste','prixCible','ecartValeur',
+  'dividende','rendementDiv','cagrDiv5','cagrDiv10','cagrDiv20','payoutRatio','fcfpeg','fcfParAction','cagrFcf5','cagrFcf10',
+  'cagrFcf20','pFcf','medianePFCF','medianePFCF20','pOcf','cagrOcf5','cagrOcf10','cagrOcf20','medianePOcf','medianePOcf20','per',
+  'eps','cagrEps5','cagrEps10','cagrEps20','ocfParAction','ca','cagrCA5','cagrCA10','cagrCA20','margeOp','roic','detteOCF',
+  'detteNetteAction','cash','cashInvesti','actions','cagrActions','devise'];
+let tvAnalyseMeta = null; // { generatedAt, source } du dernier fichier chargé
+
+function handleTvAnalyseData(data){
+  if (!data || !data.companies || Object.keys(data.companies).length === 0){
+    showError("Le fichier data/tv-analyse.json est vide. Demande à Claude de lancer la mise à jour TradingView (voir tv-data/README.md).");
+    return;
+  }
+  tvAnalyseMeta = { generatedAt: data.generatedAt, source: data.source };
+  companies = {};
+  Object.keys(data.companies).forEach(nom => {
+    const c = data.companies[nom];
+    companies[nom] = (c.rows || []).map(r => {
+      const row = {};
+      TV_ROW_FIELDS.forEach(k => { row[k] = (r[k] === undefined ? null : r[k]); });
+      row.annee = r.annee;
+      row.lienImage = r.lienImage || '';
+      row.ticker = r.ticker || c.tv || '';
+      row.secteur = r.secteur || '';
+      row.sousSecteur = r.sousSecteur || '';
+      row.tvSource = true;   // marque : valeurs TradingView, jamais écrasées par les données FMP
+      return row;
+    }).filter(r => r.annee && r.prixActuel != null);
+    if (!companies[nom].length) delete companies[nom];
+  });
+  finishCompaniesLoad();
+}
+
+async function loadTvAnalyse(){
+  const res = await fetch('data/tv-analyse.json?_=' + Date.now(), { cache:'no-store' });
+  if (!res.ok) throw new Error('data/tv-analyse.json introuvable (HTTP ' + res.status + ')');
+  const data = await res.json();
+  handleTvAnalyseData(data);
+}
+
+/* ------------------------------------------------------------------------------------------------
+   ENTREPRISE ABSENTE DE LA LISTE SUIVIE : recherche et données directement chez TradingView.
+   Le serveur local (static-server.ps1, /api/tv/search et /api/tv/snapshot) interroge TradingView ;
+   la fiche est créée avec les ratios ACTUELS (cours, PER, P/FCF, dividende, ROIC, marge...). L'historique
+   long et le prix juste (médiane P/FCF sur 10 ans) arrivent à la prochaine mise à jour hebdomadaire de
+   Claude via le connecteur TradingView. La fiche est gardée en cache local (localStorage) et rafraîchie
+   à chaque ouverture de l'appli. ------------------------------------------------------------------- */
+const TV_ONDEMAND_LS = 'wolfTvOnDemand';
+function tvOnDemandRead(){
+  try{ return JSON.parse(localStorage.getItem(TV_ONDEMAND_LS) || '{}') || {}; }catch(e){ return {}; }
+}
+function tvOnDemandWrite(store){
+  try{ localStorage.setItem(TV_ONDEMAND_LS, JSON.stringify(store)); }catch(e){ /* stockage indisponible : fiche gardée en mémoire seulement */ }
+}
+function tvRowsFromSnapshot(tv, d){
+  const num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
+  const shares = num(d.total_shares_outstanding_fundamental);
+  const cap = (v, k) => v == null ? null : v / k;
+  const ocf = (num(d.free_cash_flow_ttm) != null && num(d.neg_capital_expenditures_ttm) != null) ? d.free_cash_flow_ttm + Math.abs(d.neg_capital_expenditures_ttm) : null;
+  const row = {};
+  TV_ROW_FIELDS.forEach(k => { row[k] = null; });
+  Object.assign(row, {
+    annee: new Date().getFullYear(), lienImage: d.logoid ? ('https://s3-symbol-logo.tradingview.com/' + d.logoid + '--big.svg') : '', ticker: tv, secteur: d.sector || '', sousSecteur: d.industry || '',
+    prixActuel: num(d.close), per: num(d.price_earnings_ttm), eps: num(d.earnings_per_share_diluted_ttm),
+    pFcf: num(d.price_free_cash_flow_ttm), fcfParAction: num(d.free_cash_flow_per_share_ttm),
+    dividende: (num(d.dividends_yield) != null && num(d.close)) ? d.dividends_yield * d.close / 100 : num(d.dps_common_stock_prim_issue_fy), rendementDiv: num(d.dividends_yield),
+    roic: num(d.return_on_invested_capital_fy), margeOp: num(d.operating_margin),
+    ca: cap(num(d.total_revenue_ttm), 1e6), actions: cap(shares, 1e6), cash: cap(num(d.cash_n_short_term_invest_fq), 1e6),
+    detteNetteAction: (num(d.net_debt_fq) != null && shares) ? d.net_debt_fq / shares : null,
+    detteOCF: (num(d.net_debt_fq) != null && ocf) ? d.net_debt_fq / ocf : null,
+    ocfParAction: (ocf != null && shares) ? ocf / shares : null,
+    tvSource: true, tvPartial: true, devise: d.currency || null
+  });
+  row.pOcf = (row.prixActuel && row.ocfParAction) ? row.prixActuel / row.ocfParAction : null;
+  row.payoutRatio = (row.dividende && row.eps && row.eps > 0) ? row.dividende / row.eps * 100 : null;
+  if (window.VALO_MULTIPLES) row.tvMultiples = window.VALO_MULTIPLES.fromSnapshot(d);   // EV/EBITDA et P/B (TradingView)
+  return [row];
+}
+function tvOnDemandDisplayName(d, fallback){
+  return String(d.description || fallback || '').replace(/\s+(Class [A-Z]|Sponsored ADR.*|Ltd\.?|Inc\.?|Corporation|Corp\.?|plc|SA|SE|NV|AG)\s*$/i, '').trim() || fallback;
+}
+// Le serveur public de TradingView renvoie les COMPTES (BPA, FCF, dividende, CA, cash, dette...) dans une devise
+// « fondamentale » (souvent l'USD) alors que le COURS est dans la devise de cotation (EUR, SEK, HKD...). Sans
+// conversion, un BPA d'Hermès s'affichait à 49,1 (USD) au lieu de 43,0 (EUR). Taux = celui que TradingView a
+// lui-même appliqué, déduit de PER = cours / BPA ; à défaut, le taux de change du moment.
+const TV_MONEY_FIELDS = ['earnings_per_share_diluted_ttm', 'free_cash_flow_per_share_ttm', 'dps_common_stock_prim_issue_fy',
+  'free_cash_flow_ttm', 'neg_capital_expenditures_ttm', 'total_revenue_ttm', 'cash_n_short_term_invest_fq', 'net_debt_fq',
+  'ebitda_ttm', 'ebitda_fy', 'total_debt_fq', 'book_value_per_share_fq'];   // ebitda_fy_h : recalé sur ebitda_fy (js/valo-multiples.js)
+async function tvRawSnapshot(tv){
+  const res = await fetch('/api/tv/snapshot?symbol=' + encodeURIComponent(tv), { cache: 'no-store' });
+  if (!(res.headers.get('content-type') || '').includes('json')) throw new Error('serveur à redémarrer');
+  const j = await res.json();
+  if (!j.ok) throw new Error(j.error || 'TradingView indisponible');
+  return j.data;
+}
+async function tvFetchSnapshot(tv){
+  const d = await tvRawSnapshot(tv);
+  const close = d.close;
+  // Taux déduit de la cohérence PER = cours / BPA (ou P/FCF = cours / FCF par action) : si les comptes étaient dans la
+  // devise du cours, le taux vaudrait 1. C'est exactement le taux que TradingView a lui-même appliqué.
+  let fx = null, coherent = false;
+  const pairs = [[d.price_earnings_ttm, d.earnings_per_share_diluted_ttm], [d.price_free_cash_flow_ttm, d.free_cash_flow_per_share_ttm]];
+  for (const [ratio, perShare] of pairs){
+    if (ratio > 0 && perShare > 0 && close > 0){
+      const r = (close / ratio) / perShare;
+      if (Math.abs(r - 1) > 0.02) fx = r; else coherent = true;
+      break;
+    }
+  }
+  if (!fx && !coherent){
+    // ni PER ni P/FCF exploitables : on se rabat sur le taux de change du moment, si les devises diffèrent
+    const fund = d.fundamental_currency_code || 'USD', cur = d.currency;
+    if (cur && fund !== cur){
+      try{
+        const gbx = (cur === 'GBX' || cur === 'GBp');
+        const r = await tvRawSnapshot('FX_IDC:' + fund + (gbx ? 'GBP' : cur));
+        if (r && r.close > 0) fx = r.close * (gbx ? 100 : 1);
+      }catch(e){ /* taux indisponible : valeurs laissées telles quelles plutôt qu'inventées */ }
+    }
+  }
+  if (!fx) return d;
+  const out = Object.assign({}, d, { _fxApplied: fx });
+  TV_MONEY_FIELDS.forEach(k => { if (typeof out[k] === 'number') out[k] = out[k] * fx; });
+  return out;
+}
+// Fiche COMPLÈTE (data/tv-analyse.json) déjà présente pour ce symbole TradingView, quel que soit son nom.
+function tvFullNameForTicker(tv){
+  return Object.keys(companies).find(n => { const r = companies[n] && companies[n][0]; return r && r.ticker === tv && !r.tvPartial; }) || null;
+}
+async function selectTvCompany(tv, fallbackName){
+  const full = tvFullNameForTicker(tv);
+  if (full){ await selectCompany(full); return; }   // historique complet plutôt que la fiche partielle
+  const label = document.getElementById('activeCompanyLabel');
+  if (label) label.textContent = 'Recherche des données TradingView…';
+  try{
+    const snap = await tvFetchSnapshot(tv);
+    const nom = tvOnDemandDisplayName(snap, fallbackName);
+    // une entreprise déjà connue sous ce nom (liste suivie) garde sa fiche complète
+    if (!companies[nom]){
+      companies[nom] = tvRowsFromSnapshot(tv, snap);
+      const store = tvOnDemandRead();
+      store[nom] = { tv, snap, at: Date.now() };
+      tvOnDemandWrite(store);
+    }
+    await selectCompany(nom);
+  }catch(e){
+    if (label) label.textContent = 'TradingView : ' + (e.message || 'échec') + (String(e.message).includes('redémarrer') ? ' — ferme le serveur et relance le raccourci « Wolf Analysis ».' : '');
+  }
+}
+// Au chargement : réinjecte les fiches déjà demandées (cache) puis les rafraîchit en arrière-plan.
+function tvOnDemandRestore(){
+  const store = tvOnDemandRead();
+  // une fiche partielle dont la société a maintenant sa fiche complète (même symbole) est retirée : pas de doublon
+  let pruned = false;
+  Object.keys(store).forEach(nom => { const e = store[nom]; if (e && e.tv && tvFullNameForTicker(e.tv)){ if (companies[nom] && companies[nom][0] && companies[nom][0].tvPartial) delete companies[nom]; delete store[nom]; pruned = true; } });
+  if (pruned) tvOnDemandWrite(store);
+  Object.keys(store).forEach(nom => { const e = store[nom]; if (e && e.snap && !companies[nom]) companies[nom] = tvRowsFromSnapshot(e.tv, e.snap); });
+  Object.keys(store).forEach(nom => {
+    const e = store[nom];
+    if (!e || !e.tv || (Date.now() - (e.at || 0)) < 6 * 3600 * 1000) return;   // déjà frais (< 6 h)
+    tvFetchSnapshot(e.tv).then(snap => {
+      const fresh = tvOnDemandRead(); fresh[nom] = { tv: e.tv, snap, at: Date.now() }; tvOnDemandWrite(fresh);
+      if (companies[nom] && companies[nom][0] && companies[nom][0].tvPartial){
+        companies[nom] = tvRowsFromSnapshot(e.tv, snap);
+        if (activeCompany === nom) renderCompany(nom);
+      }
+    }).catch(() => { /* hors ligne ou serveur périmé : on garde le cache */ });
+  });
+}
+
+/* ------------------------------------------------------------------------------------------------
+   TEMPS RÉEL : à chaque affichage d'une entreprise (recherche, clic depuis un classement, etc.), ses
+   ratios ACTUELS sont relus sur TradingView par le serveur local — cours, PER, P/FCF, FCF/action,
+   dividende, ROIC, marge, actions, cash — puis le prix juste / cible / écart sont recalculés (médiane
+   P/FCF de la fiche, plafonnée à 25x). Fonctionne pour les 72 entreprises suivies ET pour toutes les autres
+   (le symbole TradingView est trouvé par une recherche par nom, puis mémorisé). Au plus une fois / 30 s
+   par entreprise ; si TradingView ne répond pas, les données déjà affichées sont conservées. ------------ */
+const TV_SYMBOL_MAP_LS = 'wolfTvSymbolMap';
+const TV_FMP_SUFFIX_EXCHANGES = { PA: ['EURONEXT'], AS: ['EURONEXT'], BR: ['EURONEXT'], LS: ['EURONEXT'], DE: ['XETR'], F: ['FWB', 'XETR'],
+  MI: ['MIL'], SW: ['SIX'], MC: ['BME'], L: ['LSE'], ST: ['OMXSTO'], CO: ['OMXCOP'], HE: ['OMXHEX'], OL: ['OSL'], TO: ['TSX'], HK: ['HKEX'],
+  T: ['TSE'], AX: ['ASX'], KS: ['KRX'], SS: ['SSE'], SZ: ['SZSE'], NS: ['NSE'], BO: ['BSE'], SI: ['SGX'], TW: ['TWSE'] };
+let tvLiveLast = {};
+function tvSymbolMapRead(){ try{ return JSON.parse(localStorage.getItem(TV_SYMBOL_MAP_LS) || '{}') || {}; }catch(e){ return {}; } }
+function tvSymbolMapWrite(m){ try{ localStorage.setItem(TV_SYMBOL_MAP_LS, JSON.stringify(m)); }catch(e){ /* stockage indisponible */ } }
+async function tvResolveSymbol(nom){
+  const cached = tvSymbolMapRead()[nom];
+  if (cached) return cached;
+  const fmp = fmpSymbols[nom] || '';
+  const suffix = fmp.includes('.') ? fmp.split('.').pop().toUpperCase() : '';
+  const preferred = suffix ? (TV_FMP_SUFFIX_EXCHANGES[suffix] || []) : ['NASDAQ', 'NYSE', 'AMEX'];
+  const res = await fetch('/api/tv/search?q=' + encodeURIComponent(fmpDisplayName(nom)), { cache: 'no-store' });
+  if (!(res.headers.get('content-type') || '').includes('json')) return null;
+  const j = await res.json();
+  const list = (j.ok && j.results) ? j.results.filter(r => r.type === 'stock' || r.type === 'dr') : [];
+  if (!list.length) return null;
+  const pick = list.find(r => preferred.includes(String(r.symbol).split(':')[0])) || list[0];
+  const m = tvSymbolMapRead(); m[nom] = pick.symbol; tvSymbolMapWrite(m);
+  return pick.symbol;
+}
+function tvApplySnapshotToRow(row, d, tv){
+  const num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
+  const set = (k, v) => { if (v != null) row[k] = v; };
+  const shares = num(d.total_shares_outstanding_fundamental);
+  const ocf = (num(d.free_cash_flow_ttm) != null && num(d.neg_capital_expenditures_ttm) != null) ? d.free_cash_flow_ttm + Math.abs(d.neg_capital_expenditures_ttm) : null;
+  set('prixActuel', num(d.close)); set('per', num(d.price_earnings_ttm)); set('eps', num(d.earnings_per_share_diluted_ttm));
+  set('pFcf', num(d.price_free_cash_flow_ttm)); set('fcfParAction', num(d.free_cash_flow_per_share_ttm));
+  set('dividende', (num(d.dividends_yield) != null && num(d.close)) ? d.dividends_yield * d.close / 100 : num(d.dps_common_stock_prim_issue_fy)); set('rendementDiv', num(d.dividends_yield));
+  set('roic', num(d.return_on_invested_capital_fy)); set('margeOp', num(d.operating_margin));
+  if (num(d.total_revenue_ttm) != null) row.ca = d.total_revenue_ttm / 1e6;
+  if (shares) row.actions = shares / 1e6;
+  if (num(d.cash_n_short_term_invest_fq) != null) row.cash = d.cash_n_short_term_invest_fq / 1e6;
+  if (num(d.net_debt_fq) != null && shares) row.detteNetteAction = d.net_debt_fq / shares;
+  if (num(d.net_debt_fq) != null && ocf) row.detteOCF = d.net_debt_fq / ocf;
+  if (ocf != null && shares){ row.ocfParAction = ocf / shares; if (row.prixActuel) row.pOcf = row.prixActuel / row.ocfParAction; }
+  if (row.dividende && row.eps && row.eps > 0) row.payoutRatio = row.dividende / row.eps * 100;
+  // valorisation : FCF/action × médiane P/FCF de la fiche (plafonnée à 25x) — impossible sans médiane (fiche « partielle »)
+  const med = num(row.medianePFCF), fcfps = num(row.fcfParAction);
+  if (med && fcfps && fcfps > 0 && row.prixActuel){
+    row.prixJuste = fcfps * Math.min(med, 25);
+    row.prixCible = row.prixJuste * 0.8;
+    row.ecartValeur = (row.prixActuel - row.prixJuste) / row.prixJuste;
+  } else if (!row.tvPartial){
+    row.prixJuste = null; row.prixCible = null; row.ecartValeur = null;
+  }
+  if (window.VALO_MULTIPLES) row.tvMultiples = window.VALO_MULTIPLES.fromSnapshot(d);   // EV/EBITDA et P/B (TradingView)
+  row.tvSource = true; row.tvSymbol = tv; row.tvLiveAt = Date.now();
+  if (d.currency) row.devise = d.currency;
+}
+async function tvLiveRefresh(nom){
+  const hist = companies[nom];
+  if (!hist || !hist.length) return;
+  if (Date.now() - (tvLiveLast[nom] || 0) < 30000) return;
+  tvLiveLast[nom] = Date.now();
+  const latest = hist[hist.length - 1];
+  const label = document.getElementById('activeCompanyLabel');
+  try{
+    const tv = (latest.tvSource && String(latest.ticker).includes(':')) ? latest.ticker : (latest.tvSymbol || await tvResolveSymbol(nom));
+    if (!tv) return;
+    const snap = await tvFetchSnapshot(tv);
+    tvApplySnapshotToRow(latest, snap, tv);
+    if (latest.tvPartial){
+      const store = tvOnDemandRead();
+      if (store[nom]) { store[nom].snap = snap; store[nom].at = Date.now(); tvOnDemandWrite(store); }
+    }
+    if (activeCompany === nom){
+      renderCompany(nom);   // le garde 30 s empêche toute boucle
+      const l2 = document.getElementById('activeCompanyLabel');
+      if (l2) l2.innerHTML = 'Entreprise sélectionnée : <b>' + fmpDisplayName(nom) + '</b> <span style="color:var(--text-faint);font-size:11px;">· TradingView en direct à ' + new Date().toLocaleTimeString('fr-FR') + '</span>';
+    }
+  }catch(e){
+    if (label && activeCompany === nom) label.title = 'TradingView en direct indisponible : ' + (e && e.message ? e.message : 'erreur');
+  }
+}
+
+function finishCompaniesLoad(){
+  tvOnDemandRestore();
   Object.keys(companies).forEach(nom => companies[nom].sort((a,b) => a.annee - b.annee));
 
   const names = Object.keys(companies);
   if (names.length === 0){
-    showError("Aucune ligne exploitable n'a été trouvée dans l'onglet (colonnes NOM / Année / Prix Actuel vides).");
+    showError("Aucune ligne exploitable n'a été trouvée dans les données des entreprises.");
     return;
   }
 
@@ -1058,6 +1317,21 @@ function fetchPriceHistorySeries(nom){
 // pour les ~20 entreprises de l'onglet Sheet dédié "PRIX ACTION 20 ANS" (priceHistoryData)
 // — pas de repli Yahoo/Stooq ici (fetch par entreprise, pas adapté à un calcul en lot).
 function stockRollingAnnualReturns(nom){
+  // Source = clôtures de fin d'année TradingView (une ligne par exercice dans companies[nom],
+  // champ prixActuel) : performance d'une année sur l'autre, plus de dépendance au Sheet.
+  const rows = companies[nom];
+  if (rows && rows.length > 2){
+    const out = [];
+    for (let i = 1; i < rows.length; i++){
+      const a = rows[i - 1], b = rows[i];
+      if (a.prixActuel && b.prixActuel && b.annee === a.annee + 1){
+        const isCurrent = (i === rows.length - 1);
+        const date = isCurrent ? new Date().toISOString().slice(0, 10) : `${b.annee}-12-31`;
+        out.push({ date, ret: b.prixActuel / a.prixActuel - 1 });
+      }
+    }
+    if (out.length) return out;
+  }
   const series = findPriceHistoryForCompany(nom);
   if (!series || series.length < 60) return null;
   const MS_YEAR = 365 * 24 * 3600 * 1000;
@@ -1855,7 +2129,14 @@ const MACRO_CHART_GETTERS = {
 // "data:," ) si ce cycle n'a pas encore eu lieu, ce qui produit un bloc PDF vide sans
 // erreur visible. Fix : lire la taille RÉELLE du conteneur DOM (`getBoundingClientRect`)
 // et la passer explicitement à `resize(w, h)`, qui ne dépend d'aucun cycle implicite.
-function chartToHiResDataUrl(chart, mime, scale){
+// forcedSize (optionnel {width,height}) : capture à une taille DIFFÉRENTE de celle du
+// conteneur DOM actuel — nécessaire pour les graphiques de la fiche Analyse développée,
+// logés dans une grille 2 colonnes ÉTROITE (voir .analyse-charts-row) : capturer leur
+// rect réel produisait une image "trop petite" une fois imprimée en pleine largeur de
+// page (retour explicite). maintainAspectRatio:false sur ces graphiques (voir
+// renderAnalyseCharts()) les rend redessinables à n'importe quelle taille sans déformer
+// le rendu — resize() vers une taille imposée fonctionne donc sans piège.
+function chartToHiResDataUrl(chart, mime, scale, forcedSize){
   if (!chart) return null;
   const original = chart.options.devicePixelRatio || window.devicePixelRatio || 1;
   const HI_RES = scale || 3;
@@ -1863,7 +2144,8 @@ function chartToHiResDataUrl(chart, mime, scale){
   const holder = chart.canvas && chart.canvas.parentElement;
   const rect = holder ? holder.getBoundingClientRect() : null;
   if (bump) chart.options.devicePixelRatio = HI_RES;
-  if (rect && rect.width > 0 && rect.height > 0) chart.resize(rect.width, rect.height);
+  if (forcedSize && forcedSize.width > 0 && forcedSize.height > 0) chart.resize(forcedSize.width, forcedSize.height);
+  else if (rect && rect.width > 0 && rect.height > 0) chart.resize(rect.width, rect.height);
   else chart.resize();
   let dataUrl = chart.toBase64Image(mime || 'image/png', 1.0);
   if (dataUrl === 'data:,') dataUrl = null; // canvas toujours à 0×0 malgré tout — on omet plutôt qu'embarquer une image cassée
@@ -1879,8 +2161,8 @@ function chartToHiResDataUrl(chart, mime, scale){
 // mais le risque est réel et le coût de la précaution est nul. Résolution réduite à
 // ×2 (au lieu de ×3 pour un export à l'unité) pour un export groupé — encore net à
 // l'impression, mais ~55% de volume de données en moins cumulé sur 9 images.
-function chartToPrintDataUrl(chart){
-  return chartToHiResDataUrl(chart, 'image/png', 2);
+function chartToPrintDataUrl(chart, forcedSize){
+  return chartToHiResDataUrl(chart, 'image/png', 2, forcedSize);
 }
 // Réencode une image en lui appliquant des coins arrondis (les PNG/JPEG téléchargés sont
 // des pixels bruts — un border-radius CSS n'a d'effet que sur un <img> affiché/imprimé,
@@ -2641,8 +2923,8 @@ function analysePdfRatioGridHtml(){
   }).join('');
   return `<div class="chain-pdf-ratio-grid">${cards}</div>`;
 }
-function chainPdfPanelWrap(label, innerHtml, num){
-  return `<div class="chain-pdf-panel">
+function chainPdfPanelWrap(label, innerHtml, num, extraClass){
+  return `<div class="chain-pdf-panel${extraClass ? ' ' + extraClass : ''}">
     ${num ? `<div class="chain-pdf-watermark">${num}</div>` : ''}
     <div class="chain-pdf-panel-head"><div class="chain-pdf-panel-label">${label.replace(/</g, '&lt;')}</div></div>
     ${innerHtml}
@@ -2652,11 +2934,59 @@ function chainPdfPanelWrap(label, innerHtml, num){
 // graphiques (voir exportChainAsPdf/exportCartAsPdf). Demande explicite : "j'ai un
 // bouton en haut de l'onglet Analyse, je puisse exporter et tous les ratios ils
 // s'affichent sur une fiche mise en page bien jolie... en utilisant la même trame."
+// Page de présentation (couverture) — demande explicite ("il faut une page de
+// présentation pour l'entreprise... je voudrais quelque chose qui ressemble" aux PDF
+// Wolf Academy Invest). Logo nettement plus grand qu'ailleurs dans ce PDF (140px, contre
+// 60px pour le petit logo d'en-tête répété sur chaque page suivante), nom en très grand,
+// secteur/ticker, une image "hero" en dessous SI l'entreprise a une fiche Analyse
+// développée (Cerveau numérique) avec au moins une image dans "Présentation de
+// l'entreprise" — 100% dérivé de données déjà saisies par l'utilisateur, aucun nouveau
+// champ à remplir. Sans hero, la page reste propre (logo + titre + repère), jamais un
+// espace vide disgracieux. page-break-after:always (voir CSS .chain-pdf-cover) — tout
+// le reste de la fiche démarre sur une page neuve.
+// Visuel de couverture — UN SEUL fichier fixe réutilisé pour TOUTES les fiches
+// (décision explicite : "un visuel Wolf Analysis fixe pour toutes", pas une photo par
+// entreprise — irréaliste à fournir à la main pour ~1800 sociétés). Fourni une seule
+// fois par l'utilisateur, enregistré dans data/ — l'application s'en sert désormais
+// automatiquement, plus jamais besoin de le retransmettre.
+// .jpg (pas .png) — demande explicite : les exports PDF (surtout le diaporama, qui
+// embarque jusqu'à 15 de ces photos en full-bleed) devenaient énormes (~30-50 Mo) et
+// très lents à charger, y compris sur mobile. Le PNG est mal choisi pour de la photo
+// (loup généré par IA, texture/dégradés continus) — converti en JPEG qualité 85, ~10x
+// plus léger, sans perte visible. Si une nouvelle photo est ajoutée dans ce dossier,
+// la convertir en JPEG de la même façon plutôt que de déposer un PNG brut.
+const WOLF_COVER_HERO_URL = 'data/cover-hero-wolf.jpg';
+function analyseCoverPageHtml(nom, latest, logo, sectorLine, eyebrow, sub){
+  // Mise en page inspirée du PDF de référence transmis (Wolf Academy Invest) : photo
+  // pleine hauteur ancrée à droite, fondu vers le fond sombre à gauche où le texte
+  // reste lisible (voir .chain-pdf-cover-hero/-fade/-content). Remplace
+  // brandedPdfHeader() pour CETTE page uniquement (pas de doublon logo+titre) — le
+  // petit bandeau Wolf Analysis est repris ici en version discrète. eyebrow/sub
+  // personnalisables — réutilisée par exportAnalyseFullAsPdf() ("Fiche entreprise" /
+  // "Analyse complète") ET exportAnalyseAsPdf() ("Analyse développée"), même structure
+  // visuelle pour les deux.
+  return `<div class="chain-pdf-cover">
+    <img class="chain-pdf-cover-hero" src="${WOLF_COVER_HERO_URL}" alt="">
+    <div class="chain-pdf-cover-fade"></div>
+    <div class="chain-pdf-cover-content">
+      <div class="chain-pdf-cover-wordmark"><img src="${WOLF_LOGO_URL}" alt=""> WOLF ANALYSIS</div>
+      <div class="chain-pdf-cover-eyebrow">${(eyebrow || 'Fiche entreprise').replace(/</g, '&lt;')}</div>
+      ${logo ? `<img class="chain-pdf-cover-logo" src="${logo}" alt="">` : ''}
+      <div class="chain-pdf-cover-title">${(nom || '').replace(/</g, '&lt;')}</div>
+      ${latest.ticker ? `<div class="chain-pdf-cover-ticker">${latest.ticker.replace(/</g, '&lt;')}</div>` : ''}
+      ${sectorLine ? `<div class="chain-pdf-cover-sector">${sectorLine.replace(/</g, '&lt;')}</div>` : ''}
+      <div class="chain-pdf-rule"></div>
+      ${sub ? `<div class="chain-pdf-cover-sub">${sub.replace(/</g, '&lt;')}</div>` : ''}
+    </div>
+  </div>`;
+}
 function exportAnalyseFullAsPdf(){
   if (!activeCompany) return;
   const latest = companies[activeCompany][companies[activeCompany].length - 1];
   const logo = companyLogoUrl(activeCompany);
   const sectorLine = [latest.secteur, latest.sousSecteur].filter(Boolean).join(' › ');
+
+  const coverHtml = analyseCoverPageHtml(activeCompany, latest, logo, sectorLine);
 
   const gaugeSvg = document.querySelector('#pageAnalyse #gaugeSvg');
   const gaugePanel = gaugeSvg ? chainPdfPanelWrap("Positionnement sur l'échelle de valorisation", gaugeSvg.outerHTML) : '';
@@ -2667,17 +2997,37 @@ function exportAnalyseFullAsPdf(){
   const valoPanel = (valoBox && valoBox.style.display !== 'none' && valoBox.innerHTML.trim())
     ? chainPdfPanelWrap('Valorisation enregistrée', valoBox.innerHTML) : '';
 
-  const chartsHtml = ANALYSE_CHART_EXPORT_LIST.map(([key, title], i) => {
+  // 'stock' (cours de bourse) : lightweight-charts, pas Chart.js — nécessite
+  // captureStockChartHiRes() (voir plus haut), PAS chartInstances[key] (toujours
+  // undefined pour cette clé, ce qui faisait disparaître silencieusement ce panneau —
+  // "on ne le voit même pas", confirmé, ce n'était pas juste "trop petit"). Capturé en
+  // grand format PORTRAIT dédié (demande explicite : "qu'il soit sur une page tout
+  // seul, à la verticale") — page-break-before:always via .chain-pdf-panel-stock.
+  // 'stock' traité APRÈS les 8 autres (pas à sa position d'origine, en tête de
+  // ANALYSE_CHART_EXPORT_LIST) : son page-break-before:always, placé juste après la
+  // page Ratios clés, empêchait le graphique suivant de remonter combler l'espace
+  // vide en bas de cette page (signalé : "la page, elle est vide"). Repoussé en
+  // dernier, c'est désormais "Dividende & Payout ratio" qui suit directement les
+  // ratios et remplit naturellement cette page.
+  const nonStockCharts = ANALYSE_CHART_EXPORT_LIST.filter(([key]) => key !== 'stock');
+  const stockChart = ANALYSE_CHART_EXPORT_LIST.find(([key]) => key === 'stock');
+  const chartsHtml = nonStockCharts.map(([key, title], i) => {
     const chart = chartInstances[key];
-    if (!chart) return '';
-    const url = chartToPrintDataUrl(chart);
+    const url = chart ? chartToPrintDataUrl(chart) : null;
     if (!url) return '';
     return chainPdfPanelWrap(title, `<img class="chain-pdf-chart-img" src="${url}" alt="">`, String(i + 1).padStart(2, '0'));
-  }).join('');
+  }).join('') + (stockChart ? (() => {
+    const url = captureStockChartHiRes(820, 760);
+    return url ? chainPdfPanelWrap(stockChart[1], `<img class="chain-pdf-chart-img" src="${url}" alt="">`, String(nonStockCharts.length + 1).padStart(2, '0'), 'chain-pdf-panel-stock') : '';
+  })() : '');
+
+  const scorePanel = chainPdfPanelWrap('Wolf Score', analyseScoreBlockHtml(activeCompany));
 
   const area = document.getElementById('printArea');
-  area.innerHTML = brandedPdfHeader('Fiche entreprise', activeCompany, (latest.ticker || '') + ' — Analyse complète', 'Wolf Analysis', sectorLine)
-    + gaugePanel + ratioPanel + valoPanel + chartsHtml + brandedPdfFooter();
+  // Pas de brandedPdfHeader() ici — la couverture (coverHtml) porte déjà sa propre
+  // identité (logo Wolf + nom + secteur), un 2e en-tête juste en dessous aurait fait
+  // doublon sur la même page.
+  area.innerHTML = coverHtml + gaugePanel + ratioPanel + valoPanel + chartsHtml + scorePanel + brandedPdfFooter();
   printAreaAfterImagesLoad(area);
 }
 function exportValorisationFullAsPdf(){
@@ -3008,9 +3358,18 @@ async function loadMacroFundamentalsFromApi(){
     }
   }catch(e){ /* cache indisponible/corrompu — on retente un fetch */ }
 
-  // Garantit rate10y/rate2y/cpi déjà en mémoire (creditIndicatorsData) — appel idempotent,
-  // court-circuité par son propre cache si déjà chargé par ailleurs.
-  await loadCreditIndicators();
+  // Message immédiat (2026-09-19) : la zone restait VIDE et sans aucun message pendant tout
+  // le chargement (30s+ quand Apps Script est lent) — l'utilisateur croyait le tableau disparu.
+  const loadingBox = document.getElementById('macroFundamentalsTable');
+  if (loadingBox && !loadingBox.innerHTML.trim()){
+    loadingBox.innerHTML = '<p class="macro-fund-note">Chargement des indicateurs macroéconomiques (BEA/FRED)… cela peut prendre jusqu\'à une minute quand le service Google est lent.</p>';
+  }
+
+  // Les taux 10/2 ans et l'inflation viennent des indicateurs crédit (~7 Mo, lents). On les
+  // lance EN PARALLÈLE de l'appel BEA (léger, quelques secondes) au lieu de les attendre
+  // avant : le tableau s'affiche dès que BEA répond, et les 5 colonnes taux/spread/inflation
+  // se complètent quand les indicateurs crédit arrivent (creditPromise, plus bas).
+  const creditPromise = loadCreditIndicators().catch(e => { console.warn('Indicateurs crédit indisponibles pour le tableau macro :', e); });
 
   try{
     const bea = await fetchBeaMacroDataViaAppsScript();
@@ -3018,8 +3377,9 @@ async function loadMacroFundamentalsFromApi(){
       if (!bea[f] || bea[f].error) throw new Error(`BEA ${f} : ${(bea[f] && bea[f].error) || 'donnée manquante'}`);
     });
     const quarters = Object.keys(bea.gdpGrowth).sort(); // "AAAAQn" se trie correctement en chaîne
+    const buildRows = () => {
     const rate10y = creditIndicatorsData.rate10y, rate2y = creditIndicatorsData.rate2y, cpi = creditIndicatorsData.cpi;
-    const out = quarters.map((tp, idx) => {
+    return quarters.map((tp, idx) => {
       const qEndTime = beaQuarterEndTime(tp);
       const taux10 = (rate10y && qEndTime != null) ? fredValueAtOrBefore(rate10y.dates, rate10y.values, qEndTime) : null;
       const taux2 = (rate2y && qEndTime != null) ? fredValueAtOrBefore(rate2y.dates, rate2y.values, qEndTime) : null;
@@ -3042,10 +3402,21 @@ async function loadMacroFundamentalsFromApi(){
         trade, taux10, taux2, spread, inflation, realRate
       };
     });
-    macroFundamentalsData = out;
+    };
+    // 1) Affichage immédiat dès que BEA a répondu (taux/inflation vides si crédit pas encore là).
+    macroFundamentalsData = buildRows();
     macroFundamentalsSource = 'api';
-    try{ localStorage.setItem(MACRO_FUND_LS_KEY, JSON.stringify({ ts: Date.now(), version: MACRO_FUND_CACHE_VERSION, data: out })); }catch(e){ /* quota / navigateur privé */ }
     renderMacroFundamentalsTable();
+    // 2) Complétion + mise en cache UNIQUEMENT une fois les taux disponibles — jamais de cache
+    //    d'une table incomplète (sinon elle resterait sans taux pendant 24h).
+    creditPromise.then(() => {
+      if (!creditIndicatorsData || !creditIndicatorsData.rate10y) return;
+      const full = buildRows();
+      macroFundamentalsData = full;
+      try{ localStorage.setItem(MACRO_FUND_LS_KEY, JSON.stringify({ ts: Date.now(), version: MACRO_FUND_CACHE_VERSION, data: full })); }catch(e){ /* quota / navigateur privé */ }
+      renderMacroFundamentalsTable();
+      renderMacroCycleRead();
+    });
   }catch(e){
     console.error('Erreur de chargement des indicateurs macro (BEA/FRED) :', e);
     // Repli sur la table manuelle du Sheet plutôt que de vider l'affichage — l'utilisateur
@@ -3127,7 +3498,10 @@ const WOLF_LOGO_URL = 'https://i.postimg.cc/43WmYDB1/20260714-LOGO-WINTER-PNG.pn
    ============================================================ */
 function printImagesRowHtml(images){
   if (!images || !images.length) return '';
-  return `<div class="print-img-row">${images.map(src => `<img src="${src}" alt="">`).join('')}</div>`;
+  return `<div class="print-img-row">${images.map(entry => {
+    const src = analyseImgSrc(entry), legende = analyseImgLegende(entry);
+    return `<div class="print-img-cell"><img src="${src}" alt="">${legende ? `<div class="print-img-caption">${escapeHtml(legende)}</div>` : ''}</div>`;
+  }).join('')}</div>`;
 }
 // Résout le logo d'une entreprise SUIVIE (companies[nom]), même correspondance que
 // portfolioEntityLogo()/cerveauEntityCard() — résolu à chaque appel (jamais mis en
@@ -3192,18 +3566,22 @@ function printAreaAfterImagesLoad(area){
     new Promise(res => setTimeout(res, 4000))
   ]).then(() => window.print());
 }
-// Bloc d'en-tête "charte Wolf Academy Invest" partagé par tous les exports PDF de
-// l'application (voir .chain-pdf-* dans style.css) — demande explicite : "l'ensemble
-// des PDF que j'exporte... je veux que ça soit ce même interface". `sectionLabel`
-// apparaît dans le bandeau fin (ex. "Cerveau numérique", "Wolf Analysis") ; `sectorLine`
-// est la ligne de repère optionnelle sous le titre (ex. rangement Cerveau, secteur…).
-function brandedPdfHeader(eyebrow, title, subtitle, sectionLabel, sectorLine){
+// Bloc d'en-tête PDF partagé par tous les exports (voir .chain-pdf-* dans style.css) —
+// demande explicite répétée : "l'ensemble des PDF que j'exporte... je veux que ça soit
+// ce même interface", puis retour direct après coup : "enlève les petites annotations
+// noires en texte noir, genre la date, Wolf Academy, tout ça... en haut des pages, je ne
+// veux pas" — la ligne texte fine (wordmark "WOLF ACADEMY INVEST" + libellé de section)
+// est donc retirée ici, ne reste que le logo loup seul (discret, pas de texte
+// d'accompagnement) au-dessus du VRAI titre (gros, doré). `sectionLabel` n'est plus
+// affiché (paramètre gardé pour compatibilité des appels existants, ignoré). `sectorLine`
+// reste la ligne de repère optionnelle sous le titre (ex. rangement Cerveau, secteur…).
+// entityLogoUrl (optionnel, 6e paramètre) : logo de l'entreprise/liste concernée, affiché
+// à côté du logo loup — même mécanisme que l'ancien exportSectionAsPdf() (fusionné ici).
+function brandedPdfHeader(eyebrow, title, subtitle, sectionLabel, sectorLine, entityLogoUrl){
   return `
     <div class="chain-pdf-topbar">
       <img src="${WOLF_LOGO_URL}" alt="">
-      <span class="chain-pdf-topbar-wordmark">Wolf Academy Invest</span>
-      <span class="chain-pdf-topbar-sep"></span>
-      <span class="chain-pdf-topbar-label">${(sectionLabel || 'Wolf Analysis').replace(/</g, '&lt;')}</span>
+      ${entityLogoUrl ? `<img class="chain-pdf-topbar-entity" src="${entityLogoUrl}" alt="">` : ''}
     </div>
     <div class="chain-pdf-eyebrow">${(eyebrow || '').replace(/</g, '&lt;')}</div>
     <div class="chain-pdf-title">${(title || '').replace(/</g, '&lt;')}</div>
@@ -3214,30 +3592,25 @@ function brandedPdfHeader(eyebrow, title, subtitle, sectionLabel, sectorLine){
 function brandedPdfFooter(note){
   return `<div class="print-footer">${note || 'Wolf Analysis — document généré automatiquement.'}</div>`;
 }
-function exportSectionAsPdf(title, subtitle, bodyHtml, entityLogoUrl){
+// Ancien en-tête "print-header" (logo + titre + date en clair) retiré — remplacé par
+// brandedPdfHeader(), même charte que les exports Cerveau numérique/Wolf Score. Jamais
+// de date affichée (retour utilisateur explicite, déjà appliqué au Journal Wolf Labo,
+// désormais partout).
+function exportSectionAsPdf(title, subtitle, bodyHtml, entityLogoUrl, sectionLabel){
   const area = document.getElementById('printArea');
-  const dateLabel = new Date().toLocaleDateString('fr-FR', { year:'numeric', month:'long', day:'numeric' });
-  area.innerHTML = `
-    <div class="print-header">
-      <img src="${WOLF_LOGO_URL}" alt="">
-      ${entityLogoUrl ? `<img class="print-entity-logo" src="${entityLogoUrl}" alt="">` : ''}
-      <div>
-        <div class="print-title">${title}</div>
-        <div class="print-subtitle">${subtitle ? subtitle + ' — ' : ''}${dateLabel}</div>
-      </div>
-    </div>
-    ${bodyHtml}
-    <div class="print-footer">Wolf Analysis — document généré automatiquement</div>`;
+  area.innerHTML = brandedPdfHeader('', title, subtitle, sectionLabel, '', entityLogoUrl)
+    + bodyHtml
+    + brandedPdfFooter();
   printAreaAfterImagesLoad(area);
 }
 // Capture un canvas Chart.js vivant en image (le canvas lui-même ne peut pas être
 // déplacé/cloné dans #printArea sans perdre son rendu — Chart.js dessine sur un
 // contexte précis, une copie DOM du <canvas> serait vierge).
-function chartCanvasToImgHtml(canvasId, altLabel, chartInstance){
+function chartCanvasToImgHtml(canvasId, altLabel, chartInstance, forcedSize){
   const canvas = document.getElementById(canvasId);
   if (!canvas) return '';
   try{
-    const dataUrl = chartInstance ? chartToHiResDataUrl(chartInstance) : canvas.toDataURL('image/png');
+    const dataUrl = chartInstance ? chartToHiResDataUrl(chartInstance, null, null, forcedSize) : canvas.toDataURL('image/png');
     return `<img class="print-chart-img" src="${dataUrl}" alt="${altLabel || ''}">`;
   }
   catch(e){ return ''; } // canvas taint (image cross-origin) — on omet simplement l'image
@@ -3458,6 +3831,19 @@ function openPortfolioZoom(){
   window.__zoomChart = new Chart(document.getElementById('zoomCanvas').getContext('2d'), config);
 }
 
+// Cellules "Valeur d'achat" + "Gain/Perte €" d'une position — 2026-09-09, demande
+// explicite ("combien j'ai gagné ou perdu en euros"). `achat` = coût TOTAL de la
+// position, pas un PRU par action : ni le Sheet Wolf Portfolio ni le Sheet Perso ne
+// trackent le nombre de titres détenus, seulement le montant investi total — clarifié
+// et accepté avec l'utilisateur plutôt que deviner un PRU inexact. Réutilisé par Wolf
+// Portfolio (achat = investi, gain = valorisation − investi, calculé ici) et Perso
+// PEA/CTO (achat = valeurAchat, gain = perfEur — déjà calculé par le Sheet, jamais
+// recalculé côté client pour rester identique au relevé bancaire de l'utilisateur).
+function portfolioGainCellsHtml(achat, gain){
+  const gainCls = gain == null ? '' : (gain >= 0 ? 'pos' : 'neg');
+  return `<div class="portfolio-holding-achat" title="Valeur d'achat">${fmtEUR(achat, 0)}</div>
+        <div class="portfolio-holding-gain ${gainCls}" title="Gain / perte">${gain != null ? (gain >= 0 ? '+' : '') + fmtEUR(gain, 0) : 'N/D'}</div>`;
+}
 function renderPortfolioHoldingsList(){
   const box = document.getElementById('portfolioHoldingsList');
   if (!box) return;
@@ -3476,6 +3862,7 @@ function renderPortfolioHoldingsList(){
         <div class="portfolio-holding-logo">${logo ? `<img src="${logo}" alt="">` : h.nom.toUpperCase() === 'CASH' ? `<span>💶</span>` : `<span>${h.nom.charAt(0).toUpperCase()}</span>`}</div>
         <div class="portfolio-holding-name">${h.nom}</div>
         <div class="portfolio-holding-amount">${fmtEUR(h.valorisation, 0)}</div>
+        ${portfolioGainCellsHtml(h.investi, (h.valorisation != null && h.investi != null) ? h.valorisation - h.investi : null)}
         <div class="portfolio-holding-pct">${pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</div>
         <div class="portfolio-holding-perf ${perfClass}">${h.perf != null ? (h.perf >= 0 ? '+' : '') + fmtPct(h.perf) : '—'}</div>
       </div>`;
@@ -3619,6 +4006,146 @@ async function downloadPortfolioChartAsImage(format){
 document.querySelector('[data-dropdown="pfImgExport"] .labo-dropdown-menu').addEventListener('click', e => {
   const btn = e.target.closest('[data-portfolio-img-format]');
   if (btn) downloadPortfolioChartAsImage(btn.dataset.portfolioImgFormat);
+});
+
+// Export "Composition" (liste des positions) en image — 2026-09-10, demande explicite
+// ("pas la répartition [le donut], mais la composition [la liste]... pour l'afficher
+// dans des [vidéos/miniatures]"). Même principe zéro-dépendance que
+// buildPortfolioDonutImage() : dessin manuel sur un <canvas> hors-écran (pas de
+// html2canvas — la liste n'est pas un canvas Chart.js comme le donut, donc pas de
+// toDataURL() direct disponible, mais on reste sur le même choix "pas de librairie
+// PDF/image externe" déjà tranché pour ce projet, voir CLAUDE.md "Export PDF").
+// Logos chargés en crossOrigin='anonymous' (loadImageCorsSafe, même fonction que le
+// donut) pour pouvoir relire le canvas ensuite sans le tainter.
+async function buildPortfolioCompositionImage(holdings, format){
+  await (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve());
+  const mime = format === 'jpeg' ? 'image/jpeg' : 'image/png';
+  const W = 1000, PAD = 32, ROW_H = 56, ROW_GAP = 10, HEADER_H = 84, FOOTER_H = 44;
+  const H = HEADER_H + holdings.length * (ROW_H + ROW_GAP) + FOOTER_H;
+  const canvas = document.createElement('canvas');
+  const scale = 2; // netteté (miniatures vidéo) sans dépendre de devicePixelRatio de l'écran
+  canvas.width = W * scale; canvas.height = H * scale;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(scale, scale);
+
+  const logos = holdings.map(h => portfolioEntityLogo(h.nom));
+  const exportImageCache = {};
+  await Promise.all([WOLF_LOGO_URL, ...logos.filter(Boolean)].map(async src => {
+    exportImageCache[src] = await loadImageCorsSafe(src);
+  }));
+
+  const BG = '#0D1013', PANEL = '#1B2128', BORDER = 'rgba(255,255,255,0.06)';
+  ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
+
+  // En-tête : logo Wolf + titre (même réflexe de marque que les autres exports/PDF)
+  const wolfImg = exportImageCache[WOLF_LOGO_URL];
+  if (wolfImg){ ctx.save(); ctx.beginPath(); ctx.arc(PAD + 18, HEADER_H / 2, 18, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(wolfImg, PAD, HEADER_H / 2 - 18, 36, 36); ctx.restore(); }
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = "600 20px 'Space Grotesk', sans-serif";
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Wolf Portfolio — Composition', PAD + 48, HEADER_H / 2);
+
+  const truncate = (text, maxWidth) => {
+    if (ctx.measureText(text).width <= maxWidth) return text;
+    let t = text;
+    while (t.length > 1 && ctx.measureText(t + '…').width > maxWidth) t = t.slice(0, -1);
+    return t + '…';
+  };
+  // 5 colonnes numériques réparties sur l'espace RÉELLEMENT disponible dans la carte
+  // (jusqu'à W-PAD, pas au-delà) — un premier calcul plaçait "perf" pile sur le bord
+  // du canvas, coupant le texte (constaté en test visuel).
+  const nameEnd = PAD + 330;
+  const colW = (W - PAD - nameEnd) / 5;
+  const colRight = { amount: nameEnd + colW, achat: nameEnd + colW * 2, gain: nameEnd + colW * 3, pct: nameEnd + colW * 4, perf: nameEnd + colW * 5 };
+
+  holdings.forEach((h, i) => {
+    const y = HEADER_H + i * (ROW_H + ROW_GAP);
+    ctx.fillStyle = PANEL;
+    const r = 10, x = PAD, w = W - PAD * 2;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + ROW_H, r); ctx.arcTo(x + w, y + ROW_H, x, y + ROW_H, r);
+    ctx.arcTo(x, y + ROW_H, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = BORDER; ctx.lineWidth = 1; ctx.stroke();
+
+    const cy = y + ROW_H / 2;
+    const swatch = PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length];
+    ctx.fillStyle = swatch;
+    ctx.beginPath(); ctx.arc(x + 14, cy, 4, 0, Math.PI * 2); ctx.fill();
+
+    const logoImg = logos[i] && exportImageCache[logos[i]];
+    const logoX = x + 26, logoSize = 32;
+    if (logoImg){
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(logoX + 6, cy - logoSize / 2);
+      ctx.arcTo(logoX + logoSize, cy - logoSize / 2, logoX + logoSize, cy + logoSize / 2, 6);
+      ctx.arcTo(logoX + logoSize, cy + logoSize / 2, logoX, cy + logoSize / 2, 6);
+      ctx.arcTo(logoX, cy + logoSize / 2, logoX, cy - logoSize / 2, 6);
+      ctx.arcTo(logoX, cy - logoSize / 2, logoX + logoSize, cy - logoSize / 2, 6);
+      ctx.closePath();
+      ctx.fillStyle = '#fff'; ctx.fill(); ctx.clip();
+      const ratio = Math.min(logoSize / logoImg.width, logoSize / logoImg.height);
+      const lw = logoImg.width * ratio, lh = logoImg.height * ratio;
+      ctx.drawImage(logoImg, logoX + (logoSize - lw) / 2, cy - lh / 2, lw, lh);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = swatch;
+      ctx.beginPath(); ctx.arc(logoX + logoSize / 2, cy, logoSize / 2, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#0D1013';
+      ctx.font = "700 13px 'Space Grotesk', sans-serif";
+      ctx.textAlign = 'center';
+      ctx.fillText(h.nom.charAt(0).toUpperCase(), logoX + logoSize / 2, cy + 1);
+      ctx.textAlign = 'left';
+    }
+
+    ctx.fillStyle = '#E9EBEE';
+    ctx.font = "600 13px 'Plus Jakarta Sans', sans-serif";
+    ctx.textAlign = 'left';
+    ctx.fillText(truncate(h.nom, nameEnd - 10 - (logoX + logoSize + 12)), logoX + logoSize + 12, cy);
+
+    ctx.font = "12px 'Plus Jakarta Sans', sans-serif";
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#E9EBEE';
+    ctx.fillText(h.valorisation != null ? fmtEUR(h.valorisation, 0) : 'N/D', colRight.amount, cy);
+    ctx.fillStyle = '#5C6470';
+    ctx.fillText(h.investi != null ? fmtEUR(h.investi, 0) : (h.valeurAchat != null ? fmtEUR(h.valeurAchat, 0) : 'N/D'), colRight.achat, cy);
+    const gain = (h.valorisation != null && h.investi != null) ? h.valorisation - h.investi : (h.perfEur != null ? h.perfEur : null);
+    ctx.fillStyle = gain == null ? '#5C6470' : (gain >= 0 ? '#4FD1A5' : '#E5636B');
+    ctx.fillText(gain != null ? (gain >= 0 ? '+' : '') + fmtEUR(gain, 0) : 'N/D', colRight.gain, cy);
+    const total = holdings.reduce((s, hh) => s + (hh.valorisation || 0), 0);
+    const pct = total ? h.valorisation / total * 100 : 0;
+    ctx.fillStyle = '#8B93A0';
+    ctx.fillText(pct.toLocaleString('fr-FR', {minimumFractionDigits:1, maximumFractionDigits:1}) + '%', colRight.pct, cy);
+    const perf = h.perf != null ? h.perf : (h.perfPct != null ? h.perfPct : null);
+    ctx.fillStyle = perf == null ? '#5C6470' : (perf >= 0 ? '#4FD1A5' : '#E5636B');
+    ctx.fillText(perf != null ? (perf >= 0 ? '+' : '') + fmtPct(perf) : '—', colRight.perf, cy);
+    ctx.textAlign = 'left';
+  });
+
+  ctx.fillStyle = '#5C6470';
+  ctx.font = "11px 'Plus Jakarta Sans', sans-serif";
+  ctx.textAlign = 'right';
+  ctx.fillText('Wolf Analysis — ' + new Date().toLocaleDateString('fr-FR'), W - PAD, H - FOOTER_H / 2);
+  ctx.textAlign = 'left';
+
+  return canvas.toDataURL(mime, 0.95);
+}
+async function downloadPortfolioCompositionImage(format){
+  const holdings = portfolioData.holdings.filter(h => h.valorisation != null && h.valorisation > 0).slice().sort((a, b) => b.valorisation - a.valorisation);
+  if (!holdings.length) return;
+  const dataUrl = await buildPortfolioCompositionImage(holdings, format);
+  if (!dataUrl) return;
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = `wolf-portfolio-composition.${format === 'jpeg' ? 'jpg' : 'png'}`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+document.querySelector('[data-dropdown="pfListImgExport"] .labo-dropdown-menu').addEventListener('click', e => {
+  const btn = e.target.closest('[data-portfolio-list-img-format]');
+  if (btn) downloadPortfolioCompositionImage(btn.dataset.portfolioListImgFormat);
 });
 
 // Panier : le donut affiché est tainté (logos de position sans crossOrigin, voir plus
@@ -3871,6 +4398,7 @@ function renderPersoHoldingsList(prefix, block){
         <div class="portfolio-holding-logo">${logo ? `<img src="${logo}" alt="">` : h.nom.toUpperCase().includes('CASH') ? `<span>💶</span>` : h.nom.toUpperCase().includes('IMMOBILIER') ? `<span>🏠</span>` : `<span>${h.nom.charAt(0).toUpperCase()}</span>`}</div>
         <div class="portfolio-holding-name">${h.nom}</div>
         <div class="portfolio-holding-amount">${fmtEUR(h.valorisation, 0)}</div>
+        ${portfolioGainCellsHtml(h.valeurAchat, h.perfEur)}
         <div class="portfolio-holding-pct">${pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</div>
         <div class="portfolio-holding-perf ${perfClass}">${h.perfPct != null ? (h.perfPct >= 0 ? '+' : '') + fmtPct(h.perfPct) : '—'}</div>
       </div>`;
@@ -4080,19 +4608,31 @@ function renderPersoOverview(){
 // (PEA/CTO/Cash/Immobilier) ; ici, chaque position individuelle est visible à la même
 // échelle globale.
 function buildPersoCombinedPositions(includeCashImmo){
+  // valeurAchat/perfEur sommés au même titre que valorisation (2026-09-09) — une
+  // position présente sur PEA ET CTO à la fois doit voir son achat/gain agrégés,
+  // pas juste sa valorisation (sinon la vue combinée retombe sur N/D pour ces deux
+  // colonnes alors que PEA/CTO pris séparément les affichent).
   const totals = {};
   ['pea', 'cto'].forEach(acc => {
     (persoData[acc].positions || []).forEach(p => {
       if (p.valorisation == null || p.valorisation <= 0) return;
-      totals[p.nom] = (totals[p.nom] || 0) + p.valorisation;
+      if (!totals[p.nom]) totals[p.nom] = { valorisation:0, valeurAchat:0, perfEur:0, hasAchat:false, hasPerf:false };
+      const t = totals[p.nom];
+      t.valorisation += p.valorisation;
+      if (p.valeurAchat != null){ t.valeurAchat += p.valeurAchat; t.hasAchat = true; }
+      if (p.perfEur != null){ t.perfEur += p.perfEur; t.hasPerf = true; }
     });
   });
   if (includeCashImmo !== false){
     const ci = persoData.cashImmo || {};
-    if (ci.cashTotal > 0) totals['Cash (LDDS + Livret A)'] = (totals['Cash (LDDS + Livret A)'] || 0) + ci.cashTotal;
-    if (ci.immobilier > 0) totals['Immobilier'] = (totals['Immobilier'] || 0) + ci.immobilier;
+    if (ci.cashTotal > 0){ const k = 'Cash (LDDS + Livret A)'; if (!totals[k]) totals[k] = { valorisation:0, valeurAchat:0, perfEur:0, hasAchat:false, hasPerf:false }; totals[k].valorisation += ci.cashTotal; }
+    if (ci.immobilier > 0){ const k = 'Immobilier'; if (!totals[k]) totals[k] = { valorisation:0, valeurAchat:0, perfEur:0, hasAchat:false, hasPerf:false }; totals[k].valorisation += ci.immobilier; }
   }
-  return { positions: Object.keys(totals).map(nom => ({ nom, valorisation: totals[nom] })) };
+  return { positions: Object.keys(totals).map(nom => ({
+    nom, valorisation: totals[nom].valorisation,
+    valeurAchat: totals[nom].hasAchat ? totals[nom].valeurAchat : null,
+    perfEur: totals[nom].hasPerf ? totals[nom].perfEur : null
+  })) };
 }
 
 function renderPersoPortfolio(){
@@ -4161,37 +4701,193 @@ function sectorEntrySecteurRaw(nom){
   const r = rankingSummaryData.find(e => e.nom === nom);
   return r ? r.secteur : null;
 }
-function renderSectorView(){
-  const grid = document.getElementById('sectorGrid');
-  if (!grid) return;
-
+// Filtre par liste Watchlist (défaut : toutes) — remplace l'ancien anneau de couleur
+// automatique autour de CHAQUE logo appartenant à une liste, jugé moche et illisible par
+// l'utilisateur ("tu m'as entouré les autres de jaune, c'est moche, arrête de faire ça").
+// À la place, l'utilisateur choisit explicitement UNE liste à la fois pour voir sa
+// répartition par secteur ("je veux trier quoi") — sectionEmpty affiché pour tout secteur
+// sans entreprise de la liste choisie plutôt que masqué, pour rester lisible d'un coup d'œil.
+let sectorWatchlistFilter = '';
+// Décoché par défaut (2026-09-08) : afficher les ~1670 entreprises de la base FMP
+// élargie par secteur alourdirait la grille de logos sur tous les onglets Secteur,
+// pas seulement celui qu'on regarde — proposé à l'utilisateur comme option plutôt
+// qu'imposé, il tranche lui-même en le voyant en vrai.
+let sectorShowFullUniverse = false;
+function populateSectorWatchlistFilter(){
+  const sel = document.getElementById('sectorWatchlistFilter');
+  if (!sel) return;
+  const existing = new Set(Array.from(sel.options).map(o => o.value));
+  allWatchlistKeys().forEach(key => {
+    if (existing.has(key)) return;
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = watchlistLabel(key);
+    sel.appendChild(opt);
+  });
+  sel.value = sectorWatchlistFilter;
+}
+// Regroupe un ensemble de noms dans les 11 secteurs GICS + "Autre" — extrait de
+// renderSectorView() (2026-09-08) pour être réutilisé tel quel par le screener
+// (onglet Filtres), qui a besoin de la même logique de regroupement mais sur une
+// liste de noms différente (filtrée par ratio plutôt que Sheet+Watchlist).
+function buildSectorBuckets(names){
   const buckets = {};
   GICS_SECTORS.forEach(s => buckets[s.key] = []);
   buckets['autre'] = [];
-
-  const names = new Set(Object.keys(companies));
-  WATCHLIST_LISTS.forEach(key => (watchlistStore[key] || []).forEach(nom => names.add(nom)));
-
   names.forEach(nom => {
     const secteurRaw = sectorEntrySecteurRaw(nom);
-    const listKey = watchlistLocationOf(nom);
     const bucketKey = normalizeSector(secteurRaw) || 'autre';
-    buckets[bucketKey].push({ nom, logo: companyLogoUrl(nom), listKey });
+    buckets[bucketKey].push({ nom, logo: companyLogoUrl(nom) });
   });
-
+  return buckets;
+}
+// Rend les buckets en HTML de grille (.sector-box × 11 + Autre) — même fragment
+// partagé par renderSectorView() et renderScreenerGrid().
+function sectorBucketsGridHtml(buckets){
   const allBuckets = GICS_SECTORS.concat([{ key:'autre', label:'Autre / non classé' }]);
-
-  grid.innerHTML = allBuckets.map(sec => {
+  return allBuckets.map(sec => {
     const list = buckets[sec.key].sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
+    // Titre/alt affichés en nom officiel FMP (fmpDisplayName) — data-nom reste le
+    // nom Sheet interne, seul le texte visible change (voir commentaire de
+    // fmpDisplayName()).
     const logosHtml = list.length === 0
       ? '<div class="sector-empty">Aucune entreprise</div>'
-      : list.map(c => {
-          const ring = c.listKey ? `box-shadow:0 0 0 2px ${WATCHLIST_LIST_COLOR[c.listKey]};` : '';
-          const listLabel = c.listKey ? ` · ${WATCHLIST_LABELS[c.listKey] || c.listKey}` : '';
-          return `<div class="sector-logo" style="${ring}" title="${c.nom.replace(/"/g,'&quot;')}${listLabel}" data-nom="${c.nom.replace(/"/g,'&quot;')}"><img src="${c.logo || ''}" alt="${c.nom.replace(/"/g,'&quot;')}"></div>`;
-        }).join('');
+      : list.map(c => { const label = fmpDisplayName(c.nom).replace(/"/g,'&quot;'); return `<div class="sector-logo" title="${label}" data-nom="${c.nom.replace(/"/g,'&quot;')}"><img src="${c.logo || ''}" alt="${label}"></div>`; }).join('');
     return `<div class="sector-box"><h3>${sec.label}</h3><div class="count">${list.length} entreprise${list.length>1?'s':''}</div><div class="sector-companies">${logosHtml}</div></div>`;
   }).join('');
+}
+function renderSectorView(){
+  const grid = document.getElementById('sectorGrid');
+  if (!grid) return;
+  populateSectorWatchlistFilter();
+
+  const baseNames = new Set(Object.keys(companies));
+  allWatchlistKeys().forEach(key => (watchlistStore[key] || []).forEach(nom => baseNames.add(nom)));
+  // mergeFmpUniverseNames() (2026-09-08, bug remonté par l'utilisateur : "j'ai trois
+  // fois le logo de Coca... deux fois Costco... deux fois Pepsi") — dédup par ticker,
+  // pas par chaîne de caractères exacte, voir son commentaire pour le détail des cas.
+  const names = sectorShowFullUniverse ? mergeFmpUniverseNames(baseNames) : baseNames;
+  const introEl = document.getElementById('sectorIntroText');
+  if (introEl) introEl.textContent = sectorShowFullUniverse
+    ? 'Toute la base FMP (~1670 entreprises) — clic sur un logo → fiche entreprise.'
+    : 'Les entreprises du Sheet + toute entreprise que tu as ajoutée à ta Watchlist. Clic sur un logo → fiche entreprise.';
+
+  const filteredNames = sectorWatchlistFilter
+    ? [...names].filter(nom => watchlistLocationOf(nom) === sectorWatchlistFilter)
+    : names;
+  grid.innerHTML = sectorBucketsGridHtml(buildSectorBuckets(filteredNames));
+}
+
+/* ============================================================
+   ONGLET FILTRES (screener) — 2026-09-08, demande explicite : "je pourrais
+   sélectionner tous les ratios... ça me trie, ça garde uniquement les
+   entreprises qui répondent aux critères... classées dans les onze secteurs".
+   Filtre TOUJOURS sur rankingSummaryData (base FMP élargie, ~1670 entreprises),
+   jamais sur companies[nom]/Sheet — même principe que le fix "Coca-Cola" du
+   jour : FMP est la source de vérité pour les données financières, le Sheet ne
+   sert qu'à la liste des 72 entreprises personnellement suivies (identité, pas
+   valeurs). Comportement par défaut sans filtre actif = toute la base FMP
+   affichée (pas une case à cocher ici, contrairement à Secteur : c'est le
+   principe même d'un screener).
+   ============================================================ */
+const SCREENER_RATIOS = [
+  { key:'rendementDiv', label:'Rendement du dividende', unit:'%' },
+  { key:'cagrDiv10', label:'CAGR dividende (10 ans)', unit:'%' },
+  { key:'medianePFCF', label:'Médiane P/FCF (10 ans)', unit:'x' },
+  { key:'fcfBase', label:'FCF / action', unit:'€' },
+  { key:'margeOp', label:'Marge opérationnelle', unit:'%' },
+  { key:'roic', label:'ROIC', unit:'%' },
+  { key:'payoutRatio', label:'Payout ratio', unit:'%' },
+  { key:'detteOCF', label:'Dette nette / OCF', unit:'x' },
+  { key:'cagrCA10', label:"CAGR chiffre d'affaires (10 ans)", unit:'%' },
+  { key:'cagrFcf10', label:'CAGR FCF (10 ans)', unit:'%' },
+  { key:'pOcf', label:'P/OCF', unit:'x' },
+  { key:'per', label:'PER', unit:'x' },
+  { key:'prixActuel', label:'Prix actuel', unit:'€' },
+  { key:'ecartValeur', label:'Écart de valeur (vs Prix Juste)', unit:'%' }
+];
+const SCREENER_OPERATORS = [
+  { key:'gt', label:'>' }, { key:'gte', label:'≥' }, { key:'lt', label:'<' }, { key:'lte', label:'≤' }
+];
+let screenerFilters = [];
+function screenerRatioValue(entry, key){
+  if (key === 'ecartValeur') return classementValuationFor(entry).ecartPrix;
+  const v = entry[key];
+  return v == null ? null : v;
+}
+function screenerCompare(value, op, threshold){
+  if (op === 'gt') return value > threshold;
+  if (op === 'gte') return value >= threshold;
+  if (op === 'lt') return value < threshold;
+  return value <= threshold; // 'lte'
+}
+function screenerFilterRowHtml(f, idx){
+  const ratioOptions = SCREENER_RATIOS.map(r => `<option value="${r.key}"${r.key===f.ratio?' selected':''}>${r.label}</option>`).join('');
+  const opOptions = SCREENER_OPERATORS.map(o => `<option value="${o.key}"${o.key===f.operator?' selected':''}>${o.label}</option>`).join('');
+  const unit = (SCREENER_RATIOS.find(r => r.key === f.ratio) || {}).unit || '';
+  return `<div class="screener-filter-row" data-idx="${idx}">
+    <select class="search-input screener-filter-ratio" data-idx="${idx}">${ratioOptions}</select>
+    <select class="search-input screener-filter-op" data-idx="${idx}">${opOptions}</select>
+    <input type="number" class="screener-filter-value" data-idx="${idx}" value="${f.value != null ? f.value : ''}" step="any">
+    <span class="screener-filter-unit">${unit}</span>
+    <button class="screener-filter-remove" data-idx="${idx}" title="Retirer ce filtre">✕</button>
+  </div>`;
+}
+function renderScreenerFilters(){
+  const list = document.getElementById('screenerFilterList');
+  if (!list) return;
+  list.innerHTML = screenerFilters.map((f, idx) => screenerFilterRowHtml(f, idx)).join('');
+}
+function renderScreenerGrid(){
+  const grid = document.getElementById('screenerGrid');
+  const countEl = document.getElementById('screenerResultCount');
+  if (!grid) return;
+  const activeFilters = screenerFilters.filter(f => f.value !== '' && f.value != null && !Number.isNaN(f.value));
+  const matches = rankingSummaryData.filter(e => activeFilters.every(f => {
+    const v = screenerRatioValue(e, f.ratio);
+    return v != null && screenerCompare(v, f.operator, f.value);
+  }));
+  if (countEl) countEl.textContent = matches.length + ' entreprise' + (matches.length > 1 ? 's' : '') + ' correspond' + (matches.length > 1 ? 'ent' : '');
+  grid.innerHTML = sectorBucketsGridHtml(buildSectorBuckets(matches.map(e => e.nom)));
+}
+function initScreenerFilters(){
+  const list = document.getElementById('screenerFilterList');
+  const addBtn = document.getElementById('screenerAddFilterBtn');
+  const resetBtn = document.getElementById('screenerResetFiltersBtn');
+  const grid = document.getElementById('screenerGrid');
+  if (!list || !addBtn || !resetBtn || !grid) return;
+  addBtn.addEventListener('click', () => {
+    screenerFilters.push({ ratio: SCREENER_RATIOS[0].key, operator:'gt', value:'' });
+    renderScreenerFilters();
+    renderScreenerGrid();
+  });
+  resetBtn.addEventListener('click', () => {
+    screenerFilters = [];
+    renderScreenerFilters();
+    renderScreenerGrid();
+  });
+  list.addEventListener('click', e => {
+    const btn = e.target.closest('.screener-filter-remove');
+    if (!btn) return;
+    screenerFilters.splice(+btn.dataset.idx, 1);
+    renderScreenerFilters();
+    renderScreenerGrid();
+  });
+  list.addEventListener('change', e => {
+    const idx = e.target.dataset.idx;
+    if (idx == null) return;
+    const f = screenerFilters[+idx];
+    if (!f) return;
+    if (e.target.classList.contains('screener-filter-ratio')) f.ratio = e.target.value;
+    else if (e.target.classList.contains('screener-filter-op')) f.operator = e.target.value;
+    else if (e.target.classList.contains('screener-filter-value')) f.value = e.target.value === '' ? '' : parseFloat(e.target.value);
+    renderScreenerFilters();
+    renderScreenerGrid();
+  });
+  grid.addEventListener('click', e => {
+    const logo = e.target.closest('.sector-logo[data-nom]');
+    if (logo) goToAnalyse(logo.dataset.nom);
+  });
 }
 
 /* ============================================================
@@ -4203,7 +4899,26 @@ function renderSectorView(){
 // "il faut l'enlever... pour l'ajout des entreprises, ça sera directement dans
 // l'onglet portefeuille dividende") — l'ajout se fait désormais exclusivement via
 // #dividendeAddSearch (voir initDividendPortfolio()), déjà en place et fonctionnel.
-function classementRowHtml(nom, logo, rank, valueText, cls, rendHtml, sourceLabel){
+// quickActions : réservé à la liste "Meilleur rendement du dividende" (demande
+// explicite) — pas aux listes de valorisation, pour ne pas surcharger toutes les listes
+// du Classement. Deux raccourcis directs, sans repasser par l'onglet Dividende/Tier
+// List : 💶 ajoute au Portefeuille Dividende (addDividendPosition(), poids par défaut
+// 10%, déjà existant mais jamais câblé depuis le Classement jusqu'ici — l'état vide de
+// l'onglet Dividende y invitait explicitement sans que ça marche) ; 🏆 ajoute à
+// "Sélection du jour" de la Tier List (setTierListEntry(), même mécanisme que la
+// recherche/le parcours par secteur de cet onglet). Bouton grisé + coché si déjà
+// présent, jamais un second ajout silencieux.
+function classementQuickActionsHtml(nom){
+  const safe = nom.replace(/"/g,'&quot;');
+  const inDividende = dividendPortfolioStore.positions[nom] != null;
+  const tierLoc = tierListLocationOf(nom);
+  const inSelection = tierLoc === TIER_LIST_SELECTION_KEY;
+  return `<div class="classement-quick-actions">
+    <button type="button" class="classement-quick-btn${inDividende ? ' active' : ''}" data-action="add-dividende" data-nom="${safe}" title="${inDividende ? 'Déjà dans le Portefeuille Dividende' : 'Ajouter au Portefeuille Dividende'}" ${inDividende ? 'disabled' : ''}>💶</button>
+    <button type="button" class="classement-quick-btn${inSelection ? ' active' : ''}" data-action="add-tierlist" data-nom="${safe}" title="${inSelection ? 'Déjà dans la sélection du jour' : (tierLoc ? 'Déjà classée — Tier ' + tierLoc : 'Ajouter à la sélection du jour (Tier List)')}" ${inSelection ? 'disabled' : ''}>🏆</button>
+  </div>`;
+}
+function classementRowHtml(nom, logo, rank, valueText, cls, rendHtml, sourceLabel, quickActions){
   const safe = nom.replace(/"/g,'&quot;');
   const inSheet = !!companies[nom];
   // Badge "Mon objectif" : signale que CETTE ligne utilise le multiple enregistré par
@@ -4218,6 +4933,7 @@ function classementRowHtml(nom, logo, rank, valueText, cls, rendHtml, sourceLabe
       <span class="classement-name">${nom}</span>
       ${badge}
       <span class="classement-value${cls ? ' ' + cls : ''}">${valueText}</span>
+      ${quickActions ? classementQuickActionsHtml(nom) : ''}
     </div>
     ${rendHtml || ''}
   </div>`;
@@ -4307,6 +5023,7 @@ function populateClassementWatchlistFilter(){
 // explicite ("il faut trouver un moyen d'afficher toutes les entreprises... top cent,
 // top cinquante"), avec un sélecteur Top N pour ne pas noyer l'écran.
 let rankingSummaryData = [];
+let rankingBySymbol = {};
 async function loadRankingSummary(){
   try{
     const res = await fetch('data/ranking-summary.json', { cache:'no-store' });
@@ -4318,8 +5035,71 @@ async function loadRankingSummary(){
     // seulement (jamais d'écrasement) : une résolution Sheet déjà en place reste
     // prioritaire sur le symbole brut FMP pour le même nom.
     rankingSummaryData.forEach(e => { if (e.symbol && !fmpSymbols[e.nom]) fmpSymbols[e.nom] = e.symbol; });
+    // Index par ticker (2026-09-08) pour fmpDisplayName() — reconstruit à chaque
+    // (re)chargement du fichier, jamais fusionné, purement dérivé de rankingSummaryData.
+    rankingBySymbol = {};
+    rankingSummaryData.forEach(e => { if (e.symbol) rankingBySymbol[e.symbol] = e; });
   }catch(e){ /* pas encore généré — non bloquant, page vide en attendant */ }
   if (document.getElementById('pageClassement') && document.getElementById('pageClassement').classList.contains('active')) renderClassement();
+  renderScreenerGrid();
+}
+// Fusionne un ensemble de noms déjà connus (Sheet/Watchlist, `baseNames`) avec l'univers
+// FMP élargi (rankingSummaryData), en dédupliquant par TICKER résolu (fmpSymbols[nom])
+// plutôt que par chaîne de caractères exacte — sinon la même entreprise apparaît deux
+// fois partout où on fait cette union dès que le nom Sheet et le nom officiel FMP
+// diffèrent. Constaté en pratique (2026-09-08, remonté par l'utilisateur sur la grille
+// Secteur en plein univers FMP) : "Coca-Cola Company" (Sheet) vs "Coca-Cola" (FMP officiel)
+// → même ticker KO ; "Costco Wholesale" vs "Costco" → COST ; "PEPSICO" vs "PepsiCo" → PEP ;
+// "Unilever" vs variantes indiennes/indonésiennes qui sont, elles, de VRAIES entités
+// cotées séparément (pas des doublons) — la dédup est donc strictement par ticker exact,
+// jamais par ressemblance de nom. `baseNames` est toujours prioritaire sur son équivalent
+// FMP en cas de collision (même nom que l'utilisateur voit déjà partout ailleurs dans
+// l'appli). Réutilisé par initSearch(), renderSectorView() et la datalist Cerveau
+// numérique — un seul endroit à corriger si un futur cas de doublon apparaît.
+// Nom officiel FMP à AFFICHER pour une entreprise, sans jamais changer son IDENTITÉ
+// interne (2026-09-08, demande explicite : "je ne t'ai demandé de pas utiliser le
+// Google Sheet" — le Sheet garde son rôle de LISTE des 72 entreprises suivies +
+// clé de stockage pour Watchlist/Objectifs/Cerveau numérique, mais son NOM affiché
+// n'a plus à faire autorité). Piège identifié avant d'écrire cette fonction : si on
+// changeait aussi la clé/`data-nom` utilisée pour la navigation, cliquer sur la
+// tuile "Coca-Cola" (nom FMP) appellerait ensuite goToAnalyse('Coca-Cola') → une
+// FICHE SYNTHÉTIQUE SÉPARÉE serait créée sous ce nom, déconnectée de la vraie
+// entreprise Sheet 'Coca-Cola Company' et de tout ce que l'utilisateur y a déjà
+// enregistré (Watchlist, Objectifs, notes Cerveau) — d'où purement cosmétique :
+// change UNIQUEMENT le texte affiché, jamais `data-nom`/la clé passée à
+// selectCompany()/companies[nom].
+function fmpDisplayName(nom){
+  const symbol = fmpSymbols[nom];
+  const entry = symbol && rankingBySymbol[symbol];
+  return entry ? entry.nom : nom;
+}
+// Redirige un nom vers l'entreprise DÉJÀ suivie sous un autre nom, si les deux
+// partagent le même ticker FMP (ex. "Coca-Cola", nom officiel FMP renvoyé par le
+// Classement/la recherche, vs "Coca-Cola Company", nom Sheet suivi) — trouvé en
+// creusant la demande "bascule vers le nom FMP" (2026-09-08). Sans ça, naviguer
+// vers "Coca-Cola" créerait une fiche SYNTHÉTIQUE séparée, déconnectée de tout ce
+// que l'utilisateur a déjà enregistré dessus sous le nom Sheet (Watchlist,
+// Objectifs de valorisation, notes/analyses Cerveau numérique) — même classe de
+// bug que l'incident de fragmentation VINCI/Vinci, voir mergeCaseVariantAnalyses().
+// Renvoie `nom` inchangé si déjà suivi ou si aucune correspondance trouvée.
+function canonicalCompanyName(nom){
+  if (companies[nom]) return nom;
+  const symbol = fmpSymbols[nom];
+  if (!symbol) return nom;
+  const match = Object.keys(companies).find(k => fmpSymbols[k] === symbol);
+  return match || nom;
+}
+function mergeFmpUniverseNames(baseNames){
+  const names = new Set(baseNames);
+  const seenSymbols = new Set();
+  names.forEach(nom => { const sym = fmpSymbols[nom]; if (sym) seenSymbols.add(sym); });
+  rankingSummaryData.forEach(e => {
+    if (names.has(e.nom)) return;
+    if (e.symbol && seenSymbols.has(e.symbol)) return;
+    names.add(e.nom);
+    if (e.symbol) seenSymbols.add(e.symbol);
+  });
+  return names;
 }
 let classementTopN = 50; // 'all' ou un nombre
 // "je veux que tu refasses tout avec maximum vingt cinq. Alors quand c'est une moyenne à
@@ -4396,46 +5176,6 @@ function classementValuationFor(e){
   return { multiple, ecartPrix, source, prixJuste };
 }
 
-// V2 "goulots d'étranglement" (plan wild-seeking-clover.md, §2) — Quality/Valuation
-// calculés, jamais saisis à la main : réutilisent le MÊME moteur que Classement/
-// Documents financiers plutôt qu'une seconde méthodologie, pour qu'une entreprise ne
-// soit jamais "attractive" au Classement et "chère" dans la fiche Cerveau numérique.
-function clampScore01(v, lo, hi){
-  if (v == null || !isFinite(v)) return null;
-  return Math.max(0, Math.min(100, ((v - lo) / (hi - lo)) * 100));
-}
-// Pondération simple, documentée ici (pas de sous-scores séparés stockés — voir plan
-// §2, un seul chiffre global) : ROIC/marge/CAGR CA/CAGR FCF bornés sur des seuils
-// usuels "excellent" pour ce type de ratio, dette/OCF inversée (moins de dette = mieux).
-// Moyenne sur les seules métriques disponibles (au moins 1) — null seulement si hist
-// est totalement absent ou vide (aucune donnée du tout).
-function computeQualityScore(nom){
-  const hist = companies[nom];
-  if (!hist || !hist.length) return { value:null, rationale:'Donnée insuffisante — entreprise non trouvée dans la base.' };
-  const latest = hist[hist.length - 1];
-  const parts = [
-    clampScore01(latest.roic, 0, 25),
-    clampScore01(latest.margeOp, 0, 35),
-    clampScore01(latest.cagrCA10, -5, 15),
-    clampScore01(latest.cagrFcf10, -5, 20),
-    latest.detteOCF != null ? clampScore01(-latest.detteOCF, -6, 0) : null
-  ].filter(p => p != null);
-  if (!parts.length) return { value:null, rationale:'Donnée insuffisante — ratios manquants pour cette entreprise.' };
-  const value = Math.round(parts.reduce((s, p) => s + p, 0) / parts.length);
-  return { value, rationale:`Calculé depuis ROIC ${fmtPct(latest.roic)}, marge op. ${fmtPct(latest.margeOp)}, CAGR CA 10a ${fmtPct(latest.cagrCA10)}, CAGR FCF 10a ${fmtPct(latest.cagrFcf10)}, dette/OCF ${latest.detteOCF != null ? latest.detteOCF.toFixed(1) + 'x' : '—'}.` };
-}
-// écart de valeur négatif = sous-valorisée = plus attractive (même sens que Classement/
-// classementValuationFor) — score inversé et borné sur ±60% (au-delà, déjà extrême).
-function computeValuationScore(nom){
-  const e = rankingSummaryData.find(r => r.nom === nom);
-  if (!e) return { value:null, rationale:'Donnée insuffisante — entreprise hors de la base FMP suivie.' };
-  const v = classementValuationFor(e);
-  if (v.ecartPrix == null) return { value:null, rationale:'Donnée insuffisante — prix juste non calculable (FCF/multiple manquant).' };
-  const clamped = Math.max(-60, Math.min(60, v.ecartPrix));
-  const value = Math.round(50 - (clamped / 60) * 50);
-  return { value, rationale:`Écart de valeur ${fmtPct(v.ecartPrix)} vs prix juste (${v.source === 'objectif' ? 'objectif enregistré' : 'médiane P/FCF historique'}) — même calcul que l'onglet Classement.` };
-}
-
 // Étend l'onglet Analyse (et tout ce qui en dépend : Documents financiers, cours de
 // bourse, Valorisation, clic depuis Classement, colonnes détaillées de Comparaison) à
 // toute la base FMP élargie (rankingSummaryData, ~500 entreprises) au lieu des 72 du
@@ -4492,6 +5232,8 @@ function buildSyntheticCompanyRows(nom, rankingEntry){
 // n'écrase jamais une entrée déjà là (Sheet réelle, ou synthèse déjà construite).
 async function ensureSyntheticCompanyData(nom){
   if (companies[nom]) return true;
+  const canonical = canonicalCompanyName(nom);
+  if (companies[canonical]){ companies[nom] = companies[canonical]; return true; }
   const rankingEntry = rankingSummaryData.find(e => e.nom === nom);
   if (!rankingEntry) return false;
   try{ await ensureDocumentsRealData(nom); }catch(e){ /* export FMP absent pour cette entreprise — non bloquant, synthèse partielle */ }
@@ -4507,6 +5249,23 @@ async function ensureSyntheticCompanyData(nom){
 // sélectionner la watchlist que je veux, tu vas me proposer les watchlist qui sont
 // dans l'onglet Watchlist").
 let classementWatchlistFilter = '';
+// Éligibilité PEA (Plan d'Épargne en Actions) : approximation par pays de domiciliation
+// réelle de l'entreprise (champ "pays" exporté depuis le profil FMP, voir
+// export_ranking.py::load_country_map — PAS déduit du suffixe du ticker, une entreprise
+// peut être cotée ailleurs que là où elle est domiciliée, ex. TotalEnergies/ASML). Liste
+// UE (27) + EEE (Islande/Liechtenstein/Norvège) : le Royaume-Uni (sorti de l'UE) et la
+// Suisse (jamais dans l'UE/EEE) en sont explicitement exclus. Approximation légale
+// usuelle mais pas garantie à 100% (cas particuliers possibles selon le courtier) — à
+// vérifier au cas par cas avant un ordre réel, voir le titre du bouton dans l'UI.
+const PEA_ELIGIBLE_COUNTRIES = new Set([
+  'FR','DE','IT','ES','NL','BE','PT','IE','AT','FI','GR','LU','SE','DK','PL','CZ','SK',
+  'HU','RO','BG','HR','SI','EE','LV','LT','CY','MT',
+  'IS','LI','NO'
+]);
+// 'all' (défaut) | 'pea' (UE/EEE, voir PEA_ELIGIBLE_COUNTRIES) | 'france' (FR uniquement,
+// sous-ensemble plus précis de 'pea' — demande explicite : "un bouton encore plus précis
+// au classement France").
+let classementPeaFilter = 'all';
 function classementRankingRows(secteurFiltre){
   // Wolf Portfolio : noms tels qu'ils apparaissent dans portfolioData.holdings (voir
   // handlePortfolioRows), comparaison directe car les deux viennent de la même base
@@ -4529,10 +5288,16 @@ function classementRankingRows(secteurFiltre){
       logo: companyLogoUrl(e.nom) || (e.symbol ? `data/logos/${e.symbol}.png` : null),
       rendementDiv: e.rendementDiv, ecartPrix: v.ecartPrix, valuationSource: v.source,
       inSheet: !!companies[e.nom],
-      secteurKey: normalizeSector(e.secteur) || 'autre'
+      secteurKey: normalizeSector(e.secteur) || 'autre',
+      pays: e.pays || null
     };
   }).filter(r => !secteurFiltre || r.secteurKey === secteurFiltre)
-    .filter(r => !filterNames || filterNames.has(stripAccents(r.nom.toLowerCase())));
+    .filter(r => !filterNames || filterNames.has(stripAccents(r.nom.toLowerCase())))
+    .filter(r => {
+      if (classementPeaFilter === 'france') return r.pays === 'FR';
+      if (classementPeaFilter === 'pea') return r.pays && PEA_ELIGIBLE_COUNTRIES.has(r.pays);
+      return true;
+    });
 }
 function classementApplyTopN(list){
   return classementTopN === 'all' ? list : list.slice(0, classementTopN);
@@ -4561,8 +5326,8 @@ function renderClassement(){
   const divRight = byDiv.slice(half);
   const empty = '<div class="objectifs-empty">Aucune donnée disponible pour ce secteur.</div>';
 
-  divLeftBox.innerHTML = divLeft.length ? divLeft.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.rendementDiv), null, null)).join('') : empty;
-  divRightBox.innerHTML = divRight.map((r, i) => classementRowHtml(r.nom, r.logo, half + i + 1, fmtPct(r.rendementDiv), null, null)).join('');
+  divLeftBox.innerHTML = divLeft.length ? divLeft.map((r, i) => classementRowHtml(r.nom, r.logo, i + 1, fmtPct(r.rendementDiv), null, null, null, true)).join('') : empty;
+  divRightBox.innerHTML = divRight.map((r, i) => classementRowHtml(r.nom, r.logo, half + i + 1, fmtPct(r.rendementDiv), null, null, null, true)).join('');
 
   // ecartPrix (voir classementValuationFor ci-dessus) : (prixActuel - prixJuste) /
   // prixJuste — NÉGATIF = prix actuel EN DESSOUS de la juste valeur = sous-valorisée =
@@ -4600,6 +5365,8 @@ function exportClassementAsPdf(){
   const filterSelect = document.getElementById('classementSecteurFilter');
   const secteurFiltre = filterSelect.value;
   const secteurLabel = secteurFiltre ? filterSelect.options[filterSelect.selectedIndex].text : null;
+  const peaLabel = classementPeaFilter === 'france' ? 'France uniquement' : (classementPeaFilter === 'pea' ? 'Éligible PEA (UE/EEE)' : null);
+  const subtitle = [secteurLabel, peaLabel].filter(Boolean).join(' · ') || null;
 
   const rows = classementRankingRows(secteurFiltre);
   const byDiv = classementApplyTopN(rows.filter(r => r.rendementDiv != null).sort((a, b) => b.rendementDiv - a.rendementDiv));
@@ -4617,7 +5384,7 @@ function exportClassementAsPdf(){
     <div class="print-section"><h3>Meilleur rendement du dividende</h3>${table(byDiv, r => fmtPct(r.rendementDiv))}</div>
     <div class="print-section"><h3>Sous-valorisées</h3>${table(sousValo, r => fmtPct(r.ecartPrix))}</div>
     <div class="print-section"><h3>Survalorisées</h3>${table(survalo, r => fmtPct(r.ecartPrix))}</div>`;
-  exportSectionAsPdf('Classement', secteurLabel, body);
+  exportSectionAsPdf('Classement', subtitle, body);
 }
 
 function initClassement(){
@@ -4640,7 +5407,25 @@ function initClassement(){
   ['classementDivLeft', 'classementDivRight', 'classementValoSous', 'classementValoSurvalo'].forEach(id => {
     const box = document.getElementById(id);
     if (!box) return;
-    box.addEventListener('click', e => {
+    box.addEventListener('click', async e => {
+      // Raccourcis 💶/🏆 (liste dividende uniquement, voir classementQuickActionsHtml) —
+      // traités AVANT la navigation vers la fiche, sinon le clic sur le bouton
+      // déclencherait aussi goToAnalyse() via le row parent.
+      const actionBtn = e.target.closest('button[data-action]');
+      if (actionBtn){
+        const nom = actionBtn.dataset.nom;
+        // Entreprise hors des 72 du Sheet (2026-09-08) : sans ce pont,
+        // dividendPositionMetrics()/constructionPositionMetrics() renvoient null pour
+        // companies[nom] manquant, et la position ajoutée disparaissait aussitôt de sa
+        // propre liste (filtrée en silence) — même garde que
+        // renderComparisonDetailColumns().
+        if (!companies[nom]) await ensureSyntheticCompanyData(nom);
+        if (actionBtn.dataset.action === 'add-dividende') addDividendPosition(nom);
+        else if (actionBtn.dataset.action === 'add-tierlist') setTierListEntry(nom, TIER_LIST_SELECTION_KEY);
+        renderDividendPortfolio();
+        renderClassement();
+        return;
+      }
       // Fonctionne maintenant aussi pour une entreprise hors des 72 du Sheet (voir
       // ensureSyntheticCompanyData) — plus de gate ici, goToAnalyse() gère elle-même
       // l'entreprise vraiment inconnue (ni Sheet, ni base FMP élargie).
@@ -4662,6 +5447,16 @@ function initClassement(){
     classementValoSortDir *= -1;
     renderClassement();
   });
+  const peaRow = document.getElementById('classementPeaButtons');
+  if (peaRow){
+    peaRow.addEventListener('click', e => {
+      const btn = e.target.closest('button[data-pea]');
+      if (!btn) return;
+      classementPeaFilter = btn.dataset.pea;
+      peaRow.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
+      renderClassement();
+    });
+  }
 }
 
 /* ============================================================
@@ -5153,7 +5948,8 @@ function pessimisticScenarioForCompany(nom){
   const hist = companies[nom];
   if (!hist || !hist.length) return null;
   const latest = hist[hist.length - 1];
-  const { fcfActuel, cagrHist, medianeHist } = valorisationInputs(latest, hist, nom);
+  const vIn = valorisationInputs(latest, hist, nom);
+  const { fcfActuel, cagrHist, medianeHist } = vIn;
   const prixActuel = latest.prixActuel;
   if (fcfActuel == null || prixActuel == null) return null;
   const savedList = objectifsStore[nom];
@@ -5164,7 +5960,7 @@ function pessimisticScenarioForCompany(nom){
     multiple: medianeHist != null ? +(medianeHist - 3).toFixed(1) : 0,
     rachat: 0
   };
-  const { rendement5A } = computeScenario(fcfActuel, prixActuel, pess.cagr, pess.multiple, pess.rachat || 0);
+  const { rendement5A } = computeScenario(fcfActuel, prixActuel, pess.cagr, pess.multiple, pess.rachat || 0, evDetteArg(vIn, pess));
   return { rendement5A, fromSaved: !!savedPess };
 }
 
@@ -5455,6 +6251,16 @@ function initSectorGrid(){
     const logo = e.target.closest('.sector-logo[data-nom]');
     if (logo) goToAnalyse(logo.dataset.nom);
   });
+  const filterSel = document.getElementById('sectorWatchlistFilter');
+  if (filterSel) filterSel.addEventListener('change', () => {
+    sectorWatchlistFilter = filterSel.value;
+    renderSectorView();
+  });
+  const fullUniverseToggle = document.getElementById('sectorFullUniverseToggle');
+  if (fullUniverseToggle) fullUniverseToggle.addEventListener('change', () => {
+    sectorShowFullUniverse = fullUniverseToggle.checked;
+    renderSectorView();
+  });
 }
 
 async function goToAnalyse(nom){
@@ -5462,7 +6268,7 @@ async function goToAnalyse(nom){
   await selectCompany(nom);
 }
 
-const PORTFOLIO_GROUP_PAGES = ['pagePortfolio', 'pageDividende', 'pagePerso', 'pageConstruction'];
+const PORTFOLIO_GROUP_PAGES = ['pagePortfolio', 'pageDividende', 'pageMesPortefeuilles', 'pagePerso', 'pagePortefeuilleIA', 'pageConstruction'];
 // Valorisation redevient une page à part entière (comme avant la tâche #74), mais
 // accessible via un SOUS-onglet sous "Analyse" plutôt qu'un bouton de nav séparé —
 // retour explicite : l'avoir append en bas de la même page #pageAnalyse forçait à
@@ -5471,7 +6277,7 @@ const PORTFOLIO_GROUP_PAGES = ['pagePortfolio', 'pageDividende', 'pagePerso', 'p
 const ANALYSE_GROUP_PAGES = ['pageAnalyse', 'pageValorisation', 'pageDocuments', 'pageRevenus'];
 // Secteur/Classement/Watchlist regroupés sous "🔍 Screener" (même pattern que
 // Portefeuille) — demande explicite pour désencombrer la nav principale.
-const SCREENER_GROUP_PAGES = ['pageSecteur', 'pageClassement', 'pageWatchlist', 'pageComparaison', 'pageTierList'];
+const SCREENER_GROUP_PAGES = ['pageSecteur', 'pageClassement', 'pageWatchlist', 'pageComparaison', 'pageTierList', 'pageFiltres'];
 // Macroéconomie éclatée en 3 sous-onglets (même pattern) — demande explicite : la page
 // mélangeait Crédit, cycle sectoriel et indicateurs macro US sur un seul écran de plus
 // en plus long à mesure que le Crédit s'étoffait.
@@ -5528,7 +6334,9 @@ const MOBILE_NAV_MANIFEST = [
   { group:'💼 Portefeuille', items:[
     { page:'pagePortfolio', label:'Wolf Portfolio' },
     { page:'pageDividende', label:'Dividende' },
+    { page:'pageMesPortefeuilles', label:'Mes portefeuilles' },
     { page:'pagePerso', label:'Perso (PEA/CTO)' },
+    { page:'pagePortefeuilleIA', label:'Portefeuille IA' },
     { page:'pageConstruction', label:'Construction de portefeuille' }
   ] },
   { group:'🔍 Screener', items:[
@@ -5536,7 +6344,8 @@ const MOBILE_NAV_MANIFEST = [
     { page:'pageClassement', label:'Classement' },
     { page:'pageWatchlist', label:'Watchlist' },
     { page:'pageComparaison', label:'Comparaison' },
-    { page:'pageTierList', label:'Tier List' }
+    { page:'pageTierList', label:'Tier List' },
+    { page:'pageFiltres', label:'Filtres' }
   ] },
   { page:'pageCerveau', label:'Cerveau numérique' },
   { page:'pageAlertes', label:'Alertes' },
@@ -5591,14 +6400,31 @@ function initMobileNav(){
 }
 
 async function selectCompany(nom){
+  nom = canonicalCompanyName(nom);
   if (!companies[nom]){
     const ok = await ensureSyntheticCompanyData(nom);
     if (!ok) return;
   }
   activeCompany = nom;
   const label = document.getElementById('activeCompanyLabel');
-  if (label) label.innerHTML = 'Entreprise sélectionnée : <b>' + nom + '</b>';
+  if (label) label.innerHTML = 'Entreprise sélectionnée : <b>' + fmpDisplayName(nom) + '</b>';
   renderCompany(nom);
+}
+
+let tvSearchTimer = null, tvSearchSeq = 0;
+async function tvRemoteSuggestions(q, box, input){
+  const seq = ++tvSearchSeq;
+  try{
+    const res = await fetch('/api/tv/search?q=' + encodeURIComponent(q), { cache: 'no-store' });
+    if (!(res.headers.get('content-type') || '').includes('json')) return;   // serveur local périmé : pas de suggestions TV
+    const j = await res.json();
+    if (seq !== tvSearchSeq || input.value.trim().toLowerCase() !== q || !j.ok || !j.results || !j.results.length) return;
+    const esc = t => String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    box.querySelectorAll('.search-suggestion:not([data-name]):not([data-tv])').forEach(x => x.remove());   // retire « Aucun résultat »
+    box.insertAdjacentHTML('beforeend', '<div class="search-suggestion-sep">Depuis TradingView</div>' + j.results.map(r =>
+      `<div class="search-suggestion" data-tv="${esc(r.symbol)}" data-tvname="${esc(r.name)}">${esc(r.name)} <span class="search-suggestion-tag">${esc(r.symbol)} · ${esc(r.currency)}</span></div>`).join(''));
+    box.classList.add('open');
+  }catch(e){ /* TradingView injoignable : les suggestions locales restent affichées */ }
 }
 
 function initSearch(){
@@ -5612,17 +6438,28 @@ function initSearch(){
     // Étendu à toute la base FMP élargie (voir ensureSyntheticCompanyData) — plus
     // seulement les 72 du Sheet, demande explicite (DocuSign/Volkswagen introuvables ici
     // alors que déjà exportés/utilisables ailleurs sur le site).
-    const allNames = [...new Set([...Object.keys(companies), ...rankingSummaryData.map(e => e.nom)])];
+    const allNames = [...mergeFmpUniverseNames(Object.keys(companies))];
     const matches = allNames.filter(n => n.toLowerCase().includes(q)).slice(0, 8);
     if (matches.length === 0){
       box.innerHTML = '<div class="search-suggestion" style="color:var(--text-faint);cursor:default;">Aucun résultat</div>';
     } else {
-      box.innerHTML = matches.map(n => `<div class="search-suggestion" data-name="${n.replace(/"/g,'&quot;')}">${n}</div>`).join('');
+      // Texte affiché en nom officiel FMP (fmpDisplayName) — data-name reste le nom
+      // interne (Sheet pour les 72 suivies) passé à selectCompany(), inchangé.
+      box.innerHTML = matches.map(n => `<div class="search-suggestion" data-name="${n.replace(/"/g,'&quot;')}">${fmpDisplayName(n)}</div>`).join('');
     }
     box.classList.add('open');
+    // Suggestions TradingView (toute la base boursière), après un court délai de frappe.
+    clearTimeout(tvSearchTimer);
+    if (q.length >= 2) tvSearchTimer = setTimeout(() => tvRemoteSuggestions(q, box, input), 280);
   });
 
   box.addEventListener('click', e => {
+    const tvItem = e.target.closest('.search-suggestion[data-tv]');
+    if (tvItem){
+      selectTvCompany(tvItem.dataset.tv, tvItem.dataset.tvname);
+      input.value = ''; box.classList.remove('open'); box.innerHTML = '';
+      return;
+    }
     const item = e.target.closest('.search-suggestion[data-name]');
     if (!item) return;
     selectCompany(item.dataset.name);
@@ -5639,7 +6476,9 @@ function initSearch(){
     if (e.key === 'Escape'){ box.classList.remove('open'); input.blur(); }
     if (e.key === 'Enter'){
       const first = box.querySelector('.search-suggestion[data-name]');
+      const firstTv = box.querySelector('.search-suggestion[data-tv]');
       if (first){ selectCompany(first.dataset.name); input.value=''; box.classList.remove('open'); box.innerHTML=''; }
+      else if (firstTv){ selectTvCompany(firstTv.dataset.tv, firstTv.dataset.tvname); input.value=''; box.classList.remove('open'); box.innerHTML=''; }
     }
   });
 }
@@ -5745,25 +6584,33 @@ function renderCompany(nom){
   const years = hist.map(r => r.annee);
   priceAlertEditing = false;
 
-  document.getElementById('logoImg').src = latest.lienImage || '';
+  document.getElementById('logoImg').src = latest.lienImage || companyLogoUrl(nom) || '';
   document.getElementById('tickerLbl').textContent = latest.ticker || '—';
-  document.getElementById('companyName').textContent = nom;
+  document.getElementById('companyName').textContent = fmpDisplayName(nom);
   document.getElementById('secteurTag').textContent = 'Secteur — ' + (latest.secteur || '—');
   document.getElementById('sousSecteurTag').textContent = 'Sous-secteur — ' + (latest.sousSecteur || '—');
-  document.getElementById('prixActuel').innerHTML = latest.prixActuel.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' <sup>€</sup>';
+  // Devise de COTATION (TradingView) : un cours en dollars s'affiche en $, pas en € (la fiche TradingView ne le ferait pas).
+  const qSym = latest.devise ? (latest.devise === 'GBX' || latest.devise === 'GBp' ? 'p' : fmpCurrencySymbol(latest.devise)) : '€';
+  const fmtQ = (v, d = 2) => v == null ? 'N/D' : v.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }) + ' ' + qSym;
+  document.getElementById('prixActuel').innerHTML = latest.prixActuel.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' <sup>' + qSym + '</sup>';
   document.getElementById('priceYear').textContent = 'Exercice ' + latest.annee;
   renderPriceAlertWidget(nom, latest.prixActuel);
 
-  document.getElementById('rPrixJuste').textContent = fmtEUR(latest.prixJuste);
-  document.getElementById('rPrixCible').textContent = fmtEUR(latest.prixCible);
+  document.getElementById('rPrixJuste').textContent = fmtQ(latest.prixJuste);
+  document.getElementById('rPrixCible').textContent = fmtQ(latest.prixCible);
   const ecartEl = document.getElementById('rEcart');
   ecartEl.className = 'v';
   if (latest.ecartValeur != null){
     ecartEl.textContent = fmtPct(latest.ecartValeur*100);
-    ecartEl.classList.add(latest.ecartValeur >= 0 ? 'pos' : 'neg');
+    // TradingView : écart = (prix actuel − prix juste) / prix juste → négatif = sous-valorisé = vert
+    // (même convention que l'ancien calcul Analyse/FMP, voir applyFmpRatioOverrides).
+    ecartEl.classList.add(isTvCompany(nom) ? (latest.ecartValeur < 0 ? 'pos' : 'neg') : (latest.ecartValeur >= 0 ? 'pos' : 'neg'));
   } else { ecartEl.textContent = 'N/D'; }
 
   document.getElementById('rRendDiv').textContent = fmtPct(latest.rendementDiv);
+  // Repli Sheet par défaut — écrasé par applyFmpRatioOverrides() dès que les données
+  // FMP de cette entreprise sont disponibles (montant TTM en euros, voir plus bas).
+  document.getElementById('rRendDivSub').textContent = latest.dividende != null ? fmtQ(latest.dividende) + ' / action — sur prix actuel' : 'sur prix actuel';
   const fcfpegEl = document.getElementById('rFcfpeg');
   fcfpegEl.className = 'v';
   if (latest.fcfpeg != null){
@@ -5790,16 +6637,23 @@ function renderCompany(nom){
 
   drawGauge(latest);
 
-  setBadge('badgeDiv', 'CAGR div. 10a', latest.cagrDiv10);
-  setBadge('badgeCA', 'CAGR CA 10a', latest.cagrCA10);
-  setBadge('badgeActions', 'CAGR actions 20a', latest.cagrActions);
+  // Repli cagrPct() (2026-09-08, demande "toutes les entreprises, pas juste celles
+  // du Google Sheet") : sur une entreprise FMP-only (ensureSyntheticCompanyData()),
+  // ces champs Sheet précalculés sont toujours null — recalcul direct depuis la
+  // série annuelle synthétique si besoin. Aucun changement pour une entreprise Sheet
+  // (le repli ne se déclenche que si le champ précalculé est absent).
+  setBadge('badgeDiv', 'CAGR div. 10a', latest.cagrDiv10 != null ? latest.cagrDiv10 : cagrPct(hist, 'dividende', 10));
+  setBadge('badgeCA', 'CAGR CA 10a', latest.cagrCA10 != null ? latest.cagrCA10 : cagrPct(hist, 'ca', 10));
+  setBadge('badgeActions', 'CAGR actions 20a', latest.cagrActions != null ? latest.cagrActions : cagrPct(hist, 'actions', 20));
   // Carte FCF/action : les 3 CAGR (5/10/20a) directement sur la carte plutôt qu'un
   // seul badge 10a — demande explicite ("que tu affiches bien le CAGR de FCF sur
   // cinq, dix et vingt ans, là je ne l'ai pas toujours"). + médiane FCF/action et
   // OCF/action sur 10/20 ans (valeur brute en €, pas un multiple) — demande explicite
   // complémentaire.
   document.getElementById('cagrBadgesFcf').innerHTML =
-    cagrBadgeSpan('CAGR 5a', latest.cagrFcf5) + cagrBadgeSpan('CAGR 10a', latest.cagrFcf10) + cagrBadgeSpan('CAGR 20a', latest.cagrFcf20);
+    cagrBadgeSpan('CAGR 5a', latest.cagrFcf5 != null ? latest.cagrFcf5 : cagrPct(hist, 'fcfParAction', 5)) +
+    cagrBadgeSpan('CAGR 10a', latest.cagrFcf10 != null ? latest.cagrFcf10 : cagrPct(hist, 'fcfParAction', 10)) +
+    cagrBadgeSpan('CAGR 20a', latest.cagrFcf20 != null ? latest.cagrFcf20 : cagrPct(hist, 'fcfParAction', 20));
   document.getElementById('medianeBadgesFcfAction').innerHTML =
     medianeBadgeHtml('Médiane 10a', medianOfLastYears(hist, 'fcfParAction', 10), ' €') + medianeBadgeHtml('Médiane 20a', medianOfLastYears(hist, 'fcfParAction', 20), ' €');
   document.getElementById('medianeBadgesOcfAction').innerHTML =
@@ -5827,6 +6681,10 @@ function renderCompany(nom){
   document.getElementById('medianeBadgesPfcfPocf').innerHTML =
     medianeBadgeHtml('Médiane P/FCF 10a', latest.medianePFCF) + medianeBadgeHtml('Médiane P/FCF 20a', latest.medianePFCF20) +
     medianeBadgeHtml('Médiane P/OCF 10a', latest.medianePOcf) + medianeBadgeHtml('Médiane P/OCF 20a', latest.medianePOcf20);
+
+  renderAnalyseScoreCard(nom);
+  renderCompetitorsCard(nom);
+  tvLiveRefresh(nom);   // cours et ratios ACTUELS relus sur TradingView à chaque affichage (voir plus haut)
 }
 
 // 9 graphiques historiques "simples" (hors cours de bourse, très stateful/async, et
@@ -5864,8 +6722,33 @@ function chartsHistoryToRows(ch){
 // Écrase les valeurs Sheet déjà affichées par renderCompany() une fois les données FMP
 // chargées (asynchrone) — appelée depuis plusieurs points d'entrée (stats FMP,
 // chartsHistory, cours de bourse), chacun ne touchant QUE ce qu'il vient de recevoir.
+// true si la fiche vient de TradingView (data/tv-analyse.json) : ses ratios, son prix et ses séries
+// ne doivent JAMAIS être écrasés par les données FMP (règle de l'utilisateur : TradingView d'abord).
+function isTvCompany(nom){
+  const h = companies[nom];
+  return !!(h && h.length && h[h.length - 1].tvSource);
+}
+// Séries sans historique chez TradingView (marges, ROIC, trésorerie, dette/OCF…) : complétées, année par
+// année, depuis l'archive FMP DÉJÀ téléchargée sur le PC (jamais le Google Sheet) quand elle existe.
+// Dividende, BPA, FCF, CA, P/FCF, actions : toujours TradingView (dividende : Yahoo).
+const TV_FMP_FILL_KEYS = ['margeOp','roic','cash','cashInvesti','detteOCF','ocfParAction','pOcf'];
+function mergeTvWithFmpHistory(tvRows, fmpCharts){
+  if (!fmpCharts) return tvRows;
+  const fmpRows = chartsHistoryToRows(fmpCharts);
+  const byYear = {};
+  fmpRows.forEach(r => { byYear[r.annee] = r; });
+  return tvRows.map(r => {
+    const f = byYear[r.annee];
+    if (!f) return r;
+    const out = Object.assign({}, r);
+    TV_FMP_FILL_KEYS.forEach(k => { if (out[k] == null && f[k] != null) out[k] = f[k]; });
+    return out;
+  });
+}
+
 function applyFmpRatioOverrides(nom){
   if (activeCompany !== nom) return;
+  if (isTvCompany(nom)) return;   // TradingView prioritaire : aucune valeur FMP par-dessus
   const real = documentsRealData[nom];
   let prixActuelFmp = null;
   if (stockCandleFull && stockCandleFull.length){
@@ -5904,15 +6787,47 @@ function applyFmpRatioOverrides(nom){
     }
   }
   if (!real) return;
-  if (real.stats && real.stats['Dividende'] && real.stats['Dividende']['Rendement'] != null){
-    document.getElementById('rRendDiv').textContent = fmtPct(real.stats['Dividende']['Rendement']);
+  // Rendement du dividende : recalculé depuis le dividende TTM (chartsHistory.dividende,
+  // déjà en 365 jours glissants — voir dividend_ttm_series côté export_to_app.py) divisé
+  // par le prix le plus à jour disponible ici, PLUTÔT que real.stats['Dividende']
+  // ['Rendement'] (champ FMP ratios.dividendYieldPercentage brut, calculé par FMP
+  // contre un prix figé à la date de son choix, pas forcément le prix du jour) —
+  // confirmé FAUX sur BNP Paribas : ce champ affichait 3,2% (l'utilisateur : "je ne te
+  // crois pas"), vérifié auprès de plusieurs sites financiers que le vrai rendement au
+  // prix actuel est ~5,0%. Affiche aussi le montant réel en euros en sous-texte
+  // (demande explicite : "je veux... qu'en euros, j'ai combien de dividendes").
+  const prixActuelBest = prixActuelFmp != null ? prixActuelFmp : (rankingEntry ? rankingEntry.prixActuel : null);
+  if (real.chartsHistory){
+    const divSeries = (real.chartsHistory.dividende || []).filter(v => v != null);
+    const divTtm = divSeries.length ? divSeries[divSeries.length - 1] : null;
+    if (divTtm != null && prixActuelBest){
+      document.getElementById('rRendDiv').textContent = fmtPct(divTtm / prixActuelBest * 100);
+      document.getElementById('rRendDivSub').textContent = fmtEUR(divTtm) + ' / action (12 derniers mois)';
+    }
   }
   if (real.chartsHistory){
     const rows = chartsHistoryToRows(real.chartsHistory);
     const med10 = medianOfLastYears(rows, 'pFcf', 10);
     if (med10 != null) document.getElementById('rMedFcf').textContent = med10.toLocaleString('fr-FR',{minimumFractionDigits:1}) + 'x';
     const knownPfcf = real.chartsHistory.pFcf.filter(v => v != null);
-    if (knownPfcf.length) document.getElementById('rPfcfActuel').textContent = knownPfcf[knownPfcf.length - 1].toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + 'x';
+    const pfcfActuel = knownPfcf.length ? knownPfcf[knownPfcf.length - 1] : null;
+    if (pfcfActuel != null) document.getElementById('rPfcfActuel').textContent = pfcfActuel.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + 'x';
+    // FCF PEG (demande explicite 2026-09-08) : "c'est le price to free cash flow
+    // actuel divisé par la médiane du free cash flow sur dix ans" = P/FCF actuel ÷
+    // Médiane P/FCF 10 ans — PAS la définition classique du PEG (prix/croissance) :
+    // un ratio de retour à la moyenne, > 1 = cher par rapport à son propre
+    // historique de multiple, < 1 = décoté. Remplace latest.fcfpeg (Sheet, colonne
+    // AJ) dès que FMP est disponible pour cette entreprise, mêmes seuils de couleur
+    // que l'ancienne version Sheet.
+    const fcfpegEl = document.getElementById('rFcfpeg');
+    if (fcfpegEl && pfcfActuel != null && med10){
+      const fcfpeg = pfcfActuel / med10;
+      fcfpegEl.textContent = fcfpeg.toLocaleString('fr-FR',{minimumFractionDigits:2});
+      fcfpegEl.className = 'v';
+      if (fcfpeg < 1) fcfpegEl.classList.add('pos');
+      else if (fcfpeg <= 1.10) fcfpegEl.classList.add('warn');
+      else fcfpegEl.classList.add('neg');
+    }
   }
 }
 // Demande explicite : basculer les 9 graphiques historiques "classiques" sur FMP QUAND
@@ -5933,8 +6848,9 @@ function sliceHistoricalRange(arr, range){
 function renderHistoricalCharts(nom, hist, years, latest){
   const real = documentsRealData[nom];
   const fmpCharts = real && real.chartsHistory;
-  const chartHist = fmpCharts ? chartsHistoryToRows(fmpCharts) : hist;
-  const chartYears = fmpCharts ? fmpCharts.years : years;
+  const tv = isTvCompany(nom);
+  const chartHist = tv ? mergeTvWithFmpHistory(hist, fmpCharts) : (fmpCharts ? chartsHistoryToRows(fmpCharts) : hist);
+  const chartYears = tv ? chartHist.map(r => r.annee) : (fmpCharts ? fmpCharts.years : years);
   const displayHist = sliceHistoricalRange(chartHist, historicalChartsRange);
   const displayYears = sliceHistoricalRange(chartYears, historicalChartsRange);
 
@@ -5943,8 +6859,8 @@ function renderHistoricalCharts(nom, hist, years, latest){
     chartInstances[key] = makeChart(key, HISTORICAL_CHART_CANVAS_ID[key], buildHistoricalChartConfig(key, displayHist, displayYears));
   });
 
-  const pfcfMedian10 = fmpCharts ? medianOfLastYears(chartHist, 'pFcf', 10) : latest.medianePFCF;
-  const pfcfMedian20 = fmpCharts ? medianOfLastYears(chartHist, 'pFcf', 20) : latest.medianePFCF20;
+  const pfcfMedian10 = (fmpCharts || tv) ? medianOfLastYears(chartHist, 'pFcf', 10) : latest.medianePFCF;
+  const pfcfMedian20 = (fmpCharts || tv) ? medianOfLastYears(chartHist, 'pFcf', 20) : latest.medianePFCF20;
   document.getElementById('medianeBadgesPfcf').innerHTML =
     medianeBadgeHtml('Médiane 10a', pfcfMedian10 ? 100/pfcfMedian10 : null, '%') + medianeBadgeHtml('Médiane 20a', pfcfMedian20 ? 100/pfcfMedian20 : null, '%');
 }
@@ -6148,26 +7064,32 @@ const STOCK_OVERLAY_METRICS = {
 // points connus). Écarté (> ~200 jours) si aucun label de la plage affichée ne
 // correspond réellement à cette année (ex. plage "1a" avec un historique de 20 ans) —
 // sans ce garde-fou, une valeur ancienne se retrouverait plaquée au bord du graphique.
-// Base "hist" (tableau annuel {annee, [field]:valeur, ...}) pour une entreprise — Sheet
-// en priorité (companies[nom], comportement inchangé), repli sur chartsHistory FMP
-// (documentsRealData[nom], déjà chargée via ensureDocumentsRealData() — voir
-// ensureComparaisonMetricsData()) pour toute entreprise hors des 72 du Sheet. Les noms
-// de champ sont VOLONTAIREMENT identiques entre les deux sources (dividende, ca,
-// margeOp, roic, fcfParAction, pFcf, actions, detteOCF, cash) — même schéma, pas de
-// table de correspondance à maintenir. Demande explicite : "ça me met toutes les
-// entreprises qui ont été enregistrées avec FMP", pas seulement celles du Sheet.
+// Base "hist" (tableau annuel {annee, [field]:valeur, ...}) pour une entreprise. Les noms
+// de champ sont VOLONTAIREMENT identiques entre Sheet et FMP (dividende, ca, margeOp,
+// roic, fcfParAction, pFcf, actions, detteOCF, cash) — même schéma, pas de table de
+// correspondance à maintenir.
+// Fusionne l'historique Sheet (~20 ans, source prioritaire/officielle du site) avec
+// l'historique FMP plus profond (chartsHistory, jusqu'à 40 exercices vus en pratique) —
+// AVANT ce correctif, une entreprise présente dans le Sheet (les 72 "principales")
+// ignorait complètement FMP ici, donc un CAGR 15/30 ans ne pouvait jamais se calculer
+// (pas assez de recul dans les seules ~20 années du Sheet). FMP ne comble que les années
+// ANTÉRIEURES à ce que couvre déjà le Sheet, jamais n'écrase une valeur Sheet existante.
 function comparaisonHistFor(nom){
-  if (companies[nom]) return companies[nom];
+  const sheetHist = companies[nom] || [];
   const ch = documentsRealData[nom] && documentsRealData[nom].chartsHistory;
-  if (!ch || !ch.years) return [];
-  return ch.years.map((y, i) => {
+  if (!ch || !ch.years) return sheetHist;
+  const fmpHist = ch.years.map((y, i) => {
     const row = { annee: parseInt(String(y).slice(0, 4), 10) };
     Object.keys(ch).forEach(k => { if (k !== 'years' && Array.isArray(ch[k])) row[k] = ch[k][i]; });
     return row;
   });
+  if (!sheetHist.length) return fmpHist;
+  const sheetYears = new Set(sheetHist.map(r => r.annee));
+  const extra = fmpHist.filter(r => !sheetYears.has(r.annee));
+  return extra.concat(sheetHist).sort((a, b) => a.annee - b.annee);
 }
 async function ensureComparaisonMetricsData(nom){
-  if (companies[nom] || (documentsRealData[nom] && documentsRealData[nom].chartsHistory)) return;
+  if (documentsRealData[nom]) return;
   try{ await ensureDocumentsRealData(nom); }catch(e){ /* pas exportée pour cette entreprise — non bloquant */ }
 }
 
@@ -6481,9 +7403,13 @@ let creditIndicatorsData = {}; // key -> { dates:[...], values:[...] }
 // appel qui renvoie les 10 séries d'un coup (voir la fonction Apps Script à ajouter,
 // fournie séparément à l'utilisateur — ce fichier ne peut pas éditer son script Google).
 async function fetchFredSeriesViaAppsScript(){
+  // Délai relevé de 30s à 90s (2026-09-19) : cette réponse pèse ~7,4 Mo (mesuré) et
+  // Apps Script met 14s à la servir côté serveur ; via le navigateur (redirection Google
+  // + téléchargement + JSON.parse) elle dépassait régulièrement 30s → "délai dépassé",
+  // indicateurs crédit ET tableau macro vides.
   const res = await Promise.race([
     fetch(APPS_SCRIPT_URL + '?action=fred', { cache:'no-store' }),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('délai dépassé (>30s)')), 30000))
+    new Promise((_, reject) => setTimeout(() => reject(new Error('délai dépassé (>90s)')), 90000))
   ]);
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const json = await res.json();
@@ -6594,7 +7520,19 @@ function setCreditLoadingStatus(msg, isError){
   });
 }
 
-async function loadCreditIndicators(){
+// Un seul téléchargement à la fois (2026-09-19) : au démarrage, init() ET le tableau macro
+// (loadMacroFundamentalsFromApi) appelaient chacun cette fonction quand le cache était
+// vide, donc la réponse de ~7,4 Mo était téléchargée DEUX FOIS en parallèle via Apps
+// Script — ce qui aggravait les "délai dépassé". Les appels concurrents partagent
+// maintenant la même promesse.
+let creditIndicatorsInFlight = null;
+function loadCreditIndicators(){
+  if (!creditIndicatorsInFlight){
+    creditIndicatorsInFlight = loadCreditIndicatorsImpl().finally(() => { creditIndicatorsInFlight = null; });
+  }
+  return creditIndicatorsInFlight;
+}
+async function loadCreditIndicatorsImpl(){
   try{
     const raw = localStorage.getItem(CREDIT_LS_KEY);
     if (raw){
@@ -8087,15 +9025,18 @@ function renderStockChartCandleView(){
       rightPriceScale:{ borderColor: THEME.hair },
       timeScale:{ borderColor: THEME.hair },
       autoSize:true,
-      // Un simple glisser accidentel sur l'axe des prix (à droite) bascule
-      // lightweight-charts en échelle MANUELLE (autoScale:false) — l'échelle reste
-      // alors figée sur la plage du moment, complètement fausse dès que le zoom/la
-      // plage change ensuite (bougies écrasées en un pavé dense en haut du graphique,
-      // remonté comme "un canal qui ne veut pas s'enlever" par l'utilisateur — trouvé
-      // en reproduisant : priceScale('right').options().autoScale était à false après
-      // des tests d'interaction sur ce graphique). Axe des prix non draggable = ne peut
-      // plus jamais se figer, l'axe des temps reste zoomable/déplaçable normalement.
-      handleScale:{ axisPressedMouseMove:{ time:true, price:false } }
+      // Glisser sur l'axe des prix (à droite) bascule lightweight-charts en échelle
+      // MANUELLE (autoScale:false) — fonctionnalité voulue par l'utilisateur (zoomer/
+      // dézoomer l'échelle des prix à la souris), mais désactivée un temps
+      // (axisPressedMouseMove.price:false) suite à un bug réel : un glisser accidentel
+      // laissait l'échelle figée sur la plage du moment (bougies écrasées en un pavé
+      // dense, "un canal qui ne veut pas s'enlever"). Réactivé ici — voir le filet de
+      // sécurité juste après (autoScale:true réappliqué à chaque rendu complet, cf. plus
+      // bas "réaffirme l'échelle auto à chaque rendu") qui répare l'échelle dès le
+      // prochain changement de plage/entreprise, même si l'utilisateur a laissé le
+      // graphique figé entre-temps. Si le bug revient (candles écrasées qui persistent
+      // même après un clic sur une plage), regarder ici en premier.
+      handleScale:{ axisPressedMouseMove:{ time:true, price:true } }
     });
     stockCandleSeries = stockCandleChart.addCandlestickSeries({
       upColor: THEME.green, downColor: THEME.red, borderVisible:false,
@@ -9189,13 +10130,18 @@ function comparaisonBadgesHtml(){
       return `<span class="chart-badge mediane-badge">${escapeHtml(nom)} · Perf. <b>${perfTxt}</b></span>`;
     }).join('');
   }
+  // Demande explicite : "l'évolution des CAGR sur cinq, dix, quinze, vingt, trente ans"
+  // — pas seulement 5/10/20 (limite des colonnes précalculées du Sheet, voir
+  // computeMetricCagr) : 15/30 passent systématiquement par le calcul direct sur
+  // l'historique fusionné Sheet+FMP (comparaisonHistFor), jamais un champ Sheet dédié.
+  const CAGR_HORIZONS = [5, 10, 15, 20, 30];
   Object.keys(COMPARAISON_METRICS).forEach(key => {
     if (key === 'price' || !comparaisonMetrics[key]) return;
     comparaisonSelected.forEach(nom => {
-      const c5 = computeMetricCagr(nom, key, 5), c10 = computeMetricCagr(nom, key, 10), c20 = computeMetricCagr(nom, key, 20);
-      if (c5 == null && c10 == null && c20 == null) return;
-      const fmt = v => v != null ? (v >= 0 ? '+' : '') + v.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%' : '—';
-      html += `<span class="chart-badge mediane-badge">${escapeHtml(nom)} · ${COMPARAISON_METRICS[key].label} CAGR <b>${fmt(c5)}/${fmt(c10)}/${fmt(c20)}</b></span>`;
+      const cagrs = CAGR_HORIZONS.map(years => ({ years, value: computeMetricCagr(nom, key, years) }));
+      if (cagrs.every(c => c.value == null)) return;
+      const fmt = c => (c.value != null ? (c.value >= 0 ? '+' : '') + c.value.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%' : '—') + ` (${c.years}a)`;
+      html += `<span class="chart-badge mediane-badge">${escapeHtml(nom)} · ${COMPARAISON_METRICS[key].label} CAGR <b>${cagrs.map(fmt).join(' · ')}</b></span>`;
     });
   });
   return html;
@@ -9206,6 +10152,77 @@ function renderComparaisonBadges(){
   if (box) box.innerHTML = html;
   const zoomBox = document.getElementById('zoomComparaisonBadgesRow');
   if (zoomBox && zoomKey === 'comparaison') zoomBox.innerHTML = html;
+}
+
+// Export PDF de la Comparaison — demande explicite : le graphique indexé + les CAGR,
+// puis à la fin le Wolf Score de chaque entreprise sélectionnée (rempli depuis l'onglet
+// Analyse, voir analyseScoreStore). Même charte que les autres exports.
+// Exporte TOUT ce qui s'affiche dans l'onglet Comparaison, pas seulement le graphique du
+// haut — demande explicite après un premier essai jugé incomplet : le graphique indexé +
+// indicateurs, PUIS pour chaque entreprise de la "Comparaison détaillée côte à côte"
+// (jauge, ratios, tous les graphiques historiques déjà à l'écran — comparisonColumnCharts,
+// voir renderComparisonDetailColumns), et enfin son Wolf Score. Lit directement le DOM/les
+// instances Chart.js déjà rendus (WYSIWYG de ce qui est affiché), ne reconstruit rien.
+function exportComparaisonAsPdf(){
+  if (!comparaisonSelected.length) return;
+  const chart = comparaisonChartInstances.unified;
+  const chartPanel = chart
+    ? chainPdfPanelWrap('Comparaison — indexé base 100', `<img class="chain-pdf-chart-img" src="${chartToPrintDataUrl(chart)}" alt="">`)
+    : '';
+  const badgesHtml = document.getElementById('comparaisonBadgesRow').innerHTML;
+  const badgesPanel = badgesHtml.trim() ? chainPdfPanelWrap('Indicateurs', `<div class="mediane-badges-row">${badgesHtml}</div>`) : '';
+
+  // Comparaison détaillée côte à côte : mêmes 4 colonnes/entreprises que
+  // renderComparisonDetailColumns() (colId <-> nom appariés dans le même ordre).
+  // Construit LIGNE PAR LIGNE (jauge des N entreprises côte à côte, puis ratios des N
+  // côte à côte, puis chaque graphique des N côte à côte...) plutôt qu'un panneau entier
+  // par entreprise placé dans une grille — un panneau haut de plusieurs pages dans une
+  // grille CSS se chevauche à l'impression (Chrome pagine très mal une grille dont une
+  // cellule dépasse une page). Chaque LIGNE ici est courte (un seul graphique de haut),
+  // donc jamais de souci de pagination — retour utilisateur direct après un premier essai
+  // qui chevauchait.
+  const detailSelection = comparaisonSelected.slice(0, 4).filter(nom => companies[nom]);
+  const n = detailSelection.length;
+  // Chaque cellule répète le nom de l'entreprise en légende + un encadré propre — sans
+  // ça, deux grilles de ratios (chacune déjà en 2 colonnes) placées côte à côte se lisent
+  // comme UNE seule grille à 4 colonnes entremêlées, aucun moyen de savoir quelle colonne
+  // appartient à quelle entreprise (retour utilisateur direct, capture à l'appui).
+  function comparisonPdfRowHtml(title, cellsHtmlArray, seqNum){
+    const cells = cellsHtmlArray.map((h, i) => `
+      <div style="border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:10px;">
+        <div style="font-family:var(--font-mono);font-size:9.5px;letter-spacing:0.08em;color:var(--gold-2);text-transform:uppercase;margin-bottom:8px;">${escapeHtml(detailSelection[i] || '')}</div>
+        ${h || '<p style="color:var(--text-dim);">—</p>'}
+      </div>`).join('');
+    return chainPdfPanelWrap(title, `<div style="display:grid;grid-template-columns:repeat(${cellsHtmlArray.length},1fr);gap:16px;align-items:start;">${cells}</div>`, seqNum);
+  }
+  let detailPanels = '';
+  if (n){
+    let seq = 0;
+    const nameRow = comparisonPdfRowHtml('Entreprises comparées', detailSelection.map(nom => `<h3 style="margin:0;color:var(--gold-2);font-family:var(--font-display);">${nom.replace(/</g, '&lt;')}</h3>`), String(++seq).padStart(2, '0'));
+    const gaugeRow = comparisonPdfRowHtml("Positionnement sur l'échelle de valorisation", detailSelection.map((nom, i) => {
+      const gaugeSvg = document.getElementById('cmp' + COMPARISON_DETAIL_COLS[i] + 'Gauge');
+      return gaugeSvg ? `<svg viewBox="0 0 1000 90" style="width:100%;">${gaugeSvg.innerHTML}</svg>` : '';
+    }), String(++seq).padStart(2, '0'));
+    const ratioRow = comparisonPdfRowHtml('Ratios clés', detailSelection.map((nom, i) => {
+      const ratioGrid = document.querySelector(`.comparaison-column[data-col="${COMPARISON_DETAIL_COLS[i]}"] .ratio-grid`);
+      return ratioGrid ? ratioGrid.outerHTML : '';
+    }), String(++seq).padStart(2, '0'));
+    const chartRows = HISTORICAL_CHART_KEYS.map(key => {
+      const cells = detailSelection.map((nom, i) => {
+        const ch = comparisonColumnCharts[COMPARISON_DETAIL_COLS[i]] && comparisonColumnCharts[COMPARISON_DETAIL_COLS[i]][key];
+        const url = ch ? chartToPrintDataUrl(ch) : null;
+        return url ? `<img class="chain-pdf-chart-img" src="${url}" alt="">` : '';
+      });
+      return comparisonPdfRowHtml(COMPARISON_CHART_LABELS[key], cells, String(++seq).padStart(2, '0'));
+    }).join('');
+    const scoreRow = comparisonPdfRowHtml('🐺 Wolf Score', detailSelection.map(nom => analyseScoreBlockHtml(nom)), String(++seq).padStart(2, '0'));
+    detailPanels = nameRow + gaugeRow + ratioRow + chartRows + scoreRow;
+  }
+
+  const area = document.getElementById('printArea');
+  area.innerHTML = brandedPdfHeader('Comparaison', comparaisonSelected.join(' vs '), `${comparaisonSelected.length} entreprise${comparaisonSelected.length > 1 ? 's' : ''} comparées`, 'Wolf Analysis')
+    + chartPanel + badgesPanel + detailPanels + brandedPdfFooter();
+  printAreaAfterImagesLoad(area);
 }
 
 async function renderComparaisonCharts(){
@@ -9315,7 +10332,8 @@ function comparisonChartBadgesHtml(key, latest){
 function comparisonScenariosHtml(nom){
   const hist = companies[nom];
   const latest = hist[hist.length - 1];
-  const { fcfActuel, cagrHist, medianeHist } = valorisationInputs(latest, hist, nom);
+  const vIn = valorisationInputs(latest, hist, nom);
+  const { fcfActuel, cagrHist, medianeHist } = vIn;
   const prixActuel = latest.prixActuel;
   if (fcfActuel == null || prixActuel == null || cagrHist == null || medianeHist == null){
     return '<p class="chart-hint">Données insuffisantes pour simuler une valorisation.</p>';
@@ -9330,7 +10348,7 @@ function comparisonScenariosHtml(nom){
     const cagr = savedS ? savedS.cagr : +(cagrHist + s.deltaCagr).toFixed(1);
     const multiple = savedS ? savedS.multiple : +(medianeHist + s.deltaMultiple).toFixed(1);
     const rachat = savedS ? (savedS.rachat || 0) : 0;
-    const r = computeScenario(fcfActuel, prixActuel, cagr, multiple, rachat);
+    const r = computeScenario(fcfActuel, prixActuel, cagr, multiple, rachat, evDetteArg(vIn, savedS));
     return `<div class="comparaison-scenario-mini ${s.key}">
       <div class="k">${s.label}</div>
       <div class="comparaison-scenario-mini-row"><span>CAGR</span><b>${cagr >= 0 ? '+' : ''}${cagr.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</b></div>
@@ -9382,6 +10400,8 @@ function comparisonColumnHtml(colId, nom){
           </div>`;
         }).join('')}
       </div>
+      <div class="section-label" style="margin:14px 0 8px;">🐺 Wolf Score</div>
+      ${analyseScoreBlockHtml(nom)}
     </div>`;
 }
 
@@ -9770,6 +10790,42 @@ function ratioCardsHtml(latest){
     <div class="ratio-card"><div class="k">P/FCF actuel</div><div class="v">${latest.pFcf != null ? latest.pFcf.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}) + 'x' : 'N/D'}</div><div class="sub">multiple payé aujourd'hui</div></div>
   `;
 }
+// Catalogue des ratios sélectionnables dans la fiche Analyse développée (Cerveau
+// numérique). 'prixActuel' est un cas à part (pas un <div class="ratio-card"> de
+// ratioCardsHtml() — construit directement depuis latest.prixActuel, voir
+// analyseFicheSelectedRatiosHtml()) ; les 8 AUTRES clés, elles, gardent l'ORDRE FIXE de
+// ratioCardsHtml() ci-dessus pour l'accès positionnel (jamais une 2e version des
+// formules/seuils).
+const ANALYSE_FICHE_RATIO_CATALOG = [
+  { key:'prixActuel', label:'Prix actuel' },
+  { key:'prixJuste', label:'Prix juste' },
+  { key:'prixCible', label:'Prix cible' },
+  { key:'ecartValeur', label:'Écart de valeur' },
+  { key:'rendementDiv', label:'Rendement du dividende' },
+  { key:'rendement5ans', label:'Rendement total estimé, 5 ans' },
+  { key:'fcfpeg', label:'FCF PEG' },
+  { key:'medianePFCF', label:'Médiane P/FCF' },
+  { key:'pfcfActuel', label:'P/FCF actuel' }
+];
+// Réutilise ratioCardsHtml() TEL QUEL (jamais une 2e version des formules/seuils, voir
+// son propre commentaire) puis filtre par position les cartes cochées — la fiche affiche
+// donc toujours la valeur EN DIRECT (recalculée à chaque renderAnalyse()/export PDF),
+// jamais une capture figée au jour de la sélection.
+function analyseFicheSelectedRatiosHtml(nom, selectedKeys){
+  if (!selectedKeys || !selectedKeys.length) return '';
+  const hist = companies[nom];
+  if (!hist || !hist.length) return '';
+  const latest = hist[hist.length - 1];
+  let prixActuelHtml = '';
+  if (selectedKeys.includes('prixActuel')){
+    prixActuelHtml = `<div class="ratio-card"><div class="k">Prix actuel</div><div class="v">${fmtEUR(latest.prixActuel)}</div><div class="sub">cours du moment</div></div>`;
+  }
+  const wrap = document.createElement('div');
+  wrap.innerHTML = ratioCardsHtml(latest);
+  const cards = Array.from(wrap.children);
+  const positional = ANALYSE_FICHE_RATIO_CATALOG.filter(c => c.key !== 'prixActuel');
+  return prixActuelHtml + cards.filter((_, i) => selectedKeys.includes(positional[i].key)).map(c => c.outerHTML).join('');
+}
 // svgId/badgeId optionnels (défaut : la jauge principale de l'onglet Analyse) — permet
 // de réutiliser telle quelle cette même fonction pour les colonnes de l'onglet
 // Comparaison (jauge par entreprise, ids dédiés par colonne), "mêmes codes" partout.
@@ -9804,7 +10860,7 @@ function drawGauge(latest, svgId, badgeId){
       <line x1="${xv}" y1="${top-4}" x2="${xv}" y2="${top+barH+4}" stroke="${color}" stroke-width="2"/>
       <circle cx="${xv}" cy="${top+barH/2}" r="4" fill="${color}"/>
       <text x="${xv}" y="${top-10}" text-anchor="middle" fill="${color}" font-size="13" font-weight="700" font-family="Plus Jakarta Sans, sans-serif">${label}</text>
-      <text x="${xv}" y="${top+barH+22}" text-anchor="middle" fill="${THEME.dim}" font-size="12" font-family="Plus Jakarta Sans, sans-serif">${value.toFixed(1)} €</text>
+      <text x="${xv}" y="${top+barH+22}" text-anchor="middle" fill="${THEME.dim}" font-size="12" font-family="Plus Jakarta Sans, sans-serif">${value.toFixed(1)} ${latest.devise ? (latest.devise === 'GBX' || latest.devise === 'GBp' ? 'p' : fmpCurrencySymbol(latest.devise)) : '€'}</text>
     `;
   }
   html += marker(xCible, 'CIBLE', latest.prixCible, THEME.green);
@@ -9858,13 +10914,32 @@ const SCENARIO_QUICK_MULTIPLES = [10, 15, 20, 25];
 // SUPPLÉMENTAIRE, au-delà de la tendance déjà capturée par le CAGR historique — positif
 // = rachats nets (dilution du nombre d'actions), négatif = émission nette (dilution de
 // la valeur par action).
-function computeScenario(fcfActuel, prixActuel, cagr, multiple, rachatPct){
-  const prixJusteSim = fcfActuel * multiple;
+// dette (EV/EBITDA uniquement) : objet { actuelle, future } par action -> délégué au moteur pur
+// VALO_MULTIPLES.evEbitdaScenario (js/valo-multiples.js, testé) : valeur actuelle = EBITDA/action × multiple − dette
+// nette ACTUELLE/action ; prix 5 ans = EBITDA futur × multiple − dette nette FUTURE/action (une seule soustraction).
+// Pas de « prix cible −20 % » pour cette méthode : prixCible vaut le prix théorique actuel. Nombre (ancien appel) ou
+// absent = 0 : FCF/OCF/PER/P/B inchangés. potentiel5A (% total sur 5 ans) est renvoyé pour toutes les méthodes.
+// Argument « dette » à passer à computeScenario() depuis un résultat de valorisationInputs() : seulement en EV/EBITDA.
+function evDetteArg(vIn, scen){
+  if (valorisationMetric !== 'ev' || !vIn) return 0;
+  return { actuelle: vIn.detteNetteParAction || 0, future: scen && scen.detteFuture != null ? scen.detteFuture : null };
+}
+function computeScenario(fcfActuel, prixActuel, cagr, multiple, rachatPct, detteNetteParAction){
+  if (detteNetteParAction && typeof detteNetteParAction === 'object' && window.VALO_MULTIPLES){
+    const r = window.VALO_MULTIPLES.evEbitdaScenario({ ebitdaPS: fcfActuel, multiple, cagr, prix: prixActuel, rachatPct,
+      detteNettePS: detteNetteParAction.actuelle, detteNetteFuturePS: detteNetteParAction.future });
+    if (!r.ok) return { prixJusteSim: 0, prixCible: 0, prixEst5A: 0, rendement5A: null, potentiel5A: null };
+    return { prixJusteSim: r.prixTheoActuel, prixCible: r.prixTheoActuel, prixEst5A: r.prixFutur, rendement5A: r.rendementAnnualise,
+      potentiel5A: r.potentielTotal, potentielActuel: r.potentielActuel, ebitdaFutur: r.ebitdaFuturPS, detteFuture: r.detteNetteFuturePS, ev: r };
+  }
+  const dn = (typeof detteNetteParAction === 'number' && detteNetteParAction) || 0;
+  const prixJusteSim = Math.max(0, fcfActuel * multiple - dn);
   const prixCible = prixJusteSim * 0.8;
   const rachatFactor = Math.pow(1 + (rachatPct || 0) / 100, 5);
-  const prixEst5A = fcfActuel * Math.pow(1 + cagr / 100, 5) * multiple * rachatFactor;
+  const prixEst5A = Math.max(0, fcfActuel * Math.pow(1 + cagr / 100, 5) * multiple - dn) * rachatFactor;
   const rendement5A = prixActuel > 0 ? (Math.pow(prixEst5A / prixActuel, 1 / 5) - 1) * 100 : null;
-  return { prixJusteSim, prixCible, prixEst5A, rendement5A };
+  const potentiel5A = prixActuel > 0 ? (prixEst5A / prixActuel - 1) * 100 : null;
+  return { prixJusteSim, prixCible, prixEst5A, rendement5A, potentiel5A };
 }
 
 // Libellés par métrique de valorisation — le PER casse le pattern "toUpperCase()"
@@ -9873,12 +10948,20 @@ function computeScenario(fcfActuel, prixActuel, cagr, multiple, rachatPct){
 // contrairement à FCF/OCF où la même grandeur sert à la fois de quantité fixe ET de
 // racine du nom du multiple (P/FCF, P/OCF).
 function valorisationLabels(){
-  if (valorisationMetric === 'per') return { fixed:'EPS', mediane:'PER', growth:'EPS' };
+  if (valorisationMetric === 'per') return { fixed:'EPS', mediane:'PER', growth:'EPS', multRow:'Médiane PER (Multiple)' };
+  if (valorisationMetric === 'ev') return { fixed:'EBITDA / action', mediane:'EV/EBITDA', growth:'EBITDA', multRow:'Multiple EV/EBITDA retenu (actuel et sortie)' };
+  if (valorisationMetric === 'pb') return { fixed:'Actif net / action', mediane:'P/B', growth:'actif net', multRow:'Multiple P/B' };
   const u = valorisationMetric.toUpperCase();
-  return { fixed:u, mediane:'P/' + u, growth:u };
+  return { fixed:u, mediane:'P/' + u, growth:u, multRow:'Médiane P/' + u + ' (Multiple)' };
+}
+function scenarioQuickMultiples(){
+  if (valorisationMetric === 'pb') return [0.6, 0.8, 1, 1.5, 2];
+  if (valorisationMetric === 'ev') return [6, 8, 10, 12, 15];
+  return SCENARIO_QUICK_MULTIPLES;
 }
 function scenarioCardHtml(s){
   const vl = valorisationLabels();
+  const isEv = valorisationMetric === 'ev';
   return `
     <div class="scenario-card ${s.key}" data-key="${s.key}">
       <div class="scenario-title-row">
@@ -9901,22 +10984,36 @@ function scenarioCardHtml(s){
         <input type="number" class="scenario-number" id="vo-${s.key}-cagr" step="0.1">
       </div>
       <div class="scenario-row">
-        <div class="scenario-row-head"><span>Médiane ${vl.mediane} (Multiple)</span><span class="val" id="vo-${s.key}-multVal">—</span></div>
-        <input type="number" class="scenario-number" id="vo-${s.key}-mult" min="0" step="0.1">
+        <div class="scenario-row-head"><span>${vl.multRow}</span><span class="val" id="vo-${s.key}-multVal">—</span></div>
+        <input type="number" class="scenario-number" id="vo-${s.key}-mult" min="0" step="${valorisationMetric === 'pb' ? '0.01' : '0.1'}">
         <div class="scenario-quick-picks">
-          ${SCENARIO_QUICK_MULTIPLES.map(v => `<button type="button" class="scenario-quick-btn" data-quick-mult="${v}">${v}x</button>`).join('')}
+          ${isEv && activeValoEvActuel != null ? `<button type="button" class="scenario-quick-btn scenario-quick-now" data-quick-mult="${+activeValoEvActuel.toFixed(1)}" title="EV/EBITDA actuel (TTM, TradingView)">Actuel ${String(+activeValoEvActuel.toFixed(1)).replace('.', ',')}x</button>` : ''}
+          ${scenarioQuickMultiples().map(v => `<button type="button" class="scenario-quick-btn" data-quick-mult="${v}">${String(v).replace('.', ',')}x</button>`).join('')}
         </div>
       </div>
       <div class="scenario-row">
         <div class="scenario-row-head"><span>Rachat d'actions suppl. (%/an)</span><span class="val" id="vo-${s.key}-rachatVal">—</span></div>
         <input type="number" class="scenario-number" id="vo-${s.key}-rachat" step="0.1" title="Hypothèse additionnelle de baisse des actions en circulation, au-delà de la tendance déjà intégrée dans le CAGR ci-dessus. 0 = pas d'hypothèse supplémentaire.">
       </div>
-      <div class="scenario-results">
+      ${isEv ? `<div class="scenario-row">
+        <div class="scenario-row-head"><span>Dette nette future / action (5a)</span><span class="val" id="vo-${s.key}-detteVal">—</span></div>
+        <div class="scenario-fcf-edit-row">
+          <input type="number" class="scenario-number" id="vo-${s.key}-dette" step="0.01" title="Dette nette par action dans 5 ans (négatif = trésorerie nette). Vide = hypothèse : dette nette actuelle.">
+          <button type="button" class="scenario-fcf-reset" id="vo-${s.key}-dette-reset" title="Revenir à l'hypothèse : dette nette actuelle" aria-label="Revenir à la dette nette actuelle">↺</button>
+        </div>
+        <div class="scenario-ev-note" id="vo-${s.key}-detteNote"></div>
+      </div>` : ''}
+      ${isEv ? `<div class="scenario-results">
+        <div><div class="r-k">Prix théorique actuel</div><div class="r-v" id="vo-${s.key}-prixJuste">—</div><div class="r-sub" id="vo-${s.key}-potActuel"></div></div>
+        <div><div class="r-k">Prix théorique (5a)</div><div class="r-v" id="vo-${s.key}-prixEst">—</div><div class="r-sub" id="vo-${s.key}-ebitdaFutur"></div></div>
+        <div><div class="r-k">Potentiel total (5a)</div><div class="r-v" id="vo-${s.key}-prixCible">—</div></div>
+        <div><div class="r-k">Rendement annualisé</div><div class="r-v" id="vo-${s.key}-rendement">—</div></div>
+      </div>` : `<div class="scenario-results">
         <div><div class="r-k">Prix juste sim.</div><div class="r-v" id="vo-${s.key}-prixJuste">—</div></div>
         <div><div class="r-k">Prix cible (-20%)</div><div class="r-v" id="vo-${s.key}-prixCible">—</div></div>
         <div><div class="r-k">Prix est. (5a)</div><div class="r-v" id="vo-${s.key}-prixEst">—</div></div>
         <div><div class="r-k">Rendement (5a)</div><div class="r-v" id="vo-${s.key}-rendement">—</div></div>
-      </div>
+      </div>`}
       <div class="scenario-chart-holder"><canvas id="vo-${s.key}-chart"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(scenarioCharts['${s.key}'], '${s.label}', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
       <div class="macro-export-row">
         <button onclick="exportScenarioChartAsPdf('${s.key}')">PDF</button>
@@ -9961,8 +11058,38 @@ function persistValoFcfOverrides(){
 }
 
 function valorisationInputs(latest, hist, nom){
+  const overrideNom = nom || activeCompany;
+  // Demande explicite (2026-09-08, cas signalé : Dassault Aviation) : "j'ai horreur
+  // que tu inverse des données... je paye des données FMP, donc tu vas les utiliser."
+  // Avant ce fix, ces tuiles lisaient le Sheet pendant que le panneau "Historique FCF
+  // (FMP)" juste en dessous (renderValoMetricHistory()) lisait déjà FMP — deux
+  // médianes P/FCF différentes affichées sur la même page pour la même entreprise, ni
+  // l'une ni l'autre fausse (deux sources cohérentes en interne mais divergentes entre
+  // elles), juste confusément présentées comme si c'était la même donnée. Repli
+  // silencieux sur le Sheet uniquement si l'entreprise n'a pas encore de données FMP
+  // exportées localement (même pattern que applyFmpRatioOverrides()).
+  const real = overrideNom && documentsRealData[overrideNom];
+  const f = VALO_METRIC_FIELDS[valorisationMetric] || VALO_METRIC_FIELDS.fcf;
+  const fixedLabel = valorisationMetric === 'ocf' ? 'OCF' : valorisationMetric === 'per' ? 'PER' : 'FCF';
   let result;
-  if (valorisationMetric === 'ocf'){
+  if (valorisationMetric === 'ev' || valorisationMetric === 'pb'){
+    result = multiplesValoInputs(latest, overrideNom);   // TradingView en direct uniquement (jamais FMP)
+  } else if (real && real.chartsHistory){
+    const rows = chartsHistoryToRows(real.chartsHistory);
+    const known = rows.filter(r => r[f.perShare] != null);
+    const fcfActuel = known.length ? known[known.length - 1][f.perShare] : null;
+    // cagrOfLastYears() renvoie une fraction (0,082) — cagrHist est utilisé partout
+    // ailleurs (fmtPct(), +deltaCagr en points) comme un pourcentage déjà à l'échelle
+    // (8,2), même convention que l'ancien champ Sheet latest.cagrFcf10 qu'il remplace.
+    const cagrFrac = cagrOfLastYears(rows, f.perShare, 10);
+    result = {
+      fcfActuel,
+      cagrHist: cagrFrac != null ? cagrFrac * 100 : null,
+      medianeHist: medianOfLastYears(rows, f.multiple, 10),
+      mediane20: medianOfLastYears(rows, f.multiple, 20),
+      label: fixedLabel
+    };
+  } else if (valorisationMetric === 'ocf'){
     const ocfActuel = (latest.prixActuel != null && latest.pOcf) ? latest.prixActuel / latest.pOcf : null;
     result = { fcfActuel: ocfActuel, cagrHist: latest.cagrOcf10, medianeHist: latest.medianePOcf, mediane20: latest.medianePOcf20, label:'OCF' };
   } else if (valorisationMetric === 'per'){
@@ -9974,10 +11101,61 @@ function valorisationInputs(latest, hist, nom){
     result = { fcfActuel: latest.fcfParAction, cagrHist: latest.cagrFcf10, medianeHist: latest.medianePFCF, mediane20: latest.medianePFCF20, label:'FCF' };
   }
   result.fcfActuelAuto = result.fcfActuel;
-  const overrideNom = nom || activeCompany;
   const override = overrideNom && valorisationFcfOverrides[overrideNom] ? valorisationFcfOverrides[overrideNom][valorisationMetric] : null;
   if (override != null) result.fcfActuel = override;
   return result;
+}
+
+// « Valoriser avec l'EV/EBITDA » / « … le P/B » : données TradingView EN DIRECT (row.tvMultiples, rempli par
+// tvLiveRefresh -> js/valo-multiples.js). Ramené à l'action pour réutiliser telles quelles les cartes de scénario :
+//   EV/EBITDA : base = EBITDA moyen 5 ans / action ; prix = base × multiple − dette nette / action
+//   P/B       : base = actif net / action        ; prix = base × multiple
+// Multiple « historique » = celui que l'utilisateur relève dans l'appli TradingView (tuile éditable du résumé ;
+// le serveur public TradingView ne fournit ni la trésorerie ni les fonds propres passés). À défaut : multiple ACTUEL.
+// Croissance par défaut : CAGR de l'EBITDA sur 10 ans (TradingView) ; pour l'actif net, croissance « autofinancée »
+// = (BPA − dividende) / actif net par action (bénéfice mis en réserve).
+let activeValoDetteNetteParAction = 0;
+let activeValoEvActuel = null;   // EV/EBITDA actuel (TTM) de l'entreprise affichée : bouton « Actuel » des scénarios
+function multiplesValoInputs(latest, nom){
+  const V = window.VALO_MULTIPLES, m = latest.tvMultiples;
+  const isEv = valorisationMetric === 'ev';
+  const out = { fcfActuel:null, cagrHist:null, medianeHist:null, mediane20:null, detteNetteParAction:0, actuel:null, histSaved:null, histCount:0,
+    label: isEv ? 'EV/EBITDA' : 'P/B', baseNote:'', status: !V ? 'module' : !m ? 'pending' : !m.serverOk ? 'server' : 'ok' };
+  if (out.status !== 'ok') return out;
+  if (isEv){
+    // EBITDA ACTUEL (12 mois glissants) — méthode de l'utilisateur (2026-11-08). L'ancienne base « EBITDA moyen 5 ans »
+    // était centrée ~2,5 ans en arrière : la projeter de 5 ans au CAGR sous-estimait l'EBITDA futur. Repli : dernier exercice.
+    const lastFy = Array.isArray(m.ebitdaHist) ? m.ebitdaHist.find(v => typeof v === 'number') : null;
+    const ebitda = m.ebitdaTtm != null && m.ebitdaTtm > 0 ? m.ebitdaTtm : lastFy;
+    out.baseNote = m.ebitdaTtm != null && m.ebitdaTtm > 0 ? 'EBITDA 12 mois' : 'EBITDA dernier exercice';
+    if (ebitda != null && ebitda > 0 && m.shares > 0) out.fcfActuel = ebitda / m.shares;
+    if (m.netDebt != null && m.shares > 0) out.detteNetteParAction = m.netDebt / m.shares;
+    out.actuel = m.evEbitdaActuel;
+    out.cagrHist = V.cagrRecentFirst(m.ebitdaHist, 10);
+    out.netDebt = m.netDebt; out.shares = m.shares;
+  } else {
+    if (m.bvps != null && m.bvps > 0) out.fcfActuel = m.bvps;
+    out.actuel = (latest.prixActuel && m.bvps > 0) ? latest.prixActuel / m.bvps : m.pbActuel;
+    const eps = latest.eps, dps = latest.dividende || 0;
+    out.cagrHist = (m.bvps > 0 && eps != null) ? (eps - dps) / m.bvps * 100 : null;
+  }
+  const p = V.parseMultipleInput(V.getSaved(nom)[isEv ? 'ev' : 'pb']);
+  if (p){ out.histSaved = p.value; out.histCount = p.count; }
+  out.medianeHist = out.histSaved != null ? out.histSaved : out.actuel;
+  // EV/EBITDA saisi année par année (fichier multiples.json) : prioritaire sur la saisie libre de la tuile.
+  if (isEv && V.evHistoryStats && V.getEvHistory){
+    const h = V.getEvHistory(nom);
+    const st = h ? V.evHistoryStats(h.years) : null;
+    if (st && st.count >= 3 && h.use !== false){ out.evStats = st; out.medianeHist = st.medianAvg; }
+  }
+  out.mediane20 = out.actuel;
+  return out;
+}
+function setMultipleHistorique(nom, txt){
+  if (!window.VALO_MULTIPLES || !nom) return;
+  window.VALO_MULTIPLES.setSaved(nom, { [valorisationMetric === 'ev' ? 'ev' : 'pb']: String(txt || '').trim() });
+  // Les scénarios repartent du nouveau multiple historique, sauf objectif déjà enregistré (voir renderValorisation).
+  renderValorisation(nom);
 }
 
 // Valeur FCF/OCF/EPS "actuelle" utilisée par les 3 cartes de scénario — module-level
@@ -10115,7 +11293,19 @@ const DOCUMENTS_GROWTH_ROWS = [
   { label:'Résultat net' },
   { label:'BPA (EPS)' },
   { label:'Free Cash Flow' },
-  { label:'Dividende par action' }
+  // Pas dans GROWTH_FIELD_MAP côté export Python (jamais précalculé serveur) — calculé
+  // ici directement depuis real.cashFlow ("Net Cash from Operating Activities", déjà
+  // chargé pour le tableau Cash Flow juste à côté), voir documentsOcfGrowthRow().
+  { label:'Cash-flow opérationnel', isOcf:true },
+  { label:'Dividende par action' },
+  // isRatio:true = valeurs déjà en % (Marge nette/opérationnelle/ROIC/CapEx-CA) — les
+  // écarts entre années sont des POINTS de %, pas une croissance relative, voir
+  // documentsRatioGrowthRow(). Demande explicite : "complète-moi ce tableau", mêmes
+  // colonnes/mise en page que les lignes du dessus, pas un nouveau graphique.
+  { label:'Marge nette', isRatio:true },
+  { label:'Marge opérationnelle', isRatio:true },
+  { label:'ROIC', isRatio:true },
+  { label:'CapEx / CA', isRatio:true }
 ];
 // En-têtes génériques ("A-4 → A-3"...) — l'utilisateur ne pouvait pas savoir quelles
 // années c'était réellement : "il faut mettre les années pour que je vois lesquelles
@@ -10123,17 +11313,31 @@ const DOCUMENTS_GROWTH_ROWS = [
 // build_growth()) via documentsGrowthCols(years) ci-dessous ; ce tableau générique reste
 // le repli si growthYears est absent (fichier généré avant cet ajout, ou entreprise pas
 // encore ré-exportée).
-const DOCUMENTS_GROWTH_COLS = ['A-4 → A-3', 'A-3 → A-2', 'A-2 → A-1', 'A-1 → A', 'Croissance totale (5a)', 'TCAC (5a)'];
+// Colonnes = les 5 ANNÉES elles-mêmes (2021...2025), pas des transitions "A→B" — demande
+// explicite : chaque colonne doit pouvoir porter soit un NIVEAU (marges/ROIC/CapEx-CA),
+// soit un taux de croissance annuel (CA/EBITDA/...), jamais les deux à la fois sous un
+// même intitulé "A-1 → A" qui ne veut rien dire pour un niveau. Colonne "CAGR" en plus,
+// "Croissance totale" retirée (redondante avec le CAGR, demande explicite : ne garder
+// que Métrique|2021|2022|2023|2024|2025|CAGR 5 ans).
 function documentsGrowthCols(years){
-  if (!years || years.length !== 5) return DOCUMENTS_GROWTH_COLS;
-  const yoyLabel = (i, fallback) => (years[i-1] != null && years[i] != null) ? `${years[i-1]} → ${years[i]}` : fallback;
+  if (!years || years.length !== 5) return ['A-4', 'A-3', 'A-2', 'A-1', 'A', 'CAGR (5a)'];
   const first = years.find(y => y != null), last = [...years].reverse().find(y => y != null);
-  const span = (first != null && last != null && first !== last) ? ` (${first}–${last})` : ' (5a)';
-  return [
-    yoyLabel(1, DOCUMENTS_GROWTH_COLS[0]), yoyLabel(2, DOCUMENTS_GROWTH_COLS[1]),
-    yoyLabel(3, DOCUMENTS_GROWTH_COLS[2]), yoyLabel(4, DOCUMENTS_GROWTH_COLS[3]),
-    `Croissance totale${span}`, `TCAC${span}`
-  ];
+  const cagrLabel = (first != null && last != null && first !== last) ? `CAGR (${first}–${last})` : 'CAGR (5a)';
+  return [...years.map(y => y != null ? String(y) : '—'), cagrLabel];
+}
+// Niveau réel (marges/ROIC/CapEx-CA) — jamais multiplié par 100, ces dictionnaires
+// stockent déjà des points de pourcentage (11.93 = 11,93%), contrairement à fmtFmpPct()
+// qui attend une fraction (0.1193) pour les taux de croissance.
+function fmtLevelPct(value){
+  if (value == null) return '—';
+  return value.toLocaleString('fr-FR', { minimumFractionDigits:1, maximumFractionDigits:1 }) + '%';
+}
+// Écart entre deux NIVEAUX déjà en points de % — jamais "+X%" (croissance relative,
+// n'aurait aucun sens pour une marge) mais "+X pt"/"-X pt" (points de pourcentage),
+// demande explicite.
+function fmtPtsDelta(value){
+  if (value == null) return '—';
+  return (value >= 0 ? '+' : '') + value.toLocaleString('fr-FR', { minimumFractionDigits:1, maximumFractionDigits:1 }) + ' pt';
 }
 const DOCUMENTS_PERIOD_PLACEHOLDERS = ['—', '—', '—', '—', '—'];
 
@@ -10169,39 +11373,71 @@ async function ensureDocumentsRealData(name){
   }
 }
 
-// value en unité brute FMP (dollars pour 'money'/'pershare', nombre d'actions pour
-// 'shares') — toujours en $ (KO reporte en USD), jamais converti en €.
-function fmtFmpValue(value, unit){
+// value en unité brute FMP (pershare/money), dans la devise de reporting RÉELLE de
+// l'entreprise (champ "currency" de data/documents-{symbole}.json, extrait de
+// reportedCurrency FMP côté export_to_app.py) — ne jamais supposer USD : ~61% des
+// entreprises importées reportent dans une autre devise (EUR, JPY, KRW, GBP...), voir
+// retour utilisateur explicite ("total énergie, tu me les mets en euros"). currency
+// absente (ancien export non régénéré) -> repli USD, comportement identique à avant.
+const FMP_CURRENCY_SYMBOLS = {
+  USD:'$', EUR:'€', GBP:'£', JPY:'¥', CNY:'¥', KRW:'₩', INR:'₹',
+  CAD:'C$', AUD:'A$', NZD:'NZ$', SGD:'S$', HKD:'HK$', BRL:'R$', MXN:'MX$', TWD:'NT$', ZAR:'R',
+};
+function fmpCurrencySymbol(currency){
+  const code = (currency || 'USD').toUpperCase();
+  return FMP_CURRENCY_SYMBOLS[code] || code;
+}
+function fmtFmpValue(value, unit, currency){
   if (value == null) return '—';
-  if (unit === 'pershare') return '$' + value.toLocaleString('fr-FR', { minimumFractionDigits:2, maximumFractionDigits:2 });
+  const sym = fmpCurrencySymbol(currency);
+  if (unit === 'pershare') return value.toLocaleString('fr-FR', { minimumFractionDigits:2, maximumFractionDigits:2 }) + ' ' + sym;
   if (unit === 'shares') return (value / 1e6).toLocaleString('fr-FR', { maximumFractionDigits:0 }) + ' M';
   const abs = Math.abs(value);
-  if (abs >= 1e9) return (value / 1e9).toLocaleString('fr-FR', { minimumFractionDigits:2, maximumFractionDigits:2 }) + ' Md$';
-  if (abs >= 1e6) return (value / 1e6).toLocaleString('fr-FR', { minimumFractionDigits:1, maximumFractionDigits:1 }) + ' M$';
-  return value.toLocaleString('fr-FR', { maximumFractionDigits:2 }) + ' $';
+  if (abs >= 1e9) return (value / 1e9).toLocaleString('fr-FR', { minimumFractionDigits:2, maximumFractionDigits:2 }) + ' Md' + sym;
+  if (abs >= 1e6) return (value / 1e6).toLocaleString('fr-FR', { minimumFractionDigits:1, maximumFractionDigits:1 }) + ' M' + sym;
+  return value.toLocaleString('fr-FR', { maximumFractionDigits:2 }) + ' ' + sym;
 }
 function fmtFmpPct(value){
   if (value == null) return '—';
   return (value >= 0 ? '+' : '') + (value * 100).toLocaleString('fr-FR', { minimumFractionDigits:1, maximumFractionDigits:1 }) + '%';
 }
 
-function documentsGrowthTableHtml(growthData, growthYears){
+// Deux natures de ligne, jamais mélangées (demande explicite — "ne pas afficher la
+// variation comme si c'était le niveau") :
+// - "growth" (CA/EBITDA/Résultat net/EPS/FCF/OCF/Dividende) : les 5 colonnes-années
+//   portent un TAUX DE CROISSANCE annuel (première colonne toujours "—", pas de N-1
+//   disponible dans la fenêtre de 5 ans), + CAGR en dernière colonne.
+// - "level" (Marge nette/opérationnelle/ROIC/CapEx-CA, r.isRatio) : les 5 colonnes
+//   portent le NIVEAU réel de chaque année, CAGR non pertinent ("—"). Une 2e ligne
+//   "↳ Variation annuelle (pts)" juste en dessous donne l'écart en points entre chaque
+//   année consécutive — visible mais jamais confondue avec le niveau lui-même.
+function documentsGrowthTableHtml(growthData, growthYears, ratioByYearMaps, real){
   const cols = documentsGrowthCols(growthYears);
+  const years5 = (growthYears && growthYears.length === 5) ? growthYears : [null, null, null, null, null];
+  const bodyRows = DOCUMENTS_GROWTH_ROWS.map(r => {
+    if (r.isRatio){
+      const byYear = (ratioByYearMaps && ratioByYearMaps[r.label]) || {};
+      const levels = years5.map(y => (y != null && byYear[String(y)] != null) ? byYear[String(y)] : null);
+      const levelCells = [...levels.map(fmtLevelPct), '—'];
+      const mainRow = `<tr><td>${r.label}</td>${levelCells.map(c => `<td>${c}</td>`).join('')}</tr>`;
+      const deltas = levels.map((v, i) => (i === 0 || v == null || levels[i - 1] == null) ? null : v - levels[i - 1]);
+      const deltaCells = [...deltas.map(fmtPtsDelta), '—'];
+      const varRow = `<tr class="documents-row-sub"><td>↳ Variation annuelle (pts)</td>${deltaCells.map(c => `<td>${c}</td>`).join('')}</tr>`;
+      return mainRow + varRow;
+    }
+    const g = r.isOcf ? documentsOcfGrowthRow(real, growthYears) : (growthData && growthData.find(x => x.label === r.label));
+    const cells = g ? ['—', ...g.yoy.map(fmtFmpPct), fmtFmpPct(g.cagr)] : cols.map(() => '—');
+    return `<tr><td>${r.label}</td>${cells.map(c => `<td>${c}</td>`).join('')}</tr>`;
+  }).join('');
   return `<div class="documents-table-wrap">
     <table class="documents-table">
       <thead><tr><th>Métrique</th>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
-      <tbody>${DOCUMENTS_GROWTH_ROWS.map(r => {
-        const g = growthData && growthData.find(x => x.label === r.label);
-        const cells = g
-          ? [...g.yoy.map(fmtFmpPct), fmtFmpPct(g.total), fmtFmpPct(g.cagr)]
-          : DOCUMENTS_GROWTH_COLS.map(() => '—');
-        return `<tr><td>${r.label}</td>${cells.map(c => `<td>${c}</td>`).join('')}</tr>`;
-      }).join('')}</tbody>
+      <tbody>${bodyRows}</tbody>
     </table>
   </div>`;
 }
 
-function documentsStatementTableHtml(rows, statementData){
+function documentsStatementTableHtml(rows, statementData, currency){
   const years = statementData ? statementData.years : DOCUMENTS_PERIOD_PLACEHOLDERS;
   const banner = statementData
     ? ''
@@ -10212,7 +11448,7 @@ function documentsStatementTableHtml(rows, statementData){
       <tbody>${rows.map(r => {
         const dataRow = statementData && statementData.rows.find(x => x.label === r.label);
         const cells = dataRow
-          ? dataRow.values.map(v => `<td>${fmtFmpValue(v, r.unit)}</td>`).join('')
+          ? dataRow.values.map(v => `<td>${fmtFmpValue(v, r.unit, currency)}</td>`).join('')
           : years.map(() => `<td>—</td>`).join('');
         return `<tr class="${r.bold ? 'documents-row-bold' : ''}"><td>${r.label}</td>${cells}</tr>`;
       }).join('')}</tbody>
@@ -10225,7 +11461,7 @@ function documentsStatementTableHtml(rows, statementData){
 // Activé maintenant, voir export_to_app.py::main() (incomeStatementQ/balanceSheetQ/
 // cashFlowQ, fenêtre 20 trimestres).
 let documentsPeriod = 'annual';
-function documentsStatementSectionHtml(statementKey, title, rows, statementData, statementDataQ){
+function documentsStatementSectionHtml(statementKey, title, rows, statementData, statementDataQ, currency){
   const data = documentsPeriod === 'quarter' ? statementDataQ : statementData;
   const sub = data
     ? `${documentsPeriod === 'quarter' ? 'Trimestriel' : 'Annuel'} — ${data.years.length} période${data.years.length > 1 ? 's' : ''} (données FMP)`
@@ -10238,7 +11474,7 @@ function documentsStatementSectionHtml(statementKey, title, rows, statementData,
         <button data-period="quarter" class="${documentsPeriod === 'quarter' ? 'active' : ''}">Trimestriel</button>
       </div>
     </div>
-    ${documentsStatementTableHtml(rows, data)}
+    ${documentsStatementTableHtml(rows, data, currency)}
   </div>`;
 }
 // value déjà dans l'unité d'affichage (points de %, ou multiple) — voir
@@ -10403,13 +11639,157 @@ function documentsKeyRatiosHtml(nom, secteurRaw, statsData, derived){
       return `<div class="ratio-card ratio-card-key"><div class="k">${label}</div><div class="v">${fmtDocStat(v, ratioKind(label))}</div></div>`;
     }).join('')}</div>`;
 }
+// Marge nette N'EST PAS dans le Sheet (voir COL dans CLAUDE.md — margeOp/roic y sont,
+// pas margeNette) : dérivée ici des états financiers FMP déjà chargés (Revenue/Net
+// Income, real.incomeStatement — même données que le tableau Income Statement juste à
+// côté), pas de nouvel appel réseau ni de nouvelle donnée à importer.
+function documentsMargeNetteSeries(real){
+  const is = real && real.incomeStatement;
+  if (!is || !is.years) return {};
+  const revenueRow = is.rows.find(r => r.label === 'Revenue');
+  const netIncomeRow = is.rows.find(r => r.label === 'Net Income');
+  if (!revenueRow || !netIncomeRow) return {};
+  const byYear = {};
+  is.years.forEach((y, i) => {
+    const rev = revenueRow.values[i], ni = netIncomeRow.values[i];
+    if (rev != null && rev !== 0 && ni != null) byYear[String(y)] = ni / rev * 100;
+  });
+  return byYear;
+}
+// Historique multi-années de 3 des ratios dérivés déjà calculés en dernier exercice
+// SEULEMENT par computeDerivedRatios() ci-dessus (voir son propre commentaire pour les
+// formules, reprises ici à l'identique, juste appliquées à CHAQUE année plutôt qu'au
+// seul dernier exercice) — sert à compléter le tableau "Croissance (5 ans)" avec les
+// mêmes lignes que le reste (pas de graphique séparé, retour explicite : "je veux juste
+// que tu me complètes le tableau").
+function documentsDerivedRatiosHistorySeries(real){
+  const is = real && real.incomeStatement, cf = real && real.cashFlow;
+  if (!is || !is.years) return { years:[], capexCA:[], rdCA:[], margeEbitda:[] };
+  const rev = is.rows.find(r => r.label === 'Revenue');
+  const rd = is.rows.find(r => r.label === 'R&D Expenses');
+  const ebitda = is.rows.find(r => r.label === 'EBITDA');
+  const capexRow = cf && cf.rows.find(r => r.label === 'Capital Expenditure');
+  const capexByYear = {};
+  if (capexRow && cf.years) cf.years.forEach((y, i) => { if (capexRow.values[i] != null) capexByYear[String(y)] = capexRow.values[i]; });
+  const years = is.years;
+  const capexCA = years.map((y, i) => {
+    const r = rev && rev.values[i], c = capexByYear[String(y)];
+    return (r && c != null) ? Math.abs(c) / r * 100 : null;
+  });
+  const rdCA = years.map((_, i) => {
+    const r = rev && rev.values[i], v = rd && rd.values[i];
+    return (r && v != null) ? v / r * 100 : null;
+  });
+  const margeEbitda = years.map((_, i) => {
+    const r = rev && rev.values[i], v = ebitda && ebitda.values[i];
+    return (r && v != null) ? v / r * 100 : null;
+  });
+  return { years, capexCA, rdCA, margeEbitda };
+}
+// Marge opérationnelle = Résultat opérationnel / CA — calculée ici depuis les ÉTATS
+// FINANCIERS FMP bruts (real.incomeStatement), formule explicite de l'utilisateur.
+// AVANT : ces valeurs venaient de hist (colonne margeOp du Google Sheet, saisie/calculée
+// à la main) — retour explicite ("je paye les données FMP... je t'ai demandé de prendre
+// l'ensemble des données sur FMP") : remplacé par un calcul 100% FMP, plus aucune
+// dépendance au Sheet pour cette ligne précise du tableau "Croissance (5 ans)".
+function documentsMargeOpByYear(real){
+  const is = real && real.incomeStatement;
+  if (!is || !is.years) return {};
+  const rev = is.rows.find(r => r.label === 'Revenue');
+  const opInc = is.rows.find(r => r.label === 'Operating Income');
+  if (!rev || !opInc) return {};
+  const byYear = {};
+  is.years.forEach((y, i) => {
+    const r = rev.values[i], o = opInc.values[i];
+    if (r != null && r !== 0 && o != null) byYear[String(y)] = o / r * 100;
+  });
+  return byYear;
+}
+// Capital investi = Total Debt + Total Equity − Cash & Cash Equivalents (définition
+// standard) — utilisé pour ROIC = NOPAT / Capital investi MOYEN (moyenne du capital
+// investi de l'année et de l'année précédente), formule explicite de l'utilisateur.
+function documentsInvestedCapitalByYear(real){
+  const bs = real && real.balanceSheet;
+  if (!bs || !bs.years) return {};
+  const debt = bs.rows.find(r => r.label === 'Total Debt');
+  const equity = bs.rows.find(r => r.label === 'Total Equity');
+  const cash = bs.rows.find(r => r.label === 'Cash & Cash Equivalents');
+  if (!debt || !equity) return {};
+  const byYear = {};
+  bs.years.forEach((y, i) => {
+    const d = debt.values[i], e = equity.values[i], c = cash ? cash.values[i] : 0;
+    if (d != null && e != null) byYear[String(y)] = d + e - (c || 0);
+  });
+  return byYear;
+}
+// ROIC = NOPAT / Capital investi moyen, avec NOPAT = EBIT × (1 − taux d'impôt effectif)
+// — taux d'impôt = Income Tax Expense / Income Before Tax de CETTE année (repli 25% si
+// l'un des deux manque ou si le résultat avant impôt est nul/négatif, cas rare). AVANT :
+// hist.roic (colonne roic du Sheet) — remplacé par ce calcul 100% FMP, même retour
+// explicite que pour Marge opérationnelle ci-dessus.
+function documentsRoicByYear(real){
+  const is = real && real.incomeStatement;
+  if (!is || !is.years) return {};
+  const ebit = is.rows.find(r => r.label === 'EBIT');
+  const pretax = is.rows.find(r => r.label === 'Income Before Tax');
+  const taxExp = is.rows.find(r => r.label === 'Income Tax Expense');
+  if (!ebit) return {};
+  const investedCapital = documentsInvestedCapitalByYear(real);
+  const byYear = {};
+  is.years.forEach((y, i) => {
+    const e = ebit.values[i];
+    if (e == null) return;
+    let taxRate = 0.25;
+    const pt = pretax && pretax.values[i], te = taxExp && taxExp.values[i];
+    if (pt != null && pt > 0 && te != null) taxRate = Math.max(0, Math.min(1, te / pt));
+    const nopat = e * (1 - taxRate);
+    const icNow = investedCapital[String(y)];
+    const icPrev = i > 0 ? investedCapital[String(is.years[i - 1])] : null;
+    const icAvg = (icNow != null && icPrev != null) ? (icNow + icPrev) / 2 : icNow;
+    if (icAvg != null && icAvg !== 0) byYear[String(y)] = nopat / icAvg * 100;
+  });
+  return byYear;
+}
+// Points de % par année pour Marge nette/Marge opérationnelle/ROIC/CapEx-CA — pas des
+// tableaux de graphique, juste un dictionnaire {année: valeur} pour compléter le tableau
+// "Croissance (5 ans)" avec ces 4 lignes. Les 4 sont maintenant 100% FMP (real), plus
+// aucune ne vient du Google Sheet.
+function documentsRatioByYearMaps(real){
+  const margeNette = documentsMargeNetteSeries(real);
+  const margeOp = documentsMargeOpByYear(real);
+  const roic = documentsRoicByYear(real);
+  const adv = documentsDerivedRatiosHistorySeries(real);
+  const capexCA = {};
+  adv.years.forEach((y, i) => { if (adv.capexCA[i] != null) capexCA[String(y)] = adv.capexCA[i]; });
+  return { 'Marge nette':margeNette, 'Marge opérationnelle':margeOp, 'ROIC':roic, 'CapEx / CA':capexCA };
+}
+// Cash-flow opérationnel — absent de GROWTH_FIELD_MAP côté export Python (jamais
+// précalculé serveur), calculé ici depuis real.cashFlow ("Net Cash from Operating
+// Activities", déjà chargé pour le tableau Cash Flow) — même formule de croissance
+// relative que Free Cash Flow/CA (un flux absolu, pas un ratio en points de %).
+function documentsOcfGrowthRow(real, years){
+  const cf = real && real.cashFlow;
+  if (!cf || !cf.years || !years || years.length !== 5) return null;
+  const row = cf.rows.find(r => r.label === 'Net Cash from Operating Activities');
+  if (!row) return null;
+  const byYear = {};
+  cf.years.forEach((y, i) => { if (row.values[i] != null) byYear[String(y)] = row.values[i]; });
+  const vals = years.map(y => (y != null && byYear[String(y)] != null) ? byYear[String(y)] : null);
+  const pctChange = (a, b) => (a != null && b != null && b !== 0) ? (a - b) / Math.abs(b) : null;
+  const yoy = [1, 2, 3, 4].map(i => pctChange(vals[i], vals[i - 1]));
+  const total = pctChange(vals[4], vals[0]);
+  let cagr = null;
+  if (vals[0] != null && vals[0] > 0 && vals[4] != null && vals[4] > 0) cagr = Math.pow(vals[4] / vals[0], 1 / 4) - 1;
+  return { yoy, total, cagr };
+}
 function documentsStatisticsHtml(growthData, statsData, growthYears, secteurRaw, real, nom){
   const keyLabels = new Set(keyRatiosFor(nom, secteurRaw) || []);
   const derived = computeDerivedRatios(real);
   const hasDerived = Object.keys(derived).length > 0;
+  const ratioByYearMaps = documentsRatioByYearMaps(real);
   return `${documentsKeyRatiosHtml(nom, secteurRaw, statsData, derived)}
     <div class="section-label" style="margin-top:14px;">Croissance (5 ans)</div>
-    ${documentsGrowthTableHtml(growthData, growthYears)}
+    ${documentsGrowthTableHtml(growthData, growthYears, ratioByYearMaps, real)}
 
     <div class="section-label" style="margin-top:14px;">Ratios Avancés (dérivés des états financiers)</div>
     ${hasDerived
@@ -10449,9 +11829,10 @@ function renderDocumentsPage(nom){
   const real = documentsRealData[name];
   if (!real) ensureDocumentsRealData(name);
 
-  if (documentsView === 'income') content.innerHTML = documentsStatementSectionHtml('income', 'Income Statement', DOCUMENTS_IS_ROWS, real && real.incomeStatement, real && real.incomeStatementQ);
-  else if (documentsView === 'balance') content.innerHTML = documentsStatementSectionHtml('balance', 'Balance Sheet', DOCUMENTS_BS_ROWS, real && real.balanceSheet, real && real.balanceSheetQ);
-  else if (documentsView === 'cashflow') content.innerHTML = documentsStatementSectionHtml('cashflow', 'Cash Flow', DOCUMENTS_CF_ROWS, real && real.cashFlow, real && real.cashFlowQ);
+  const currency = real && real.currency;
+  if (documentsView === 'income') content.innerHTML = documentsStatementSectionHtml('income', 'Income Statement', DOCUMENTS_IS_ROWS, real && real.incomeStatement, real && real.incomeStatementQ, currency);
+  else if (documentsView === 'balance') content.innerHTML = documentsStatementSectionHtml('balance', 'Balance Sheet', DOCUMENTS_BS_ROWS, real && real.balanceSheet, real && real.balanceSheetQ, currency);
+  else if (documentsView === 'cashflow') content.innerHTML = documentsStatementSectionHtml('cashflow', 'Cash Flow', DOCUMENTS_CF_ROWS, real && real.cashFlow, real && real.cashFlowQ, currency);
   else content.innerHTML = documentsStatisticsHtml(real && real.growth, real && real.stats, real && real.growthYears, latest.secteur, real, name);
 }
 function initDocumentsTabbar(){
@@ -10521,7 +11902,7 @@ function revenueGrowthRows(seg){
     return { label, firstYear: first.y, lastYear: last.y, total, cagr };
   });
 }
-function revenueSegmentSectionHtml(title, key, seg){
+function revenueSegmentSectionHtml(title, key, seg, currency){
   if (!seg || !seg.years || !seg.years.length){
     return `<div class="chart-card wide"><div class="chart-card-head"><h3>${title}</h3></div>
       <div class="documents-empty-banner">📭 Cette entreprise ne détaille pas cette répartition dans ses dépôts (ou l'import FMP n'a pas encore été fait pour elle) — pas une erreur, certaines entreprises (notamment hors États-Unis) ne segmentent pas leur CA de cette façon.</div></div>`;
@@ -10536,7 +11917,7 @@ function revenueSegmentSectionHtml(title, key, seg){
       <div class="analyse-chart-table">
         ${rows.map(r => {
           const pct = total ? (r.value / total * 100) : 0;
-          return `<div class="analyse-chart-row"><span>${r.label}</span><span>${fmtFmpValue(r.value)}</span><span>${pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</span></div>`;
+          return `<div class="analyse-chart-row"><span>${r.label}</span><span>${fmtFmpValue(r.value, undefined, currency)}</span><span>${pct.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})}%</span></div>`;
         }).join('')}
       </div>
     </div>
@@ -10610,8 +11991,8 @@ function renderRevenusPage(nom){
   const real = documentsRealData[name];
   if (!real) ensureDocumentsRealData(name);
 
-  content.innerHTML = revenueSegmentSectionHtml('Répartition géographique', 'geo', real && real.revenueGeo)
-    + revenueSegmentSectionHtml('Répartition par segment d\'activité', 'product', real && real.revenueProduct);
+  content.innerHTML = revenueSegmentSectionHtml('Répartition géographique', 'geo', real && real.revenueGeo, real && real.currency)
+    + revenueSegmentSectionHtml('Répartition par segment d\'activité', 'product', real && real.revenueProduct, real && real.currency);
   renderRevenusCharts(real);
 }
 
@@ -10628,6 +12009,17 @@ function cagrOfLastYears(hist, field, n){
   if (first <= 0 || nYears <= 0 || (last / first) <= 0) return null;
   return Math.pow(last / first, 1 / nYears) - 1;
 }
+// Repli pour les badges CAGR (renderCompany()) sur une entreprise hors Sheet
+// (ensureSyntheticCompanyData()) : les champs précalculés Sheet (cagrDiv10, cagrCA10,
+// cagrActions, cagrFcf5/10/20) ne sont jamais renseignés sur les lignes synthétiques
+// FMP — mais la série annuelle brute (dividende/ca/actions/fcfParAction) l'est déjà
+// (chartsHistoryToRows()), donc cagrOfLastYears() peut recalculer le même résultat
+// directement. cagrOfLastYears() renvoie une fraction (0,082) ; les badges attendent
+// un pourcentage déjà à l'échelle (8,2), même convention que le champ Sheet remplacé.
+function cagrPct(hist, field, n){
+  const c = cagrOfLastYears(hist, field, n);
+  return c != null ? c * 100 : null;
+}
 const VALO_METRIC_FIELDS = {
   fcf: { perShare:'fcfParAction', multiple:'pFcf', metricName:'FCF', chartLabel:'FCF / action (€)' },
   ocf: { perShare:'ocfParAction', multiple:'pOcf', metricName:'OCF', chartLabel:'OCF / action (€)' },
@@ -10637,6 +12029,11 @@ function renderValoMetricHistory(nom){
   const content = document.getElementById('voMetricHistoryContent');
   const label = document.getElementById('voMetricHistoryLabel');
   if (!content || !label) return;
+  if (valorisationMetric === 'ev' || valorisationMetric === 'pb'){
+    if (voMetricChart){ voMetricChart.destroy(); voMetricChart = null; }
+    renderMultiplesHistory(nom, content, label);
+    return;
+  }
   const f = VALO_METRIC_FIELDS[valorisationMetric] || VALO_METRIC_FIELDS.fcf;
   const multipleLabel = valorisationMetric === 'per' ? 'PER' : 'P/' + f.metricName;
   label.textContent = `Historique ${f.metricName} (FMP)`;
@@ -10677,12 +12074,213 @@ function renderValoMetricHistory(nom){
   }
 }
 
+// Tuiles du résumé de Valorisation en mode EV/EBITDA ou P/B : la 4e devient un CHAMP où l'utilisateur colle le
+// multiple moyen historique relevé dans TradingView (un chiffre, ou la liste des années -> moyenne), la 5e affiche
+// le multiple ACTUEL (TradingView en direct). Les sous-titres d'origine sont restaurés pour FCF/OCF/PER.
+function renderMultiplesSummaryTiles(nom, v){
+  const isMult = valorisationMetric === 'ev' || valorisationMetric === 'pb';
+  const subOf = id => { const el = document.getElementById(id); const c = el && el.closest('.ratio-card'); return c ? c.querySelector('.sub') : null; };
+  const setSub = (id, txt) => { const s = subOf(id); if (!s) return; if (s.dataset.orig == null) s.dataset.orig = s.textContent; s.textContent = txt != null ? txt : s.dataset.orig; };
+  if (!isMult){ ['voFcfActuelInput', 'voCagrHist', 'voMedianeHist', 'voMediane20'].forEach(id => setSub(id, null)); return; }
+  const lbl = v.label;
+  const fmtX = x => x != null ? x.toLocaleString('fr-FR', { minimumFractionDigits: valorisationMetric === 'pb' ? 2 : 1, maximumFractionDigits: 2 }) + 'x' : 'N/D';
+  document.getElementById('voMedianeLabel').textContent = lbl + ' moyen historique';
+  document.getElementById('voMediane20Label').textContent = lbl + (valorisationMetric === 'ev' ? ' actuel (TTM)' : ' actuel');
+  if (valorisationMetric === 'pb') document.getElementById('voCagrLabel').textContent = 'Croissance de l\'actif net';
+  if (v.status !== 'ok'){
+    const msg = v.status === 'server' ? 'Relance le raccourci « Wolf Analysis » (serveur à mettre à jour)' : v.status === 'pending' ? 'Lecture TradingView en direct…' : 'Module manquant';
+    document.getElementById('voMedianeHist').textContent = '—';
+    document.getElementById('voMediane20').textContent = '—';
+    ['voFcfActuelInput', 'voCagrHist', 'voMedianeHist', 'voMediane20'].forEach(id => setSub(id, msg));
+    return;
+  }
+  if (v.evStats){
+    document.getElementById('voMedianeLabel').textContent = 'EV/EBITDA historique (réaliste)';
+    document.getElementById('voMedianeHist').textContent = fmtX(v.evStats.medianAvg);
+    setSub('voMedianeHist', 'médiane des moyennes 5/10/15/20 ans · ' + v.evStats.count + ' années saisies (' + v.evStats.first + '–' + v.evStats.last + ')');
+  }
+  const raw = (window.VALO_MULTIPLES.getSaved(nom) || {})[valorisationMetric === 'ev' ? 'ev' : 'pb'] || '';
+  const box = document.getElementById('voMedianeHist');
+  if (v.evStats) { /* saisie libre remplacée par l'historique annuel */ } else {
+  box.innerHTML = '<input type="text" inputmode="decimal" class="ratio-card-input" id="voMultHistInput" placeholder="à saisir" autocomplete="off">';
+  const inp = document.getElementById('voMultHistInput');
+  inp.value = raw;
+  inp.addEventListener('change', () => setMultipleHistorique(nom, inp.value));
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
+  setSub('voMedianeHist', v.histSaved != null
+    ? (v.histCount > 1 ? 'moyenne de ' + v.histCount + ' valeurs = ' + fmtX(v.histSaved) : 'relevé dans TradingView')
+    : 'à relever dans TradingView (un chiffre, ou le tableau année par année plus bas) — en attendant : multiple actuel');
+  }
+  document.getElementById('voMediane20').textContent = fmtX(v.actuel);
+  if (valorisationMetric === 'ev'){
+    const dn = v.netDebt;
+    const md = x => (Math.abs(x) / 1e9).toLocaleString('fr-FR', { maximumFractionDigits: 2 }) + ' Md';
+    const dnPs = v.detteNetteParAction != null ? ' = ' + fmtEUR(Math.abs(v.detteNetteParAction)) + '/action' : '';
+    setSub('voMediane20', 'valeur d\'entreprise du jour ÷ EBITDA 12 mois · ' + (dn != null ? (dn < 0 ? 'trésorerie nette ' + md(dn) + dnPs + ' (s\'ajoute)' : 'dette nette ' + md(dn) + dnPs + ' (se retranche)') + ' · TradingView en direct' : 'TradingView en direct'));
+    setSub('voFcfActuelInput', v.baseNote + ' ÷ actions — modifiable');
+    setSub('voCagrHist', 'CAGR de l\'EBITDA sur 10 ans');
+  } else {
+    setSub('voMediane20', 'cours ÷ actif net par action' + (v.actuel != null && v.actuel < 1 ? ' — SOUS l\'actif net' : ''));
+    setSub('voFcfActuelInput', 'fonds propres par action — modifiable');
+    setSub('voCagrHist', '(BPA − dividende) ÷ actif net : bénéfice mis en réserve');
+  }
+}
+// Section « historique » de Valorisation en mode EV/EBITDA ou P/B (TradingView uniquement).
+function renderMultiplesHistory(nom, content, label){
+  const hist = companies[nom]; const latest = hist && hist[hist.length - 1];
+  const m = latest && latest.tvMultiples;
+  const V = window.VALO_MULTIPLES;
+  if (!m || !m.serverOk || !V){
+    label.textContent = 'Données TradingView';
+    content.innerHTML = `<div class="documents-empty-banner">${!m ? '⏳ Lecture des données TradingView en direct…' : '🔄 Ferme la fenêtre du serveur puis relance le raccourci « Wolf Analysis » : le serveur doit être mis à jour pour lire l\'EBITDA et l\'actif net sur TradingView.'}</div>`;
+    return;
+  }
+  const big = x => x == null ? '—' : (x / 1e9).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' Md';
+  if (valorisationMetric === 'pb'){
+    label.textContent = 'Actif net (TradingView)';
+    content.innerHTML = `<div class="ratio-grid">
+      <div class="ratio-card"><div class="k">Actif net par action</div><div class="v">${m.bvps != null ? fmtEUR(m.bvps) : 'N/D'}</div><div class="sub">TradingView en direct</div></div>
+      <div class="ratio-card"><div class="k">P/B actuel</div><div class="v">${m.pbActuel != null ? m.pbActuel.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + 'x' : 'N/D'}</div><div class="sub">${m.pbActuel != null && m.pbActuel < 1 ? 'sous l\'actif net comptable' : 'cours ÷ actif net'}</div></div>
+    </div>
+    <p class="valo-intro" style="margin-top:8px;">Méthode faite pour les banques, assurances et foncières. TradingView ne fournit pas l'historique de l'actif net : le P/B moyen historique se relève dans l'appli TradingView et se colle dans la tuile du haut.</p>`;
+    return;
+  }
+  label.textContent = 'Historique EBITDA (TradingView)';
+  const h = (m.ebitdaHist || []).slice(0, 20);
+  const lastYear = new Date().getFullYear() - 1;   // ebitda_fy_h : dernier exercice publié en premier
+  const years = h.map((_, i) => lastYear - i).reverse();
+  const vals = h.slice().reverse();
+  const tiles = [5, 10, 20].map(n => {
+    const a = V.averageLastYears(m.ebitdaHist, n), c = V.cagrRecentFirst(m.ebitdaHist, n);
+    return `<div class="ratio-card"><div class="k">EBITDA ${n} ans</div><div class="v">${a ? big(a.value) : '—'}</div><div class="sub">moyenne · CAGR ${c != null ? fmtPct(c) : '—'}</div></div>`;
+  }).join('');
+  content.innerHTML = `
+    <div class="chart-card wide">
+      <div class="chart-card-head"><div><h3>EBITDA annuel</h3><p>TradingView, dernier exercice publié à droite</p></div></div>
+      <div class="chart-holder" style="height:200px;"><canvas id="voMetricChart"></canvas></div>
+    </div>
+    <div class="ratio-grid" style="margin-top:10px;">
+      <div class="ratio-card"><div class="k">EBITDA 12 mois</div><div class="v">${big(m.ebitdaTtm)}</div><div class="sub">TradingView en direct</div></div>
+      ${tiles}
+    </div>
+    <p class="valo-intro" style="margin-top:8px;">Méthode faite pour l'industrie, la chimie, l'énergie et les infrastructures. Scénarios : EBITDA 12 mois par action × multiple − dette nette par action ; à 5 ans, EBITDA × (1 + CAGR)^5 × multiple − dette nette future. Les moyennes ci-dessus servent de repère si tu veux saisir un EBITDA « normalisé » à la main.</p>
+    ${evHistoryCardHtml(nom)}`;
+  wireEvHistoryCard(nom);
+  const canvas = document.getElementById('voMetricChart');
+  if (canvas){
+    voMetricChart = new Chart(canvas.getContext('2d'), {
+      type:'bar',
+      data:{ labels: years, datasets:[{ label:'EBITDA', data: vals.map(x => x == null ? null : x / 1e9), backgroundColor:THEME.blue, borderRadius:4, barPercentage:0.6 }]},
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v => v + ' Md'} } } }
+    });
+  }
+}
+
+/* EV/EBITDA historique saisi année par année (relevé dans l'appli TradingView : le serveur public ne le fournit pas).
+   Stocké dans un FICHIER (data/mes-portefeuilles/multiples.json, via le serveur local). Plage d'années libre.
+   Moyennes 5/10/15/20 ans + médiane ; multiples par défaut des scénarios : pessimiste = plus basse des moyennes,
+   réaliste = médiane, optimiste = plus haute des moyennes (VALO_MULTIPLES.evHistoryStats, testé). */
+let evHistRange = {};
+function evHistoryCardHtml(nom){
+  const V = window.VALO_MULTIPLES;
+  const h = (V.getEvHistory && V.getEvHistory(nom)) || { years: {} };
+  const lastYear = new Date().getFullYear() - 1;
+  const saved = Object.keys(h.years || {}).map(Number);
+  const r = evHistRange[nom] || { from: Math.min(2006, ...(saved.length ? saved : [2006])), to: Math.max(lastYear, ...(saved.length ? saved : [lastYear])) };
+  evHistRange[nom] = r;
+  const st = V.evHistoryStats(h.years);
+  const fx = x => x == null ? '—' : x.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 2 }) + 'x';
+  const yearOpts = sel => { let o = ''; for (let y = 1995; y <= lastYear + 1; y++) o += `<option ${y === sel ? 'selected' : ''}>${y}</option>`; return o; };
+  let cells = '';
+  for (let y = r.to; y >= r.from; y--){
+    const v = h.years && h.years[y] != null ? String(h.years[y]).replace('.', ',') : '';
+    cells += `<label>${y}<input type="text" inputmode="decimal" data-ev-year="${y}" value="${v}" placeholder="—"></label>`;
+  }
+  const avg = n => st.avgs && st.avgs[n] && (n === 5 || st.count >= n) ? fx(st.avgs[n].value) : '—';
+  const hist0 = companies[nom], cur = hist0 && hist0[hist0.length - 1].tvMultiples ? hist0[hist0.length - 1].tvMultiples.evEbitdaActuel : null;
+  const vsRef = cur != null && st.medianAvg ? (cur / st.medianAvg - 1) * 100 : null;
+  const curTile = `<div class="ratio-card ev-hist-now"><div class="k">Actuel (TTM)</div><div class="v">${fx(cur)}</div><div class="sub">${vsRef == null ? 'TradingView en direct' : (vsRef >= 0 ? '+' : '') + vsRef.toLocaleString('fr-FR', { maximumFractionDigits: 0 }) + ' % vs réaliste (' + fx(st.medianAvg) + ')'}</div></div>`;
+  return `<div class="ev-hist-card">
+    <div class="valo-calc-head"><h3>EV/EBITDA historique (relevé dans TradingView)</h3>
+      <span class="ev-hist-range">de <select id="evHistFrom">${yearOpts(r.from)}</select> à <select id="evHistTo">${yearOpts(r.to)}</select></span></div>
+    <p class="valo-intro" style="margin:0 0 8px;">Saisis l'EV/EBITDA de chaque année (dernier exercice en premier). Les cases vides sont ignorées. Enregistré dans un fichier sur ton PC.</p>
+    <div class="ev-hist-grid">${cells}</div>
+    <div class="ratio-grid ev-hist-stats">
+      ${curTile}
+      <div class="ratio-card"><div class="k">Moyenne 5 ans</div><div class="v">${avg(5)}</div></div>
+      <div class="ratio-card"><div class="k">Moyenne 10 ans</div><div class="v">${avg(10)}</div></div>
+      <div class="ratio-card"><div class="k">Moyenne 15 ans</div><div class="v">${avg(15)}</div></div>
+      <div class="ratio-card"><div class="k">Moyenne 20 ans</div><div class="v">${avg(20)}</div></div>
+      <div class="ratio-card"><div class="k">Médiane des années</div><div class="v">${fx(st.median)}</div><div class="sub">${st.count || 0} année(s) · min ${fx(st.min)} · max ${fx(st.max)}</div></div>
+    </div>
+    ${st.count && st.max < 3 ? `<div class="mp-banner err" style="margin:8px 0;">⚠ Valeurs très basses (toutes ≤ ${fx(st.max)}) : un EV/EBITDA se situe en général entre 5x et 30x (Schneider aujourd'hui : 16,27x). Vérifie la saisie ou décoche « Utiliser cet historique » ; sinon les prix des scénarios tombent à 0 €.</div>` : ''}
+    <p class="valo-intro" style="margin:6px 0;">Scénarios proposés : <b class="neg">pessimiste ${fx(st.minAvg)}</b> (plus basse des moyennes) · <b>réaliste ${fx(st.medianAvg)}</b> (médiane des moyennes) · <b class="pos">optimiste ${fx(st.maxAvg)}</b> (plus haute des moyennes).</p>
+    <div class="ev-hist-actions">
+      <label class="mp-check"><input type="checkbox" id="evHistUse" ${h.use !== false ? 'checked' : ''}> Utiliser cet historique pour remplir les scénarios</label>
+      <button class="refresh-btn" id="evHistSave">Enregistrer</button>
+      <button class="zoom-btn objectifs-export" id="evHistApply" ${st.count >= 3 ? '' : 'disabled'}>↻ Appliquer aux 3 scénarios</button>
+      <span id="evHistMsg" class="ev-hist-msg"></span>
+    </div>
+  </div>`;
+}
+function readEvHistoryInputs(nom){
+  const V = window.VALO_MULTIPLES;
+  const prev = (V.getEvHistory(nom) || { years: {} }).years || {};
+  const years = Object.assign({}, prev);
+  document.querySelectorAll('[data-ev-year]').forEach(inp => {
+    const y = inp.dataset.evYear, x = parseFloat(String(inp.value).replace(/\s/g, '').replace(',', '.').replace(/x$/i, ''));
+    if (isFinite(x) && x > 0) years[y] = +x.toFixed(3); else delete years[y];
+  });
+  return years;
+}
+function applyEvHistoryToScenarios(nom){
+  const st = window.VALO_MULTIPLES.evHistoryStats(readEvHistoryInputs(nom));
+  if (!(st.count >= 3)) return;
+  const pick = { pessimiste: st.minAvg, realiste: st.medianAvg, optimiste: st.maxAvg };
+  const hist = companies[nom]; const latest = hist[hist.length - 1];
+  SCENARIOS.forEach(s => {
+    if (pick[s.key] == null || !scenarioValues[s.key]) return;
+    scenarioValues[s.key].multiple = +pick[s.key].toFixed(1);
+    const inp = document.getElementById('vo-' + s.key + '-mult'); if (inp) inp.value = scenarioValues[s.key].multiple;
+    updateScenarioCard(s, hist, latest.prixActuel);
+  });
+}
+function wireEvHistoryCard(nom){
+  const V = window.VALO_MULTIPLES;
+  const fromSel = document.getElementById('evHistFrom'), toSel = document.getElementById('evHistTo');
+  if (!fromSel) return;
+  const reRange = () => {
+    const a = +fromSel.value, b = +toSel.value;
+    evHistRange[nom] = { from: Math.min(a, b), to: Math.max(a, b) };
+    renderValoMetricHistory(nom);
+  };
+  fromSel.addEventListener('change', reRange); toSel.addEventListener('change', reRange);
+  const msg = document.getElementById('evHistMsg');
+  document.getElementById('evHistSave').addEventListener('click', async () => {
+    try {
+      await V.saveEvHistory(nom, { years: readEvHistoryInputs(nom), use: document.getElementById('evHistUse').checked, updatedAt: new Date().toISOString() });
+      renderValorisation(nom);
+      const m2 = document.getElementById('evHistMsg'); if (m2) m2.textContent = '✔ Enregistré';
+    } catch(e){ msg.textContent = '⚠ ' + e.message; }
+  });
+  document.getElementById('evHistApply').addEventListener('click', () => applyEvHistoryToScenarios(nom));
+}
+
 function renderValorisation(nom){
   const hist = companies[nom];
   if (!hist) return;
+  // EV/EBITDA : l'historique annuel saisi est lu dans un fichier via le serveur local -> on le charge une fois.
+  if (valorisationMetric === 'ev' && window.VALO_MULTIPLES && window.VALO_MULTIPLES.loadEvStore && !renderValorisation._evLoaded){
+    renderValorisation._evLoaded = true;
+    window.VALO_MULTIPLES.loadEvStore().then(() => { if (activeCompany === nom && valorisationMetric === 'ev') renderValorisation(nom); });
+  }
   const latest = hist[hist.length - 1];
-  const { fcfActuel, fcfActuelAuto, cagrHist, medianeHist, mediane20 } = valorisationInputs(latest, hist, nom);
+  const vInputs = valorisationInputs(latest, hist, nom);
+  const { fcfActuel, fcfActuelAuto, cagrHist, medianeHist, mediane20 } = vInputs;
   const prixActuel = latest.prixActuel;
+  const isMultMetric = valorisationMetric === 'ev' || valorisationMetric === 'pb';
+  activeValoDetteNetteParAction = isMultMetric ? (vInputs.detteNetteParAction || 0) : 0;
+  activeValoEvActuel = valorisationMetric === 'ev' && vInputs.actuel != null ? vInputs.actuel : null;
   // Le PER casse le raccourci "un seul label pour tout" utilisé par FCF/OCF : la
   // quantité fixe/qui croît est l'EPS, le multiple appliqué est le PER — deux libellés
   // différents, voir valorisationLabels().
@@ -10700,13 +12298,34 @@ function renderValorisation(nom){
   document.getElementById('voCagrHist').textContent = cagrHist != null ? fmtPct(cagrHist) : 'N/D';
   document.getElementById('voMedianeHist').textContent = medianeHist != null ? medianeHist.toLocaleString('fr-FR', {minimumFractionDigits:1}) + 'x' : 'N/D';
   document.getElementById('voMediane20').textContent = mediane20 != null ? mediane20.toLocaleString('fr-FR', {minimumFractionDigits:1}) + 'x' : 'N/D';
+  renderMultiplesSummaryTiles(nom, vInputs);
 
+  // Ré-amorce depuis le DERNIER objectif enregistré pour cette entreprise s'il en
+  // existe un — bug remonté explicitement : l'utilisateur ajustait les curseurs,
+  // cliquait "Enregistrer cet objectif", puis en revenant sur cette même entreprise
+  // (ex. via Analyse → tag "Analyse développée") scenarioValues était réinitialisé aux
+  // valeurs par défaut PURES (historique ± delta), écrasant silencieusement l'objectif
+  // qu'il venait tout juste de sauvegarder — la fiche Analyse développée affichait donc
+  // l'ancien scénario, jamais celui modifié. Le bouton "↻ Charger" de l'historique des
+  // objectifs reste utile pour revenir à une entrée plus ANCIENNE si plusieurs ont été
+  // enregistrées ; ce n'est que le point de départ par défaut qui change ici.
+  // EV/EBITDA et P/B : seul un objectif enregistré AVEC CETTE MÉTHODE est repris (un multiple P/FCF de 20x n'a aucun
+  // sens en P/B). FCF/OCF/PER : comportement d'origine inchangé.
+  const savedObjectifList = (objectifsStore[nom] || []).filter(o => !isMultMetric || o.metric === valorisationMetric);
+  const savedObjectif = savedObjectifList.length ? savedObjectifList[savedObjectifList.length - 1] : null;
   scenarioValues = {};
   SCENARIOS.forEach(s => {
-    scenarioValues[s.key] = {
+    const saved = savedObjectif && savedObjectif.scenarios && savedObjectif.scenarios[s.key];
+    // écart de multiple entre scénarios : ±3x en P/FCF/OCF/PER, ±2x en EV/EBITDA, ±20 % du multiple en P/B (0,8x − 3 < 0)
+    const dMult = valorisationMetric === 'pb' ? (medianeHist || 0) * 0.2 * Math.sign(s.deltaMultiple) : valorisationMetric === 'ev' ? 2 * Math.sign(s.deltaMultiple) : s.deltaMultiple;
+    const dec = valorisationMetric === 'pb' ? 2 : 1;
+    // EV/EBITDA avec historique annuel saisi : pessimiste = plus basse des moyennes 5/10/15/20 ans, réaliste = médiane,
+    // optimiste = plus haute des moyennes (demande de l'utilisateur, 2026-11-08).
+    const evPick = valorisationMetric === 'ev' && vInputs.evStats ? { pessimiste: vInputs.evStats.minAvg, realiste: vInputs.evStats.medianAvg, optimiste: vInputs.evStats.maxAvg }[s.key] : null;
+    scenarioValues[s.key] = saved ? { cagr: saved.cagr, multiple: saved.multiple, rachat: saved.rachat || 0, detteFuture: saved.detteFuture != null ? saved.detteFuture : null } : {
       cagr: cagrHist != null ? +(cagrHist + s.deltaCagr).toFixed(1) : 0,
-      multiple: medianeHist != null ? +(medianeHist + s.deltaMultiple).toFixed(1) : 0,
-      rachat: 0
+      multiple: evPick != null ? +evPick.toFixed(1) : medianeHist != null ? Math.max(0, +(medianeHist + dMult).toFixed(dec)) : 0,
+      rachat: 0, detteFuture: null
     };
   });
 
@@ -10727,7 +12346,121 @@ function renderValorisation(nom){
   if (!documentsRealData[nom]) ensureDocumentsRealData(nom);
   renderDcfTiles(nom);
   renderValoMetricHistory(nom);
+  renderValoCalculator(nom);
 }
+
+/* ============================================================
+   CALCULATRICE DE VALORISATION (onglet Valorisation, 2026-11-08)
+   Méthode de l'utilisateur : EBITDA actuel/action × EV/EBITDA moyen − dette nette/action = prix théorique ;
+   puis projection 5 ans (CAGR, multiple de sortie, dette nette future) — même moteur pur que les scénarios
+   (VALO_MULTIPLES.evEbitdaScenario). Préremplie depuis TradingView (row.tvMultiples), tout reste modifiable.
+   ============================================================ */
+let valoCalcNom = null;
+const valoCalcHistory = [];
+function valoCalcParse(v){
+  const t = String(v == null ? '' : v).replace(/\s|\u00a0|\u202f/g, '').replace(',', '.');
+  if (!t) return null;
+  const x = parseFloat(t);
+  return isFinite(x) ? x : null;
+}
+function valoCalcEls(){ const o = {}; document.querySelectorAll('[data-calc]').forEach(el => { o[el.dataset.calc] = el; }); return o; }
+function valoCalcFill(nom){
+  const els = valoCalcEls();
+  if (!els.prix) return;
+  const hist = companies[nom]; const latest = hist && hist[hist.length - 1];
+  const m = latest && latest.tvMultiples;
+  const V = window.VALO_MULTIPLES;
+  const set = (k, v, d) => { if (els[k]) els[k].value = v == null || !isFinite(v) ? '' : String(+v.toFixed(d)).replace('.', ','); };
+  set('prix', latest && latest.prixActuel, 2);
+  if (m && m.shares > 0){
+    const lastFy = Array.isArray(m.ebitdaHist) ? m.ebitdaHist.find(v => typeof v === 'number') : null;
+    const e = m.ebitdaTtm > 0 ? m.ebitdaTtm : lastFy;
+    set('ebitda', e != null ? e / m.shares : null, 2);
+    set('dette', m.netDebt != null ? m.netDebt / m.shares : null, 2);
+    set('cagr', V ? V.cagrRecentFirst(m.ebitdaHist, 10) : null, 1);
+    const saved = V ? V.parseMultipleInput(V.getSaved(nom).ev) : null;
+    set('mult', saved ? saved.value : m.evEbitdaActuel, 1);
+  } else {
+    ['ebitda', 'dette', 'cagr', 'mult'].forEach(k => { if (els[k]) els[k].value = ''; });
+  }
+  if (els.multSortie) els.multSortie.value = '';
+  if (els.detteFut) els.detteFut.value = '';
+  if (els.annees) els.annees.value = '5';
+  valoCalcNom = nom;
+  valoCalcCompute();
+}
+function valoCalcCompute(){
+  const els = valoCalcEls(), box = document.getElementById('valoCalcResults'), fBox = document.getElementById('valoCalcFormula');
+  if (!box || !window.VALO_MULTIPLES) return;
+  const g = k => els[k] ? valoCalcParse(els[k].value) : null;
+  const multP = window.VALO_MULTIPLES.parseMultipleInput(els.mult ? els.mult.value : '');
+  const mult = multP ? multP.value : null;
+  const n = g('annees') || 5;
+  const r = window.VALO_MULTIPLES.evEbitdaScenario({ ebitdaPS: g('ebitda'), multiple: mult, multipleSortie: g('multSortie'), cagr: g('cagr'),
+    detteNettePS: g('dette'), detteNetteFuturePS: g('detteFut'), prix: g('prix'), annees: n });
+  if (!r.ok){ box.innerHTML = '<div class="valo-calc-empty">' + r.error + '</div>'; fBox.textContent = ''; return; }
+  const num = (v, d = 2) => v == null ? '—' : v.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d });
+  const pct = v => v == null ? '—' : (v >= 0 ? '+' : '') + num(v, 1) + ' %';
+  const cls = v => v == null ? '' : v >= 0 ? 'pos' : 'neg';
+  const tile = (k, v, c, sub) => `<div><div class="r-k">${k}</div><div class="r-v ${c || ''}">${v}</div>${sub ? `<div class="r-sub">${sub}</div>` : ''}</div>`;
+  box.innerHTML = tile('Prix théorique actuel', num(r.prixTheoActuel), '', r.potentielActuel != null ? pct(r.potentielActuel) + ' vs cours' : '')
+    + tile('Prix théorique (' + n + ' ans)', num(r.prixFutur), '', 'EBITDA/action : ' + num(r.ebitdaFuturPS))
+    + tile('Potentiel total', pct(r.potentielTotal), cls(r.potentielTotal))
+    + tile('Rendement annualisé', r.rendementAnnualise == null ? '—' : pct(r.rendementAnnualise) + '/an', cls(r.rendementAnnualise));
+  const dn = g('dette') || 0;
+  fBox.innerHTML = `Aujourd'hui : ${num(g('ebitda'))} × ${num(mult, 1)} − (${num(dn)}) = <b>${num(r.prixTheoActuel)}</b>`
+    + `<br>Dans ${n} ans : ${num(g('ebitda'))} × (1 + ${num(g('cagr') || 0, 1)} %)^${n} = ${num(r.ebitdaFuturPS)} → ${num(r.ebitdaFuturPS)} × ${num(r.multipleSortie, 1)} − (${num(r.detteNetteFuturePS)}) = <b>${num(r.prixFutur)}</b>`
+    + (r.detteFutureAuto ? '<br><i>Hypothèse : dette nette future = dette nette actuelle.</i>' : '')
+    + (r.negatif ? "<br>⚠ La dette dépasse la valeur d'entreprise : prix ramené à 0." : '');
+}
+// Calcul libre : seuls chiffres, + − * / ^ ( ) et espaces sont acceptés (vérifiés AVANT l'évaluation).
+function valoCalcEvalFree(expr){
+  let t = String(expr || '').replace(/[\u00a0\u202f]/g, ' ').replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-');
+  t = t.replace(/(\d) (?=\d{3}\b)/g, '$1').replace(/,/g, '.');
+  if (!t.trim()) return null;
+  if (!/^[0-9.+\-*/()^ ]+$/.test(t)) return NaN;
+  try { const v = Function('"use strict";return (' + t.replace(/\^/g, '**') + ');')(); return typeof v === 'number' ? v : NaN; }
+  catch(e){ return NaN; }
+}
+function initValoCalculator(){
+  const card = document.querySelector('.valo-calc-card');
+  if (!card || card.dataset.wired) return;
+  card.dataset.wired = '1';
+  card.querySelectorAll('[data-calc]').forEach(el => el.addEventListener('input', valoCalcCompute));
+  const refill = document.getElementById('valoCalcRefill');
+  if (refill) refill.addEventListener('click', () => { if (activeCompany) valoCalcFill(activeCompany); });
+  const tot = document.getElementById('valoCalcTotal'), sh = document.getElementById('valoCalcShares'), ps = document.getElementById('valoCalcPerShare');
+  let perShare = null;
+  const conv = () => { const a = valoCalcParse(tot.value), b = valoCalcParse(sh.value); perShare = a != null && b > 0 ? a / b : null;
+    ps.textContent = perShare == null ? '—' : '= ' + perShare.toLocaleString('fr-FR', { maximumFractionDigits: 4 }) + ' par action'; };
+  tot.addEventListener('input', conv); sh.addEventListener('input', conv);
+  card.querySelectorAll('[data-calc-send]').forEach(b => b.addEventListener('click', () => {
+    const el = valoCalcEls()[b.dataset.calcSend];
+    if (el && perShare != null){ el.value = String(+perShare.toFixed(4)).replace('.', ','); valoCalcCompute(); }
+  }));
+  const free = document.getElementById('valoCalcFree'), res = document.getElementById('valoCalcFreeResult'), histEl = document.getElementById('valoCalcHistory');
+  const show = () => { const v = valoCalcEvalFree(free.value);
+    res.textContent = v == null ? '=' : isFinite(v) ? '= ' + v.toLocaleString('fr-FR', { maximumFractionDigits: 6 }) : '= calcul invalide'; return v; };
+  free.addEventListener('input', show);
+  free.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    const v = show();
+    if (v == null || !isFinite(v)) return;
+    valoCalcHistory.unshift(free.value.trim() + ' = ' + v.toLocaleString('fr-FR', { maximumFractionDigits: 6 }));
+    valoCalcHistory.length = Math.min(valoCalcHistory.length, 8);
+    histEl.innerHTML = valoCalcHistory.map(h => '<li>' + escapeHtmlCalc(h) + '</li>').join('');
+  });
+}
+function escapeHtmlCalc(t){ return String(t).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c])); }
+function renderValoCalculator(nom){
+  initValoCalculator();
+  // Préremplit à chaque changement d'entreprise, ou dès que les données TradingView arrivent (sinon : saisie conservée).
+  const hist = companies[nom]; const latest = hist && hist[hist.length - 1];
+  const hasTv = !!(latest && latest.tvMultiples);
+  if (nom !== valoCalcNom || (hasTv && !valoCalcHadTv)){ valoCalcHadTv = hasTv; valoCalcFill(nom); }
+}
+let valoCalcHadTv = false;
+
 // Tuiles DCF (FMP) de la page Valorisation — fonction dédiée plutôt que de refaire tout
 // renderValorisation() quand la donnée réelle arrive après coup (fetch async), pour ne
 // pas re-déclencher tout le câblage des scénarios pour 2 chiffres.
@@ -10736,7 +12469,7 @@ function renderDcfTiles(name){
   const dcfEl = document.getElementById('voDcf');
   const dcfLevEl = document.getElementById('voDcfLevered');
   if (!dcfEl || !dcfLevEl) return;
-  const fmtDcf = d => (d && d.value != null) ? fmtFmpValue(d.value, 'pershare') : '—';
+  const fmtDcf = d => (d && d.value != null) ? fmtFmpValue(d.value, 'pershare', real && real.currency) : '—';
   dcfEl.textContent = fmtDcf(real && real.dcf);
   dcfLevEl.textContent = fmtDcf(real && real.dcfLevered);
 }
@@ -10835,6 +12568,23 @@ function wireScenarioCard(s, hist, prixActuel){
   multInput.addEventListener('input', update);
   rachatInput.addEventListener('input', update);
   syncQuickButtons();
+  // EV/EBITDA : dette nette future par action, propre à chaque scénario (null = hypothèse « dette actuelle »).
+  const detteInput = document.getElementById('vo-' + s.key + '-dette');
+  const detteReset = document.getElementById('vo-' + s.key + '-dette-reset');
+  if (detteInput){
+    const dv = scenarioValues[s.key].detteFuture;
+    detteInput.value = dv != null ? dv : '';
+    detteInput.placeholder = activeValoDetteNetteParAction != null ? String(+activeValoDetteNetteParAction.toFixed(2)) : '';
+    detteInput.addEventListener('input', () => {
+      const v = parseFloat(String(detteInput.value).replace(',', '.'));
+      scenarioValues[s.key].detteFuture = isNaN(v) ? null : v;
+      updateScenarioCard(s, hist, prixActuel);
+    });
+    if (detteReset) detteReset.addEventListener('click', () => {
+      scenarioValues[s.key].detteFuture = null; detteInput.value = '';
+      updateScenarioCard(s, hist, prixActuel);
+    });
+  }
 
   if (card){
     card.querySelectorAll('.scenario-quick-btn').forEach(btn => {
@@ -10862,14 +12612,39 @@ function updateScenarioCard(s, hist, prixActuel){
     return;
   }
 
-  const { prixJusteSim, prixCible, prixEst5A, rendement5A } = computeScenario(fcfActuel, prixActuel, cagr, multiple, rachat);
+  const isEv = valorisationMetric === 'ev';
+  const detteArg = isEv ? { actuelle: activeValoDetteNetteParAction || 0, future: scenarioValues[s.key].detteFuture } : activeValoDetteNetteParAction;
+  const sc = computeScenario(fcfActuel, prixActuel, cagr, multiple, rachat, detteArg);
+  const { prixJusteSim, prixCible, prixEst5A, rendement5A } = sc;
+  const signPct = v => v == null ? 'N/D' : (v >= 0 ? '+' : '') + v.toLocaleString('fr-FR', {minimumFractionDigits:1, maximumFractionDigits:1}) + '%';
 
   document.getElementById('vo-'+s.key+'-prixJuste').textContent = fmtEUR(prixJusteSim);
-  document.getElementById('vo-'+s.key+'-prixCible').textContent = fmtEUR(prixCible);
+  if (isEv){
+    const potEl = document.getElementById('vo-'+s.key+'-prixCible');
+    potEl.textContent = signPct(sc.potentiel5A);
+    potEl.className = 'r-v ' + (sc.potentiel5A != null && sc.potentiel5A >= 0 ? 'pos' : 'neg');
+    const pa = document.getElementById('vo-'+s.key+'-potActuel');
+    if (pa) pa.textContent = sc.potentielActuel != null ? signPct(sc.potentielActuel) + ' vs cours' : '';
+    const ef = document.getElementById('vo-'+s.key+'-ebitdaFutur');
+    if (ef) ef.textContent = sc.ebitdaFutur != null ? 'EBITDA/action 5a : ' + fmtEUR(sc.ebitdaFutur) : '';
+    const dVal = document.getElementById('vo-'+s.key+'-detteVal');
+    if (dVal) dVal.textContent = sc.detteFuture != null ? fmtEUR(sc.detteFuture) : '—';
+    const dNote = document.getElementById('vo-'+s.key+'-detteNote');
+    const auto = scenarioValues[s.key].detteFuture == null;
+    if (dNote){
+      dNote.textContent = auto ? 'Hypothèse : dette nette actuelle (' + fmtEUR(activeValoDetteNetteParAction || 0) + '/action) — modifiable'
+        : 'Hypothèse personnalisée (actuelle : ' + fmtEUR(activeValoDetteNetteParAction || 0) + '/action)';
+      if (sc.ev && sc.ev.negatif) dNote.textContent += " · ⚠ dette > valeur d'entreprise : prix ramené à 0";
+    }
+    const dReset = document.getElementById('vo-'+s.key+'-dette-reset');
+    if (dReset) dReset.classList.toggle('visible', !auto);
+  } else {
+    document.getElementById('vo-'+s.key+'-prixCible').textContent = fmtEUR(prixCible);
+  }
   document.getElementById('vo-'+s.key+'-prixEst').textContent = fmtEUR(prixEst5A);
   const rendEl = document.getElementById('vo-'+s.key+'-rendement');
-  rendEl.textContent = (rendement5A >= 0 ? '+' : '') + rendement5A.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + '%';
-  rendEl.className = 'r-v ' + (rendement5A >= 0 ? 'pos' : 'neg');
+  rendEl.textContent = rendement5A == null ? 'N/D' : (rendement5A >= 0 ? '+' : '') + rendement5A.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + '%' + (isEv ? '/an' : '');
+  rendEl.className = 'r-v ' + (rendement5A != null && rendement5A >= 0 ? 'pos' : 'neg');
 
   renderScenarioChart(s, hist, prixJusteSim, prixEst5A);
 }
@@ -11001,7 +12776,10 @@ function persistObjectifsLocal(){
 function saveObjectif(nom){
   if (!objectifsStore[nom]) objectifsStore[nom] = [];
   const snapshot = {};
-  SCENARIOS.forEach(s => { snapshot[s.key] = { cagr: scenarioValues[s.key].cagr, multiple: scenarioValues[s.key].multiple, rachat: scenarioValues[s.key].rachat || 0 }; });
+  SCENARIOS.forEach(s => {
+    snapshot[s.key] = { cagr: scenarioValues[s.key].cagr, multiple: scenarioValues[s.key].multiple, rachat: scenarioValues[s.key].rachat || 0 };
+    if (valorisationMetric === 'ev' && scenarioValues[s.key].detteFuture != null) snapshot[s.key].detteFuture = scenarioValues[s.key].detteFuture;
+  });
   objectifsStore[nom].push({ date: new Date().toISOString().slice(0, 10), scenarios: snapshot, metric: valorisationMetric });
   persistObjectifsLocal();
   renderObjectifsHistory(nom);
@@ -11050,7 +12828,9 @@ function applyObjectif(nom, idx){
   SCENARIOS.forEach(s => {
     const v = entry.scenarios[s.key];
     if (!v) return;
-    scenarioValues[s.key] = { cagr: v.cagr, multiple: v.multiple, rachat: v.rachat || 0 };
+    scenarioValues[s.key] = { cagr: v.cagr, multiple: v.multiple, rachat: v.rachat || 0, detteFuture: v.detteFuture != null ? v.detteFuture : null };
+    const detteInput = document.getElementById('vo-' + s.key + '-dette');
+    if (detteInput) detteInput.value = v.detteFuture != null ? v.detteFuture : '';
     const cagrInput = document.getElementById('vo-' + s.key + '-cagr');
     const multInput = document.getElementById('vo-' + s.key + '-mult');
     const rachatInput = document.getElementById('vo-' + s.key + '-rachat');
@@ -11218,8 +12998,12 @@ function exportWatchlist(){
 }
 
 const WATCHLIST_LABELS = { qualite:'🐺 Wolf Company', achat:"Liste d'achat", idee:'Idée du moment', surveiller:'À surveiller', analyser:'À analyser' };
-function exportWatchlistAsPdf(){
-  const body = allWatchlistKeys().map(key => {
+// listKey optionnel : une seule liste (bouton "Exporter PDF" + sélecteur de liste dans
+// l'onglet Watchlist), sinon toutes — demande explicite ("je puisse exporter soit
+// toutes les listes, soit juste une watchlist en particulier").
+function exportWatchlistAsPdf(listKey){
+  const keys = listKey ? [listKey] : allWatchlistKeys();
+  const panels = keys.map((key, i) => {
     const noms = watchlistStore[key] || [];
     const rows = noms.length
       ? `<table class="print-table"><thead><tr><th>Entreprise</th></tr></thead><tbody>${noms.map(n => {
@@ -11227,10 +13011,89 @@ function exportWatchlistAsPdf(){
           const logoImg = logo ? `<img class="print-inline-logo" src="${logo}" alt="">` : '';
           return `<tr><td>${logoImg}${n.replace(/</g,'&lt;')}</td></tr>`;
         }).join('')}</tbody></table>`
-      : '<p style="color:#999">Aucune entreprise dans cette liste.</p>';
-    return `<div class="print-section"><h3>${escapeHtml(watchlistLabel(key))} (${noms.length})</h3>${rows}</div>`;
+      : '<p style="color:var(--text-dim);">Aucune entreprise dans cette liste.</p>';
+    return chainPdfPanelWrap(`${watchlistLabel(key)} (${noms.length})`, rows, String(i + 1).padStart(2, '0'));
   }).join('');
-  exportSectionAsPdf('Watchlist', null, body);
+  const title = listKey ? watchlistLabel(listKey) : 'Watchlist — toutes les listes';
+  exportSectionAsPdf(title, null, panels);
+}
+
+// Convertit une URL d'image en data URI via fetch() plutôt qu'un dessin canvas — jamais
+// de risque de canvas "tainted" (voir CLAUDE.md piège #13) puisqu'on ne dessine jamais
+// l'image elle-même sur un canvas ici, juste ses octets bruts. fetch() applique quand
+// même CORS pour une URL cross-origin sans en-tête Access-Control-Allow-Origin : dans ce
+// cas la promesse est simplement rejetée (catch → null), pas de blocage/plantage — la
+// ligne concernée s'affiche alors sans logo, comme companyLogoUrl() qui renvoie déjà
+// null pour toute entreprise sans logo connu.
+function fetchImageAsDataUrl(url){
+  return fetch(url).then(r => {
+    if (!r.ok) throw new Error('fetch failed');
+    return r.blob();
+  }).then(blob => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  })).catch(() => null);
+}
+// Export image (PNG/JPEG) — demande explicite ("il faut qu'il y ait les logos dedans,
+// pas juste les noms d'entreprises"). Les logos suivis sont pour la plupart des fichiers
+// LOCAUX (data/logos/*.png, voir companyLogoUrl()) — même origine, donc sans risque de
+// canvas "tainted" une fois convertis en data URI par fetchImageAsDataUrl() ci-dessus.
+// Pour le petit nombre de logos encore hébergés en externe (repli sur lienImage du
+// Sheet), fetchImageAsDataUrl() échoue proprement si l'hébergeur ne renvoie pas
+// Access-Control-Allow-Origin — cette ligne s'affiche alors sans logo plutôt que de
+// faire échouer tout l'export.
+async function watchlistSvgMarkup(listKey){
+  const keys = listKey ? [listKey] : allWatchlistKeys();
+  const W = 900;
+  const BG = '#0D1013', PANEL = '#1B2128', GOLD = '#D9A441', GOLD2 = '#F0C877', TEXT = '#E9EBEE', DIM = '#8B93A0';
+  // Précharge tous les logos AVANT de construire le SVG (un seul passage asynchrone,
+  // plutôt qu'un <image> pointant vers une URL externe non garantie au moment du rendu).
+  const allNoms = [...new Set(keys.flatMap(key => watchlistStore[key] || []))];
+  const logoUrls = {};
+  await Promise.all(allNoms.map(async nom => {
+    const src = companyLogoUrl(nom);
+    if (src) logoUrls[nom] = await fetchImageAsDataUrl(src);
+  }));
+  let y = 130;
+  const rowH = 26;
+  const logoSize = 18;
+  const blocks = keys.map(key => {
+    const noms = watchlistStore[key] || [];
+    const h = (noms.length ? noms.length * rowH : rowH) + 46;
+    const block = `
+      <rect x="60" y="${y}" width="${W - 120}" height="${h}" rx="12" fill="${PANEL}"/>
+      <text x="84" y="${y + 30}" font-family="'Space Grotesk',sans-serif" font-size="15" font-weight="700" fill="${TEXT}">${escapeHtml(watchlistLabel(key))} (${noms.length})</text>
+      ${noms.length
+        ? noms.map((n, i) => {
+            const rowY = y + 52 + i * rowH;
+            const logo = logoUrls[n];
+            const mark = logo
+              ? `<rect x="84" y="${rowY - logoSize + 4}" width="${logoSize}" height="${logoSize}" rx="4" fill="#fff"/><image x="86" y="${rowY - logoSize + 6}" width="${logoSize - 4}" height="${logoSize - 4}" href="${logo}" preserveAspectRatio="xMidYMid meet"/>`
+              : `<circle cx="88" cy="${rowY - 4}" r="2.5" fill="${GOLD2}"/>`;
+            const textX = logo ? 100 + logoSize - 14 : 100;
+            return `${mark}<text x="${textX}" y="${rowY + 4}" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" fill="${TEXT}">${escapeHtml(n)}</text>`;
+          }).join('')
+        : `<text x="84" y="${y + 44}" font-family="'Plus Jakarta Sans',sans-serif" font-size="12" fill="${DIM}">Aucune entreprise dans cette liste.</text>`}`;
+    y += h + 20;
+    return block;
+  }).join('');
+  const H = y + 40;
+  const title = listKey ? watchlistLabel(listKey) : 'Watchlist — toutes les listes';
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+    <rect width="${W}" height="${H}" fill="${BG}"/>
+    <circle cx="90" cy="66" r="25" fill="none" stroke="${GOLD}" stroke-width="2"/>
+    <text x="90" y="76" font-size="26" text-anchor="middle">🐺</text>
+    <text x="132" y="58" font-family="monospace" font-size="10.5" letter-spacing="2" fill="${DIM}">WOLF ANALYSIS</text>
+    <text x="132" y="84" font-family="'Space Grotesk',sans-serif" font-size="22" font-weight="700" fill="${TEXT}">${escapeHtml(title)}</text>
+    ${blocks}
+    <text x="60" y="${H - 16}" font-family="monospace" font-size="9.5" fill="${DIM}">Wolf Analysis — Watchlist générée automatiquement.</text>
+  </svg>`;
+}
+async function downloadWatchlistImage(listKey, format){
+  const filenameBase = 'watchlist-' + (listKey ? watchlistLabel(listKey).replace(/[^\p{L}\p{N}]+/gu, '-') : 'toutes-les-listes');
+  downloadSvgAsImage(await watchlistSvgMarkup(listKey), filenameBase, format);
 }
 
 function watchlistLocationOf(nom){
@@ -11261,7 +13124,14 @@ function moveToWatchlist(nom, listKey, targetNom, before){
 
 function watchlistChipHtml(nom, logo){
   const safe = nom.replace(/"/g, '&quot;');
-  return `<div class="watchlist-chip" data-nom="${safe}" title="${safe}"><img src="${logo || ''}" alt=""></div>`;
+  const initial = nom.charAt(0).toUpperCase();
+  // onerror : repli sur l'initiale si le logo (URL parfois devinée, voir companyLogoUrl)
+  // ne charge pas réellement — même filet que tierListCardHtml, même retour utilisateur.
+  return `<div class="watchlist-chip" data-nom="${safe}" title="${safe}">
+    ${logo
+      ? `<img src="${logo}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"><span class="watchlist-chip-fallback" style="display:none;">${initial}</span>`
+      : `<span class="watchlist-chip-fallback">${initial}</span>`}
+  </div>`;
 }
 
 // Grille de colonnes construite en JS (plus un bloc HTML statique fixé à 5 colonnes
@@ -11305,10 +13175,26 @@ function watchlistNewListColumnHtml(){
 // vu que j'ai une barre de recherche." Le pool reste un point de dépôt VALIDE pour
 // retirer une entreprise d'une liste (glisser depuis une colonne jusqu'ici), juste
 // affiché comme une simple zone d'indication plutôt qu'une galerie de logos.
+// Additif (comme populateSectorWatchlistFilter) : garde la sélection courante, ajoute
+// toute liste (dont personnalisée) pas encore présente — sans ça, une liste créée après
+// initWatchlist() n'apparaîtrait jamais dans le sélecteur d'export.
+function populateWatchlistExportSelect(){
+  const sel = document.getElementById('watchlistExportListSelect');
+  if (!sel) return;
+  const existing = new Set(Array.from(sel.options).map(o => o.value));
+  allWatchlistKeys().forEach(key => {
+    if (existing.has(key)) return;
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = watchlistLabel(key);
+    sel.appendChild(opt);
+  });
+}
 function renderWatchlist(){
   const pool = document.getElementById('watchlistPool');
   const grid = document.getElementById('watchlistGrid');
   if (!pool || !grid) return;
+  populateWatchlistExportSelect();
 
   pool.innerHTML = '<div class="watchlist-pool-hint">Glisse une entreprise ici pour la retirer d\'une liste — utilise la recherche ci-dessus pour en ajouter une nouvelle.</div>';
 
@@ -11440,10 +13326,11 @@ function initWatchlist(){
       // après un pointerup suite à un vrai glisser tactile, le click de compatibilité
       // du navigateur est trop peu fiable (timing, cible recalculée après un
       // re-rendu du DOM) pour distinguer proprement tap et glisser sur mobile.
-      // Entreprise hors des 72 du Sheet (base FMP élargie) : pas de fiche Analyse
-      // complète pour elle pour l'instant, tap sans effet plutôt que de basculer sur
-      // l'onglet Analyse sans rien y afficher de pertinent.
-      if (!moved){ if (companies[nom]) goToAnalyse(nom); return; }
+      // Entreprise hors des 72 du Sheet (base FMP élargie) : goToAnalyse()/
+      // selectCompany() savent déjà matérialiser une fiche via
+      // ensureSyntheticCompanyData() (2026-09-08) — cette garde datait d'avant ce
+      // pont et bloquait la navigation à tort sur un tap sans aucun retour visible.
+      if (!moved){ goToAnalyse(nom); return; }
       const target = findWatchlistDropTarget(me.clientX, me.clientY, chip);
       if (target) moveToWatchlist(nom, target.zone.dataset.list || null, target.targetNom, target.before);
     }
@@ -11482,8 +13369,22 @@ function initWatchlist(){
 
   const exportBtn = document.getElementById('watchlistExportBtn');
   if (exportBtn) exportBtn.addEventListener('click', exportWatchlist);
+  populateWatchlistExportSelect();
   const exportPdfBtn = document.getElementById('watchlistExportPdfBtn');
-  if (exportPdfBtn) exportPdfBtn.addEventListener('click', exportWatchlistAsPdf);
+  if (exportPdfBtn) exportPdfBtn.addEventListener('click', () => {
+    const sel = document.getElementById('watchlistExportListSelect');
+    exportWatchlistAsPdf(sel ? sel.value : '');
+  });
+  const exportPngBtn = document.getElementById('watchlistExportPngBtn');
+  if (exportPngBtn) exportPngBtn.addEventListener('click', () => {
+    const sel = document.getElementById('watchlistExportListSelect');
+    downloadWatchlistImage(sel ? sel.value : '', 'png');
+  });
+  const exportJpegBtn = document.getElementById('watchlistExportJpegBtn');
+  if (exportJpegBtn) exportJpegBtn.addEventListener('click', () => {
+    const sel = document.getElementById('watchlistExportListSelect');
+    downloadWatchlistImage(sel ? sel.value : '', 'jpeg');
+  });
 
   // Création/suppression de listes personnalisées — délégué sur `page` (stable), pas sur
   // #watchlistGrid dont le innerHTML est reconstruit à chaque renderWatchlist(). Bouton
@@ -11577,28 +13478,145 @@ function exportTierList(){
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
-function tierListPrintTableHtml(noms){
-  return noms.length
-    ? `<table class="print-table"><thead><tr><th>Entreprise</th></tr></thead><tbody>${noms.map(n => {
-        const logo = companyLogoUrl(n);
-        const logoImg = logo ? `<img class="print-inline-logo" src="${logo}" alt="">` : '';
-        return `<tr><td>${logoImg}${n.replace(/</g,'&lt;')}</td></tr>`;
-      }).join('')}</tbody></table>`
-    : '<p style="color:#999">Aucune entreprise dans ce tier.</p>';
+// Grille de logos (comme l'écran, pas un tableau texte) — retour explicite : l'export
+// Tier List était "beaucoup mieux mis en page" attendu, "un peu comme" les exports
+// Cerveau numérique (grille de cartes/logos), pas un tableau à une colonne.
+function tierListPrintGridHtml(noms){
+  if (!noms.length) return '<p style="color:var(--text-dim);">Aucune entreprise dans ce tier.</p>';
+  return `<div class="print-tier-grid">${noms.map(n => {
+    const logo = companyLogoUrl(n);
+    const safe = n.replace(/</g, '&lt;');
+    return `<div class="print-tier-item">
+      <div class="print-tier-logo">${logo ? `<img src="${logo}" alt="">` : `<span>${n.charAt(0).toUpperCase()}</span>`}</div>
+      <div class="print-tier-item-name">${safe}</div>
+    </div>`;
+  }).join('')}</div>`;
 }
 function exportTierListAsPdf(){
   // .filter(n => companies[n]) retiré — masquait silencieusement toute entreprise de la
   // base FMP élargie ajoutée via la recherche (voir renderTierListSuggestions()), même
   // bug que la Watchlist avant sa propre extension.
   const selNoms = Object.keys(tierListStore).filter(n => tierListStore[n] === TIER_LIST_SELECTION_KEY);
-  const selSection = selNoms.length
-    ? `<div class="print-section"><h3>🎬 Sélection du jour (${selNoms.length})</h3>${tierListPrintTableHtml(selNoms)}</div>`
-    : '';
-  const body = selSection + TIER_LIST_TIERS.map(t => {
+  const selPanel = selNoms.length ? chainPdfPanelWrap(`🎬 Sélection du jour (${selNoms.length})`, tierListPrintGridHtml(selNoms)) : '';
+  const panels = TIER_LIST_TIERS.map((t, i) => {
     const noms = Object.keys(tierListStore).filter(n => tierListStore[n] === t.key);
-    return `<div class="print-section"><h3 style="color:${t.color}">Tier ${t.key} (${noms.length})</h3>${tierListPrintTableHtml(noms)}</div>`;
+    return chainPdfPanelWrap(`Tier ${t.key} (${noms.length})`, tierListPrintGridHtml(noms), String(i + 1).padStart(2, '0'));
   }).join('');
-  exportSectionAsPdf('Tier List', null, body);
+  const area = document.getElementById('printArea');
+  area.innerHTML = brandedPdfHeader('', 'Tier List', null, 'Wolf Analysis') + selPanel + panels + brandedPdfFooter();
+  printAreaAfterImagesLoad(area);
+}
+// Export image (PNG/JPEG) — même technique que Wolf Score/Watchlist (SVG texte, voir
+// downloadSvgAsImage). Refonte demandée explicitement pour servir de miniature YouTube :
+// logos réels en grand, AUCUN texte (juste les lettres de tier S/A/B/C/D/F), format 16:9.
+// Dessiné directement en Canvas2D (pas via SVG) — plusieurs dizaines de logos à
+// précharger et positionner précisément, plus simple à piloter en Canvas qu'en balises
+// <image> SVG. Uniquement des logos LOCAUX (data/logos/{symbole}.png, même origine que
+// la page) jamais l'URL externe de secours (Sheet lienImage) : un logo externe sans
+// CORS "tainte" le canvas (voir CLAUDE.md piège #13) et empêcherait tout export PNG/JPEG
+// du reste de l'image, pas seulement ce logo — repli sur une bulle à l'initiale sinon.
+function tierListSafeLogoUrl(nom){
+  const match = Object.keys(companies).find(n => stripAccents(n.toLowerCase()) === stripAccents(nom.toLowerCase()));
+  const symbol = fmpSymbols[nom] || (match && fmpSymbols[match]);
+  if (!symbol) return null;
+  const file = logosManifest[symbol] || (symbol + '.png');
+  return location.origin + '/data/logos/' + file;
+}
+function tierListThumbnailCanvas(){
+  return new Promise(resolve => {
+    const W = 1280, H = 720;
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    const rows = TIER_LIST_TIERS.map(t => ({ t, noms: Object.keys(tierListStore).filter(n => tierListStore[n] === t.key) }));
+    const allNoms = rows.flatMap(r => r.noms);
+    const logoImgs = {};
+    Promise.all(allNoms.map(nom => new Promise(res => {
+      const url = tierListSafeLogoUrl(nom);
+      if (!url){ res(); return; }
+      const img = new Image();
+      img.onload = () => { logoImgs[nom] = img; res(); };
+      img.onerror = () => res();
+      img.src = url;
+    }))).then(() => {
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.fillStyle = '#0D1013';
+      ctx.fillRect(0, 0, W, H);
+      // Lignes vides retirées (retour utilisateur : "trop de vide") — une miniature doit
+      // rester dense, pas la grille S-F complète même quand un tier n'a personne. La
+      // hauteur totale se redistribue sur les tiers réellement peuplés.
+      const populatedRows = rows.filter(r => r.noms.length > 0);
+      const rowH = H / (populatedRows.length || 1);
+      const labelW = 130;
+      populatedRows.forEach((r, i) => {
+        const y = i * rowH;
+        ctx.fillStyle = r.t.color;
+        ctx.fillRect(0, y, labelW, rowH);
+        ctx.fillStyle = '#0D1013';
+        ctx.font = 'bold 64px "Space Grotesk", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(r.t.key, labelW / 2, y + rowH / 2 + 4);
+        ctx.fillStyle = '#1B2128';
+        ctx.fillRect(labelW, y, W - labelW, rowH);
+        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+        const n = r.noms.length;
+        const pad = 16;
+        const gap = 12;
+        const avail = W - labelW - pad * 2;
+        const d = Math.max(34, Math.min(rowH - 24, Math.floor((avail - gap * (n - 1)) / n)));
+        // Logos collés à gauche, juste après la lettre de tier — demande explicite
+        // ("les logos... collés sur la gauche... que ça prenne moins de place"),
+        // remplace l'ancien centrage (qui avait lui-même remplacé un calage à gauche
+        // plus tôt dans le projet — préférence de l'utilisateur reconfirmée ici).
+        let x = labelW + pad;
+        const cy = y + rowH / 2;
+        r.noms.forEach(nom => {
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(x + d / 2, cy, d / 2, 0, Math.PI * 2);
+          ctx.closePath();
+          ctx.clip();
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(x, cy - d / 2, d, d);
+          const img = logoImgs[nom];
+          if (img && img.naturalWidth && img.naturalHeight){
+            // "contain" (comme .tierlist-card object-fit:contain à l'écran) — jamais
+            // étiré/déformé, jamais rogné : un logo non carré (souvent le cas) plaqué en
+            // d×d se retrouvait déformé ("cropé bizarre", retour utilisateur direct).
+            const scale = Math.min(d / img.naturalWidth, d / img.naturalHeight);
+            const dw = img.naturalWidth * scale, dh = img.naturalHeight * scale;
+            ctx.drawImage(img, x + (d - dw) / 2, cy - dh / 2, dw, dh);
+          } else {
+            ctx.fillStyle = '#D9A441';
+            ctx.fillRect(x, cy - d / 2, d, d);
+            ctx.fillStyle = '#0D1013';
+            ctx.font = `bold ${Math.floor(d * 0.42)}px "Space Grotesk", sans-serif`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(nom.charAt(0).toUpperCase(), x + d / 2, cy + 2);
+          }
+          ctx.restore();
+          x += d + gap;
+        });
+      });
+      resolve(canvas);
+    });
+  });
+}
+function downloadTierListImage(format){
+  tierListThumbnailCanvas().then(canvas => {
+    canvas.toBlob(blob => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `tier-list-thumbnail.${format === 'jpeg' ? 'jpg' : 'png'}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+    }, format === 'jpeg' ? 'image/jpeg' : 'image/png', 0.95);
+  });
 }
 function tierListLocationOf(nom){ return tierListStore[nom] || null; }
 function setTierListEntry(nom, tierKey){
@@ -11610,13 +13628,21 @@ function setTierListEntry(nom, tierKey){
 function tierListCardHtml(nom){
   const logo = companyLogoUrl(nom);
   const safe = nom.replace(/"/g, '&quot;');
+  const initial = nom.charAt(0).toUpperCase();
   // Logo seul, pas de nom en texte à côté (demande explicite) — le nom complet reste
   // accessible en survol via title, même pattern que .watchlist-chip. Bouton ✕ dédié
   // pour retirer SANS glisser (demande explicite : le clic simple navigue déjà vers la
   // fiche entreprise, voir initTierList()/pointerup — il fallait un second geste,
   // distinct, pour le retrait).
+  // onerror : companyLogoUrl() peut renvoyer une URL DEVINÉE (data/logos/{symbole}.png,
+  // repli quand aucun manifeste/lienImage n'existe) sans garantie que le fichier existe
+  // vraiment — sans ce filet, une entreprise sans logo réel affichait une icône d'image
+  // cassée au lieu de l'initiale de repli (retour utilisateur : "je marque Visa et je
+  // n'ai pas de logo dessus").
   return `<div class="tierlist-card" data-nom="${safe}" title="${safe}">
-    ${logo ? `<img src="${logo}" alt="">` : `<span>${nom.charAt(0).toUpperCase()}</span>`}
+    ${logo
+      ? `<img src="${logo}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"><span style="display:none;">${initial}</span>`
+      : `<span>${initial}</span>`}
     <button type="button" class="tierlist-card-remove" data-tierlist-remove="${safe}" title="Retirer">✕</button>
   </div>`;
 }
@@ -11836,8 +13862,10 @@ function initTierList(){
       // Le tap/clic (pas de glisser) va directement à la fiche entreprise — même
       // logique que la Watchlist, gérée ici plutôt que via un listener 'click' séparé
       // (peu fiable après un vrai glisser tactile). Entreprise hors des 72 du Sheet :
-      // pas de fiche Analyse complète pour l'instant, tap sans effet.
-      if (!moved){ if (companies[nom]) goToAnalyse(nom); dragNom = null; return; }
+      // goToAnalyse()/selectCompany() matérialisent déjà la fiche via
+      // ensureSyntheticCompanyData() (2026-09-08) — garde obsolète retirée, même fix
+      // que la Watchlist.
+      if (!moved){ goToAnalyse(nom); dragNom = null; return; }
       const el = document.elementFromPoint(me.clientX, me.clientY);
       const zone = el && el.closest('.tierlist-dropzone');
       if (zone) setTierListEntry(nom, zone.dataset.tier || null);
@@ -11867,6 +13895,10 @@ function initTierList(){
   if (exportBtn) exportBtn.addEventListener('click', exportTierList);
   const exportPdfBtn = document.getElementById('tierListExportPdfBtn');
   if (exportPdfBtn) exportPdfBtn.addEventListener('click', exportTierListAsPdf);
+  const exportPngBtn = document.getElementById('tierListExportPngBtn');
+  if (exportPngBtn) exportPngBtn.addEventListener('click', () => downloadTierListImage('png'));
+  const exportJpegBtn = document.getElementById('tierListExportJpegBtn');
+  if (exportJpegBtn) exportJpegBtn.addEventListener('click', () => downloadTierListImage('jpeg'));
   const resetBtn = document.getElementById('tierListResetBtn');
   if (resetBtn) resetBtn.addEventListener('click', () => {
     tierListStore = {};
@@ -12126,6 +14158,17 @@ const CERVEAU_DB_NAME = 'wolfAnalysisCerveau';
 const CERVEAU_STORE = 'state';
 let cerveauDB = null;
 let cerveauData = { chains:{}, notes:{}, analyses:{} };
+// Assigné par l'appel à loadCerveauData() tout en bas du fichier — CRITIQUE : tant que
+// cette promesse n'est pas résolue, cerveauData.analyses/chains/notes peuvent être
+// encore VIDES en mémoire alors que de vraies données existent déjà dans IndexedDB (le
+// fetch + la lecture IndexedDB de loadCerveauData() sont asynchrones, jamais attendus par
+// son appelant). Bug réel trouvé et corrigé : openAnalyse(nom) testait
+// "!cerveauData.analyses[nom]" AVANT que ce chargement soit terminé, créait une fiche
+// VIERGE, puis l'ENREGISTRAIT IMMÉDIATEMENT (persistCerveauData()) — écrasant les vraies
+// données dès que le chargement IndexedDB, encore en vol, se terminait ensuite. Toute
+// fonction qui risque de créer/persister une entrée "par défaut" pour une entreprise doit
+// d'abord `await cerveauDataReadyPromise` (voir openAnalyse()).
+let cerveauDataReadyPromise = null;
 let cerveauView = { level:'secteurs' };
 // Phase agrandie en plein écran (index dans chain.phases, ou null) — CSS pur, pas de
 // déplacement de nœud DOM comme le zoom scénario : quasi toute interaction dans une
@@ -12143,18 +14186,93 @@ function openCerveauDB(){
   });
 }
 
+// Empêche la fragmentation d'une même entreprise entre deux entrées de casse
+// différente (ex. "VINCI" / "Vinci") — constaté en pratique lors de l'incident de
+// cette session : une fiche quasi vide avait été créée sous "Vinci" (recherche/
+// sélection non harmonisée en casse), coexistant avec la vraie fiche "VINCI"
+// richement remplie, semant la confusion sur laquelle contenait le vrai travail.
+// Fusionne vers la clé qui correspond exactement au nom Sheet (companies) si connu,
+// sinon vers la plus remplie des deux. Ne retire une clé doublon qu'après avoir
+// vérifié qu'elle est totalement vide (rien à perdre) — si les deux variantes ont du
+// contenu propre non fusionnable automatiquement, les deux sont conservées telles
+// quelles plutôt que de risquer d'en écraser une.
+function analysisRichness(list){
+  return (list || []).reduce((sum, v) => sum + Object.values(v.sections || {}).reduce((s, sec) => s + (sec.texte || '').length + (sec.images || []).length * 50, 0), 0);
+}
+function mergeCaseVariantAnalyses(){
+  ['analyses', 'notes'].forEach(section => {
+    const store = cerveauData[section];
+    const groups = {};
+    Object.keys(store).forEach(k => {
+      const lower = k.toLowerCase();
+      (groups[lower] = groups[lower] || []).push(k);
+    });
+    Object.values(groups).forEach(keys => {
+      if (keys.length < 2) return;
+      const sheetName = Object.keys(companies || {}).find(n => n.toLowerCase() === keys[0].toLowerCase());
+      let canonical = (sheetName && store[sheetName]) ? sheetName : keys.slice().sort((a, b) => analysisRichness(store[b]) - analysisRichness(store[a]))[0];
+      keys.forEach(k => {
+        if (k === canonical) return;
+        if (section === 'analyses') mergeAnalysesGapFill(store, { [canonical]: store[k] });
+        const richness = section === 'analyses' ? analysisRichness(store[k]) : (store[k] || []).length;
+        if (richness === 0) delete store[k];
+      });
+    });
+  });
+}
+
+function mergeAnalysesGapFill(localAnalyses, baselineAnalyses){
+  Object.keys(baselineAnalyses || {}).forEach(nom => {
+    const baseList = baselineAnalyses[nom] || [];
+    // Entité totalement absente en local : aucune version réelle à masquer, sûr
+    // d'adopter le socle tel quel.
+    if (!Array.isArray(localAnalyses[nom]) || !localAnalyses[nom].length){
+      localAnalyses[nom] = baseList;
+      return;
+    }
+    const localList = localAnalyses[nom];
+    baseList.forEach(baseVersion => {
+      const localVersion = localList.find(v => v.id === baseVersion.id);
+      // BUG CORRIGÉ (constaté en pratique : la fiche VINCI de l'utilisateur a semblé
+      // "vidée" après un rechargement) — NE JAMAIS pousser une version du socle dont
+      // l'id n'existe pas déjà localement. Une entité qui existe déjà localement avec
+      // sa PROPRE version (créée indépendamment, id différent) n'a rien à voir avec la
+      // fiche de test que Claude a pu remplir de son côté sous le même nom
+      // d'entreprise : les ajouter comme "nouvelle version" en fin de tableau les
+      // fait sélectionner par défaut à la prochaine ouverture (openAnalyse() prend
+      // toujours cerveauData.analyses[nom][length-1]), masquant silencieusement la
+      // vraie fiche complète de l'utilisateur derrière une version quasi vide. Seul un
+      // vrai gap-fill CHAMP PAR CHAMP sur une version DÉJÀ présente localement (même
+      // id) est sûr — sinon on ignore cette version du socle pour cette entité.
+      if (!localVersion) return;
+      Object.keys(baseVersion.sections || {}).forEach(key => {
+        const baseSec = baseVersion.sections[key];
+        if (!baseSec) return;
+        if (!localVersion.sections) localVersion.sections = {};
+        if (!localVersion.sections[key]) localVersion.sections[key] = { texte:'', images:[] };
+        const localSec = localVersion.sections[key];
+        if (!localSec.texte && baseSec.texte) localSec.texte = baseSec.texte;
+        if ((!localSec.images || !localSec.images.length) && baseSec.images && baseSec.images.length){
+          localSec.images = baseSec.images;
+        }
+      });
+    });
+  });
+}
+
 async function loadCerveauData(){
   GICS_SECTORS.forEach(s => { if (!cerveauData.chains[s.key]) cerveauData.chains[s.key] = []; });
   if (!cerveauData.chains.autre) cerveauData.chains.autre = [];
 
   let baselineChains = null;
+  let baselineAnalyses = null;
   try{
     const res = await fetch('data/cerveau.json', { cache:'no-store' });
     if (res.ok){
       const json = await res.json();
       if (json && json.chains) baselineChains = json.chains;
       if (json && json.notes) Object.assign(cerveauData.notes, json.notes);
-      if (json && json.analyses) Object.assign(cerveauData.analyses, json.analyses);
+      if (json && json.analyses) baselineAnalyses = json.analyses;
     }
   }catch(e){ /* socle absent ou fetch bloqué (ex. file://) — non bloquant */ }
 
@@ -12166,11 +14284,40 @@ async function loadCerveauData(){
       req.onerror = () => reject(req.error);
     });
     if (stored){
+      // Sauvegarde de sécurité AVANT toute fusion avec le socle — demande explicite de
+      // l'utilisateur après un bug de fusion qui avait fait apparaître sa fiche VINCI
+      // comme vidée (elle ne l'était pas, juste masquée par une version ajoutée par
+      // erreur, voir mergeAnalysesGapFill). Ce filet ne dépend d'AUCUNE logique de
+      // fusion : c'est l'état local brut, tel que lu depuis IndexedDB avant la moindre
+      // modification par ce chargement. Utilise désormais la MÊME génération datée
+      // que persistCerveauData() (voir backupThenWrite) — un historique de plusieurs
+      // dizaines de générations, pas une seule, pour pouvoir revenir en arrière même
+      // si LA dernière sauvegarde s'avère, elle aussi, mauvaise.
+      try{
+        const tx = cerveauDB.transaction(CERVEAU_STORE, 'readwrite');
+        const store = tx.objectStore(CERVEAU_STORE);
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        store.put(stored, 'backup-' + stamp);
+        store.put(stored, 'backup-last-good'); // pointeur pratique vers la plus récente, en plus de l'historique
+      }catch(e){ /* non bloquant */ }
       if (stored.chains) Object.keys(stored.chains).forEach(k => { cerveauData.chains[k] = stored.chains[k]; });
       if (stored.notes) Object.keys(stored.notes).forEach(k => { cerveauData.notes[k] = stored.notes[k]; });
       if (stored.analyses) Object.keys(stored.analyses).forEach(k => { cerveauData.analyses[k] = stored.analyses[k]; });
     }
   }catch(e){ /* IndexedDB indisponible (navigation privée stricte...) — non bloquant */ }
+
+  // Fusion "comble les trous" pour les fiches Analyse développée — un simple écrasement
+  // par IndexedDB (comportement précédent) empêchait tout contenu ajouté par Claude au
+  // socle data/cerveau.json de jamais apparaître dès qu'une fiche du même nom existait
+  // déjà localement, même vide sur le champ précis qu'on venait de remplir (bug
+  // constaté : le texte "Position dans la chaîne de valeur" de VINCI, ajouté au socle,
+  // n'apparaissait jamais dans le navigateur réel de l'utilisateur, car sa fiche VINCI
+  // locale existait déjà avec seulement "Substituts" rempli). Ne JAMAIS écraser un champ
+  // déjà rempli localement — uniquement combler les champs texte/images encore vides,
+  // section par section, version par version (appariées par id). Une version du socle
+  // absente localement est ajoutée en entier ; une version locale absente du socle
+  // n'est jamais touchée.
+  if (baselineAnalyses) mergeAnalysesGapFill(cerveauData.analyses, baselineAnalyses);
 
   // Fusion PAR CHAÎNE (id), pas par clé de secteur entière — sinon toute mise à jour du
   // socle (nouvelle chaîne ajoutée par Claude dans un secteur déjà visité) se fait
@@ -12201,6 +14348,8 @@ async function loadCerveauData(){
   }
 
   migrateCerveauChains();
+  mergeCaseVariantAnalyses();
+  await rehydrateCerveauDiskHandle();
   renderCerveau();
 }
 
@@ -12217,10 +14366,148 @@ async function loadCerveauData(){
 // jamais `cerveauData.chains = stored.chains`). En cas de doute sur une migration,
 // GARDER l'ancien champ en plus du nouveau plutôt que de le supprimer (coût de stockage
 // négligeable face au risque de perte de données).
+// Nombre de générations de sauvegarde à conserver — demande explicite de l'utilisateur
+// après un incident où une seule fusion fautive a rendu sa fiche VINCI illisible
+// ("il faut qu'il y ait des systèmes de backup... ça ne doit jamais, jamais arriver").
+// Un coût de stockage négligeable (texte JSON) face au risque de ne pouvoir revenir
+// en arrière que d'UN seul cran si cette unique génération s'avère, elle aussi,
+// mauvaise.
+const CERVEAU_BACKUP_MAX_GENERATIONS = 40;
+let cerveauLastSavedAt = null;
+
+// Sauvegarde l'état ACTUELLEMENT stocké (avant de le remplacer) sous une clé datée
+// séparée, dans la MÊME transaction que l'écriture qui le remplace — jamais un
+// écrasement qui ne garde aucune trace de ce qu'il y avait avant. Purge ensuite les
+// générations les plus anciennes au-delà de CERVEAU_BACKUP_MAX_GENERATIONS (purge de
+// la sauvegarde elle-même, jamais des données réelles de l'utilisateur).
+function backupThenWrite(store, newValue){
+  const getReq = store.get('state');
+  getReq.onsuccess = () => {
+    const previous = getReq.result;
+    if (previous){
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      store.put(previous, 'backup-' + stamp);
+    }
+    store.put(newValue, 'state');
+    const keysReq = store.getAllKeys();
+    keysReq.onsuccess = () => {
+      const backupKeys = keysReq.result.filter(k => typeof k === 'string' && k.startsWith('backup-')).sort();
+      const excess = backupKeys.length - CERVEAU_BACKUP_MAX_GENERATIONS;
+      if (excess > 0) backupKeys.slice(0, excess).forEach(k => store.delete(k));
+    };
+  };
+}
+
 function persistCerveauData(){
   if (!cerveauDB) return;
-  try{ cerveauDB.transaction(CERVEAU_STORE, 'readwrite').objectStore(CERVEAU_STORE).put(cerveauData, 'state'); }
-  catch(e){ /* ignore */ }
+  try{
+    const tx = cerveauDB.transaction(CERVEAU_STORE, 'readwrite');
+    backupThenWrite(tx.objectStore(CERVEAU_STORE), cerveauData);
+    cerveauLastSavedAt = new Date();
+    updateCerveauSaveStatusLabel();
+    writeCerveauDiskBackup(); // couche indépendante, best-effort, voir plus bas
+  }catch(e){ /* ignore */ }
+}
+
+// Toutes les sauvegardes disponibles (générations datées + le filet posé au
+// chargement), les plus récentes en premier, avec un résumé de contenu pour que
+// l'utilisateur puisse reconnaître laquelle restaurer sans deviner à l'aveugle.
+async function listCerveauBackups(){
+  if (!cerveauDB) return [];
+  const store = cerveauDB.transaction(CERVEAU_STORE, 'readonly').objectStore(CERVEAU_STORE);
+  const keys = await new Promise((resolve, reject) => {
+    const req = store.getAllKeys();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  const backupKeys = keys.filter(k => typeof k === 'string' && (k.startsWith('backup-') || k === 'backup-last-good')).sort().reverse();
+  const out = [];
+  for (const key of backupKeys){
+    const val = await new Promise((resolve, reject) => {
+      const req = cerveauDB.transaction(CERVEAU_STORE, 'readonly').objectStore(CERVEAU_STORE).get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    if (!val) continue;
+    const nAnalyses = Object.keys(val.analyses || {}).length;
+    const nChains = Object.values(val.chains || {}).reduce((s, arr) => s + (arr || []).length, 0);
+    out.push({ key, nAnalyses, nChains });
+  }
+  return out;
+}
+
+function updateCerveauSaveStatusLabel(){
+  if (!cerveauLastSavedAt) return;
+  const hh = String(cerveauLastSavedAt.getHours()).padStart(2, '0');
+  const mm = String(cerveauLastSavedAt.getMinutes()).padStart(2, '0');
+  const ss = String(cerveauLastSavedAt.getSeconds()).padStart(2, '0');
+  const text = '💾 Sauvegardé à ' + hh + ':' + mm + ':' + ss;
+  const rootEl = document.getElementById('cerveauSaveStatus');
+  if (rootEl) rootEl.textContent = text;
+  // Visible EN PLUS dans la fiche Analyse développée elle-même (là où l'utilisateur
+  // regarde pendant qu'il travaille, pas seulement au menu racine du Cerveau
+  // numérique) — demande explicite : donner une confirmation visible et immédiate
+  // pour ne plus avoir à ré-enregistrer "dix fois" par doute.
+  const ficheEl = document.getElementById('analyseUpdatedLabel');
+  if (ficheEl && analyseEntite) ficheEl.textContent = text;
+}
+
+// Couche de secours INDÉPENDANTE d'IndexedDB — demande explicite de l'utilisateur
+// ("architecture ultra sécurisée... plusieurs systèmes de backup") : un vrai fichier
+// sur le disque, mis à jour à chaque sauvegarde. Protège contre toute la classe de
+// bug rencontrée cette session (changement de port de serveur local = nouvelle
+// origine = IndexedDB vide) puisqu'un fichier disque ne dépend d'aucune origine
+// navigateur. Le handle est lui-même persisté dans IndexedDB (structuredClone-able)
+// pour survivre à une fermeture du navigateur ; la permission d'écriture doit parfois
+// être reconfirmée par l'utilisateur (restriction de sécurité du navigateur, pas
+// contournable) — dans ce cas l'écriture silencieuse est simplement ignorée cette
+// fois-ci (jamais de popup intrusif à chaque sauvegarde), et l'utilisateur peut
+// recliquer sur le bouton pour réactiver.
+const CERVEAU_DISK_HANDLE_KEY = 'disk-backup-handle';
+let cerveauDiskHandle = null;
+
+async function setupCerveauDiskBackup(){
+  if (!('showSaveFilePicker' in window)){
+    alert("Ton navigateur ne permet pas l'écriture directe sur disque (fonctionnalité Chrome/Edge). Utilise le bouton Exporter régulièrement à la place.");
+    return;
+  }
+  try{
+    const handle = await window.showSaveFilePicker({
+      suggestedName: 'wolf-analysis-cerveau-backup.json',
+      types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }]
+    });
+    cerveauDiskHandle = handle;
+    if (cerveauDB){
+      try{ cerveauDB.transaction(CERVEAU_STORE, 'readwrite').objectStore(CERVEAU_STORE).put(handle, CERVEAU_DISK_HANDLE_KEY); }catch(e){ /* ignore */ }
+    }
+    await writeCerveauDiskBackup();
+    alert('Sauvegarde sur disque activée — ce fichier se mettra à jour automatiquement à chaque enregistrement, en plus des sauvegardes internes.');
+  }catch(e){
+    if (e.name !== 'AbortError') alert("Impossible d'activer la sauvegarde sur disque : " + e.message);
+  }
+}
+
+async function writeCerveauDiskBackup(){
+  if (!cerveauDiskHandle) return;
+  try{
+    const perm = await cerveauDiskHandle.queryPermission({ mode:'readwrite' });
+    if (perm !== 'granted') return;
+    const writable = await cerveauDiskHandle.createWritable();
+    await writable.write(JSON.stringify(cerveauData, null, 2));
+    await writable.close();
+  }catch(e){ /* best-effort — ne doit jamais bloquer la sauvegarde principale */ }
+}
+
+async function rehydrateCerveauDiskHandle(){
+  if (!cerveauDB) return;
+  try{
+    const handle = await new Promise((resolve, reject) => {
+      const req = cerveauDB.transaction(CERVEAU_STORE, 'readonly').objectStore(CERVEAU_STORE).get(CERVEAU_DISK_HANDLE_KEY);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    if (handle) cerveauDiskHandle = handle;
+  }catch(e){ /* non bloquant */ }
 }
 
 function exportCerveau(){
@@ -12233,6 +14520,28 @@ function exportCerveau(){
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+// Filet de sécurité — demande explicite de l'utilisateur après un incident où une
+// fusion fautive avait fait apparaître sa fiche VINCI comme vidée (voir
+// mergeAnalysesGapFill) : "fait en sorte que ça ne supprime jamais, peu importe les
+// entreprises, peu importe les données... il faut des systèmes de backup". Restaure
+// une génération PRÉCISE (voir listCerveauBackups()/backupThenWrite()) plutôt
+// qu'une seule "dernière sauvegarde" implicite — si LA plus récente s'avère, elle
+// aussi, mauvaise, l'utilisateur peut remonter plus loin dans l'historique. Ignore
+// complètement la logique de fusion : repart d'un état brut tel qu'il a été capturé,
+// donc reste fonctionnel même si un futur bug de fusion prend une forme différente.
+async function restaurerSauvegardeCerveau(key){
+  if (!cerveauDB) return null;
+  const backup = await new Promise((resolve, reject) => {
+    const req = cerveauDB.transaction(CERVEAU_STORE, 'readonly').objectStore(CERVEAU_STORE).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  if (!backup) return null;
+  cerveauData = { chains: backup.chains || {}, notes: backup.notes || {}, analyses: backup.analyses || {} };
+  persistCerveauData();
+  return backup;
 }
 
 // Bucket "Thématiques transversales" RETIRÉ (demande explicite : "là par exemple tu m'as
@@ -12252,13 +14561,30 @@ function renderCerveau(){
   renderCerveauSecteurs(box);
 }
 
+// Confirmation en 2 clics (jamais confirm() natif, voir "Pièges techniques" point 7) —
+// remis à false à chaque rendu pour ne jamais rester coincé en attente après un
+// changement de vue.
+let cerveauRestoreConfirming = false;
+function formatBackupLabel(key){
+  // 'backup-2026-09-06T21-10-09-123Z' -> '06/09/2026 21:10:09'
+  const m = key.match(/^backup-(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})/);
+  if (!m) return key === 'backup-last-good' ? 'Sauvegarde de secours' : key;
+  return m[3] + '/' + m[2] + '/' + m[1] + ' ' + m[4] + ':' + m[5] + ':' + m[6];
+}
 function renderCerveauSecteurs(box){
   const allSectors = GICS_SECTORS.concat([{ key:'autre', label:'Autre / non classé' }]);
+  cerveauRestoreConfirming = false;
   box.innerHTML = `
     <div class="cerveau-actions">
       <button class="zoom-btn objectifs-export" id="cerveauExportBtn">⭳ Exporter</button>
       <button class="zoom-btn objectifs-export" id="cerveauExportAllPdfBtn">🖨 Exporter tout en PDF</button>
       <button class="zoom-btn objectifs-export" id="cerveauGoulotsBtn">🎯 Goulots d'étranglement</button>
+      <button class="zoom-btn objectifs-export" id="cerveauDiskBackupBtn" title="Sauvegarde continue sur un vrai fichier de ton disque, indépendante du navigateur.">🔒 Sauvegarde sur disque</button>
+      <span id="cerveauSaveStatus" class="analyse-hint" style="align-self:center;"></span>
+    </div>
+    <div class="cerveau-actions" style="margin-top:8px;">
+      <select id="cerveauBackupSelect" class="search-input" style="max-width:360px;"><option value="">Chargement des sauvegardes…</option></select>
+      <button class="zoom-btn objectifs-export" id="cerveauRestoreBtn" title="Restaure l'état exact de la sauvegarde sélectionnée. N'écrase rien : tu peux toujours re-choisir une autre génération ensuite.">🛟 Restaurer cette sauvegarde</button>
     </div>
     <div class="sector-grid">${allSectors.map(s => {
       const n = (cerveauData.chains[s.key] || []).length;
@@ -12267,6 +14593,29 @@ function renderCerveauSecteurs(box){
   document.getElementById('cerveauExportBtn').addEventListener('click', exportCerveau);
   document.getElementById('cerveauExportAllPdfBtn').addEventListener('click', exportAllChainsAsPdf);
   document.getElementById('cerveauGoulotsBtn').addEventListener('click', () => { cerveauView = { level:'goulots' }; renderCerveau(); });
+  document.getElementById('cerveauDiskBackupBtn').addEventListener('click', setupCerveauDiskBackup);
+  updateCerveauSaveStatusLabel();
+
+  const sel = document.getElementById('cerveauBackupSelect');
+  listCerveauBackups().then(backups => {
+    if (!backups.length){ sel.innerHTML = '<option value="">Aucune sauvegarde disponible pour l\'instant</option>'; return; }
+    sel.innerHTML = backups.map(b => `<option value="${b.key}">${formatBackupLabel(b.key)} — ${b.nAnalyses} fiche(s), ${b.nChains} chaîne(s)</option>`).join('');
+  });
+
+  document.getElementById('cerveauRestoreBtn').addEventListener('click', async e => {
+    const key = sel.value;
+    if (!key){ alert('Choisis une sauvegarde dans la liste.'); return; }
+    if (!cerveauRestoreConfirming){
+      cerveauRestoreConfirming = true;
+      e.target.textContent = '⚠️ Confirmer la restauration ?';
+      return;
+    }
+    const backup = await restaurerSauvegardeCerveau(key);
+    cerveauRestoreConfirming = false;
+    if (!backup){ alert("Cette sauvegarde n'a pas pu être lue."); return; }
+    renderCerveau();
+    alert('Sauvegarde restaurée : ' + formatBackupLabel(key));
+  });
   box.querySelectorAll('.cerveau-sector-box').forEach(el => {
     el.addEventListener('click', () => { cerveauView = { level:'chaines', secteur: el.dataset.secteur }; renderCerveau(); });
   });
@@ -12287,10 +14636,10 @@ const CERVEAU_GOULOTS_FILTERS = [
   { key:'all', label:'Tous', title:'Toute entreprise classée qualité, dominante OU goulot (hors simple participante)' },
   { key:'goulot', label:'Goulots', title:'Uniquement le tier le plus fort : goulot d\'étranglement confirmé' },
   { key:'systemique', label:'Goulots systémiques', title:'Goulots dont la portée transversale (bottleneckScope) a été explicitement renseignée' },
-  { key:'qualite-haute', label:'Haute qualité', title:'Quality Score calculé ≥ 70/100, quel que soit le tier' },
-  { key:'attractif', label:'Combinaison attractive', title:'Bottleneck ≥ 70 ET Quality ≥ 70 ET Valuation ≥ 60 simultanément — rare par construction' }
+  { key:'qualite-haute', label:'Haute qualité', title:'Wolf Score ≥ 70/100 (5 modules, scoring manuel de l\'onglet Analyse), quel que soit le tier' },
+  { key:'attractif', label:'Combinaison attractive', title:'Wolf Score ≥ 70 ET Valorisation ≥ 60 simultanément — rare par construction' }
 ];
-let cerveauGoulotsSort = { key:'bottleneckValue', dir:-1 };
+let cerveauGoulotsSort = { key:'globalValue', dir:-1 };
 let cerveauGoulotsFilterKey = 'all';
 function cerveauGoulotsCollect(){
   const sectorLabels = {};
@@ -12317,22 +14666,22 @@ function cerveauGoulotsCollect(){
   return Array.from(byName.values()).map(row => {
     const versions = cerveauData.analyses[row.nom];
     const latest = versions && versions.length ? versions[versions.length - 1] : null;
-    const bottleneck = (latest && latest.scores && latest.scores.bottleneck) || { value:null, confidence:null };
     const scope = latest ? latest.bottleneckScope : null;
-    const quality = computeQualityScore(row.nom);
-    const valuation = computeValuationScore(row.nom);
+    // Scoring manuel (analyseScoreStore, voir onglet Analyse) — remplace l'ancien
+    // Bottleneck/Quality/Valuation calculé. globalValue = Wolf Score (5 modules, /100),
+    // Valorisation reste indépendante (voir ANALYSE_SCORE_MODULES/analyseScoreGlobal()).
+    const g = analyseScoreGlobal(analyseScoreEntryFor(row.nom));
     return {
       nom: row.nom, tier: row.tier, sectors: row.sectors.join(', '), scope,
-      bottleneckValue: bottleneck.value, confidence: bottleneck.confidence,
-      qualityValue: quality.value, valuationValue: valuation.value
+      globalValue: g.global || null, valorisationValue: g.valorisation || null
     };
   });
 }
 function cerveauGoulotsApplyFilter(rows, key){
   if (key === 'goulot') return rows.filter(r => r.tier === 'goulot');
   if (key === 'systemique') return rows.filter(r => r.scope === 'systemique');
-  if (key === 'qualite-haute') return rows.filter(r => r.qualityValue != null && r.qualityValue >= 70);
-  if (key === 'attractif') return rows.filter(r => r.bottleneckValue != null && r.bottleneckValue >= 70 && r.qualityValue != null && r.qualityValue >= 70 && r.valuationValue != null && r.valuationValue >= 60);
+  if (key === 'qualite-haute') return rows.filter(r => r.globalValue != null && r.globalValue >= 70);
+  if (key === 'attractif') return rows.filter(r => r.globalValue != null && r.globalValue >= 70 && r.valorisationValue != null && r.valorisationValue >= 60);
   return rows;
 }
 function cerveauGoulotsScoreCell(val){
@@ -12354,14 +14703,14 @@ function renderCerveauGoulots(box){
   const cols = [
     { key:'nom', label:'Entreprise' }, { key:'sectors', label:'Secteur(s)' },
     { key:'tier', label:'Tier' }, { key:'scope', label:'Portée' },
-    { key:'bottleneckValue', label:'Bottleneck' }, { key:'qualityValue', label:'Quality' }, { key:'valuationValue', label:'Valuation' }
+    { key:'globalValue', label:'Wolf Score' }, { key:'valorisationValue', label:'Valorisation' }
   ];
   const emptyMessages = {
     all: "Aucune entreprise classée qualité/dominante/goulot pour le moment — utilise le bouton tier (·/Q/D/⚠) sur une carte d'entreprise dans une chaîne.",
     goulot: "Aucun goulot confirmé pour le moment.",
-    systemique: "Aucun goulot avec une portée « systémique » renseignée pour le moment — se règle dans la fiche Analyse développée, à côté du score Bottleneck.",
-    'qualite-haute': "Aucune entreprise avec un Quality Score calculé ≥ 70 dans cette sélection pour le moment.",
-    attractif: "Aucune entreprise ne combine actuellement Bottleneck ≥ 70, Quality ≥ 70 ET Valuation ≥ 60 en même temps — normal et attendu : les meilleurs goulots recherchés jusqu'ici (ASML, Synopsys, Cadence...) sont aussi les plus chers (Valuation basse). C'est justement ce que cette vue doit aider à repérer LE JOUR où ça change."
+    systemique: "Aucun goulot avec une portée « systémique » renseignée pour le moment — se règle dans la fiche Analyse développée.",
+    'qualite-haute': "Aucune entreprise avec un Wolf Score ≥ 70 dans cette sélection pour le moment — se remplit depuis l'onglet Analyse.",
+    attractif: "Aucune entreprise ne combine actuellement Wolf Score ≥ 70 ET Valorisation ≥ 60 en même temps."
   };
   box.innerHTML = `
     <div class="cerveau-breadcrumb"><a data-back="secteurs">Secteurs</a> / Goulots d'étranglement</div>
@@ -12374,9 +14723,8 @@ function renderCerveauGoulots(box){
         <td style="text-align:left;">${escapeHtml(r.sectors)}</td>
         <td><span class="cec-tier-${r.tier}">${CERVEAU_TIER_LABELS[r.tier]}</span></td>
         <td>${r.scope ? (r.scope === 'systemique' ? '🌐 Systémique' : 'Local') : '—'}</td>
-        <td>${cerveauGoulotsScoreCell(r.bottleneckValue)}${r.confidence ? ` <span class="analyse-score-nd">(${r.confidence})</span>` : ''}</td>
-        <td>${cerveauGoulotsScoreCell(r.qualityValue)}</td>
-        <td>${cerveauGoulotsScoreCell(r.valuationValue)}</td>
+        <td>${cerveauGoulotsScoreCell(r.globalValue)}</td>
+        <td>${cerveauGoulotsScoreCell(r.valorisationValue)}</td>
       </tr>`).join('')}</tbody>
     </table></div>` : `<div class="objectifs-empty">${escapeHtml(emptyMessages[cerveauGoulotsFilterKey] || 'Aucune entreprise dans ce filtre pour le moment.')}</div>`}`;
   box.querySelector('[data-back="secteurs"]').addEventListener('click', () => { cerveauView = { level:'secteurs' }; renderCerveau(); });
@@ -12705,8 +15053,12 @@ const CERVEAU_TIER_BADGE = {
 };
 function cerveauEntityCard(ent, phaseIdx, entIdx){
   const safe = ent.nom.replace(/"/g, '&quot;');
-  const tracked = companies[ent.nom];
-  const logo = tracked ? companies[ent.nom][companies[ent.nom].length - 1].lienImage : '';
+  // companyLogoUrl() (2026-09-08) plutôt qu'une lecture directe de companies[ent.nom] :
+  // celle-ci ne résolvait rien pour une entité FMP-only tant que sa fiche Analyse
+  // n'avait pas déjà été visitée une fois (companies[nom] resterait vide sinon),
+  // alors que companyLogoUrl() sait déjà résoudre un logo local via fmpSymbols/
+  // logosManifest sans dépendre du Sheet.
+  const logo = companyLogoUrl(ent.nom) || '';
   const noteCount = (cerveauData.notes[ent.nom] || []).length;
   const width = ent.width || 200;
   const tier = ent.tier || 'participante';
@@ -12905,9 +15257,6 @@ function exportChainAsPdf(chain, secteur){
   area.innerHTML = `
     <div class="chain-pdf-topbar">
       <img src="${WOLF_LOGO_URL}" alt="">
-      <span class="chain-pdf-topbar-wordmark">Wolf Academy Invest</span>
-      <span class="chain-pdf-topbar-sep"></span>
-      <span class="chain-pdf-topbar-label">Cerveau numérique</span>
     </div>
     <div class="chain-pdf-eyebrow">Chaîne de valeur</div>
     <div class="chain-pdf-title">${chain.nom.replace(/</g, '&lt;')}</div>
@@ -12978,9 +15327,6 @@ function exportAllChainsAsPdf(){
   area.innerHTML = `
     <div class="chain-pdf-topbar">
       <img src="${WOLF_LOGO_URL}" alt="">
-      <span class="chain-pdf-topbar-wordmark">Wolf Academy Invest</span>
-      <span class="chain-pdf-topbar-sep"></span>
-      <span class="chain-pdf-topbar-label">Cerveau numérique</span>
     </div>
     <div class="chain-pdf-eyebrow">Cartographie complète</div>
     <div class="chain-pdf-title">Toutes les chaînes de valeur</div>
@@ -13013,7 +15359,7 @@ function renderCerveauPhases(box){
   box.innerHTML = `
     <div class="cerveau-breadcrumb"><a data-back="secteurs">Secteurs</a> / <a data-back="chaines">${cerveauSectorLabel(secteur)}</a>${chainPath.map(seg => ` / ${seg}`).join('')} / ${chain.nom}</div>
     <div class="cerveau-actions"><button class="zoom-btn objectifs-export" id="cerveauChainExportPdfBtn">🖨 Exporter PDF</button></div>
-    <datalist id="cerveauCompanyList">${Object.keys(companies).map(n => `<option value="${n.replace(/"/g, '&quot;')}">`).join('')}</datalist>
+    <datalist id="cerveauCompanyList">${[...mergeFmpUniverseNames(Object.keys(companies))].map(n => `<option value="${n.replace(/"/g, '&quot;')}">`).join('')}</datalist>
     ${cerveauZoomedPhase != null ? '<div class="cerveau-phase-backdrop" data-action="phase-zoom-close"></div>' : ''}
     <div class="cerveau-phase-grid">${chain.phases.map((ph, i) => `
       <div class="scenario-card cerveau-phase${cerveauZoomedPhase === i ? ' cerveau-phase-zoomed' : ''}">
@@ -13573,52 +15919,111 @@ const CERVEAU_ANALYSE_SECTIONS_TOP = [
 // Concurrents juste après (MID_A avant le bloc concurrents, MID_B après — perspectives/
 // risques non repositionnés par la demande, gardés après concurrents dans leur ordre
 // existant).
+// Gabarit de départ du tableau libre (secteursActivite, voir tableEditor) — reprend
+// TEL QUEL l'exemple donné explicitement par l'utilisateur (CA/marge opérationnelle/
+// ROIC par division sur 2 ans + leur évolution), plutôt qu'un gabarit générique
+// (Secteur/2024/2025) qui ne laissait de la place que pour UNE seule métrique par
+// colonne-année — source de confusion signalée ("je peux marquer le nom du secteur et
+// l'année. Et là je ne peux rien marquer d'autre"). Rester libre d'ajouter/renommer/
+// supprimer des colonnes ensuite (bouton + Colonne), ce gabarit n'est qu'un point de
+// départ déjà rempli avec les métriques les plus demandées.
+const ANALYSE_TABLE_DEFAULT_COLUMNS = ['Secteur', 'CA 2024', 'CA 2025', 'Évolution CA', 'Marge opérationnelle 2024', 'Marge opérationnelle 2025', 'Évolution marge', 'ROIC 2024', 'ROIC 2025'];
 const CERVEAU_ANALYSE_SECTIONS_MID_A = [
-  { key:'secteursActivite', label:"Secteurs d'activité", hint:'Produits, perspectives de développement' },
+  // groupable:true = seule section avec des sous-groupes nommés (titre + images propres),
+  // demande explicite ("créer les secteurs pour ranger les images dans chacun") — les
+  // autres sections gardent un unique bloc texte+images, pas de généralisation non
+  // demandée. Voir analyseSectionGroupesHtml()/analyseImagesArrayFromEl().
+  // tableEditor:true = un tableau libre (colonnes ET lignes entièrement éditables par
+  // l'utilisateur — noms de colonnes, années, libellés de ligne, valeurs) en plus du
+  // bloc texte+images générique et des secteurs groupés ci-dessus. Demande explicite :
+  // "je voudrais juste un tableau qui est préfait et c'est moi qui le remplis... avec la
+  // possibilité d'ajouter des colonnes et des lignes" — ex. CA/marge opérationnelle/ROIC
+  // par division sur plusieurs années. Voir analyseSectionTableHtml().
+  { key:'secteursActivite', label:"Secteurs d'activité", hint:'Produits, perspectives de développement', groupable:true, tableEditor:true },
   { key:'marche', label:'Analyse du marché' },
   { key:'moat', label:'Avantage concurrentiel (moat)' }
+];
+// Conclusion sur la concurrence — demande explicite : une fois tous les concurrents
+// détaillés par secteur, pouvoir conclure si l'entreprise a vraiment un avantage face
+// à eux ou non. Position confirmée explicitement par l'utilisateur : juste après le
+// bloc concurrents, juste avant "Perspectives de croissance".
+const CERVEAU_ANALYSE_SECTIONS_APRES_CONCURRENTS = [
+  { key:'conclusionConcurrents', label:'Conclusion sur la concurrence', hint:"Face à ces concurrents, a-t-elle vraiment un avantage ? Lequel, ou pourquoi pas ?" }
 ];
 const CERVEAU_ANALYSE_SECTIONS_MID_B = [
   { key:'perspectives', label:'Perspectives de croissance' },
   { key:'risques', label:'Analyse du risque' }
 ];
 const CERVEAU_ANALYSE_SECTIONS_BOTTOM = [
-  { key:'ratios', label:'Ratios financiers', hint:"Captures d'écran de l'application" },
+  // ratioSelector:true = en plus des captures d'écran manuelles (texte/images, inchangé),
+  // une case à cocher par ratio insère sa valeur EN DIRECT depuis companies[nom] — demande
+  // explicite ("c'est long d'aller tout télécharger pour tout remettre"), zéro re-upload
+  // à chaque mise à jour des données. Voir analyseFicheSelectedRatiosHtml().
+  // chartSelector:true = en plus des ratios chiffrés (ratioSelector), une 2e case à
+  // cocher par GRAPHIQUE de l'onglet Analyse (CA, Dividende, Marge, Dette...) — demande
+  // explicite ("dans cette rubrique je dois pouvoir sélectionner tous les graphiques").
+  // Insère un instantané image du graphique (voir analyseFicheChartDataUrl()), pas les
+  // données brutes — nécessite que l'entreprise de la fiche soit celle actuellement
+  // affichée dans l'onglet Analyse (mêmes chartInstances/stockCandleChart, pas de
+  // seconde instance dédiée à la fiche).
+  { key:'ratios', label:'Ratios financiers', hint:"Coche les ratios/graphiques à insérer en direct, ou ajoute tes propres captures d'écran", ratioSelector:true, chartSelector:true }
+];
+// Conclusion séparée de BOTTOM ci-dessus — demande explicite : le Wolf Score (calculé,
+// lecture seule) doit s'intercaler ENTRE "Ratios financiers" et "Conclusion", pas
+// après cette dernière comme avant ("le score, tu le mets au-dessus de la conclusion").
+// Rendue en dernier dans l'ordre d'affichage (renderAnalyse()/exportAnalyseAsPdf()),
+// juste après analyseScoreBlockHtml() — reste dans CERVEAU_ANALYSE_SECTIONS_ALL pour
+// le backfill défensif, l'ordre de CETTE liste n'a pas d'incidence là où elle est
+// utilisée (juste l'initialisation/migration des données, pas leur affichage).
+const CERVEAU_ANALYSE_SECTIONS_CONCLUSION = [
   { key:'conclusion', label:'Conclusion', hint:'Business model, synthèse, datée automatiquement' }
 ];
 // V2 "goulots d'étranglement" (voir plan wild-seeking-clover.md) — 3 sections texte
 // libre, même mécanisme que les autres (analyseSectionHtml, aucun rendu spécifique),
 // juste après le moat (MID_A) et avant le bloc concurrents : le goulot est une
 // extension du moat, pas un sujet séparé.
+// "profondeurGoulot" retirée de l'affichage — demande explicite ("cet onglet-là, tu peux
+// l'enlever, je n'en ai pas vraiment besoin"). Toute donnée déjà saisie sous cette clé
+// (v.sections.profondeurGoulot) reste en mémoire/IndexedDB, juste plus rendue nulle part.
 const CERVEAU_ANALYSE_SECTIONS_GOULOT = [
   { key:'positionChaine', label:'Position dans la chaîne de valeur', hint:"Ce qu'elle fournit, qui dépend d'elle" },
-  { key:'substituabilite', label:'Substituts & remplaçabilité', hint:'Substituts crédibles, temps/coût de remplacement, barrières à l\'entrée, concentration du marché' },
-  { key:'profondeurGoulot', label:'Profondeur, centralité & durabilité', hint:'Ses propres fournisseurs critiques ("goulot dans le goulot"), goulot direct/indirect, local ou systémique, durabilité à 5/10/20 ans — et une conclusion explicite : pourquoi est-elle (ou non) un véritable goulot, et ce qui casserait si elle disparaissait' }
+  { key:'substituabilite', label:'Substituts & remplaçabilité', hint:'Substituts crédibles, temps/coût de remplacement, barrières à l\'entrée, concentration du marché' }
 ];
-const CERVEAU_ANALYSE_SECTIONS_ALL = CERVEAU_ANALYSE_SECTIONS_TOP.concat(CERVEAU_ANALYSE_SECTIONS_MID_A, CERVEAU_ANALYSE_SECTIONS_GOULOT, CERVEAU_ANALYSE_SECTIONS_MID_B, CERVEAU_ANALYSE_SECTIONS_BOTTOM);
+const CERVEAU_ANALYSE_SECTIONS_ALL = CERVEAU_ANALYSE_SECTIONS_TOP.concat(CERVEAU_ANALYSE_SECTIONS_MID_A, CERVEAU_ANALYSE_SECTIONS_GOULOT, CERVEAU_ANALYSE_SECTIONS_APRES_CONCURRENTS, CERVEAU_ANALYSE_SECTIONS_MID_B, CERVEAU_ANALYSE_SECTIONS_BOTTOM, CERVEAU_ANALYSE_SECTIONS_CONCLUSION);
 
 let analyseEntite = null;
 let analyseVersionId = null;
 let analyseCharts = {};
 let analyseDeleteConfirming = false;
 let draggedImageRef = null; // { arr, idx } — référence directe au tableau d'images en cours de glisser-déposer
+// Enregistrement continu (voir scheduleAnalyseAutosave()/wireAnalyseSectionEvents()) —
+// demande explicite ("faire en sorte qu'il y ait un enregistrement automatique... que
+// je puisse cliquer sur enregistrer, mais qu'il y ait un enregistrement continu"). Le
+// bouton "Enregistrer" reste inchangé (saveAnalyseVersion() directe) ; ce timer
+// déclenche EN PLUS la même sauvegarde après une pause de frappe, jamais depuis
+// renderAnalyse() lui-même (uniquement depuis de vrais évènements input/click de
+// l'utilisateur, voir wireAnalyseSectionEvents()) — pour ne jamais réintroduire le
+// risque corrigé sur openAnalyse() (une fiche vierge qui s'auto-persisterait sans
+// action réelle de l'utilisateur).
+let analyseAutosaveTimer = null;
 
-// V2 "goulots d'étranglement" — scores structurés (pas du texte+images, voir plan) :
-// value:null + rationale plutôt qu'un chiffre inventé quand la donnée manque.
-// confidence/sources uniquement pertinents pour bottleneck (jugement manuel) — quality/
-// valuation sont calculés (voir computeQualityScore/computeValuationScore), jamais saisis.
-function blankAnalyseScores(){
-  return {
-    bottleneck: { value:null, rationale:'', confidence:null, verified:false, sources:[] },
-    quality: { value:null, rationale:'' },
-    valuation: { value:null, rationale:'', updatedAt:null }
-  };
-}
+// Ancien système Bottleneck/Quality/Valuation retiré (retour explicite : "je n'aime pas
+// ce mode de calcul" — Quality/Valuation étaient calculés depuis des ratios FMP). Voir
+// plus bas ANALYSE_SCORE_MOAT_CRITERIA/ANALYSE_SCORE_QUALITE_CRITERIA pour le nouveau
+// scoring manuel (Avantage concurrentiel / Qualité / Valorisation), stocké PAR
+// ENTREPRISE dans analyseScoreStore (pas par fiche/version) — rempli depuis l'onglet
+// Analyse, simplement lu ici.
 function blankAnalyseVersion(label){
   const today = new Date().toISOString().slice(0, 10);
   const sections = {};
-  CERVEAU_ANALYSE_SECTIONS_ALL.forEach(s => { sections[s.key] = { texte:'', images:[] }; });
-  return { id:'v' + Date.now() + Math.random().toString(36).slice(2), label, dateCreated:today, dateModified:today, sections, revenusPays:[], revenusSecteurs:[], actionnariat:[], concurrents:[], scores:blankAnalyseScores(), bottleneckScope:null };
+  CERVEAU_ANALYSE_SECTIONS_ALL.forEach(s => {
+    sections[s.key] = { texte:'', images:[] };
+    if (s.groupable) sections[s.key].groupes = [];
+    if (s.ratioSelector) sections[s.key].ratiosSelectionnes = [];
+    if (s.chartSelector) sections[s.key].graphiquesSelectionnes = [];
+    if (s.tableEditor) sections[s.key].tableau = { columns:[...ANALYSE_TABLE_DEFAULT_COLUMNS], rows:[] };
+  });
+  return { id:'v' + Date.now() + Math.random().toString(36).slice(2), label, dateCreated:today, dateModified:today, sections, revenusPays:[], revenusSecteurs:[], actionnariat:[], concurrents:[], concurrentSecteurs:[] };
 }
 
 function currentAnalyseVersion(){
@@ -13626,22 +16031,53 @@ function currentAnalyseVersion(){
   return list.find(v => v.id === analyseVersionId) || list[list.length - 1];
 }
 
-function openAnalyse(nom){
+async function openAnalyse(nom){
+  // Attend la fin du chargement IndexedDB avant de décider qu'une entreprise "n'a pas
+  // encore de fiche" — sinon une fiche VIERGE créée ici pourrait écraser de vraies
+  // données pas encore chargées en mémoire (voir le commentaire sur cerveauDataReadyPromise).
+  if (cerveauDataReadyPromise) await cerveauDataReadyPromise;
   analyseEntite = nom;
+  // NE PLUS écrire immédiatement sur disque une fiche vierge juste créée — deuxième
+  // filet de sécurité en plus de l'attente ci-dessus (voir cerveauDataReadyPromise) :
+  // même si un futur bug refaisait apparaître la race condition, un objet vierge qui
+  // reste PUREMENT en mémoire tant que l'utilisateur n'a rien tapé ne peut plus jamais
+  // écraser quoi que ce soit sur disque. La première vraie sauvegarde (saveAnalyseVersion(),
+  // bouton "Enregistrer") s'en charge, comme pour toute autre modification.
   if (!cerveauData.analyses[nom] || !cerveauData.analyses[nom].length){
     cerveauData.analyses[nom] = [blankAnalyseVersion('Version 1')];
-    persistCerveauData();
   }
   analyseVersionId = cerveauData.analyses[nom][cerveauData.analyses[nom].length - 1].id;
   document.getElementById('analyseTitle').textContent = 'Analyse développée — ' + nom;
-  renderAnalyse();
+  // Modale affichée AVANT renderAnalyse() : autoGrowTextarea() lit scrollHeight, qui
+  // vaut toujours 0 sur un élément encore dans un ancêtre display:none (même piège que
+  // les graphiques Chart.js dans une modale de zoom, voir CLAUDE.md) — sinon toutes les
+  // textarea s'ouvriraient tassées à leur min-height, pas à la taille de leur contenu.
   document.getElementById('analyseModal').style.display = 'flex';
+  renderAnalyse();
 }
 function closeAnalyse(){
+  // Vide une sauvegarde automatique encore en attente (voir scheduleAnalyseAutosave())
+  // AVANT de fermer — sinon une fermeture rapide après la dernière frappe (avant le
+  // délai du debounce) perdrait ces derniers changements malgré l'enregistrement continu.
+  if (analyseAutosaveTimer){
+    clearTimeout(analyseAutosaveTimer);
+    analyseAutosaveTimer = null;
+    if (analyseEntite) saveAnalyseVersion();
+  }
   document.getElementById('analyseModal').style.display = 'none';
   Object.values(analyseCharts).forEach(c => c && c.destroy());
   analyseCharts = {};
   analyseEntite = null;
+}
+// Enregistrement continu — déclenché uniquement par de vrais évènements input/click de
+// l'utilisateur (voir wireAnalyseSectionEvents()), jamais par renderAnalyse() lui-même.
+function scheduleAnalyseAutosave(){
+  if (!analyseEntite) return;
+  clearTimeout(analyseAutosaveTimer);
+  analyseAutosaveTimer = setTimeout(() => {
+    analyseAutosaveTimer = null;
+    if (analyseEntite) saveAnalyseVersion();
+  }, 1500);
 }
 
 function renderAnalyseVersionSelect(){
@@ -13650,12 +16086,23 @@ function renderAnalyseVersionSelect(){
   sel.innerHTML = list.map(v => `<option value="${v.id}"${v.id === analyseVersionId ? ' selected' : ''}>${v.label} (${v.dateModified})</option>`).join('');
 }
 
+// Chaque image de la fiche Analyse développée peut désormais porter une petite légende
+// — demande explicite ("un petit, une petite légende, mais en tout petit"). Format
+// {src, legende} ; les entrées plus anciennes (simple string URL, avant cet ajout)
+// restent lisibles telles quelles via ces 2 accesseurs, jamais migrées de force — pas
+// besoin, aucune perte, juste une légende vide tant qu'on n'y touche pas.
+function analyseImgSrc(entry){ return typeof entry === 'string' ? entry : entry.src; }
+function analyseImgLegende(entry){ return typeof entry === 'string' ? '' : (entry.legende || ''); }
 function analyseImagesHtml(images, ownerAttr){
-  return `<div class="analyse-images" ${ownerAttr}>${images.map((src, i) => `
+  return `<div class="analyse-images" ${ownerAttr}>${images.map((entry, i) => {
+    const src = analyseImgSrc(entry), legende = analyseImgLegende(entry);
+    return `
     <div class="analyse-image-thumb" draggable="true" ${ownerAttr} data-img-idx="${i}">
       <img src="${src}" alt="" data-zoom-src="${src.replace(/"/g,'&quot;')}">
       <button class="analyse-image-del" ${ownerAttr} data-idx="${i}">✕</button>
-    </div>`).join('')}</div>`;
+      <input type="text" class="analyse-image-legende" ${ownerAttr} data-idx="${i}" placeholder="Légende…" value="${legende.replace(/"/g,'&quot;')}">
+    </div>`;
+  }).join('')}</div>`;
 }
 
 function analyseImageAddRowHtml(ownerAttr){
@@ -13673,7 +16120,183 @@ function analyseSectionHtml(s, data){
     <textarea class="analyse-textarea" data-key="${s.key}" placeholder="Texte…">${(data.texte || '').replace(/</g, '&lt;')}</textarea>
     ${analyseImagesHtml(data.images || [], `data-key="${s.key}"`)}
     ${analyseImageAddRowHtml(`data-key="${s.key}"`)}
+    ${s.groupable ? analyseSectionGroupesHtml(s.key, data.groupes || []) : ''}
+    ${s.ratioSelector ? analyseSectionRatioSelectorHtml(data.ratiosSelectionnes || []) : ''}
+    ${s.chartSelector ? analyseSectionChartSelectorHtml(data.graphiquesSelectionnes || []) : ''}
+    ${s.tableEditor ? analyseSectionTableHtml(s.key, data.tableau || { columns:[...ANALYSE_TABLE_DEFAULT_COLUMNS], rows:[] }) : ''}
   </div>`;
+}
+// Tableau libre entièrement éditable (secteursActivite pour l'instant, voir
+// tableEditor) — colonnes ET lignes ajoutables/supprimables, aucune colonne imposée
+// au-delà du modèle de départ (Secteur/2024/2025) : demande explicite, l'utilisateur
+// choisit lui-même les années et les métriques (CA, marge opérationnelle, ROIC,
+// évolution...), pas un gabarit figé. Édition en texte libre partout, y compris les
+// en-têtes — aucune donnée FMP mêlée ici (contrairement à ratioSelector/chartSelector),
+// cohérent avec le reste de cette section qui est déjà 100% manuel.
+function analyseSectionTableHtml(sectionKey, tableau){
+  const cols = tableau.columns || [];
+  const rows = tableau.rows || [];
+  const ownerAttr = `data-section="${sectionKey}"`;
+  // <textarea> (pas <input>) pour les en-têtes ET les cellules — demande explicite
+  // ("quand je marque trop... il doit y avoir un retour à la ligne automatique") : un
+  // <input type="text"> ne peut JAMAIS wrapper son contenu sur plusieurs lignes (champ
+  // mono-ligne par nature, quel que soit le CSS white-space), il fallait donc changer
+  // d'élément, pas juste de style. autoGrowTextarea() s'applique déjà à TOUT textarea
+  // de la fiche (voir wireAnalyseSectionEvents(), passage générique) — aucun câblage
+  // supplémentaire nécessaire ici, et .value fonctionne identiquement sur <textarea>
+  // et <input> donc les listeners existants (analyse-table-col-input/-cell) marchent
+  // sans modification. rows="1" = hauteur de départ minimale, autoGrowTextarea()
+  // l'agrandit ensuite selon le contenu réel.
+  return `<div class="analyse-table-editor">
+    <div class="analyse-table-scroll">
+      <table>
+        <thead><tr>
+          ${cols.map((c, ci) => `<th><textarea rows="1" class="analyse-table-col-input" ${ownerAttr} data-col="${ci}" placeholder="Colonne">${(c || '').replace(/</g, '&lt;')}</textarea><button type="button" class="analyse-table-col-del" ${ownerAttr} data-col="${ci}" title="Supprimer la colonne">✕</button></th>`).join('')}
+          <th class="analyse-table-addcol-cell"><button type="button" class="analyse-table-addcol" ${ownerAttr} title="Ajouter une colonne">+ Colonne</button></th>
+        </tr></thead>
+        <tbody>
+          ${rows.map((row, ri) => `<tr>
+            ${cols.map((_, ci) => `<td><textarea rows="1" class="analyse-table-cell" ${ownerAttr} data-row="${ri}" data-col="${ci}">${(row[ci] || '').replace(/</g, '&lt;')}</textarea></td>`).join('')}
+            <td><button type="button" class="analyse-table-row-del" ${ownerAttr} data-row="${ri}" title="Supprimer la ligne">✕</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <button type="button" class="cerveau-btn-cancel analyse-table-addrow" ${ownerAttr}>+ Ajouter une ligne</button>
+  </div>`;
+}
+// Sous-groupes nommés à l'intérieur d'UNE section (secteursActivite pour l'instant) —
+// demande explicite ("créer les secteurs pour ranger les images dans chacun") : un titre
+// + ses propres images, sans toucher au bloc texte+images générique au-dessus (les deux
+// coexistent, purement additif). data-section+data-groupe (jamais data-key seul, pour ne
+// pas collisionner avec le bloc générique) résolus par analyseImagesArrayFromEl().
+// Sous-secteurs (demande explicite : "sur Vinci, j'ai un secteur Concessions, j'ai
+// besoin de sous-secteurs Aéroports/Autoroutes/Vinci Highway/Autres concessions...")
+// — un 2e niveau de nesting SOUS chaque groupe (secteur), même forme {titre, texte,
+// images} qu'un groupe, pas de 3e niveau demandé. data-sous en PLUS de data-section/
+// data-groupe (jamais seul) pour ne pas collisionner avec les attributs du groupe
+// parent — résolu par analyseImagesArrayFromEl() (le cas data-sous est vérifié AVANT
+// le cas groupe seul, sinon un élément de sous-secteur serait mal résolu vers les
+// images du groupe parent).
+function analyseGroupeSousSecteursHtml(sectionKey, groupeIdx, sousSecteurs){
+  return `<div class="analyse-groupe-sous-liste">
+    ${(sousSecteurs || []).map((sub, si) => {
+      const ownerAttr = `data-section="${sectionKey}" data-groupe="${groupeIdx}" data-sous="${si}"`;
+      return `<div class="analyse-groupe-sous">
+        <div class="analyse-groupe-head">
+          <input type="text" class="analyse-groupe-sous-titre" ${ownerAttr} placeholder="Titre du sous-secteur…" value="${(sub.titre || '').replace(/"/g, '&quot;')}">
+          <button type="button" class="analyse-groupe-sous-del" ${ownerAttr} title="Supprimer ce sous-secteur">✕</button>
+        </div>
+        <textarea class="analyse-groupe-sous-texte" ${ownerAttr} placeholder="Texte…">${(sub.texte || '').replace(/</g, '&lt;')}</textarea>
+        ${analyseImagesHtml(sub.images || [], ownerAttr)}
+        ${analyseImageAddRowHtml(ownerAttr)}
+      </div>`;
+    }).join('')}
+    <button type="button" class="cerveau-btn-cancel analyse-groupe-sous-add" data-section="${sectionKey}" data-groupe="${groupeIdx}">+ Ajouter un sous-secteur</button>
+  </div>`;
+}
+function analyseSectionGroupesHtml(sectionKey, groupes){
+  return `<div class="analyse-section-groupes">
+    ${groupes.map((g, i) => {
+      const ownerAttr = `data-section="${sectionKey}" data-groupe="${i}"`;
+      return `<div class="analyse-groupe">
+        <div class="analyse-groupe-head">
+          <input type="text" class="analyse-groupe-titre" ${ownerAttr} placeholder="Titre du secteur…" value="${(g.titre || '').replace(/"/g, '&quot;')}">
+          <button type="button" class="analyse-groupe-del" ${ownerAttr} title="Supprimer ce secteur">✕</button>
+        </div>
+        <textarea class="analyse-groupe-texte" ${ownerAttr} placeholder="Texte…">${(g.texte || '').replace(/</g, '&lt;')}</textarea>
+        ${analyseImagesHtml(g.images || [], ownerAttr)}
+        ${analyseImageAddRowHtml(ownerAttr)}
+        ${analyseGroupeSousSecteursHtml(sectionKey, i, g.sousSecteurs || [])}
+      </div>`;
+    }).join('')}
+    <button type="button" class="cerveau-btn-cancel analyse-groupe-add" data-section="${sectionKey}">+ Ajouter un secteur</button>
+  </div>`;
+}
+// Sélecteur à cocher des ratios financiers (voir ANALYSE_FICHE_RATIO_CATALOG) — la
+// grille en dessous est purement un aperçu en direct, jamais sauvegardée en tant que
+// telle (seule la LISTE des clés cochées l'est, dans data.ratiosSelectionnes).
+function analyseSectionRatioSelectorHtml(selectedKeys){
+  return `<div class="analyse-ratio-selector">
+    <div class="analyse-ratio-checks">${ANALYSE_FICHE_RATIO_CATALOG.map(r =>
+      `<label class="analyse-ratio-check"><input type="checkbox" data-ratio-key="${r.key}"${selectedKeys.includes(r.key) ? ' checked' : ''}> ${r.label}</label>`
+    ).join('')}</div>
+    <div class="ratio-grid analyse-ratio-live-grid">${analyseFicheSelectedRatiosHtml(analyseEntite, selectedKeys)}</div>
+  </div>`;
+}
+// Capture le graphique boursier (lightweight-charts, pas un canvas Chart.js — API
+// distincte) à une taille FORCÉE, même technique que captureWolfLaboChartHiRes() :
+// autoSize doit être désactivé le temps du resize manuel (confirmé en test ailleurs
+// dans ce fichier : avec autoSize actif, resize() est silencieusement ignoré). Sans
+// forcedW/forcedH, capture à 2× la taille CSS actuelle (comme les autres graphiques).
+// BUG CORRIGÉ (trouvé en testant après un retour utilisateur "tu as réduit la plage
+// sur les graphiques, tu as mis 2022 à 2026") : lightweight-charts recalcule la plage
+// de dates VISIBLE en fonction de la largeur du canvas dès qu'on appelle resize() — un
+// resize vers une largeur plus étroite que l'affichage à l'écran perd donc les années
+// les plus anciennes de l'historique, silencieusement, avant même la capture. Confirmé
+// en test direct : getVisibleLogicalRange() changeait bien de valeur après resize(820,
+// 760) seul. Fix : mémoriser la plage AVANT le resize, la réappliquer explicitement
+// APRÈS (avant takeScreenshot()) — puis la réappliquer une 2e fois après le resize de
+// retour à la taille d'origine, pour ne pas non plus décaler le graphique affiché à
+// l'écran après l'export.
+function captureStockChartHiRes(forcedW, forcedH){
+  if (!stockCandleChart || typeof stockCandleChart.takeScreenshot !== 'function') return null;
+  const holder = document.getElementById('chartStockCandle');
+  if (!holder) return null;
+  const origW = holder.clientWidth, origH = holder.clientHeight;
+  if (!origW || !origH) return null;
+  const w = forcedW || origW * 2, h = forcedH || origH * 2;
+  const timeScale = stockCandleChart.timeScale();
+  const visibleRange = timeScale.getVisibleLogicalRange();
+  try{
+    stockCandleChart.applyOptions({ autoSize:false });
+    stockCandleChart.resize(w, h);
+    if (visibleRange) timeScale.setVisibleLogicalRange(visibleRange);
+    const dataUrl = stockCandleChart.takeScreenshot().toDataURL('image/png');
+    stockCandleChart.resize(origW, origH);
+    if (visibleRange) timeScale.setVisibleLogicalRange(visibleRange);
+    stockCandleChart.applyOptions({ autoSize:true });
+    return dataUrl;
+  }catch(e){
+    try{
+      stockCandleChart.resize(origW, origH);
+      if (visibleRange) timeScale.setVisibleLogicalRange(visibleRange);
+      stockCandleChart.applyOptions({ autoSize:true });
+    }catch(e2){ /* ignore */ }
+    return null;
+  }
+}
+// Instantané d'UN graphique de l'onglet Analyse par sa clé (voir ANALYSE_CHART_EXPORT_LIST) :
+// 'stock' est lightweight-charts (captureStockChartHiRes(), pas un canvas Chart.js —
+// API distincte de celle utilisée par les 8 autres, voir chartToPrintDataUrl()), les 8
+// autres sont chartInstances[key] (Chart.js), même mécanisme que
+// exportAnalyseFullAsPdf()/printAnalyseChartHtml() ailleurs dans ce fichier.
+function analyseFicheChartDataUrl(key, forcedSize){
+  if (key === 'stock'){
+    return captureStockChartHiRes(forcedSize && forcedSize.width, forcedSize && forcedSize.height);
+  }
+  const chart = chartInstances[key];
+  return chart ? chartToPrintDataUrl(chart, forcedSize) : null;
+}
+// Sélecteur à cocher des graphiques (voir ANALYSE_CHART_EXPORT_LIST) — contrairement aux
+// ratios (calculés depuis companies[nom], toujours disponibles), un graphique n'existe
+// QUE si l'entreprise de la fiche est actuellement affichée dans l'onglet Analyse — pas
+// de seconde instance Chart.js/lightweight-charts dédiée à la fiche. Message explicite
+// plutôt qu'un échec silencieux si ce n'est pas le cas.
+function analyseSectionChartSelectorHtml(selectedKeys){
+  const checks = `<div class="analyse-ratio-checks">${ANALYSE_CHART_EXPORT_LIST.map(([key, label]) =>
+    `<label class="analyse-ratio-check"><input type="checkbox" data-chart-key="${key}"${selectedKeys.includes(key) ? ' checked' : ''}> ${escapeHtml(label)}</label>`
+  ).join('')}</div>`;
+  if (!selectedKeys.length) return `<div class="analyse-chart-selector">${checks}</div>`;
+  if (analyseEntite !== activeCompany){
+    return `<div class="analyse-chart-selector">${checks}<p class="analyse-hint analyse-chart-selector-warn">⚠ Ouvre d'abord « ${escapeHtml(analyseEntite)} » dans l'onglet Analyse pour insérer ses graphiques ici (l'onglet affiche actuellement ${activeCompany ? escapeHtml(activeCompany) : 'aucune entreprise'}).</p></div>`;
+  }
+  const thumbs = selectedKeys.map(key => {
+    const label = (ANALYSE_CHART_EXPORT_LIST.find(([k]) => k === key) || [key, key])[1];
+    const url = analyseFicheChartDataUrl(key);
+    return url ? `<div class="analyse-fiche-chart-thumb"><img src="${url}" alt="${escapeHtml(label)}" data-zoom-src="${url.replace(/"/g, '&quot;')}"><div class="analyse-fiche-chart-label">${escapeHtml(label)}</div></div>` : '';
+  }).filter(Boolean).join('');
+  return `<div class="analyse-chart-selector">${checks}<div class="analyse-fiche-charts-grid">${thumbs}</div></div>`;
 }
 
 function analyseChartSectionHtml(key, rows){
@@ -13700,114 +16323,579 @@ function analyseChartSectionHtml(key, rows){
   </div>`;
 }
 
-function analyseConcurrentsHtml(list){
+// Ancien bloc "Concurrents" (liste plate) retiré de l'affichage — demande explicite
+// ("les concurrents par secteur, c'est les concurrents, on garde juste ça") : un seul
+// concept désormais, "Concurrents par secteur". v.concurrents (le champ de données) est
+// gardé et JAMAIS effacé — voir la migration additive dans renderAnalyse() qui bascule
+// son contenu dans v.concurrentSecteurs une fois, aucune donnée saisie n'est perdue.
+// Concurrents PAR SECTEUR — demande explicite ("je puisse faire des concurrents par
+// secteur... ajouter un secteur où je puisse mettre le titre et dedans du texte, des
+// images, des logos, des concurrents") : un bloc ADDITIF à côté de la liste plate
+// ci-dessus (v.concurrents, jamais touchée, jamais migrée — aucune donnée existante ne
+// bouge), dans un champ séparé v.concurrentSecteurs. Chaque secteur a un titre + sa
+// propre liste de concurrents, MÊME structure/rendu par concurrent (nom/texte/images)
+// que analyseConcurrentsHtml() ci-dessus — data-csector (index du secteur) + data-cidx
+// (index du concurrent dans ce secteur) pour ne pas collisionner avec data-competitor
+// (liste plate) ni data-groupe (secteursActivite).
+// Diagramme visuel (une boîte par secteur/pôle + puces de ses concurrents) — demande
+// explicite après retour sur la 1re version ("le graphique... comment sont positionnés
+// ses concurrents dans chacun des secteurs" — pas un simple % du CA, qui fait doublon
+// avec Revenus par secteur d'activité). Purement dérivé de v.concurrentSecteurs, aucune
+// donnée nouvelle à saisir : le titre/résumé/liste de concurrents déjà remplis plus bas
+// alimentent directement ce résumé visuel en haut de la section.
+function concurrentSecteursDiagramHtml(secteurs){
+  if (!secteurs || !secteurs.length) return '';
+  return `<div class="cv-diagram">${secteurs.map(sec => `
+    <div class="cv-box">
+      <div class="cv-box-nom">${escapeHtml(sec.titre || 'Secteur')}</div>
+      ${sec.texte ? `<p class="cv-box-desc">${escapeHtml(sec.texte)}</p>` : ''}
+      ${(sec.concurrents || []).length ? `<div class="cv-competitor-chips">${(sec.concurrents || []).map(c => `<span class="cv-competitor-chip">${escapeHtml(c.nom || 'Sans nom')}</span>`).join('')}</div>` : ''}
+    </div>`).join('')}</div>`;
+}
+function analyseConcurrentSecteursHtml(secteurs){
   return `<div class="analyse-section">
-    <h4>Concurrents</h4>
-    <p class="analyse-hint">Au moins 3-4 fiches : logo/image produit, description rapide</p>
-    <div class="analyse-competitors">${list.map((c, i) => `
-      <div class="analyse-competitor">
-        <input type="text" class="analyse-competitor-nom" data-idx="${i}" placeholder="Nom du concurrent" value="${(c.nom || '').replace(/"/g, '&quot;')}">
-        <textarea class="analyse-competitor-texte" data-idx="${i}" placeholder="Description…">${(c.texte || '').replace(/</g, '&lt;')}</textarea>
-        ${analyseImagesHtml(c.images || [], `data-competitor="${i}"`)}
-        ${analyseImageAddRowHtml(`data-competitor="${i}"`)}
-        <div><button class="analyse-competitor-del" data-idx="${i}">Supprimer ce concurrent</button></div>
-      </div>`).join('')}</div>
-    <button class="cerveau-btn-cancel" id="analyseAddCompetitor">+ Ajouter un concurrent</button>
+    <h4>Concurrents par secteur</h4>
+    <p class="analyse-hint">Regroupe les concurrents par secteur/activité — un titre par secteur, un résumé de ce que fait ce secteur/sous-secteur, puis autant de fiches concurrent (texte, logo/images) que besoin.</p>
+    ${concurrentSecteursDiagramHtml(secteurs)}
+    ${secteurs.map((sec, si) => `
+      <div class="analyse-concurrent-secteur">
+        <div class="analyse-groupe-head">
+          <input type="text" class="analyse-csector-titre" data-csector="${si}" placeholder="Titre du secteur…" value="${(sec.titre || '').replace(/"/g, '&quot;')}">
+          <button type="button" class="analyse-csector-del" data-csector="${si}" title="Supprimer ce secteur">✕</button>
+        </div>
+        <textarea class="analyse-csector-texte" data-csector="${si}" placeholder="Résumé : ce que fait ce secteur/sous-secteur…">${(sec.texte || '').replace(/</g, '&lt;')}</textarea>
+        <div class="analyse-competitors">${(sec.concurrents || []).map((c, ci) => `
+          <div class="analyse-competitor">
+            <input type="text" class="analyse-ccompetitor-nom" data-csector="${si}" data-cidx="${ci}" placeholder="Nom du concurrent" value="${(c.nom || '').replace(/"/g, '&quot;')}">
+            <textarea class="analyse-ccompetitor-texte" data-csector="${si}" data-cidx="${ci}" placeholder="Description…">${(c.texte || '').replace(/</g, '&lt;')}</textarea>
+            ${analyseImagesHtml(c.images || [], `data-csector="${si}" data-cidx="${ci}"`)}
+            ${analyseImageAddRowHtml(`data-csector="${si}" data-cidx="${ci}"`)}
+            <div><button class="analyse-ccompetitor-del" data-csector="${si}" data-cidx="${ci}">Supprimer ce concurrent</button></div>
+          </div>`).join('')}</div>
+        <button type="button" class="cerveau-btn-cancel analyse-ccompetitor-add" data-csector="${si}">+ Ajouter un concurrent dans ce secteur</button>
+      </div>`).join('')}
+    <button type="button" class="cerveau-btn-cancel analyse-csector-add">+ Ajouter un secteur de concurrents</button>
   </div>`;
 }
 
-// V2 "goulots d'étranglement" (plan wild-seeking-clover.md, §1/§3) — bloc structuré
-// (pas analyseSectionHtml, ce sont des champs numériques/select + texte, pas texte+
-// images). Bottleneck = jugement manuel éditable (valeur/confiance/portée/sources) ;
-// Quality/Valuation = calculés (computeQualityScore/computeValuationScore), lecture
-// seule ici — jamais saisis à la main, voir §2 du plan.
-function analyseScoreValueHtml(val){
-  return val == null ? '<span class="analyse-score-nd">Donnée insuffisante</span>' : `<span class="analyse-score-value">${val}/100</span>`;
+// ============================================================
+// WOLF SCORE — barème "Universal Quality" (remplace le précédent Moat/Qualité 5×20 —
+// demande explicite de l'utilisateur, barème envoyé point par point). 5 modules à
+// poids VARIABLES par critère (plus un /20 uniforme), dont la somme fait exactement
+// /100 — le score global EST cette somme, pas une moyenne. La Valorisation (module
+// séparé, saisie manuelle /100) N'EST PLUS moyennée dans ce score — affichée à côté,
+// indépendante (décision explicite : ce barème est un score de QUALITÉ seul).
+// Ici TOUT est saisi manuellement par l'utilisateur — un score PAR ENTREPRISE (pas par
+// fiche/version de l'Analyse développée), rempli et sauvegardé depuis l'onglet Analyse ;
+// la fiche Analyse développée du Cerveau numérique se contente de LIRE cette même
+// donnée (jamais une copie séparée), pour qu'un remplissage ne se désynchronise jamais
+// entre les deux endroits. Un critère non rempli compte pour 0 dans le total du module
+// (le score grandit au fur et à mesure du remplissage, jamais bloqué sur "N/D").
+const ANALYSE_SCORE_MOAT_CRITERIA = [ // 1 · Avantage compétitif — /25
+  { key:'pouvoirPrix', label:'Pouvoir de fixation des prix', max:5, hint:"Capacité à augmenter ses prix sans détruire les volumes." },
+  { key:'coutsTransfert', label:'Coûts de transfert / fidélité client', max:4, hint:"Complexité, coût ou friction pour un client qui voudrait basculer vers un concurrent." },
+  { key:'avantageCouts', label:'Avantage de coûts / échelle', max:4, hint:"Coûts structurels, économies d'échelle, réseau de distribution ou taille critique inaccessibles aux rivaux." },
+  { key:'differenciation', label:'Différenciation / actifs uniques', max:4, hint:"Marque, technologie, rareté ou actif difficilement reproductible par un concurrent." },
+  { key:'positionChaine', label:'Position dans la chaîne de valeur', max:4, hint:"Rareté ou position incontournable, difficile à contourner par ses clients ou fournisseurs." },
+  { key:'barrieresEntree', label:"Barrières à l'entrée", max:4, hint:"Réglementation, capital nécessaire, savoir-faire ou licence qui protègent l'activité des nouveaux entrants." }
+];
+const ANALYSE_SCORE_QUALITE_CRITERIA = [ // 2 · Qualité économique — /25
+  { key:'croissanceOrganique', label:'Croissance organique', max:4, hint:"Dynamique et régularité de la progression des ventes, hors croissance externe." },
+  { key:'marges', label:'Marges / rentabilité opérationnelle', max:4, hint:'Niveau et solidité de la rentabilité.' },
+  { key:'roic', label:'ROIC / ROCE', max:6, hint:"Le capital réinvesti crée-t-il vraiment de la valeur, ou seulement de la croissance ?" },
+  { key:'conversionFcf', label:'Conversion bénéfice → FCF', max:5, hint:"Le bénéfice comptable se transforme-t-il réellement en cash disponible ?" },
+  { key:'recurrence', label:'Récurrence / visibilité des revenus', max:3, hint:"Part des revenus prévisible/contractuelle plutôt que ponctuelle." },
+  { key:'resilienceResultats', label:'Résilience des résultats', max:3, hint:"Régularité des résultats d'une année à l'autre, sans à-coups." }
+];
+const ANALYSE_SCORE_BILAN_CRITERIA = [ // 3 · Bilan & résilience — /20
+  { key:'structureDette', label:'Structure de dette', max:5, hint:"La dette est-elle supportable par les flux de trésorerie du business, pas juste son niveau brut ?" },
+  { key:'liquidite', label:'Liquidité', max:3, hint:"Capacité à honorer ses engagements courts termes." },
+  { key:'resilienceCrise', label:'Résilience en crise', max:4, hint:"Comportement du business quand l'environnement se dégrade." },
+  { key:'besoinCapital', label:'Besoin en capital', max:4, hint:"Intensité capitalistique nécessaire pour maintenir/développer l'activité." },
+  { key:'risqueRefinancement', label:'Risque de refinancement / bilan', max:4, hint:"Échéancier de la dette, dépendance aux marchés de capitaux." }
+];
+const ANALYSE_SCORE_MANAGEMENT_CRITERIA = [ // 4 · Management & allocation du capital — /20
+  { key:'allocationCapital', label:'Allocation du capital', max:5, hint:"Quand le management génère 1 € de plus, sait-il où le mettre ?" },
+  { key:'rendementInvestissements', label:'Rendement des investissements / acquisitions', max:4, hint:"Les capitaux déployés (croissance interne ou acquisitions) créent-ils de la valeur ?" },
+  { key:'disciplineFinanciere', label:'Discipline financière', max:3, hint:"Rigueur dans la gestion du capital, pas de dépenses/dettes inconsidérées." },
+  { key:'alignementActionnaires', label:'Alignement avec les actionnaires', max:3, hint:"Intérêts du management alignés avec ceux des actionnaires minoritaires." },
+  { key:'gouvernance', label:'Gouvernance & transparence', max:3, hint:"Qualité du reporting, indépendance du conseil, historique de communication." },
+  { key:'visionStrategique', label:'Vision stratégique', max:2, hint:"Clarté et cohérence de la stratégie à moyen/long terme." }
+];
+const ANALYSE_SCORE_CROISSANCE_CRITERIA = [ // 5 · Croissance future & durabilité — /10
+  { key:'runway', label:'Runway / marché adressable', max:3, hint:"Taille du marché encore accessible à conquérir." },
+  { key:'reinvestissement', label:'Réinvestissement rentable possible', max:3, hint:"Capacité à redéployer ses profits à un rendement attractif." },
+  { key:'tendances', label:'Tendances structurelles favorables', max:2, hint:"Le business est-il porté par des tendances de fond plutôt qu'à contre-courant ?" },
+  { key:'durabiliteModele', label:'Durabilité du modèle économique', max:2, hint:"Le modèle tient-il sur 10-20 ans, ou dépend-il de conditions temporaires ?" }
+];
+// Modules dans l'ordre d'affichage — un seul endroit à modifier pour ajouter/réordonner
+// un module (rendu carte Analyse, bloc lecture seule fiche, export SVG : les 3 lisent
+// ce tableau plutôt que de lister les modules en dur chacun de leur côté).
+const ANALYSE_SCORE_MODULES = [
+  { key:'moat', title:'1 · Avantage compétitif', criteria:ANALYSE_SCORE_MOAT_CRITERIA, max:25 },
+  { key:'qualite', title:'2 · Qualité économique', criteria:ANALYSE_SCORE_QUALITE_CRITERIA, max:25 },
+  { key:'bilan', title:'3 · Bilan & résilience', criteria:ANALYSE_SCORE_BILAN_CRITERIA, max:20 },
+  { key:'management', title:'4 · Management & allocation du capital', criteria:ANALYSE_SCORE_MANAGEMENT_CRITERIA, max:20 },
+  { key:'croissance', title:'5 · Croissance future & durabilité', criteria:ANALYSE_SCORE_CROISSANCE_CRITERIA, max:10 }
+];
+const ANALYSE_SCORE_LS_KEY = 'wolfAnalysisAnalyseScores';
+const ANALYSE_SCORE_BASELINE_URL = 'data/analyse-scores.json';
+let analyseScoreStore = {};
+
+function blankAnalyseScoreEntry(){
+  const entry = { valorisation:null };
+  ANALYSE_SCORE_MODULES.forEach(m => {
+    entry[m.key] = {};
+    m.criteria.forEach(c => { entry[m.key][c.key] = null; });
+  });
+  return entry;
 }
-function analyseScoresHtml(v){
-  const s = v.scores;
-  const quality = computeQualityScore(analyseEntite);
-  const valuation = computeValuationScore(analyseEntite);
-  return `<div class="analyse-section analyse-scores-section">
-    <h4>Scores — Bottleneck / Quality / Valuation</h4>
-    <p class="analyse-hint">Bottleneck : jugement qualitatif à saisir et sourcer ci-dessous — un score de conviction analytique, pas une mesure précise au point près. Quality/Valuation : calculés automatiquement depuis les mêmes données que l'onglet Classement, non modifiables ici.</p>
-    <div class="analyse-scores-grid">
-      <div class="analyse-score-card">
-        <div class="analyse-score-head"><span class="analyse-score-label">🎯 Bottleneck</span>${analyseScoreValueHtml(s.bottleneck.value)}</div>
-        <div class="analyse-score-row">
-          <input type="number" min="0" max="100" class="analyse-score-input" data-score-field="bottleneck-value" placeholder="0-100" value="${s.bottleneck.value != null ? s.bottleneck.value : ''}">
-          <select class="analyse-score-select" data-score-field="bottleneck-confidence">
-            <option value="">Confiance…</option>
-            <option value="faible"${s.bottleneck.confidence === 'faible' ? ' selected' : ''}>Confiance faible</option>
-            <option value="moyenne"${s.bottleneck.confidence === 'moyenne' ? ' selected' : ''}>Confiance moyenne</option>
-            <option value="forte"${s.bottleneck.confidence === 'forte' ? ' selected' : ''}>Confiance forte</option>
-          </select>
-          <select class="analyse-score-select" data-score-field="bottleneck-scope">
-            <option value="">Portée du goulot…</option>
-            <option value="local"${v.bottleneckScope === 'local' ? ' selected' : ''}>Local (limité à sa chaîne)</option>
-            <option value="systemique"${v.bottleneckScope === 'systemique' ? ' selected' : ''}>Systémique (transversal)</option>
-          </select>
-        </div>
-        <textarea class="analyse-score-textarea" data-score-field="bottleneck-rationale" placeholder="Justification (indispensabilité, substituts, barrières à l'entrée, durabilité...)">${escapeHtml(s.bottleneck.rationale || '')}</textarea>
-        <div class="analyse-score-sources">
-          ${(s.bottleneck.sources || []).map((src, i) => `<div class="analyse-score-source-row">
-            <a href="${escapeHtml(src.url || '#')}" target="_blank" rel="noopener">${escapeHtml(src.title || src.url || 'Source')}</a>
-            <span class="analyse-score-source-claim">${escapeHtml(src.claim || '')}</span>
-            <button type="button" data-remove-source="${i}" title="Retirer">✕</button>
-          </div>`).join('') || '<p class="chart-hint" style="margin:4px 0;">Aucune source enregistrée.</p>'}
-          <div class="analyse-score-source-add">
-            <input type="text" placeholder="Titre" data-source-input="title">
-            <input type="text" placeholder="URL" data-source-input="url">
-            <input type="text" placeholder="Affirmation vérifiée (ex. « part de marché 92% »)" data-source-input="claim">
-            <button type="button" data-action="add-source">+ Source</button>
+// Rétro-compat : une entrée créée avant ce barème porte encore ses anciennes clés
+// (ex. entry.moat.actifIncorporel) — les anciens critères ne correspondent plus à rien
+// dans le nouveau barème (questions différentes, poids différents), donc AUCUNE
+// tentative de conversion automatique (produirait un score trompeur). Ces anciennes
+// clés restent simplement dans l'objet, ignorées par le rendu — rien n'est supprimé du
+// JSON/localStorage, juste plus affiché ; le nouveau barème démarre à zéro, à
+// re-remplir. Voir demande explicite de l'utilisateur (barème "Universal Quality").
+function analyseScoreEntryFor(nom){
+  if (!analyseScoreStore[nom]) analyseScoreStore[nom] = blankAnalyseScoreEntry();
+  const e = analyseScoreStore[nom];
+  ANALYSE_SCORE_MODULES.forEach(m => {
+    if (!e[m.key]) e[m.key] = {};
+    m.criteria.forEach(c => { if (!(c.key in e[m.key])) e[m.key][c.key] = null; });
+  });
+  if (e.valorisation === undefined) e.valorisation = null;
+  return e;
+}
+function analyseScoreModuleTotal(values){
+  return Object.values(values).reduce((s, v) => s + (v || 0), 0);
+}
+// global = SOMME directe des 5 modules (leurs max s'additionnent déjà à 100, voir
+// ANALYSE_SCORE_MODULES) — plus une moyenne comme l'ancien système à 3 modules.
+// Valorisation reste une note séparée, affichée à côté, jamais dans cette somme
+// (décision explicite : ce score est un score de QUALITÉ seul).
+function analyseScoreGlobal(entry){
+  const totals = {};
+  let global = 0;
+  ANALYSE_SCORE_MODULES.forEach(m => { const t = analyseScoreModuleTotal(entry[m.key]); totals[m.key] = t; global += t; });
+  return { totals, valorisation: entry.valorisation || 0, global };
+}
+function persistAnalyseScoreLocal(){
+  try{ localStorage.setItem(ANALYSE_SCORE_LS_KEY, JSON.stringify(analyseScoreStore)); }catch(e){ /* quota/navigateur privé */ }
+}
+async function loadAnalyseScoreBaseline(){
+  try{
+    const res = await fetch(ANALYSE_SCORE_BASELINE_URL, { cache:'no-store' });
+    if (res.ok){
+      const json = await res.json();
+      if (json && typeof json === 'object') analyseScoreStore = Object.assign({}, json, analyseScoreStore);
+    }
+  }catch(e){ /* fichier absent ou fetch bloqué (ex. file://) — non bloquant */ }
+  try{
+    const raw = localStorage.getItem(ANALYSE_SCORE_LS_KEY);
+    if (raw) analyseScoreStore = Object.assign({}, analyseScoreStore, JSON.parse(raw));
+  }catch(e){ /* localStorage indisponible ou JSON corrompu */ }
+  if (activeCompany) renderAnalyseScoreCard(activeCompany);
+}
+function exportAnalyseScores(){
+  const blob = new Blob([JSON.stringify(analyseScoreStore, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'wolf-analysis-scores.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ============================================================
+// CONCURRENTS & PARTS DE MARCHÉ — section 2 de l'onglet Analyse (sous le Wolf Score),
+// demande explicite après vérification qu'aucune donnée FMP équivalente n'existe (FMP
+// ne donne jamais de part de marché, et la marge par segment encore moins — confirmé
+// sur documents-DG.PA.json : revenueGeo/revenueProduct valent null pour VINCI, et même
+// renseignés ces endpoints ne donnent que du chiffre d'affaires, jamais une marge par
+// segment). Saisie 100% manuelle, même pattern de persistance que les autres stores par
+// entreprise du site (localStorage + socle data/*.json + export JSON).
+const COMPETITEURS_LS_KEY = 'wolfAnalysisCompetiteurs';
+const COMPETITEURS_BASELINE_URL = 'data/competiteurs.json';
+let competiteursStore = {};
+function competiteursEntryFor(nom){
+  if (!competiteursStore[nom]) competiteursStore[nom] = [];
+  return competiteursStore[nom];
+}
+function persistCompetiteursLocal(){
+  try{ localStorage.setItem(COMPETITEURS_LS_KEY, JSON.stringify(competiteursStore)); }catch(e){ /* quota/navigateur privé */ }
+}
+async function loadCompetiteursBaseline(){
+  try{
+    const res = await fetch(COMPETITEURS_BASELINE_URL, { cache:'no-store' });
+    if (res.ok){
+      const json = await res.json();
+      if (json && typeof json === 'object') competiteursStore = Object.assign({}, json, competiteursStore);
+    }
+  }catch(e){ /* fichier absent ou fetch bloqué (ex. file://) — non bloquant */ }
+  try{
+    const raw = localStorage.getItem(COMPETITEURS_LS_KEY);
+    if (raw) competiteursStore = Object.assign({}, competiteursStore, JSON.parse(raw));
+  }catch(e){ /* localStorage indisponible ou JSON corrompu */ }
+  if (activeCompany) renderCompetitorsCard(activeCompany);
+}
+function exportCompetiteurs(){
+  const blob = new Blob([JSON.stringify(competiteursStore, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'wolf-analysis-competiteurs.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+function renderCompetitorsCard(nom){
+  const box = document.getElementById('competitorsCard');
+  if (!box) return;
+  if (!nom){ box.innerHTML = ''; return; }
+  const rows = competiteursEntryFor(nom);
+  box.innerHTML = `
+    <div class="analyse-score-card-head">
+      <div>
+        <h3>🏁 Concurrents &amp; parts de marché</h3>
+        <p class="chart-hint" style="margin:2px 0 0;">Saisie manuelle (rapport annuel, recherche) — aucune donnée FMP équivalente n'existe. Sauvegardée automatiquement.</p>
+      </div>
+      <button class="zoom-btn" id="competitorsExportJsonBtn" title="Exporter en JSON" aria-label="Exporter en JSON">⭳</button>
+      <button class="zoom-btn" id="competitorsPrintBtn" title="Exporter en PDF" aria-label="Exporter en PDF">🖨</button>
+    </div>
+    <div class="competitor-share-rows">
+      ${rows.length ? rows.map((c, i) => `
+      <div class="competitor-share-row">
+        <input type="text" class="competitor-share-nom" data-idx="${i}" placeholder="Concurrent" value="${(c.nom || '').replace(/"/g, '&quot;')}">
+        <input type="number" class="competitor-share-part" data-idx="${i}" min="0" max="100" step="0.1" placeholder="Part %" value="${c.partMarche != null ? c.partMarche : ''}">
+        <input type="text" class="competitor-share-commentaire" data-idx="${i}" placeholder="Commentaire…" value="${(c.commentaire || '').replace(/"/g, '&quot;')}">
+        <button type="button" class="competitor-share-del" data-idx="${i}" title="Supprimer">✕</button>
+      </div>`).join('') : '<p class="chart-hint">Aucun concurrent renseigné pour le moment.</p>'}
+    </div>
+    <button type="button" class="cerveau-btn-cancel" id="competitorsAddBtn">+ Ajouter un concurrent</button>`;
+  wireCompetitorsCard(nom);
+}
+function wireCompetitorsCard(nom){
+  const box = document.getElementById('competitorsCard');
+  if (!box) return;
+  const rows = competiteursEntryFor(nom);
+  // 'input' sans re-rendu (comme .analyse-textarea de la fiche Cerveau) — pas de perte
+  // de focus pendant la frappe ; seuls l'ajout/la suppression reconstruisent le DOM.
+  box.querySelectorAll('.competitor-share-nom').forEach(input => {
+    input.addEventListener('input', () => { rows[parseInt(input.dataset.idx, 10)].nom = input.value; persistCompetiteursLocal(); });
+  });
+  box.querySelectorAll('.competitor-share-part').forEach(input => {
+    input.addEventListener('input', () => {
+      rows[parseInt(input.dataset.idx, 10)].partMarche = input.value === '' ? null : Math.max(0, Math.min(100, parseFloat(input.value) || 0));
+      persistCompetiteursLocal();
+    });
+  });
+  box.querySelectorAll('.competitor-share-commentaire').forEach(input => {
+    input.addEventListener('input', () => { rows[parseInt(input.dataset.idx, 10)].commentaire = input.value; persistCompetiteursLocal(); });
+  });
+  box.querySelectorAll('.competitor-share-del').forEach(btn => {
+    btn.addEventListener('click', () => { rows.splice(parseInt(btn.dataset.idx, 10), 1); persistCompetiteursLocal(); renderCompetitorsCard(nom); });
+  });
+  const addBtn = document.getElementById('competitorsAddBtn');
+  if (addBtn) addBtn.addEventListener('click', () => { rows.push({ nom:'', partMarche:null, commentaire:'' }); persistCompetiteursLocal(); renderCompetitorsCard(nom); });
+  const jsonBtn = document.getElementById('competitorsExportJsonBtn');
+  if (jsonBtn) jsonBtn.addEventListener('click', exportCompetiteurs);
+  const printBtn = document.getElementById('competitorsPrintBtn');
+  if (printBtn) printBtn.addEventListener('click', () => exportCompetitorsCardAsPdf(nom));
+}
+function printCompetitorsRowsHtml(rows){
+  if (!rows || !rows.length) return '<p>Aucun concurrent renseigné.</p>';
+  return `<table class="print-table"><thead><tr><th>Concurrent</th><th>Part de marché</th><th>Commentaire</th></tr></thead><tbody>${rows.map(c =>
+    `<tr><td>${escapeHtml(c.nom || '—')}</td><td>${c.partMarche != null ? c.partMarche.toLocaleString('fr-FR') + ' %' : '—'}</td><td>${escapeHtml(c.commentaire || '')}</td></tr>`
+  ).join('')}</tbody></table>`;
+}
+function exportCompetitorsCardAsPdf(nom){
+  exportSectionAsPdf('Concurrents & parts de marché', nom, `<div class="print-section">${printCompetitorsRowsHtml(competiteursEntryFor(nom))}</div>`, companyLogoUrl(nom));
+}
+
+// --- Onglet Analyse : carte interactive (source de vérité, remplie ici) --------------
+function analyseScoreModuleFieldsHtml(module, values){
+  return module.criteria.map(c => `
+    <div class="analyse-score-field">
+      <label title="${c.hint.replace(/"/g,'&quot;')}">${c.label}</label>
+      <input type="number" min="0" max="${c.max}" class="analyse-score-input" data-score-module="${module.key}" data-score-key="${c.key}" placeholder="0-${c.max}" value="${values[c.key] != null ? values[c.key] : ''}">
+    </div>`).join('');
+}
+function analyseScoreCriterionMax(moduleKey, critKey){
+  const m = ANALYSE_SCORE_MODULES.find(x => x.key === moduleKey);
+  const c = m && m.criteria.find(x => x.key === critKey);
+  return c ? c.max : 20;
+}
+function renderAnalyseScoreCard(nom){
+  const box = document.getElementById('analyseScoreCard');
+  if (!box) return;
+  if (!nom){ box.innerHTML = ''; return; }
+  const entry = analyseScoreEntryFor(nom);
+  const g = analyseScoreGlobal(entry);
+  box.innerHTML = `
+    <div class="analyse-score-card-head">
+      <img src="${WOLF_LOGO_URL}" alt="" class="analyse-score-wolf">
+      <div>
+        <h3>🐺 Wolf Score</h3>
+        <p class="chart-hint" style="margin:2px 0 0;">5 modules à poids variables (25/25/20/20/10), la somme fait la note globale /100. Valorisation notée à part, indépendante. Saisie manuelle, sauvegardée automatiquement.</p>
+      </div>
+      <div class="analyse-score-global"><span class="analyse-score-global-value">${g.global}</span><span class="analyse-score-global-sub">/100</span></div>
+      <button class="zoom-btn" id="analyseScoreExportJsonBtn" title="Exporter tous les scores en JSON" aria-label="Exporter en JSON">⭳</button>
+      <button class="zoom-btn" id="analyseScorePngBtn" title="Exporter cette fiche en PNG" aria-label="Exporter en PNG">🖼️</button>
+      <button class="zoom-btn" id="analyseScoreJpegBtn" title="Exporter cette fiche en JPEG" aria-label="Exporter en JPEG">📷</button>
+      <button class="zoom-btn" id="analyseScorePrintBtn" title="Exporter cette fiche en PDF" aria-label="Exporter en PDF">🖨</button>
+    </div>
+    <div class="analyse-score-modules">
+      ${ANALYSE_SCORE_MODULES.map(m => `
+      <div class="analyse-score-module">
+        <div class="analyse-score-module-head"><h4>${m.title}</h4><span class="analyse-score-module-total">${g.totals[m.key]}/${m.max}</span></div>
+        <div class="analyse-score-fields">${analyseScoreModuleFieldsHtml(m, entry[m.key])}</div>
+      </div>`).join('')}
+      <div class="analyse-score-module">
+        <div class="analyse-score-module-head"><h4>Valorisation <span class="analyse-score-separate-tag">indépendante, hors score global</span></h4><span class="analyse-score-module-total">${g.valorisation}/100</span></div>
+        <div class="analyse-score-fields analyse-score-fields-single">
+          <div class="analyse-score-field">
+            <label>Note de valorisation</label>
+            <input type="number" min="0" max="100" class="analyse-score-input" data-score-module="valorisation" placeholder="0-100" value="${entry.valorisation != null ? entry.valorisation : ''}">
           </div>
+          <button type="button" class="cerveau-btn-cancel" id="analyseScoreValoAutoBtn" title="Calcule la note à partir du rendement à 5 ans du scénario Réaliste (onglet Valorisation) — 0% de rendement = 0/100, 20% ou plus = 100/100.">🎯 Calculer depuis le scénario réaliste</button>
         </div>
       </div>
-      <div class="analyse-score-card analyse-score-card-readonly">
-        <div class="analyse-score-head"><span class="analyse-score-label">💎 Quality</span>${analyseScoreValueHtml(quality.value)}</div>
-        <p class="analyse-score-rationale">${escapeHtml(quality.rationale || '')}</p>
-      </div>
-      <div class="analyse-score-card analyse-score-card-readonly">
-        <div class="analyse-score-head"><span class="analyse-score-label">💰 Valuation</span>${analyseScoreValueHtml(valuation.value)}</div>
-        <p class="analyse-score-rationale">${escapeHtml(valuation.rationale || '')}</p>
+    </div>`;
+  wireAnalyseScoreCard(nom);
+}
+
+// Principe de scoring — demande explicite : l'utilisateur remplissait cette note "un
+// peu au hasard" faute de repère objectif. Réutilise TEL QUEL le rendement à 5 ans du
+// scénario Réaliste déjà calculé pour l'onglet Valorisation (computeAnalyseScenarios,
+// qui lit en priorité le dernier objectif enregistré, sinon les curseurs en direct,
+// sinon l'historique — jamais un second calcul indépendant). Barème : 0% de rendement
+// annualisé estimé = aucune marge de sécurité = 0/100 ; 20% ou plus = excellente
+// opportunité = 100/100 (plafonné) ; linéaire entre les deux, un repère usuel en value
+// investing (≈15%/an est déjà considéré comme un bon objectif).
+function computeValorisationScoreFromRealiste(nom){
+  const scenarios = computeAnalyseScenarios(nom);
+  if (!scenarios) return null;
+  const realiste = scenarios.find(s => s.key === 'realiste');
+  if (!realiste || !realiste.result || realiste.result.rendement5A == null) return null;
+  const pct = realiste.result.rendement5A;
+  return Math.max(0, Math.min(100, Math.round(pct / 20 * 100)));
+}
+function wireAnalyseScoreCard(nom){
+  const box = document.getElementById('analyseScoreCard');
+  if (!box) return;
+  box.querySelectorAll('.analyse-score-input').forEach(input => {
+    input.addEventListener('change', () => {
+      const mod = input.dataset.scoreModule;
+      const entry = analyseScoreEntryFor(nom);
+      const max = mod === 'valorisation' ? 100 : analyseScoreCriterionMax(mod, input.dataset.scoreKey);
+      const n = input.value === '' ? null : Math.max(0, Math.min(max, parseInt(input.value, 10) || 0));
+      if (mod === 'valorisation') entry.valorisation = n;
+      else entry[mod][input.dataset.scoreKey] = n;
+      persistAnalyseScoreLocal();
+      renderAnalyseScoreCard(nom);
+      if (typeof renderCerveauGoulots === 'function' && document.getElementById('cerveauContent')) renderCerveauIfGoulotsOpen();
+    });
+  });
+  const printBtn = document.getElementById('analyseScorePrintBtn');
+  if (printBtn) printBtn.addEventListener('click', () => exportAnalyseScoreCardAsPdf(nom));
+  const jsonBtn = document.getElementById('analyseScoreExportJsonBtn');
+  if (jsonBtn) jsonBtn.addEventListener('click', exportAnalyseScores);
+  const pngBtn = document.getElementById('analyseScorePngBtn');
+  if (pngBtn) pngBtn.addEventListener('click', () => downloadWolfScoreImage(nom, 'png'));
+  const jpegBtn = document.getElementById('analyseScoreJpegBtn');
+  if (jpegBtn) jpegBtn.addEventListener('click', () => downloadWolfScoreImage(nom, 'jpeg'));
+  const valoAutoBtn = document.getElementById('analyseScoreValoAutoBtn');
+  if (valoAutoBtn) valoAutoBtn.addEventListener('click', () => {
+    const score = computeValorisationScoreFromRealiste(nom);
+    if (score == null){ alert("Impossible de calculer : aucun scénario Réaliste disponible pour cette entreprise (ouvre-la dans l'onglet Valorisation, ou enregistre un objectif, puis réessaie)."); return; }
+    const entry = analyseScoreEntryFor(nom);
+    entry.valorisation = score;
+    persistAnalyseScoreLocal();
+    renderAnalyseScoreCard(nom);
+    if (typeof renderCerveauGoulots === 'function' && document.getElementById('cerveauContent')) renderCerveauIfGoulotsOpen();
+  });
+}
+// Un rendu Cerveau numérique en fond (vue Goulots ouverte) doit refléter tout de suite
+// une note modifiée depuis l'onglet Analyse — no-op silencieux si la vue Goulots n'est
+// pas celle actuellement affichée.
+function renderCerveauIfGoulotsOpen(){
+  if (cerveauView && cerveauView.level === 'goulots') renderCerveau();
+}
+
+// --- Rendu partagé (carte Analyse, fiche Cerveau, export PDF) -----------------------
+function analyseScoreModuleReadonlyHtml(module, values, total){
+  return `<div class="analyse-score-module">
+    <div class="analyse-score-module-head"><h4>${module.title}</h4><span class="analyse-score-module-total">${total}/${module.max}</span></div>
+    <div class="analyse-score-fields">${module.criteria.map(c => `<div class="analyse-score-field"><label>${c.label}</label><span class="analyse-score-readonly-value">${values[c.key] != null ? values[c.key] : '—'}/${c.max}</span></div>`).join('')}</div>
+  </div>`;
+}
+function analyseScoreBlockHtml(nom){
+  const entry = analyseScoreEntryFor(nom);
+  const g = analyseScoreGlobal(entry);
+  return `<div class="analyse-section analyse-scores-section">
+    <div class="analyse-score-card-head">
+      <img src="${WOLF_LOGO_URL}" alt="" class="analyse-score-wolf">
+      <div><h4 style="margin:0;">🐺 Wolf Score</h4></div>
+      <div class="analyse-score-global"><span class="analyse-score-global-value">${g.global}</span><span class="analyse-score-global-sub">/100</span></div>
+    </div>
+    <div class="analyse-score-modules">
+      ${ANALYSE_SCORE_MODULES.map(m => analyseScoreModuleReadonlyHtml(m, entry[m.key], g.totals[m.key])).join('')}
+      <div class="analyse-score-module">
+        <div class="analyse-score-module-head"><h4>Valorisation <span class="analyse-score-separate-tag">indépendante, hors score global</span></h4><span class="analyse-score-module-total">${g.valorisation}/100</span></div>
       </div>
     </div>
   </div>`;
 }
-function wireAnalyseScoresEvents(){
-  const box = document.getElementById('analyseBody');
-  const v = currentAnalyseVersion();
-  const valueInput = box.querySelector('[data-score-field="bottleneck-value"]');
-  if (valueInput) valueInput.addEventListener('change', () => {
-    const n = parseInt(valueInput.value, 10);
-    v.scores.bottleneck.value = (valueInput.value === '' || isNaN(n)) ? null : Math.max(0, Math.min(100, n));
-    saveAnalyseVersion();
+// Calcule les 3 scénarios pour N'IMPORTE QUELLE entreprise (pas seulement
+// activeCompany) — demande explicite : "je t'ai demandé de mettre mes trois
+// scénarios... tu n'as pas mis" après une 1ère version qui affichait un message
+// d'avertissement tant que l'entreprise n'était pas ouverte dans l'onglet Analyse
+// (comme pour les graphiques historiques), jugé à tort comme "rien n'est affiché".
+// Ici la donnée de base (FCF actuel, CAGR/médiane historiques, prix actuel) vient de
+// companies[nom] via valorisationInputs() — TOUJOURS disponible, comme pour les
+// ratios sélectionnés (analyseFicheSelectedRatiosHtml). Si l'entreprise EST celle
+// actuellement ouverte dans l'onglet Valorisation, on relit scenarioValues (déjà
+// ajusté par l'utilisateur via les curseurs) pour une mise à jour en temps réel
+// ("si jamais je les modifie, il faut qu'ils se mettent à jour en temps réel") ;
+// sinon on retombe sur les mêmes valeurs par défaut que renderValorisation()
+// (historique ± delta par scénario), jamais une simple case vide.
+function computeAnalyseScenarios(nom){
+  const hist = companies[nom];
+  if (!hist || !hist.length) return null;
+  const latest = hist[hist.length - 1];
+  const prixActuel = latest.prixActuel;
+  const vIn = valorisationInputs(latest, hist, nom);
+  const { fcfActuel, cagrHist, medianeHist } = vIn;
+  const live = nom === activeCompany;
+  // Quand l'entreprise n'est PAS celle actuellement ouverte dans l'onglet Valorisation,
+  // scenarioValues (en mémoire, éphémère) ne reflète plus rien pour elle — retombait
+  // avant sur des valeurs par défaut (historique ± delta), ignorant tout objectif que
+  // l'utilisateur avait explicitement enregistré ("Enregistrer cet objectif") pour
+  // cette entreprise. Bug remonté : "tu as mis un ancien, pas celui qui est actuel".
+  // Fix : priorité au DERNIER objectif sauvegardé (objectifsStore, même source que
+  // pessimisticScenarioForCompany()/l'historique des objectifs de Valorisation),
+  // avant de retomber sur les valeurs par défaut si aucun objectif n'a jamais été
+  // enregistré pour cette entreprise.
+  const savedList = objectifsStore[nom];
+  const saved = (!live && savedList && savedList.length) ? savedList[savedList.length - 1] : null;
+  return SCENARIOS.map(s => {
+    const sv = live ? scenarioValues[s.key] : (saved && saved.scenarios && saved.scenarios[s.key]);
+    const cagr = sv ? sv.cagr : (cagrHist != null ? +(cagrHist + s.deltaCagr).toFixed(1) : 0);
+    const multiple = sv ? sv.multiple : (medianeHist != null ? +(medianeHist + s.deltaMultiple).toFixed(1) : 0);
+    const rachat = sv ? (sv.rachat || 0) : 0;
+    const r = (fcfActuel != null && prixActuel != null) ? computeScenario(fcfActuel, prixActuel, cagr, multiple, rachat, evDetteArg(vIn, sv)) : null;
+    return { key:s.key, label:s.label, color:s.color, cagr, multiple, result:r };
   });
-  const confSel = box.querySelector('[data-score-field="bottleneck-confidence"]');
-  if (confSel) confSel.addEventListener('change', () => { v.scores.bottleneck.confidence = confSel.value || null; saveAnalyseVersion(); });
-  const scopeSel = box.querySelector('[data-score-field="bottleneck-scope"]');
-  if (scopeSel) scopeSel.addEventListener('change', () => { v.bottleneckScope = scopeSel.value || null; saveAnalyseVersion(); });
-  const rationale = box.querySelector('[data-score-field="bottleneck-rationale"]');
-  if (rationale) rationale.addEventListener('blur', () => { v.scores.bottleneck.rationale = rationale.value; saveAnalyseVersion(); });
-  const addSrcBtn = box.querySelector('.analyse-score-source-add [data-action="add-source"]');
-  if (addSrcBtn) addSrcBtn.addEventListener('click', () => {
-    const wrap = addSrcBtn.closest('.analyse-score-source-add');
-    const title = wrap.querySelector('[data-source-input="title"]').value.trim();
-    const url = wrap.querySelector('[data-source-input="url"]').value.trim();
-    const claim = wrap.querySelector('[data-source-input="claim"]').value.trim();
-    if (!title && !url) return;
-    v.scores.bottleneck.sources.push({ title, url, claim, date: new Date().toISOString().slice(0, 10) });
-    v.scores.bottleneck.verified = true;
-    saveAnalyseVersion();
-    renderAnalyse();
-  });
-  box.querySelectorAll('[data-remove-source]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      v.scores.bottleneck.sources.splice(parseInt(btn.dataset.removeSource, 10), 1);
-      saveAnalyseVersion();
-      renderAnalyse();
-    });
-  });
+}
+function analyseScenarioResultRowsHtml(r){
+  if (!r) return [['Prix juste sim.', 'N/D'], ['Prix cible (-20%)', 'N/D'], ['Prix est. (5a)', 'N/D'], ['Rendement (5a)', 'N/D']];
+  return [
+    ['Prix juste sim.', fmtEUR(r.prixJusteSim)],
+    ['Prix cible (-20%)', fmtEUR(r.prixCible)],
+    ['Prix est. (5a)', fmtEUR(r.prixEst5A)],
+    ['Rendement (5a)', r.rendement5A != null ? (r.rendement5A >= 0 ? '+' : '') + r.rendement5A.toLocaleString('fr-FR', { minimumFractionDigits:2, maximumFractionDigits:2 }) + '%' : 'N/D']
+  ];
+}
+// Réutilise les classes .analyse-score-* (déjà stylées écran + impression) plutôt que
+// d'en créer de nouvelles — même traitement visuel que le bloc Wolf Score juste en
+// dessous.
+function analyseValorisationScenariosHtml(nom){
+  const scenarios = computeAnalyseScenarios(nom);
+  if (!scenarios) return '';
+  const cards = scenarios.map(s => {
+    const rows = analyseScenarioResultRowsHtml(s.result).map(([label, val]) =>
+      `<div class="analyse-score-field"><label>${label}</label><span class="analyse-score-readonly-value">${val}</span></div>`
+    ).join('');
+    return `<div class="analyse-score-module">
+      <div class="analyse-score-module-head"><h4>${escapeHtml(s.label)}</h4><span class="analyse-score-module-total">CAGR ${s.cagr}% · ${s.multiple}x</span></div>
+      <div class="analyse-score-fields">${rows}</div>
+    </div>`;
+  }).join('');
+  return `<div class="analyse-section analyse-scores-section">
+    <div class="analyse-score-card-head"><div><h4 style="margin:0;">📊 Scénarios de valorisation</h4></div></div>
+    <div class="analyse-score-modules">${cards}</div>
+  </div>`;
+}
+function exportAnalyseScoreCardAsPdf(nom){
+  exportSectionAsPdf('Wolf Score', nom, analyseScoreBlockHtml(nom), companyLogoUrl(nom));
+}
+
+// Export image (PNG/JPEG) du Wolf Score — demande explicite ("je puisse exporter le
+// scoring en PDF ou en JPEG ou PNG"). Construit un SVG autonome (texte/formes, comme
+// drawGauge() ailleurs dans ce fichier) plutôt que de rastériser le DOM de la carte :
+// pas de librairie externe (jsPDF/html2canvas — voir la règle déjà établie pour l'export
+// PDF), et surtout aucun risque de canvas "tainted" par une image externe (voir CLAUDE.md
+// pièges #13 sur le logo Wolf en CORS) — le "logo loup" est ici un simple émoji, zéro
+// dépendance réseau.
+function wolfScoreSvgMarkup(nom){
+  const entry = analyseScoreEntryFor(nom);
+  const g = analyseScoreGlobal(entry);
+  const W = 900;
+  const BG = '#0D1013', PANEL = '#1B2128', GOLD = '#D9A441', GOLD2 = '#F0C877', TEXT = '#E9EBEE', DIM = '#8B93A0';
+  const modules = ANALYSE_SCORE_MODULES.map(m => ({
+    title:m.title, total:g.totals[m.key], max:m.max,
+    rows:m.criteria.map(c => ({ label:c.label, value:entry[m.key][c.key], max:c.max }))
+  })).concat([{ title:'Valorisation (indépendante, hors score global)', total:g.valorisation, max:100, rows:[{ label:'Note de valorisation', value:entry.valorisation, max:100 }] }]);
+  let y = 150;
+  const blocks = modules.map(mod => {
+    const rowsH = mod.rows.length * 28 + 46;
+    const block = `
+      <rect x="60" y="${y}" width="${W - 120}" height="${rowsH}" rx="12" fill="${PANEL}" />
+      <text x="84" y="${y + 30}" font-family="'Space Grotesk',sans-serif" font-size="15" font-weight="700" fill="${TEXT}">${escapeHtml(mod.title)}</text>
+      <text x="${W - 84}" y="${y + 30}" text-anchor="end" font-family="monospace" font-size="14" font-weight="700" fill="${GOLD}">${mod.total}/${mod.max}</text>
+      ${mod.rows.map((r, i) => {
+        const ry = y + 56 + i * 28;
+        return `<text x="84" y="${ry}" font-family="'Plus Jakarta Sans',sans-serif" font-size="12" fill="${DIM}">${escapeHtml(r.label)}</text>
+        <text x="${W - 84}" y="${ry}" text-anchor="end" font-family="monospace" font-size="12.5" fill="${GOLD2}">${r.value != null ? r.value : '—'}/${r.max}</text>`;
+      }).join('')}`;
+    y += rowsH + 20;
+    return block;
+  }).join('');
+  const H = y + 40;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+    <rect width="${W}" height="${H}" fill="${BG}"/>
+    <circle cx="90" cy="66" r="25" fill="none" stroke="${GOLD}" stroke-width="2"/>
+    <text x="90" y="76" font-size="26" text-anchor="middle">🐺</text>
+    <text x="132" y="58" font-family="monospace" font-size="10.5" letter-spacing="2" fill="${DIM}">WOLF ACADEMY INVEST</text>
+    <text x="132" y="84" font-family="'Space Grotesk',sans-serif" font-size="22" font-weight="700" fill="${TEXT}">Wolf Score — ${escapeHtml(nom)}</text>
+    <text x="${W - 60}" y="80" text-anchor="end" font-family="'Space Grotesk',sans-serif" font-size="34" font-weight="700" fill="${GOLD2}">${g.global}<tspan font-size="14" fill="${DIM}">/100</tspan></text>
+    ${blocks}
+    <text x="60" y="${H - 16}" font-family="monospace" font-size="9.5" fill="${DIM}">Wolf Analysis — Wolf Score généré automatiquement.</text>
+  </svg>`;
+}
+// Rasterise un SVG autonome (texte/formes uniquement — jamais d'image externe dessus,
+// voir CLAUDE.md piège #13 sur le canvas "tainted" par un logo sans CORS) en PNG/JPEG
+// téléchargeable. Partagé par tous les exports image du site (Wolf Score, Watchlist...)
+// — un seul endroit à corriger si le besoin évolue.
+function downloadSvgAsImage(svgStr, filenameBase, format){
+  const svgUrl = URL.createObjectURL(new Blob([svgStr], { type:'image/svg+xml;charset=utf-8' }));
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext('2d');
+    if (format === 'jpeg'){ ctx.fillStyle = '#0D1013'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+    ctx.drawImage(img, 0, 0);
+    URL.revokeObjectURL(svgUrl);
+    canvas.toBlob(blob => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${filenameBase.replace(/[^a-z0-9]+/gi, '-')}.${format === 'jpeg' ? 'jpg' : 'png'}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+    }, format === 'jpeg' ? 'image/jpeg' : 'image/png', 0.95);
+  };
+  img.src = svgUrl;
+}
+function downloadWolfScoreImage(nom, format){
+  downloadSvgAsImage(wolfScoreSvgMarkup(nom), `wolf-score-${nom}`, format);
 }
 
 function renderAnalyseCharts(v){
@@ -13844,37 +16932,814 @@ function openAnalyseChartZoom(key){
   });
 }
 
+// Règle absolue, redemandée sans ambiguïté possible : AUCUN bloc (texte, image, secteur,
+// sous-secteur, grille de ratios/graphiques) ne doit jamais être coupé net entre deux
+// pages — chaque bloc doit rester une carte entière, avec ses coins arrondis intacts en
+// haut ET en bas, quitte à laisser un peu de vide en bas de la page précédente. Ancienne
+// tolérance ("les sections texte libre peuvent s'étaler sur plusieurs pages") abandonnée :
+// elle produisait exactement le symptôme décrit ("coupures qui ne sont pas arrondies").
+// .print-section est donc désormais TOUJOURS atomique (voir sa définition CSS) — pour
+// une section qui peut légitimement dépasser une page à elle seule (secteurs d'activité,
+// avec plusieurs secteurs/sous-secteurs et leurs images), voir printGroupableSectionHtml()
+// ci-dessous : chaque secteur/sous-secteur devient sa PROPRE carte indépendante plutôt que
+// d'être empilé dans un unique bloc partagé impossible à faire tenir sur une page.
 function printAnalyseSectionHtml(s, data){
+  if (s.groupable) return printGroupableSectionHtml(s, data);
+  if (s.ratioSelector || s.chartSelector) return printRatiosSectionHtml(s, data);
   const imgs = printImagesRowHtml(data.images);
   const text = (data.texte || '').replace(/</g, '&lt;');
-  return `<div class="print-section"><h3>${s.label}</h3>${text ? `<p>${text}</p>` : ''}${imgs}</div>`;
+  // Même module que toutes les autres sections (chainPdfPanelWrap, liseré doré) —
+  // demande explicite ("des fois tu as mis un liseré jaune... des fois un bloc tout
+  // gris, il faut uniformiser"). .print-section (fond gris uni, sans liseré) n'est plus
+  // utilisé nulle part dans cette fiche.
+  return chainPdfPanelWrap(s.label, `${text ? `<p style="margin:0 0 8px">${text}</p>` : ''}${imgs}`);
+}
+// Section "Ratios financiers" (ratioSelector/chartSelector) : jusqu'à 9 graphiques
+// peuvent être sélectionnés, largement de quoi dépasser une page — même principe que
+// printGroupableSectionHtml() : la grille de ratios ET chaque graphique deviennent leur
+// PROPRE module indépendant plutôt qu'un seul bloc partagé (qui se coupait net dès que
+// le contenu dépassait une page, malgré le fait que chaque graphique individuellement
+// était protégé). Graphiques centrés (justify-content:center) et en grand format —
+// demande répétée ("centre les graphiques... ou mets les plus gros et qui soient au
+// milieu").
+function printRatiosSectionHtml(s, data){
+  const introInner = `${data.texte ? `<p style="margin:0 0 8px">${data.texte.replace(/</g, '&lt;')}</p>` : ''}${printImagesRowHtml(data.images)}`;
+  const hasIntro = data.texte || (data.images && data.images.length);
+  const titleHtml = hasIntro
+    ? chainPdfPanelWrap(s.label, introInner)
+    : `<h3 class="print-groupable-title">${escapeHtml(s.label)}</h3>`;
+  const ratiosHtml = s.ratioSelector && data.ratiosSelectionnes && data.ratiosSelectionnes.length
+    ? chainPdfPanelWrap('Ratios sélectionnés', `<div class="ratio-grid">${analyseFicheSelectedRatiosHtml(analyseEntite, data.ratiosSelectionnes)}</div>`)
+    : '';
+  // Graphiques : uniquement si l'entreprise de la fiche est celle actuellement affichée
+  // dans l'onglet Analyse (mêmes contraintes qu'à l'écran, voir analyseSectionChartSelectorHtml).
+  const graphiquesHtml = s.chartSelector && data.graphiquesSelectionnes && data.graphiquesSelectionnes.length && analyseEntite === activeCompany
+    ? data.graphiquesSelectionnes.map(key => {
+        const label = (ANALYSE_CHART_EXPORT_LIST.find(([k]) => k === key) || [key, key])[1];
+        // forcedSize (voir chartToHiResDataUrl) : capture à une taille fixe et large,
+        // pas celle, minuscule, du conteneur d'aperçu à l'écran (.analyse-fiche-chart-
+        // thumb, 260px) — sinon l'image imprimée reste petite ET floue une fois
+        // agrandie par le CSS. Demande explicite ("il faut les mettre en grand et en
+        // qualité, on ne les voit pas"), même correctif que printAnalyseChartHtml().
+        const url = analyseFicheChartDataUrl(key, ANALYSE_PRINT_CHART_SIZE);
+        if (!url) return '';
+        return chainPdfPanelWrap(label, `<div class="print-chart-row"><div class="print-chart-cell"><img src="${url}" alt="${escapeHtml(label)}"></div></div>`, null, 'print-groupe-panel');
+      }).join('')
+    : '';
+  return titleHtml + ratiosHtml + graphiquesHtml;
+}
+// Sections "groupable" (secteursActivite pour l'instant) — CHAQUE secteur et CHAQUE
+// sous-secteur devient sa PROPRE carte (chainPdfPanelWrap, même style que les modules
+// des autres exports : bordure gauche or, coins arrondis, atomique), au lieu d'être
+// empilés dans un seul grand bloc partagé impossible à faire tenir sur une page.
+// Demande explicite : "fais-les dans des modules, dans des rectangles, essaye de créer
+// une hiérarchie là-dedans" — le secteur est un module, chacun de ses sous-secteurs est
+// un module plus petit/nesté À L'INTÉRIEUR (bordure plus fine, légèrement indenté),
+// jamais un simple paragraphe qui s'enchaîne sans distinction visuelle.
+function printGroupableSectionHtml(s, data){
+  const introInner = `${data.texte ? `<p style="margin:0 0 8px">${data.texte.replace(/</g, '&lt;')}</p>` : ''}${printImagesRowHtml(data.images)}`;
+  const introHtml = (data.texte || (data.images && data.images.length))
+    ? chainPdfPanelWrap(s.label, introInner)
+    : `<h3 class="print-groupable-title">${escapeHtml(s.label)}</h3>`;
+  // Carte du secteur (titre+texte+images) et cartes de ses sous-secteurs SŒURS
+  // indépendantes — PAS combinées dans un seul chainPdfPanelWrap partagé. Les combiner
+  // forçait le paquet entier (texte du secteur + TOUS ses sous-secteurs) à rester
+  // atomique d'un bloc, ce qui — dès que ça ne tenait pas sur une page — le poussait en
+  // bloc vers une page fraîche puis le fragmentait quand même de façon imprévisible
+  // (pages presque vides constatées). Chaque carte reste individuellement atomique ;
+  // la page peut se couper PROPREMENT entre le secteur et son 1er sous-secteur, ou entre
+  // deux sous-secteurs — jamais à l'intérieur d'une seule carte.
+  const groupesHtml = (data.groupes || []).map(g => {
+    const ownInner = `${g.texte ? `<p style="margin:0 0 8px">${g.texte.replace(/</g, '&lt;')}</p>` : ''}${printImagesRowHtml(g.images)}`;
+    const ownCard = chainPdfPanelWrap(g.titre || 'Sans titre', ownInner, null, 'print-groupe-panel');
+    const sousHtml = (g.sousSecteurs || []).length
+      ? `<div class="print-sous-grid">${g.sousSecteurs.map(sub => {
+          const subInner = `${sub.texte ? `<p style="margin:0 0 8px">${sub.texte.replace(/</g, '&lt;')}</p>` : ''}${printImagesRowHtml(sub.images)}`;
+          return chainPdfPanelWrap(sub.titre || 'Sans titre', subInner, null, 'print-sous-panel');
+        }).join('')}</div>`
+      : '';
+    return ownCard + sousHtml;
+  }).join('');
+  // Tableau libre (voir tableEditor/analyseSectionTableHtml()) — sa propre carte aussi,
+  // même principe. Un <thead> HTML se répète automatiquement sur chaque page à
+  // l'impression quand un tableau déborde d'une page (comportement natif du moteur de
+  // pagination), donc pas de risque de perdre les en-têtes de colonnes en cours de route
+  // même sur un grand tableau — ce tableau-ci reste néanmoins généralement court.
+  const tableauHtml = s.tableEditor && data.tableau && data.tableau.rows && data.tableau.rows.length
+    ? chainPdfPanelWrap('Tableau', `<table class="print-table"><thead><tr>${data.tableau.columns.map(c => `<th>${escapeHtml(c || '')}</th>`).join('')}</tr></thead><tbody>${data.tableau.rows.map(row => `<tr>${row.map(cell => `<td>${escapeHtml(cell || '')}</td>`).join('')}</tr>`).join('')}</tbody></table>`, null, 'print-groupe-panel')
+    : '';
+  return introHtml + groupesHtml + tableauHtml;
+}
+// Taille forcée (pas celle, étroite, du conteneur réel dans la grille 2 colonnes de la
+// fiche) — demande explicite ("les graphiques sont beaucoup trop petits"), voir
+// chartToHiResDataUrl().
+const ANALYSE_PRINT_CHART_SIZE = { width:680, height:340 };
+// Descriptif chiffré sous le camembert (couleur + libellé + %) — même correctif que
+// le diaporama paysage : la légende native de Chart.js est trop petite/peu lisible à
+// l'impression ("on n'arrive pas à voir quelle couleur représente quoi... il faut
+// afficher les pourcentages"). Mêmes couleurs que le camembert (PORTFOLIO_COLORS,
+// même ordre d'index que renderAnalyseCharts()).
+function printChartLegendListHtml(rows){
+  const list = rows || [];
+  const total = list.reduce((s, r) => s + (r.valeur || 0), 0) || 1;
+  return `<div class="print-chart-legend">${list.map((r, i) => {
+    const pct = Math.round((r.valeur || 0) / total * 100);
+    const color = PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length];
+    return `<div class="print-chart-legend-row"><span class="print-chart-legend-swatch" style="background:${color}"></span><span class="print-chart-legend-label">${escapeHtml(r.label || '')}</span><span class="print-chart-legend-pct">${pct}%</span></div>`;
+  }).join('')}</div>`;
+}
+// Diapo de transition (loup + titre de partie) entre les sections de la fiche
+// Analyse développée — demande explicite : "fais exactement comme le PDF en
+// paysage, mais en portrait... les images du loup pour chacune des parties".
+// Réutilise les MÊMES fichiers data/wolf-slides/<role>.jpg que le diaporama
+// (resolveWolfSlideImages(), déjà async) — un seul dossier d'images à maintenir.
+function analyseSectionDividerHtml(heroUrl, eyebrow, title){
+  return `<div class="chain-pdf-section-divider">
+    ${heroUrl ? `<img class="chain-pdf-section-divider-hero" src="${heroUrl}" alt="">` : ''}
+    ${heroUrl ? `<div class="chain-pdf-section-divider-fade"></div>` : ''}
+    <div class="chain-pdf-section-divider-content">
+      <div class="chain-pdf-section-divider-eyebrow">${escapeHtml(eyebrow || '')}</div>
+      <div class="chain-pdf-section-divider-title">${escapeHtml(title || '')}</div>
+    </div>
+  </div>`;
 }
 function printAnalyseChartHtml(key, rows){
   if (!rows || !rows.length) return '';
-  return `<div class="print-section"><h3>${ANALYSE_CHART_LABELS[key]}</h3>${chartCanvasToImgHtml('analyseChart_' + key, ANALYSE_CHART_LABELS[key], analyseCharts[key])}</div>`;
+  return chainPdfPanelWrap(ANALYSE_CHART_LABELS[key], chartCanvasToImgHtml('analyseChart_' + key, ANALYSE_CHART_LABELS[key], analyseCharts[key], ANALYSE_PRINT_CHART_SIZE) + printChartLegendListHtml(rows));
 }
-function printAnalyseConcurrentsHtml(list){
-  if (!list || !list.length) return '';
-  const body = list.map(c => `<div style="margin-bottom:10px"><strong>${(c.nom || 'Sans nom').replace(/</g, '&lt;')}</strong><p>${(c.texte || '').replace(/</g, '&lt;')}</p>${printImagesRowHtml(c.images)}</div>`).join('');
-  return `<div class="print-section"><h3>Concurrents</h3>${body}</div>`;
+function printConcurrentSecteursHtml(secteurs){
+  if (!secteurs || !secteurs.length) return '';
+  const body = secteurs.map(sec => {
+    const resume = (sec.texte || '').replace(/</g, '&lt;');
+    const comps = (sec.concurrents || []).map(c => `<div class="print-subblock" style="margin:6px 0 6px 12px"><strong>${(c.nom || 'Sans nom').replace(/</g, '&lt;')}</strong><p>${(c.texte || '').replace(/</g, '&lt;')}</p>${printImagesRowHtml(c.images)}</div>`).join('');
+    return `<div style="margin-bottom:14px"><h4>${(sec.titre || 'Sans titre').replace(/</g, '&lt;')}</h4>${resume ? `<p>${resume}</p>` : ''}${comps}</div>`;
+  }).join('');
+  return `<div class="print-section"><h3>Concurrents par secteur</h3>${concurrentSecteursDiagramHtml(secteurs)}${body}</div>`;
 }
-function exportAnalyseAsPdf(){
+async function exportAnalyseAsPdf(){
   const v = currentAnalyseVersion();
   if (!v || !analyseEntite) return;
-  const body = CERVEAU_ANALYSE_SECTIONS_TOP.map(s => printAnalyseSectionHtml(s, v.sections[s.key])).join('')
-    + printAnalyseChartHtml('revenusPays', v.revenusPays)
-    + printAnalyseChartHtml('revenusSecteurs', v.revenusSecteurs)
-    + CERVEAU_ANALYSE_SECTIONS_MID_A.map(s => printAnalyseSectionHtml(s, v.sections[s.key])).join('')
-    + printAnalyseConcurrentsHtml(v.concurrents)
-    + CERVEAU_ANALYSE_SECTIONS_MID_B.map(s => printAnalyseSectionHtml(s, v.sections[s.key])).join('')
-    + printAnalyseChartHtml('actionnariat', v.actionnariat)
-    + CERVEAU_ANALYSE_SECTIONS_BOTTOM.map(s => printAnalyseSectionHtml(s, v.sections[s.key])).join('');
-  exportSectionAsPdf('Analyse développée — ' + analyseEntite, v.label, body, companyLogoUrl(analyseEntite));
+  // Page de présentation (couverture) — demande explicite : CETTE fiche précisément
+  // ("l'analyse développée... la fiche spécifique de l'entreprise où on parle des
+  // revenus... des secteurs d'activité... c'est celle-là où je veux que tu travailles")
+  // est celle qui doit avoir la couverture soignée, pas l'export "Fiche entreprise"
+  // de l'onglet Analyse — même fonction réutilisée (analyseCoverPageHtml(), voir
+  // exportAnalyseFullAsPdf) puisqu'une entité du Cerveau numérique n'est pas
+  // forcément une entreprise suivie dans le Sheet/FMP : `latest`/`sectorLine`
+  // retombent proprement sur des valeurs vides plutôt que de planter.
+  const companyRows = companies[analyseEntite];
+  const latest = companyRows ? companyRows[companyRows.length - 1] : {};
+  const logo = companyLogoUrl(analyseEntite);
+  const sectorLine = latest.secteur ? [latest.secteur, latest.sousSecteur].filter(Boolean).join(' › ') : '';
+  // Pas de v.label ("Version 1") en sous-titre — demande explicite ("il ne faut pas
+  // mettre Version 1... il ne faut rien mettre").
+  // "Analyse complète" (pas "Analyse développée", jugé moins présentable) — demande
+  // explicite.
+  const coverHtml = analyseCoverPageHtml(analyseEntite, latest, logo, sectorLine, 'Analyse complète');
+
+  // Mêmes visuels loup que le diaporama paysage — demande explicite ("fais
+  // exactement comme le PDF en paysage, mais en portrait... les images du loup pour
+  // chacune des parties"). Une diapo de transition avant CHAQUE section (même
+  // granularité que le diaporama), seulement si elle a du contenu réel à montrer
+  // (jamais de transition suivie d'une page vide). "secteursActivite" utilise le
+  // rôle "secteurs" (même nom de fichier que le diaporama, data/wolf-slides/).
+  const images = await resolveWolfSlideImages();
+  const div = (roleKey, eyebrow, title) => analyseSectionDividerHtml(images[roleKey], eyebrow, title);
+  const hasSectionContent = s => { const d = v.sections[s.key]; return d && ((d.texte && d.texte.trim()) || (d.images && d.images.length) || (d.groupes && d.groupes.length)); };
+  const printSection = s => {
+    if (!hasSectionContent(s)) return '';
+    const roleKey = s.key === 'secteursActivite' ? 'secteurs' : (s.key === 'conclusionConcurrents' ? 'concurrents' : s.key);
+    const eyebrow = s.key === 'conclusion' ? 'VERDICT' : (s.key === 'conclusionConcurrents' ? 'CONCURRENCE' : 'ANALYSE');
+    return div(roleKey, eyebrow, s.label) + printAnalyseSectionHtml(s, v.sections[s.key]);
+  };
+
+  const hasRevenus = (v.revenusPays || []).length || (v.revenusSecteurs || []).length;
+  const revenusHtml = hasRevenus
+    ? div('revenus', 'DONNÉES', 'Revenus par pays & par secteur') + printAnalyseChartHtml('revenusPays', v.revenusPays) + printAnalyseChartHtml('revenusSecteurs', v.revenusSecteurs)
+    : '';
+  const hasConcurrents = (v.concurrentSecteurs || []).some(sec => (sec.concurrents || []).length);
+  const concurrentsHtml = hasConcurrents ? div('concurrents', 'CONCURRENCE', 'Concurrents par secteur') + printConcurrentSecteursHtml(v.concurrentSecteurs) : '';
+  const hasActionnariat = (v.actionnariat || []).length > 0;
+  const actionnariatHtml = hasActionnariat ? div('actionnariat', 'DONNÉES', 'Actionnariat principal') + printAnalyseChartHtml('actionnariat', v.actionnariat) : '';
+  const ratiosData = v.sections.ratios || {};
+  const hasRatios = (ratiosData.ratiosSelectionnes && ratiosData.ratiosSelectionnes.length) || (ratiosData.graphiquesSelectionnes && ratiosData.graphiquesSelectionnes.length) || (ratiosData.texte && ratiosData.texte.trim());
+  const ratiosHtml = hasRatios ? div('ratios', 'RATIOS FINANCIERS', 'Ratios financiers') + CERVEAU_ANALYSE_SECTIONS_BOTTOM.map(s => printAnalyseSectionHtml(s, v.sections[s.key])).join('') : '';
+
+  const body = coverHtml
+    + CERVEAU_ANALYSE_SECTIONS_TOP.map(printSection).join('')
+    + revenusHtml
+    + CERVEAU_ANALYSE_SECTIONS_MID_A.map(printSection).join('')
+    + CERVEAU_ANALYSE_SECTIONS_GOULOT.map(printSection).join('')
+    + concurrentsHtml
+    + CERVEAU_ANALYSE_SECTIONS_APRES_CONCURRENTS.map(printSection).join('')
+    + CERVEAU_ANALYSE_SECTIONS_MID_B.map(printSection).join('')
+    + actionnariatHtml
+    + ratiosHtml
+    + analyseValorisationScenariosHtml(analyseEntite)
+    + div('wolfscore', 'VERDICT', 'Wolf Score')
+    + analyseScoreBlockHtml(analyseEntite)
+    + CERVEAU_ANALYSE_SECTIONS_CONCLUSION.map(printSection).join('');
+  // Pas exportSectionAsPdf() ici (brandedPdfHeader() ferait doublon avec coverHtml, qui
+  // porte déjà sa propre identité Wolf Analysis — même raison que dans
+  // exportAnalyseFullAsPdf) : on construit #printArea directement.
+  const area = document.getElementById('printArea');
+  area.innerHTML = body + brandedPdfFooter();
+  printAreaAfterImagesLoad(area);
+}
+
+// ============================================================================
+// Diaporama 16:9 (1920×1080) — support visuel pour vidéo, généré au clic depuis
+// LES MÊMES données que exportAnalyseAsPdf() ci-dessus (aucune saisie séparée).
+// Document d'impression SÉPARÉ (fenêtre popup, sa propre feuille css/wolf-slides.css)
+// plutôt que #printArea/css/style.css : @page n'est pas scopable par sélecteur, donc
+// un format paysage sans marge ne peut pas cohabiter avec @page{size:A4} du portrait
+// dans le même document. N'affecte donc jamais l'export portrait existant. Voir le
+// plan (wild-seeking-clover.md) pour le détail des décisions.
+// ============================================================================
+
+// Une photo de loup DÉDIÉE par diapo/section — demande explicite ("chaque section,
+// il va me falloir un loup", décomposée section par section), pas un petit jeu de
+// rôles partagés comme dans une 1ère version abandonnée de ce fichier. La couverture
+// réutilise l'image déjà validée du portrait (WOLF_COVER_HERO_URL) et n'est PAS dans
+// cette liste. Un rôle sans fichier déposé = diapo sans photo (jamais d'image cassée,
+// jamais de repli sur une photo qui ne correspondrait pas au sujet de la diapo) — voir
+// data/wolf-slides/README.txt pour le détail des 14 fichiers attendus.
+const WOLF_SLIDES_BASE = 'data/wolf-slides/';
+const WOLF_SLIDES_ROLES = ['presentation', 'marche', 'moat', 'positionChaine', 'substituabilite', 'secteurs', 'revenus', 'concurrents', 'perspectives', 'risques', 'actionnariat', 'ratios', 'wolfscore', 'conclusion'];
+const WOLF_SLIDES_EXTS = ['.png', '.jpg', '.jpeg'];
+function probeImageUrl(url){
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => resolve(url);
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+async function resolveWolfSlideImages(){
+  const found = {};
+  for (const role of WOLF_SLIDES_ROLES){
+    let url = null;
+    for (const ext of WOLF_SLIDES_EXTS){
+      url = await probeImageUrl(WOLF_SLIDES_BASE + role + ext);
+      if (url) break;
+    }
+    found[role] = url;
+  }
+  return found;
+}
+
+// Convertit une image utilisateur (ajoutée par URL collée, voir wireAnalyseImageEvents)
+// en data URL AVANT de l'insérer dans la fenêtre du diaporama — cause probable des
+// "images qui n'apparaissent pas" : une image ajoutée par URL externe s'affiche très
+// bien sur la page principale (referrer http://localhost:8189/... valide), mais la
+// fenêtre popup (document.write sur about:blank) n'a pas d'URL réelle, donc pas de
+// referrer valide à envoyer — un serveur qui protège ses images par referrer (courant)
+// rejette alors la requête silencieusement, sans erreur visible. En résolvant l'image
+// en data URL depuis LA PAGE PRINCIPALE (où elle charge normalement), la popup n'a
+// plus besoin de la re-télécharger elle-même. crossOrigin='anonymous' est nécessaire
+// pour lire les pixels du canvas ; si le serveur ne supporte pas CORS, le chargement
+// échoue proprement et on retombe sur l'URL d'origine (comportement actuel, pas pire).
+function loadImageDataUrl(url){
+  return new Promise(resolve => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try{
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+        canvas.getContext('2d').drawImage(img, 0, 0);
+        resolve(canvas.toDataURL('image/png'));
+      }catch(e){ resolve(url); }
+    };
+    img.onerror = () => resolve(url);
+    img.src = url;
+  });
+}
+async function resolveImagesArray(images){
+  if (!images || !images.length) return images;
+  return Promise.all(images.map(async im => {
+    const obj = (typeof im === 'string') ? { src: im, legende: '' } : im;
+    if (!obj.src || obj.src.startsWith('data:')) return obj;
+    return { ...obj, src: await loadImageDataUrl(obj.src) };
+  }));
+}
+
+function wolfSlideChartDataUrl(key){
+  const inst = analyseCharts[key];
+  return inst ? chartToPrintDataUrl(inst, { width:900, height:900 }) : null;
+}
+// Réutilise le rendu déjà validé des ratio-cards (analyseFicheSelectedRatiosHtml) au
+// lieu de redériver le formatage — on relit juste le libellé/la valeur déjà calculés.
+function wolfSlideExtractRatioStats(nom, selectedKeys){
+  const html = analyseFicheSelectedRatiosHtml(nom, selectedKeys);
+  if (!html) return [];
+  const wrap = document.createElement('div');
+  wrap.innerHTML = html;
+  return Array.from(wrap.children).map(card => ({
+    k: (card.querySelector('.k') || {}).textContent || '',
+    v: (card.querySelector('.v') || {}).textContent || ''
+  }));
+}
+
+function wolfSlideShell({ heroUrl, eyebrowMini, num, eyebrow, title, subtitle, bodyHtml, extraClass }){
+  const noImg = !heroUrl;
+  return `<div class="wolf-slide${noImg ? ' wolf-slide-noimg' : ''}${extraClass ? ' ' + extraClass : ''}">
+    ${heroUrl ? `<img class="wolf-slide-hero" src="${heroUrl}" alt="">` : ''}
+    ${heroUrl ? `<div class="wolf-slide-fade"></div>` : ''}
+    <div class="wolf-slide-header">
+      <img class="wolf-slide-logo" src="${WOLF_LOGO_URL}" alt="">
+      <span class="wolf-slide-wordmark">WOLF ACADEMY INVEST</span>
+      ${eyebrowMini ? `<span class="wolf-slide-header-sep">—</span><span class="wolf-slide-eyebrow-mini">${escapeHtml(eyebrowMini)}</span>` : ''}
+      <span class="wolf-slide-pagenum">${String(num).padStart(2, '0')}</span>
+    </div>
+    <div class="wolf-slide-content">
+      ${eyebrow ? `<div class="wolf-slide-eyebrow">${escapeHtml(eyebrow)}</div>` : ''}
+      <h1 class="wolf-slide-title">${escapeHtml(title || '')}</h1>
+      ${subtitle ? `<div class="wolf-slide-subtitle">${escapeHtml(subtitle)}</div>` : ''}
+      <div class="wolf-slide-rule"></div>
+      ${bodyHtml || ''}
+    </div>
+    <div class="wolf-slide-footer">Support pédagogique — ceci n'est pas un conseil en investissement.</div>
+  </div>`;
+}
+// Diapo de TRANSITION — loup + titre de la partie, aucun contenu chargé dessus.
+// Demande explicite : plutôt qu'une photo qui grignote la largeur de CHAQUE diapo de
+// contenu (gênant pour les graphiques/tableaux, ex. les 2 camemberts revenus côte à
+// côte), une diapo dédiée par étape ("dès qu'on passe une étape, on a le loup avec le
+// titre de la nouvelle partie"), suivie de la/les diapo(s) de contenu SANS photo
+// (heroUrl null), en pleine largeur.
+function wolfSlideDividerHtml(heroUrl, num, eyebrowMini, title){
+  return wolfSlideShell({ heroUrl, eyebrowMini, num, eyebrow: eyebrowMini, title, bodyHtml: '', extraClass: 'wolf-slide-divider' });
+}
+
+function wolfSlideCoverHtml(nom, latest, sectorLine, logo){
+  const heroUrl = WOLF_COVER_HERO_URL; // même photo (loupe) déjà validée pour le portrait
+  return `<div class="wolf-slide wolf-slide-cover${heroUrl ? '' : ' wolf-slide-noimg'}">
+    ${heroUrl ? `<img class="wolf-slide-hero" src="${heroUrl}" alt="">` : ''}
+    ${heroUrl ? `<div class="wolf-slide-fade"></div>` : ''}
+    <div class="wolf-slide-content">
+      <div class="wolf-slide-cover-wordmark"><img src="${WOLF_LOGO_URL}" alt=""> WOLF ANALYSIS</div>
+      <div class="wolf-slide-cover-eyebrow">Analyse complète</div>
+      ${logo ? `<img class="wolf-slide-cover-logo" src="${logo}" alt="">` : ''}
+      <div class="wolf-slide-cover-title">${escapeHtml(nom || '')}</div>
+      ${latest.ticker ? `<div class="wolf-slide-cover-ticker">${escapeHtml(latest.ticker)}</div>` : ''}
+      ${sectorLine ? `<div class="wolf-slide-cover-sector">${escapeHtml(sectorLine)}</div>` : ''}
+    </div>
+    <div class="wolf-slide-footer">Support pédagogique — ceci n'est pas un conseil en investissement.</div>
+  </div>`;
+}
+
+// Pas de sous-texte descriptif par ligne — demande explicite ("les petites
+// annotations que tu mets... ça n'apporte rien"), juste le numéro et le titre.
+// Bascule en 2 colonnes au-delà de 9 entrées — demande explicite : le pied de page
+// ("Support pédagogique...") se faisait recouvrir par la 12e ligne d'une longue liste
+// à une seule colonne, qui grandissait sans jamais tenir compte de l'espace réservé
+// au pied de page. Une fiche bien remplie dépasse facilement 12-16 entrées
+// (présentation/marché/moat/positionChaine/substituts/perspectives/risques + secteurs
+// + revenus + N secteurs de concurrents + actionnariat + ratios + cours de bourse +
+// graphiques + scénarios + Wolf Score + conclusion), donc ce n'est pas un cas rare.
+function wolfSlideSommaireRowHtml(it, i){
+  return `<div class="wolf-slide-sommaire-row">
+    <div class="wolf-slide-sommaire-num">${String(i + 1).padStart(2, '0')}</div>
+    <div class="wolf-slide-sommaire-title">${escapeHtml(it.title || '')}</div>
+  </div>`;
+}
+function wolfSlideSommaireHtml(heroUrl, num, items){
+  let body;
+  if (items.length > 9){
+    const mid = Math.ceil(items.length / 2);
+    const colA = items.slice(0, mid).map((it, i) => wolfSlideSommaireRowHtml(it, i));
+    const colB = items.slice(mid).map((it, i) => wolfSlideSommaireRowHtml(it, i + mid));
+    body = `<div class="wolf-slide-sommaire-columns">
+      <div class="wolf-slide-sommaire-list">${colA.join('')}</div>
+      <div class="wolf-slide-sommaire-list">${colB.join('')}</div>
+    </div>`;
+  }else{
+    body = `<div class="wolf-slide-sommaire-list">${items.map((it, i) => wolfSlideSommaireRowHtml(it, i)).join('')}</div>`;
+  }
+  return wolfSlideShell({ heroUrl, eyebrowMini: 'SOMMAIRE', num, eyebrow: 'SOMMAIRE', title: 'Le plan de la présentation', bodyHtml: body });
+}
+
+// images (voir data.images/g.images, même structure que le portrait) — demande
+// explicite : "les visuels qui sont mis dans le PDF vertical, ils doivent aussi se
+// mettre dans le PDF de présentation" (ex. photos ajoutées sur VINCI Construction/
+// Autoroutes/Concessions, sous-secteurs de "Secteurs d'activité"). Légendes reprises
+// (demande explicite, "il faut remettre les légendes") ; taille adaptative — UNE
+// image seule occupe beaucoup plus de place ("quand l'image est seule, tu la mets
+// beaucoup plus grande"), plusieurs images se répartissent en grille plus généreuse
+// qu'avant ("les images sont tout petites... revois la mise en page").
+function wolfSlideImagesRowHtml(images, splitMode){
+  const list = (images || []).map(img => (typeof img === 'string') ? { src: img, legende: '' } : img).filter(im => im && im.src);
+  if (!list.length) return '';
+  const base = splitMode ? 'wolf-slide-split-images' : 'wolf-slide-body-images';
+  const cls = list.length === 1 ? `${base} ${base}-solo` : base;
+  return `<div class="${cls}">${list.map(im => `<figure class="wolf-slide-body-figure"><img class="wolf-slide-body-img" src="${im.src}" alt="">${im.legende ? `<figcaption>${escapeHtml(im.legende)}</figcaption>` : ''}</figure>`).join('')}</div>`;
+}
+function wolfSlideTextHtml(heroUrl, num, eyebrowMini, title, subtitle, texte){
+  const paras = (texte || '').split(/\n{2,}/).map(p => `<p>${escapeHtml(p)}</p>`).join('');
+  return wolfSlideShell({ heroUrl, eyebrowMini, num, eyebrow: eyebrowMini, title, subtitle, bodyHtml: `<div class="wolf-slide-body">${paras}</div>` });
+}
+// Diapo DÉDIÉE aux images d'une section QUAND IL N'Y A PAS DE TEXTE à côté (ex. VINCI
+// Immobilier) — une image seule occupe alors une diapo quasi entière ("beaucoup plus
+// grande"), plusieurs se répartissent en grille généreuse.
+function wolfSlideImagesOnlyHtml(num, eyebrowMini, title, images){
+  return wolfSlideShell({ heroUrl: null, eyebrowMini, num, eyebrow: eyebrowMini, title, bodyHtml: wolfSlideImagesRowHtml(images) });
+}
+// Texte ET images sur LA MÊME diapo (2 colonnes) — demande explicite : les séparer sur
+// 2 diapos était du gaspillage ("tu ne vas pas me faire deux pages pour rien... tu
+// dois tout cumuler"). Texte à gauche (colonne plus étroite, police resserrée pour
+// tenir), image(s) à droite ("je pense tu mets les images à droite et le texte à
+// gauche").
+function wolfSlideTextImagesHtml(num, eyebrowMini, title, subtitle, texte, images){
+  const paras = (texte || '').split(/\n{2,}/).map(p => `<p>${escapeHtml(p)}</p>`).join('');
+  const body = `<div class="wolf-slide-split">
+    <div class="wolf-slide-split-text"><div class="wolf-slide-body">${paras}</div></div>
+    ${wolfSlideImagesRowHtml(images, true)}
+  </div>`;
+  return wolfSlideShell({ heroUrl: null, eyebrowMini, num, eyebrow: eyebrowMini, title, subtitle, bodyHtml: body });
+}
+
+// Descriptif chiffré sous chaque camembert (couleur + libellé + %) — demande
+// explicite : la légende native du graphique est trop petite ("on n'arrive pas à
+// voir quelle couleur représente quoi"), "il faut afficher les pourcentages" et "le
+// descriptif en dessous des graphiques". Mêmes couleurs que le camembert lui-même
+// (PORTFOLIO_COLORS, même ordre d'index que renderAnalyseCharts()).
+function wolfSlideChartLegendListHtml(rows){
+  const list = rows || [];
+  const total = list.reduce((s, r) => s + (r.valeur || 0), 0) || 1;
+  return `<div class="wolf-slide-chart-legend">${list.map((r, i) => {
+    const pct = Math.round((r.valeur || 0) / total * 100);
+    const color = PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length];
+    return `<div class="wolf-slide-chart-legend-row"><span class="wolf-slide-chart-legend-swatch" style="background:${color}"></span><span class="wolf-slide-chart-legend-label">${escapeHtml(r.label || '')}</span><span class="wolf-slide-chart-legend-pct">${pct}%</span></div>`;
+  }).join('')}</div>`;
+}
+function wolfSlideChartsPairHtml(heroUrl, num, urlA, labelA, rowsA, urlB, labelB, rowsB){
+  const col = (url, label, rows) => url ? `<div class="wolf-slide-chart-col"><div class="wolf-slide-chart-col-title">${escapeHtml(label)}</div><img src="${url}" alt="${escapeHtml(label)}">${wolfSlideChartLegendListHtml(rows)}</div>` : '';
+  const body = `<div class="wolf-slide-charts-pair">${col(urlA, labelA, rowsA)}${col(urlB, labelB, rowsB)}</div>`;
+  return wolfSlideShell({ heroUrl, eyebrowMini: 'DONNÉES', num, eyebrow: 'DONNÉES CLÉS', title: 'Revenus par pays & par secteur', bodyHtml: body, extraClass: 'wolf-slide-centered-body' });
+}
+
+// rows optionnel : descriptif chiffré sous le graphique (couleur + libellé + %) —
+// demande explicite pour l'actionnariat ("il faut mettre les pourcentages... le
+// descriptif est trop petit"), même correctif que les 2 camemberts revenus.
+function wolfSlideChartFullHtml(heroUrl, num, eyebrowMini, title, url, extraClass, rows){
+  const body = rows
+    ? `<div class="wolf-slide-chart-full wolf-slide-chart-full-legend"><img src="${url}" alt="${escapeHtml(title)}">${wolfSlideChartLegendListHtml(rows)}</div>`
+    : `<div class="wolf-slide-chart-full"><img src="${url}" alt="${escapeHtml(title)}"></div>`;
+  return wolfSlideShell({ heroUrl, eyebrowMini, num, eyebrow: eyebrowMini, title, bodyHtml: body, extraClass });
+}
+
+// Jusqu'à 4 graphiques historiques par diapo (grille 2×2) — demande explicite : "il y a
+// beaucoup trop de pages à la fin pour présenter les ratios financiers... condenser au
+// moins quatre ratios par page". Le cours de bourse ('stock') reste à part, sur sa
+// propre diapo en grand (voir wolfSlideChartFullHtml + extraClass 'wolf-slide-stock').
+function wolfSlideChartGridHtml(heroUrl, num, eyebrowMini, title, items){
+  const body = `<div class="wolf-slide-chart-grid">${items.map(it => `<div class="wolf-slide-chart-grid-cell"><div class="wolf-slide-chart-grid-title">${escapeHtml(it.label)}</div><div class="wolf-slide-chart-grid-img-wrap"><img src="${it.url}" alt="${escapeHtml(it.label)}"></div></div>`).join('')}</div>`;
+  return wolfSlideShell({ heroUrl, eyebrowMini, num, eyebrow: eyebrowMini, title, bodyHtml: body, extraClass: 'wolf-slide-centered-body' });
+}
+
+function wolfSlideStatRowHtml(heroUrl, num, stats){
+  const body = `<div class="wolf-slide-stats">${stats.map(s => `<div class="wolf-slide-stat"><div class="wolf-slide-stat-k">${escapeHtml(s.k)}</div><div class="wolf-slide-stat-v">${s.v ? escapeHtml(s.v) : '—'}</div></div>`).join('')}</div>`;
+  return wolfSlideShell({ heroUrl, eyebrowMini: 'DONNÉES', num, eyebrow: 'RATIOS FINANCIERS', title: 'Chiffres clés', bodyHtml: body, extraClass: 'wolf-slide-centered-body' });
+}
+
+// Au plus 2 concurrents par diapo (voir le chunking dans exportAnalyseSlidesAsPdf) —
+// demande explicite : "on n'y voit rien, les logos on les voit à peine... fais une
+// page, un concurrent, ou deux concurrents par page, les logos avec les bonnes
+// échelles". Chaque concurrent occupe donc une bonne partie de la diapo.
+function wolfSlideCompetitorsHtml(heroUrl, num, titre, concurrents){
+  const body = `<div class="wolf-slide-competitors">${(concurrents || []).map(c => `<div class="wolf-slide-competitor"><div class="wolf-slide-competitor-name">${escapeHtml(c.nom || 'Sans nom')}</div>${c.texte ? `<div class="wolf-slide-competitor-text">${escapeHtml(c.texte)}</div>` : ''}${wolfSlideImagesRowHtml(c.images)}</div>`).join('')}</div>`;
+  return wolfSlideShell({ heroUrl, eyebrowMini: 'CONCURRENCE', num, eyebrow: 'CONCURRENTS', title: titre || 'Concurrents', bodyHtml: body, extraClass: 'wolf-slide-centered-body' });
+}
+
+// Reprend TEL QUEL les 3 scénarios de l'onglet Valorisation (SCENARIOS/scenarioValues,
+// mêmes données que analyseValorisationScenariosHtml côté portrait/écran, jamais
+// recalculées séparément) — demande explicite : "rajouter les 3 scénarios... les
+// afficher dans une nouvelle section après les ratios financiers". Nécessite que
+// l'entreprise de la fiche soit celle affichée dans l'onglet Analyse (scenarioValues
+// n'existe que pour activeCompany), même contrainte que les graphiques historiques.
+function wolfSlideValorisationScenariosHtml(num, nom){
+  const scenarios = computeAnalyseScenarios(nom);
+  if (!scenarios) return '';
+  const cards = scenarios.map(s => {
+    const rows = analyseScenarioResultRowsHtml(s.result).map(([label, val]) =>
+      `<div class="wolf-slide-score-mini-row"><span>${label}</span><b>${val}</b></div>`
+    ).join('');
+    return `<div class="wolf-slide-score-mini wolf-slide-scenario-${s.color}"><div class="wolf-slide-score-mini-head"><span>${escapeHtml(s.label)}</span><span class="wolf-slide-score-mini-total">CAGR ${s.cagr}% · ${s.multiple}x</span></div>${rows}</div>`;
+  }).join('');
+  return `<div class="wolf-slide wolf-slide-score-full wolf-slide-noimg">
+    <div class="wolf-slide-header">
+      <img class="wolf-slide-logo" src="${WOLF_LOGO_URL}" alt="">
+      <span class="wolf-slide-wordmark">WOLF ACADEMY INVEST</span>
+      <span class="wolf-slide-header-sep">—</span><span class="wolf-slide-eyebrow-mini">RATIOS FINANCIERS</span>
+      <span class="wolf-slide-pagenum">${String(num).padStart(2, '0')}</span>
+    </div>
+    <div class="wolf-slide-content">
+      <div class="wolf-slide-score-card">
+        <div class="wolf-slide-score-card-head"><div>📊 Scénarios de valorisation</div></div>
+        <div class="wolf-slide-score-grid" style="grid-template-columns:repeat(3,1fr);">${cards}</div>
+      </div>
+    </div>
+    <div class="wolf-slide-footer">Support pédagogique — ceci n'est pas un conseil en investissement.</div>
+  </div>`;
+}
+
+// Wolf Score — TOUT sur une seule diapo (score global + les 5 modules avec le détail
+// de chaque critère) — demande explicite : la 1ère version (résumé + 5 diapos de
+// détail, une par module) était "trop décomposée" ("de la page 33 à 38... en une
+// page, je dois tout avoir"). Grille compacte 3 colonnes pour que les 5 modules
+// tiennent sur la diapo, sans photo (pas la place) — le loup reste sur la diapo de
+// transition qui précède.
+function wolfSlideWolfScoreHtml(heroUrl, num, nom){
+  const entry = analyseScoreEntryFor(nom);
+  const g = analyseScoreGlobal(entry);
+  const modules = ANALYSE_SCORE_MODULES.map(m => {
+    const rows = m.criteria.map(c => `<div class="wolf-slide-score-mini-row"><span>${escapeHtml(c.label)}</span><b>${entry[m.key][c.key] != null ? entry[m.key][c.key] : '—'}/${c.max}</b></div>`).join('');
+    return `<div class="wolf-slide-score-mini"><div class="wolf-slide-score-mini-head"><span>${escapeHtml(m.title)}</span><span class="wolf-slide-score-mini-total">${g.totals[m.key]}/${m.max}</span></div>${rows}</div>`;
+  }).join('')
+  // Note de valorisation — indépendante du score global, absente d'une 1ère version
+  // ("il y a aussi en plus une note sur la valorisation... elle n'y est pas là").
+  + `<div class="wolf-slide-score-mini wolf-slide-score-mini-valo"><div class="wolf-slide-score-mini-head"><span>Valorisation</span><span class="wolf-slide-score-mini-total">${g.valorisation}/100</span></div><div class="wolf-slide-score-mini-row"><span>Indépendante, hors score global</span></div></div>`;
+  // Carte englobante unique (en-tête + grille de modules) — demande explicite : "sur
+  // la dernière page où tu me mets le Wolf Score dans le PDF vertical... comment
+  // c'est mis en page avec le rectangle, je veux la même chose sur le PDF paysage".
+  // Reprend .analyse-section/.analyse-score-card-head de css/style.css (le
+  // rectangle englobant + en-tête loup/titre/badge du PDF portrait).
+  return `<div class="wolf-slide wolf-slide-score-full${heroUrl ? '' : ' wolf-slide-noimg'}">
+    ${heroUrl ? `<img class="wolf-slide-hero" src="${heroUrl}" alt="">` : ''}
+    ${heroUrl ? `<div class="wolf-slide-fade"></div>` : ''}
+    <div class="wolf-slide-header">
+      <img class="wolf-slide-logo" src="${WOLF_LOGO_URL}" alt="">
+      <span class="wolf-slide-wordmark">WOLF ACADEMY INVEST</span>
+      <span class="wolf-slide-header-sep">—</span><span class="wolf-slide-eyebrow-mini">VERDICT</span>
+      <span class="wolf-slide-pagenum">${String(num).padStart(2, '0')}</span>
+    </div>
+    <div class="wolf-slide-content">
+      <div class="wolf-slide-score-card">
+        <div class="wolf-slide-score-card-head">
+          <img class="wolf-slide-score-wolf" src="${WOLF_LOGO_URL}" alt="">
+          <div>🐺 Wolf Score</div>
+          <div class="wolf-slide-score-global"><span class="wolf-slide-score-global-value">${g.global}</span><span class="wolf-slide-score-global-sub">/100</span></div>
+        </div>
+        <div class="wolf-slide-score-grid">${modules}</div>
+      </div>
+    </div>
+    <div class="wolf-slide-footer">Support pédagogique — ceci n'est pas un conseil en investissement.</div>
+  </div>`;
+}
+
+function wolfSlideConclusionHtml(heroUrl, num, texte){
+  return `<div class="wolf-slide${heroUrl ? '' : ' wolf-slide-noimg'}">
+    ${heroUrl ? `<img class="wolf-slide-hero" src="${heroUrl}" alt="">` : ''}
+    ${heroUrl ? `<div class="wolf-slide-fade"></div>` : ''}
+    <div class="wolf-slide-header">
+      <img class="wolf-slide-logo" src="${WOLF_LOGO_URL}" alt="">
+      <span class="wolf-slide-wordmark">WOLF ACADEMY INVEST</span>
+      <span class="wolf-slide-pagenum">${String(num).padStart(2, '0')}</span>
+    </div>
+    <div class="wolf-slide-content">
+      <div class="wolf-slide-verdict-label"><div class="wolf-slide-verdict-bar"></div><span class="wolf-slide-verdict-tag">CONCLUSION</span></div>
+      <div class="wolf-slide-verdict-quote">${escapeHtml(texte || '')}</div>
+      <div class="wolf-slide-verdict-sign">Wolf Analysis</div>
+    </div>
+    <div class="wolf-slide-footer">Support pédagogique — ceci n'est pas un conseil en investissement.</div>
+  </div>`;
+}
+
+function wolfSlidesDocumentHtml(nom, bodyHtml){
+  return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
+<title>${escapeHtml(nom || '')} — Diaporama Wolf Analysis</title>
+<base href="${location.origin}/">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;700&family=Lora:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/wolf-slides.css?v=${Date.now()}">
+</head><body>${bodyHtml}</body></html>`;
+}
+
+// Point d'entrée — bouton #analyseExportSlidesBtn, câblé à côté de
+// #analyseExportPdfBtn. Génère TOUJOURS depuis les données live de la fiche
+// actuellement ouverte (currentAnalyseVersion()), jamais un état figé.
+async function exportAnalyseSlidesAsPdf(){
+  const v = currentAnalyseVersion();
+  if (!v || !analyseEntite) return;
+  const nom = analyseEntite;
+  const companyRows = companies[nom];
+  const latest = companyRows ? companyRows[companyRows.length - 1] : {};
+  const sectorLine = latest.secteur ? [latest.secteur, latest.sousSecteur].filter(Boolean).join(' › ') : '';
+  const logo = companyLogoUrl(nom);
+
+  // Ouverture SYNCHRONE (avant tout await) — sinon bloquée par le bloqueur de popup,
+  // qui n'autorise window.open() que dans le même tick que le geste utilisateur.
+  const win = window.open('', '_blank');
+  if (!win){
+    alert("Le navigateur a bloqué l'ouverture de la fenêtre du diaporama — autorise les popups pour ce site puis réessaie.");
+    return;
+  }
+  win.document.write('<!DOCTYPE html><title>Génération…</title><body style="background:#090909;color:#8A929C;font-family:sans-serif;padding:40px;">Génération du diaporama…</body>');
+  win.document.close();
+
+  const images = await resolveWolfSlideImages();
+
+  const textSections = [];
+  const pushIfFilled = async (key, label, hint) => {
+    const data = v.sections[key];
+    if (data && ((data.texte && data.texte.trim()) || (data.images && data.images.length))) textSections.push({ key, label, hint, texte: data.texte, images: await resolveImagesArray(data.images) });
+  };
+  await pushIfFilled('presentation', "Présentation de l'entreprise", 'Stratégie, profil opérationnel et concurrentiel');
+  await pushIfFilled('marche', 'Analyse du marché', '');
+  await pushIfFilled('moat', 'Avantage concurrentiel (moat)', '');
+  await pushIfFilled('positionChaine', 'Position dans la chaîne de valeur', "Ce qu'elle fournit, qui dépend d'elle");
+  await pushIfFilled('substituabilite', 'Substituts & remplaçabilité', '');
+  await pushIfFilled('perspectives', 'Perspectives de croissance', '');
+  await pushIfFilled('risques', 'Analyse du risque', '');
+
+  const secteurs = v.sections.secteursActivite;
+  const groupSlides = [];
+  const hasContent = o => (o.texte && o.texte.trim()) || (o.images && o.images.length);
+  for (const g of (secteurs && secteurs.groupes) || []){
+    if (hasContent(g)) groupSlides.push({ titre: g.titre || 'Sans titre', texte: g.texte, images: await resolveImagesArray(g.images) });
+    for (const sub of g.sousSecteurs || []){
+      if (hasContent(sub)) groupSlides.push({ titre: sub.titre || 'Sans titre', texte: sub.texte, images: await resolveImagesArray(sub.images) });
+    }
+  }
+
+  const hasRevenusEither = (v.revenusPays || []).length > 0 || (v.revenusSecteurs || []).length > 0;
+  const hasActionnariat = (v.actionnariat || []).length > 0;
+  const concurrentSecteurs = [];
+  for (const sec of (v.concurrentSecteurs || [])){
+    const list = sec.concurrents || [];
+    if (!list.length) continue;
+    const resolved = [];
+    for (const c of list) resolved.push({ ...c, images: await resolveImagesArray(c.images) });
+    concurrentSecteurs.push({ ...sec, concurrents: resolved });
+  }
+
+  const ratiosData = v.sections.ratios || {};
+  const ratioStats = wolfSlideExtractRatioStats(nom, ratiosData.ratiosSelectionnes || []);
+  // Graphiques historiques : nécessitent que cette entreprise soit celle affichée dans
+  // l'onglet Analyse (mêmes contraintes qu'à l'écran, voir analyseFicheChartDataUrl).
+  const selectedCharts = analyseEntite === activeCompany ? (ratiosData.graphiquesSelectionnes || []) : [];
+
+  const conclusionTexte = ((v.sections.conclusion && v.sections.conclusion.texte) || '').trim();
+  // Conclusion sur la concurrence — demande explicite, juste après les concurrents
+  // (voir CERVEAU_ANALYSE_SECTIONS_APRES_CONCURRENTS). Résolue à part (pas dans
+  // textSections ci-dessus) car elle doit s'afficher juste après les diapos concurrents,
+  // pas dans le lot de sections texte en tout début de diaporama.
+  const concCcData = v.sections.conclusionConcurrents;
+  const hasConcCc = concCcData && ((concCcData.texte && concCcData.texte.trim()) || (concCcData.images && concCcData.images.length));
+  const concCcTexte = hasConcCc ? concCcData.texte : '';
+  const concCcImages = hasConcCc ? await resolveImagesArray(concCcData.images) : [];
+
+  // Sommaire construit APRÈS avoir déterminé ce qui sera vraiment affiché — jamais
+  // une table des matières qui annonce du contenu absent.
+  const planItems = [];
+  textSections.forEach(s => planItems.push({ title: s.label, hint: s.hint }));
+  // Une seule ligne pour toute la section (pas une par groupe/sous-secteur) — demande
+  // explicite : "tu as tout déroulé... il faut juste mettre secteur d'activité, on
+  // fera le détail [dans le] plan" (le plan doit tenir sur une seule diapo).
+  if (groupSlides.length) planItems.push({ title: "Secteurs d'activité", hint: `${groupSlides.length} module${groupSlides.length > 1 ? 's' : ''}` });
+  if (hasRevenusEither) planItems.push({ title: 'Revenus par pays & par secteur', hint: 'Répartition géographique et sectorielle' });
+  concurrentSecteurs.forEach(sec => planItems.push({ title: 'Concurrents — ' + (sec.titre || ''), hint: 'Paysage concurrentiel' }));
+  if (hasConcCc) planItems.push({ title: 'Conclusion sur la concurrence', hint: "A-t-elle vraiment un avantage ?" });
+  if (hasActionnariat) planItems.push({ title: 'Actionnariat principal', hint: 'Répartition du capital' });
+  if (ratioStats.length) planItems.push({ title: 'Chiffres clés', hint: 'Ratios financiers sélectionnés' });
+  if (selectedCharts.includes('stock')) planItems.push({ title: 'Cours de bourse', hint: 'Historique' });
+  if (selectedCharts.filter(k => k !== 'stock').length) planItems.push({ title: 'Graphiques historiques', hint: 'Ratios financiers sélectionnés' });
+  if (computeAnalyseScenarios(nom)) planItems.push({ title: 'Scénarios de valorisation', hint: 'Optimiste / Réaliste / Pessimiste' });
+  planItems.push({ title: 'Wolf Score', hint: 'Synthèse de notation, détail par module' });
+  if (conclusionTexte) planItems.push({ title: 'Conclusion', hint: 'Synthèse finale' });
+
+  // Une diapo de TRANSITION (loup + titre) avant chaque étape, puis la ou les diapo(s)
+  // de contenu de cette étape SANS photo (pleine largeur — important pour les
+  // graphiques/tableaux). Demande explicite : "dès qu'on passe une étape, on a le loup
+  // avec le titre de la nouvelle partie", plutôt qu'une photo répétée sur chaque diapo
+  // de contenu qui grignoterait la largeur disponible pour les données.
+  let num = 2;
+  const slides = [];
+  slides.push(wolfSlideCoverHtml(nom, latest, sectorLine, logo));
+  // Sommaire : aucun rôle dédié listé explicitement par l'utilisateur — reprend la
+  // photo "presentation" (1ère étape), à ajuster facilement si besoin.
+  slides.push(wolfSlideSommaireHtml(images.presentation, num++, planItems));
+
+  // Texte + images d'une même section TOUJOURS sur UNE seule diapo — demande
+  // explicite ("tu dois tout cumuler... tu ne vas pas me faire deux pages pour
+  // rien") : texte à gauche / images à droite si les deux existent, sinon le
+  // gabarit dédié à celui des deux qui est présent (image seule "beaucoup plus
+  // grande", texte seul pleine largeur).
+  const pushSectionSlide = (eyebrowMini, title, subtitle, texte, imgs) => {
+    const hasTexte = texte && texte.trim();
+    const hasImgs = imgs && imgs.length;
+    if (hasTexte && hasImgs) slides.push(wolfSlideTextImagesHtml(num++, eyebrowMini, title, subtitle, texte, imgs));
+    else if (hasTexte) slides.push(wolfSlideTextHtml(null, num++, eyebrowMini, title, subtitle, texte));
+    else if (hasImgs) slides.push(wolfSlideImagesOnlyHtml(num++, eyebrowMini, title, imgs));
+  };
+
+  textSections.forEach(s => {
+    slides.push(wolfSlideDividerHtml(images[s.key], num++, 'ANALYSE', s.label));
+    pushSectionSlide('ANALYSE', s.label, s.hint, s.texte, s.images);
+  });
+
+  if (groupSlides.length){
+    slides.push(wolfSlideDividerHtml(images.secteurs, num++, 'SECTEURS', "Secteurs d'activité"));
+    groupSlides.forEach(g => pushSectionSlide('SECTEURS', g.titre, "Secteur d'activité", g.texte, g.images));
+  }
+
+  if (hasRevenusEither){
+    const urlA = (v.revenusPays || []).length ? wolfSlideChartDataUrl('revenusPays') : null;
+    const urlB = (v.revenusSecteurs || []).length ? wolfSlideChartDataUrl('revenusSecteurs') : null;
+    if (urlA || urlB){
+      slides.push(wolfSlideDividerHtml(images.revenus, num++, 'DONNÉES', 'Revenus par pays & par secteur'));
+      slides.push(wolfSlideChartsPairHtml(null, num++, urlA, ANALYSE_CHART_LABELS.revenusPays, v.revenusPays, urlB, ANALYSE_CHART_LABELS.revenusSecteurs, v.revenusSecteurs));
+    }
+  }
+
+  if (concurrentSecteurs.length){
+    slides.push(wolfSlideDividerHtml(images.concurrents, num++, 'CONCURRENCE', 'Concurrents par secteur'));
+    concurrentSecteurs.forEach(sec => {
+      const list = sec.concurrents || [];
+      for (let i = 0; i < list.length; i += 2){
+        slides.push(wolfSlideCompetitorsHtml(null, num++, sec.titre, list.slice(i, i + 2)));
+      }
+    });
+  }
+
+  // Conclusion sur la concurrence — demande explicite, juste après les concurrents
+  // (même thème "CONCURRENCE", pas une nouvelle diapo de transition dédiée pour ne
+  // pas alourdir le diaporama pour un seul bloc de texte).
+  if (hasConcCc){
+    pushSectionSlide('CONCURRENCE', 'Conclusion sur la concurrence', "A-t-elle vraiment un avantage ?", concCcTexte, concCcImages);
+  }
+
+  if (hasActionnariat){
+    const url = wolfSlideChartDataUrl('actionnariat');
+    if (url){
+      slides.push(wolfSlideDividerHtml(images.actionnariat, num++, 'DONNÉES', 'Actionnariat principal'));
+      slides.push(wolfSlideChartFullHtml(null, num++, 'DONNÉES', ANALYSE_CHART_LABELS.actionnariat, url, 'wolf-slide-centered-body', v.actionnariat));
+    }
+  }
+
+  // Cours de bourse à part (sa propre diapo, en très grand — demande explicite : "le
+  // cours de bourse, lui, doit bien être tout seul... beaucoup plus grand"), les autres
+  // graphiques historiques condensés 4 par diapo (grille 2×2 — demande explicite :
+  // "beaucoup trop de pages... condenser au moins quatre ratios par page").
+  const stockUrl = selectedCharts.includes('stock') && analyseFicheChartDataUrl('stock', { width: 1600, height: 900 });
+  const otherChartItems = selectedCharts.filter(key => key !== 'stock').map(key => {
+    const label = (ANALYSE_CHART_EXPORT_LIST.find(([k]) => k === key) || [key, key])[1];
+    const url = analyseFicheChartDataUrl(key, { width: 900, height: 600 });
+    return url ? { label, url } : null;
+  }).filter(Boolean);
+
+  if (ratioStats.length || stockUrl || otherChartItems.length){
+    slides.push(wolfSlideDividerHtml(images.ratios, num++, 'RATIOS FINANCIERS', 'Ratios financiers'));
+    if (ratioStats.length) slides.push(wolfSlideStatRowHtml(null, num++, ratioStats));
+    if (stockUrl) slides.push(wolfSlideChartFullHtml(null, num++, 'RATIOS FINANCIERS', 'Cours de bourse', stockUrl, 'wolf-slide-stock'));
+    for (let i = 0; i < otherChartItems.length; i += 4){
+      slides.push(wolfSlideChartGridHtml(null, num++, 'RATIOS FINANCIERS', 'Historique', otherChartItems.slice(i, i + 4)));
+    }
+  }
+
+  if (computeAnalyseScenarios(nom)){
+    slides.push(wolfSlideDividerHtml(images.ratios, num++, 'RATIOS FINANCIERS', 'Scénarios de valorisation'));
+    slides.push(wolfSlideValorisationScenariosHtml(num++, nom));
+  }
+
+  slides.push(wolfSlideDividerHtml(images.wolfscore, num++, 'VERDICT', 'Wolf Score'));
+  slides.push(wolfSlideWolfScoreHtml(null, num++, nom));
+
+  if (conclusionTexte){
+    slides.push(wolfSlideDividerHtml(images.conclusion, num++, 'VERDICT', 'Conclusion'));
+    slides.push(wolfSlideConclusionHtml(null, num++, conclusionTexte));
+  }
+
+  win.document.open();
+  win.document.write(wolfSlidesDocumentHtml(nom, slides.join('')));
+  win.document.close();
+
+  const finishAndPrint = () => {
+    const imgs = Array.from(win.document.querySelectorAll('img'));
+    const waits = imgs.map(img => img.complete ? Promise.resolve() : new Promise(res => {
+      img.addEventListener('load', res, { once: true });
+      img.addEventListener('error', res, { once: true });
+    }));
+    const fontsReady = (win.document.fonts && win.document.fonts.ready) ? win.document.fonts.ready : Promise.resolve();
+    Promise.race([
+      Promise.all([Promise.all(waits), fontsReady]),
+      new Promise(res => setTimeout(res, 5000))
+    ]).then(() => { try{ win.focus(); win.print(); }catch(e){ /* fenêtre fermée entre-temps */ } });
+  };
+  if (win.document.readyState === 'complete') finishAndPrint();
+  else win.addEventListener('load', finishAndPrint, { once: true });
 }
 
 // Récupère le tableau d'images (et son objet propriétaire pour la sauvegarde) à partir
 // d'un élément qui porte soit data-key (section fixe), soit data-competitor (concurrent).
 function analyseImagesArrayFromEl(v, el){
+  // Sous-secteur AVANT groupe seul (voir analyseGroupeSousSecteursHtml()) — un élément
+  // de sous-secteur porte AUSSI data-section/data-groupe, sinon il serait mal résolu
+  // vers les images du groupe parent au lieu des siennes propres.
+  if (el.dataset.section != null && el.dataset.groupe != null && el.dataset.sous != null) return v.sections[el.dataset.section].groupes[parseInt(el.dataset.groupe, 10)].sousSecteurs[parseInt(el.dataset.sous, 10)].images;
+  if (el.dataset.section != null && el.dataset.groupe != null) return v.sections[el.dataset.section].groupes[parseInt(el.dataset.groupe, 10)].images;
+  if (el.dataset.csector != null && el.dataset.cidx != null) return v.concurrentSecteurs[parseInt(el.dataset.csector, 10)].concurrents[parseInt(el.dataset.cidx, 10)].images;
   if (el.dataset.key != null) return v.sections[el.dataset.key].images;
   return v.concurrents[parseInt(el.dataset.competitor, 10)].images;
 }
@@ -13883,7 +17748,7 @@ function wireAnalyseImageEvents(v, box){
   box.querySelectorAll('.analyse-image-input').forEach(input => {
     input.addEventListener('change', async () => {
       const arr = analyseImagesArrayFromEl(v, input);
-      for (const file of input.files) arr.push(await readFileAsDataURL(file));
+      for (const file of input.files) arr.push({ src: await readFileAsDataURL(file), legende:'' });
       input.value = '';
       renderAnalyse();
     });
@@ -13893,12 +17758,24 @@ function wireAnalyseImageEvents(v, box){
       const input = btn.previousElementSibling;
       const url = input.value.trim();
       if (!url) return;
-      analyseImagesArrayFromEl(v, btn).push(url);
+      analyseImagesArrayFromEl(v, btn).push({ src:url, legende:'' });
       renderAnalyse();
     });
   });
   box.querySelectorAll('.analyse-image-del').forEach(btn => {
     btn.addEventListener('click', () => { analyseImagesArrayFromEl(v, btn).splice(parseInt(btn.dataset.idx, 10), 1); renderAnalyse(); });
+  });
+  // Légende par image — pas de renderAnalyse() à chaque frappe (perdrait le focus),
+  // même convention que .analyse-textarea : accumule dans l'objet vivant, persisté au
+  // clic explicite sur "Enregistrer" (saveAnalyseVersion()), pas d'auto-save ici.
+  box.querySelectorAll('.analyse-image-legende').forEach(input => {
+    input.addEventListener('input', () => {
+      const arr = analyseImagesArrayFromEl(v, input);
+      const idx = parseInt(input.dataset.idx, 10);
+      const entry = arr[idx];
+      if (typeof entry === 'string') arr[idx] = { src: entry, legende: input.value };
+      else entry.legende = input.value;
+    });
   });
   box.querySelectorAll('.analyse-image-thumb img').forEach(img => {
     img.addEventListener('click', () => openImageZoom(img.dataset.zoomSrc));
@@ -13925,6 +17802,32 @@ function wireAnalyseSectionEvents(){
   const v = currentAnalyseVersion();
   const box = document.getElementById('analyseBody');
 
+  // Enregistrement continu (voir scheduleAnalyseAutosave()) — délégation sur `box` (le
+  // conteneur FIXE, jamais recréé par renderAnalyse() qui ne remplace que son
+  // innerHTML), câblée UNE SEULE FOIS pour toute la durée de vie de la page — sinon
+  // chaque appel à wireAnalyseSectionEvents() (donc chaque renderAnalyse()) empilerait
+  // un nouveau listener en plus des précédents. 'input' couvre tout champ texte/nombre
+  // de la fiche (textarea, titres de groupe, cellules du tableau...) ; 'click' couvre
+  // les actions structurelles (ajouter/supprimer une ligne, une image, un secteur...) —
+  // jamais déclenché depuis renderAnalyse() lui-même, donc jamais depuis l'OUVERTURE
+  // d'une fiche (voir cerveauDataReadyPromise plus haut sur ce même risque).
+  if (!box.dataset.autosaveWired){
+    box.dataset.autosaveWired = '1';
+    box.addEventListener('input', scheduleAnalyseAutosave);
+    box.addEventListener('click', e => { if (e.target.closest('button')) scheduleAnalyseAutosave(); });
+  }
+
+  // Auto-grandissement de TOUS les textarea de la fiche — jamais de scroll interne ni de
+  // texte coupé (demande explicite), même mécanisme que autoGrowTextarea() pour les
+  // blocs libres du Cerveau numérique : hauteur recalculée à l'ouverture ET à chaque
+  // frappe. Générique (un seul passage pour les 3 classes de textarea de la fiche :
+  // sections, résumé de secteur, description concurrent) plutôt que dupliqué dans
+  // chacun des blocs de wiring ci-dessous.
+  box.querySelectorAll('textarea').forEach(ta => {
+    autoGrowTextarea(ta);
+    ta.addEventListener('input', () => autoGrowTextarea(ta));
+  });
+
   box.querySelectorAll('.analyse-textarea').forEach(ta => {
     ta.addEventListener('input', () => { v.sections[ta.dataset.key].texte = ta.value; });
   });
@@ -13950,28 +17853,179 @@ function wireAnalyseSectionEvents(){
     btn.addEventListener('click', () => { v[btn.dataset.key].splice(parseInt(btn.dataset.idx, 10), 1); renderAnalyse(); });
   });
 
-  box.querySelectorAll('.analyse-competitor-nom').forEach(input => {
-    input.addEventListener('input', () => { v.concurrents[parseInt(input.dataset.idx, 10)].nom = input.value; });
+  // Sous-groupes nommés (secteursActivite) — voir analyseSectionGroupesHtml().
+  box.querySelectorAll('.analyse-groupe-titre').forEach(input => {
+    input.addEventListener('input', () => { v.sections[input.dataset.section].groupes[parseInt(input.dataset.groupe, 10)].titre = input.value; });
   });
-  box.querySelectorAll('.analyse-competitor-texte').forEach(ta => {
-    ta.addEventListener('input', () => { v.concurrents[parseInt(ta.dataset.idx, 10)].texte = ta.value; });
+  box.querySelectorAll('.analyse-groupe-texte').forEach(ta => {
+    ta.addEventListener('input', () => { v.sections[ta.dataset.section].groupes[parseInt(ta.dataset.groupe, 10)].texte = ta.value; });
   });
-  box.querySelectorAll('.analyse-competitor-del').forEach(btn => {
-    btn.addEventListener('click', () => { v.concurrents.splice(parseInt(btn.dataset.idx, 10), 1); renderAnalyse(); });
+  box.querySelectorAll('.analyse-groupe-del').forEach(btn => {
+    btn.addEventListener('click', () => { v.sections[btn.dataset.section].groupes.splice(parseInt(btn.dataset.groupe, 10), 1); renderAnalyse(); });
   });
-  document.getElementById('analyseAddCompetitor').addEventListener('click', () => { v.concurrents.push({ nom:'', texte:'', images:[] }); renderAnalyse(); });
+  box.querySelectorAll('.analyse-groupe-add').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sec = v.sections[btn.dataset.section];
+      if (!sec.groupes) sec.groupes = [];
+      sec.groupes.push({ titre:'', texte:'', images:[] });
+      renderAnalyse();
+    });
+  });
+
+  // Sous-secteurs (voir analyseGroupeSousSecteursHtml()) — même principe que les
+  // groupes ci-dessus, un niveau plus bas. data-groupe identifie le secteur PARENT,
+  // data-sous le sous-secteur lui-même à l'intérieur de sousSecteurs[].
+  box.querySelectorAll('.analyse-groupe-sous-titre').forEach(input => {
+    input.addEventListener('input', () => { v.sections[input.dataset.section].groupes[parseInt(input.dataset.groupe, 10)].sousSecteurs[parseInt(input.dataset.sous, 10)].titre = input.value; });
+  });
+  box.querySelectorAll('.analyse-groupe-sous-texte').forEach(ta => {
+    ta.addEventListener('input', () => { v.sections[ta.dataset.section].groupes[parseInt(ta.dataset.groupe, 10)].sousSecteurs[parseInt(ta.dataset.sous, 10)].texte = ta.value; });
+  });
+  box.querySelectorAll('.analyse-groupe-sous-del').forEach(btn => {
+    btn.addEventListener('click', () => { v.sections[btn.dataset.section].groupes[parseInt(btn.dataset.groupe, 10)].sousSecteurs.splice(parseInt(btn.dataset.sous, 10), 1); renderAnalyse(); });
+  });
+  box.querySelectorAll('.analyse-groupe-sous-add').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const g = v.sections[btn.dataset.section].groupes[parseInt(btn.dataset.groupe, 10)];
+      if (!g.sousSecteurs) g.sousSecteurs = [];
+      g.sousSecteurs.push({ titre:'', texte:'', images:[] });
+      renderAnalyse();
+    });
+  });
+
+  // Tableau libre (secteursActivite, voir tableEditor/analyseSectionTableHtml()) —
+  // édition de texte (en-tête ou cellule) = accumulation en mémoire seule, jamais de
+  // renderAnalyse() (perdrait le focus à chaque frappe, même convention que
+  // .analyse-textarea/.analyse-groupe-titre) ; ajout/suppression de ligne ou colonne =
+  // changement de STRUCTURE du tableau, donc renderAnalyse() nécessaire.
+  box.querySelectorAll('.analyse-table-col-input').forEach(input => {
+    input.addEventListener('input', () => {
+      v.sections[input.dataset.section].tableau.columns[parseInt(input.dataset.col, 10)] = input.value;
+    });
+  });
+  box.querySelectorAll('.analyse-table-cell').forEach(input => {
+    input.addEventListener('input', () => {
+      const t = v.sections[input.dataset.section].tableau;
+      t.rows[parseInt(input.dataset.row, 10)][parseInt(input.dataset.col, 10)] = input.value;
+    });
+  });
+  box.querySelectorAll('.analyse-table-col-del').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const t = v.sections[btn.dataset.section].tableau;
+      const ci = parseInt(btn.dataset.col, 10);
+      t.columns.splice(ci, 1);
+      t.rows.forEach(row => row.splice(ci, 1));
+      renderAnalyse();
+    });
+  });
+  box.querySelectorAll('.analyse-table-row-del').forEach(btn => {
+    btn.addEventListener('click', () => {
+      v.sections[btn.dataset.section].tableau.rows.splice(parseInt(btn.dataset.row, 10), 1);
+      renderAnalyse();
+    });
+  });
+  box.querySelectorAll('.analyse-table-addcol').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const t = v.sections[btn.dataset.section].tableau;
+      t.columns.push('Colonne');
+      t.rows.forEach(row => row.push(''));
+      renderAnalyse();
+    });
+  });
+  box.querySelectorAll('.analyse-table-addrow').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const t = v.sections[btn.dataset.section].tableau;
+      t.rows.push(t.columns.map(() => ''));
+      renderAnalyse();
+    });
+  });
+
+  // Sélecteur de ratios en direct (voir ANALYSE_FICHE_RATIO_CATALOG) — seule la liste des
+  // clés cochées est persistée, jamais une valeur figée.
+  box.querySelectorAll('[data-ratio-key]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      if (!v.sections.ratios.ratiosSelectionnes) v.sections.ratios.ratiosSelectionnes = [];
+      const arr = v.sections.ratios.ratiosSelectionnes;
+      const idx = arr.indexOf(cb.dataset.ratioKey);
+      if (cb.checked && idx === -1) arr.push(cb.dataset.ratioKey);
+      else if (!cb.checked && idx !== -1) arr.splice(idx, 1);
+      renderAnalyse();
+    });
+  });
+
+  // Sélecteur de graphiques en direct (voir ANALYSE_CHART_EXPORT_LIST) — même principe,
+  // seule la liste des clés cochées est persistée.
+  box.querySelectorAll('[data-chart-key]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      if (!v.sections.ratios.graphiquesSelectionnes) v.sections.ratios.graphiquesSelectionnes = [];
+      const arr = v.sections.ratios.graphiquesSelectionnes;
+      const idx = arr.indexOf(cb.dataset.chartKey);
+      if (cb.checked && idx === -1) arr.push(cb.dataset.chartKey);
+      else if (!cb.checked && idx !== -1) arr.splice(idx, 1);
+      renderAnalyse();
+    });
+  });
+  box.querySelectorAll('.analyse-fiche-chart-thumb img').forEach(img => {
+    img.addEventListener('click', () => openImageZoom(img.dataset.zoomSrc));
+  });
+
+  // Concurrents par secteur — additif, v.concurrents (liste plate) jamais touché.
+  box.querySelectorAll('.analyse-csector-titre').forEach(input => {
+    input.addEventListener('input', () => { v.concurrentSecteurs[parseInt(input.dataset.csector, 10)].titre = input.value; });
+  });
+  box.querySelectorAll('.analyse-csector-texte').forEach(ta => {
+    ta.addEventListener('input', () => { v.concurrentSecteurs[parseInt(ta.dataset.csector, 10)].texte = ta.value; });
+  });
+  box.querySelectorAll('.analyse-csector-del').forEach(btn => {
+    btn.addEventListener('click', () => { v.concurrentSecteurs.splice(parseInt(btn.dataset.csector, 10), 1); renderAnalyse(); });
+  });
+  const csectorAddBtn = box.querySelector('.analyse-csector-add');
+  if (csectorAddBtn) csectorAddBtn.addEventListener('click', () => {
+    if (!v.concurrentSecteurs) v.concurrentSecteurs = [];
+    v.concurrentSecteurs.push({ titre:'', texte:'', concurrents:[] });
+    renderAnalyse();
+  });
+  box.querySelectorAll('.analyse-ccompetitor-nom').forEach(input => {
+    input.addEventListener('input', () => { v.concurrentSecteurs[parseInt(input.dataset.csector, 10)].concurrents[parseInt(input.dataset.cidx, 10)].nom = input.value; });
+  });
+  box.querySelectorAll('.analyse-ccompetitor-texte').forEach(ta => {
+    ta.addEventListener('input', () => { v.concurrentSecteurs[parseInt(ta.dataset.csector, 10)].concurrents[parseInt(ta.dataset.cidx, 10)].texte = ta.value; });
+  });
+  box.querySelectorAll('.analyse-ccompetitor-del').forEach(btn => {
+    btn.addEventListener('click', () => { v.concurrentSecteurs[parseInt(btn.dataset.csector, 10)].concurrents.splice(parseInt(btn.dataset.cidx, 10), 1); renderAnalyse(); });
+  });
+  box.querySelectorAll('.analyse-ccompetitor-add').forEach(btn => {
+    btn.addEventListener('click', () => {
+      v.concurrentSecteurs[parseInt(btn.dataset.csector, 10)].concurrents.push({ nom:'', texte:'', images:[] });
+      renderAnalyse();
+    });
+  });
 }
 
 function renderAnalyse(){
   renderAnalyseVersionSelect();
   const v = currentAnalyseVersion();
-  // Rétro-compatibilité : une fiche créée avant les sections/scores V2 n'a ni les 3
-  // nouvelles clés dans v.sections ni v.scores/v.bottleneckScope — backfill défensif
-  // plutôt que de planter sur data.texte undefined (même logique que les autres
-  // migrations du fichier, ex. migrateCerveauChains()).
-  CERVEAU_ANALYSE_SECTIONS_ALL.forEach(s => { if (!v.sections[s.key]) v.sections[s.key] = { texte:'', images:[] }; });
-  if (!v.scores) v.scores = blankAnalyseScores();
-  if (v.bottleneckScope === undefined) v.bottleneckScope = null;
+  // Rétro-compatibilité : une fiche créée avant les 3 sections Goulot n'a pas ces clés
+  // dans v.sections — backfill défensif plutôt que de planter sur data.texte undefined
+  // (même logique que les autres migrations du fichier, ex. migrateCerveauChains()).
+  CERVEAU_ANALYSE_SECTIONS_ALL.forEach(s => {
+    if (!v.sections[s.key]) v.sections[s.key] = { texte:'', images:[] };
+    if (s.groupable && !v.sections[s.key].groupes) v.sections[s.key].groupes = [];
+    if (s.ratioSelector && !v.sections[s.key].ratiosSelectionnes) v.sections[s.key].ratiosSelectionnes = [];
+    if (s.chartSelector && !v.sections[s.key].graphiquesSelectionnes) v.sections[s.key].graphiquesSelectionnes = [];
+    if (s.tableEditor && !v.sections[s.key].tableau) v.sections[s.key].tableau = { columns:[...ANALYSE_TABLE_DEFAULT_COLUMNS], rows:[] };
+  });
+  if (!v.concurrentSecteurs) v.concurrentSecteurs = [];
+  // Migration additive UNE SEULE FOIS : l'ancien bloc "Concurrents" (liste plate) est
+  // retiré de l'affichage (demande explicite — "les concurrents par secteur, c'est les
+  // concurrents"), mais toute fiche remplie AVANT ce changement garde ses concurrents —
+  // basculés ici dans un groupe "Concurrents" plutôt qu'effacés. v.concurrents devient
+  // vide juste après, donc cette bascule ne se redéclenche jamais (condition sur sa
+  // longueur) — jamais de doublon au rendu suivant.
+  if (v.concurrents && v.concurrents.length){
+    v.concurrentSecteurs.push({ titre:'Concurrents', texte:'', concurrents:v.concurrents });
+    v.concurrents = [];
+  }
   document.getElementById('analyseUpdatedLabel').textContent = 'Dernière modification : ' + v.dateModified;
   analyseDeleteConfirming = false;
   const delBtn = document.getElementById('analyseDeleteBtn');
@@ -13983,16 +18037,25 @@ function renderAnalyse(){
     + `<div class="analyse-charts-row">${analyseChartSectionHtml('revenusPays', v.revenusPays)}${analyseChartSectionHtml('revenusSecteurs', v.revenusSecteurs)}</div>`
     + CERVEAU_ANALYSE_SECTIONS_MID_A.map(s => analyseSectionHtml(s, v.sections[s.key])).join('')
     + CERVEAU_ANALYSE_SECTIONS_GOULOT.map(s => analyseSectionHtml(s, v.sections[s.key])).join('')
-    + analyseConcurrentsHtml(v.concurrents)
+    + analyseConcurrentSecteursHtml(v.concurrentSecteurs)
+    + CERVEAU_ANALYSE_SECTIONS_APRES_CONCURRENTS.map(s => analyseSectionHtml(s, v.sections[s.key])).join('')
     + CERVEAU_ANALYSE_SECTIONS_MID_B.map(s => analyseSectionHtml(s, v.sections[s.key])).join('')
-    + analyseScoresHtml(v)
     + analyseChartSectionHtml('actionnariat', v.actionnariat)
-    + CERVEAU_ANALYSE_SECTIONS_BOTTOM.map(s => analyseSectionHtml(s, v.sections[s.key])).join('');
+    + CERVEAU_ANALYSE_SECTIONS_BOTTOM.map(s => analyseSectionHtml(s, v.sections[s.key])).join('')
+    // Scénarios de valorisation (Optimiste/Réaliste/Pessimiste) juste après les ratios
+    // financiers — demande explicite. Lecture seule ici aussi : la saisie/les curseurs
+    // restent dans l'onglet Valorisation, jamais dupliqués.
+    + analyseValorisationScenariosHtml(analyseEntite)
+    // Scoring qualitatif juste AVANT la conclusion — demande explicite ("le score, tu le
+    // mets au-dessus de la conclusion"). Lecture seule ici : la saisie se fait depuis
+    // l'onglet Analyse (analyseScoreStore, voir renderAnalyseScoreCard) — même donnée,
+    // jamais dupliquée.
+    + analyseScoreBlockHtml(analyseEntite)
+    + CERVEAU_ANALYSE_SECTIONS_CONCLUSION.map(s => analyseSectionHtml(s, v.sections[s.key])).join('');
   wireAnalyseSectionEvents();
-  wireAnalyseScoresEvents();
   renderAnalyseCharts(v);
-  // Même lazy-load que la vue Goulots (voir son commentaire) — sans ça, Quality reste
-  // "Donnée insuffisante" pour toute entreprise FMP-only jamais visitée via Analyse.
+  // Lazy-load : charge les données FMP pour toute entreprise FMP-only jamais visitée
+  // via Analyse, pour que les graphiques historiques de cette fiche aient des données.
   if (!companies[analyseEntite] && rankingSummaryData.some(e => e.nom === analyseEntite)){
     const openedFor = analyseEntite;
     ensureSyntheticCompanyData(openedFor).then(ok => { if (ok && analyseEntite === openedFor) renderAnalyse(); });
@@ -14004,7 +18067,17 @@ function saveAnalyseVersion(){
   v.dateModified = new Date().toISOString().slice(0, 10);
   persistCerveauData();
   renderAnalyseVersionSelect();
-  document.getElementById('analyseUpdatedLabel').textContent = 'Dernière modification : ' + v.dateModified + ' — enregistré ✓';
+  // Heure précise en plus de la date — demande explicite ("juste le jour... ça
+  // serait bien qu'il y ait l'heure aussi, comme ça c'est sûr"). Utilise
+  // cerveauLastSavedAt (posé à l'instant par persistCerveauData()) plutôt que de
+  // recalculer une nouvelle date : cette ligne écrasait auparavant l'affichage
+  // précis mis en place par updateCerveauSaveStatusLabel() avec une version
+  // date-seule, ce qui annulait le correctif.
+  const t = cerveauLastSavedAt || new Date();
+  const hh = String(t.getHours()).padStart(2, '0');
+  const mm = String(t.getMinutes()).padStart(2, '0');
+  const ss = String(t.getSeconds()).padStart(2, '0');
+  document.getElementById('analyseUpdatedLabel').textContent = 'Enregistré ✓ le ' + v.dateModified + ' à ' + hh + ':' + mm + ':' + ss;
 }
 
 function duplicateAnalyseVersion(){
@@ -14058,6 +18131,13 @@ function initAnalyseModal(){
     deleteAnalyseVersion();
   });
   document.getElementById('analyseExportPdfBtn').addEventListener('click', exportAnalyseAsPdf);
+  document.getElementById('analyseExportSlidesBtn').addEventListener('click', exportAnalyseSlidesAsPdf);
+  // Bouton dupliqué ici (en plus de la vue racine du Cerveau numérique) — demande
+  // explicite : l'utilisateur ne passe JAMAIS par le menu Secteurs/Chaînes, il va
+  // systématiquement Analyse → tag "Analyse développée" → droit sur la fiche. Le
+  // filet de sécurité doit être là où l'utilisateur travaille réellement, pas
+  // seulement à un endroit qu'il ne visite jamais.
+  document.getElementById('analyseDiskBackupBtn').addEventListener('click', setupCerveauDiskBackup);
 }
 
 function openImageZoom(src){
@@ -15179,6 +19259,17 @@ function renderWolfLaboDrawings(){
       const s = wolfLaboChart.addLineSeries({ color: d.color || THEME.gold, lineWidth: selected ? 3 : 2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
       s.setData(pts.map(p => ({ time:p.time, value:p.price })));
       series.push(s);
+    } else if (d.type === 'measure'){
+      // setData() exige un ordre chronologique croissant (comme la ligne de tendance,
+      // voir sortPts) — mais la COULEUR suit le sens réel du clic (point A → point B,
+      // d.points non trié), pas l'ordre chronologique : cliquer un sommet puis un creux
+      // reste rouge même si le point de départ est postérieur dans le temps.
+      const pts = sortPts(d.points);
+      const rawDiff = d.points[1].price - d.points[0].price;
+      const color = rawDiff >= 0 ? THEME.green : THEME.red;
+      const s = wolfLaboChart.addLineSeries({ color, lineWidth: selected ? 3 : 2, lineStyle: 2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+      s.setData(pts.map(p => ({ time:p.time, value:p.price })));
+      series.push(s);
     } else if (d.type === 'channel'){
       const baseSorted = sortPts(d.base);
       const candles = wolfLaboFilteredCandles();
@@ -15223,6 +19314,7 @@ function renderWolfLaboDrawings(){
 
 function wolfLaboDrawingLabel(d){
   if (d.type === 'trendline') return 'Ligne de tendance';
+  if (d.type === 'measure') return 'Mesure de performance';
   if (d.type === 'channel') return 'Canal';
   return 'Canal auto (régression)';
 }
@@ -15308,6 +19400,7 @@ function setWolfLaboDrawMode(mode){
   const hint = document.getElementById(wolfLaboDrawHintId);
   if (hint){
     if (mode === 'trendline'){ hint.textContent = 'Clique 2 points sur le graphique pour tracer la ligne (Échap pour annuler).'; hint.style.display = ''; }
+    else if (mode === 'measure'){ hint.textContent = 'Comme sur TradingView : clique un point A puis un point B pour mesurer la performance entre les deux (Échap pour annuler).'; hint.style.display = ''; }
     else if (mode === 'channel'){ hint.textContent = "Comme sur TradingView : clique 2 points pour tracer UNE des deux bornes du canal (support ou résistance, peu importe laquelle), puis un 3e clic pour placer l'AUTRE borne (Échap pour annuler). La médiane s'affiche automatiquement au milieu, non modifiable. Une fois posé, clique le canal (sur le graphique ou dans la liste) pour ajuster chaque borne à la souris."; hint.style.display = ''; }
     else hint.style.display = 'none';
   }
@@ -15338,7 +19431,7 @@ function wolfLaboFindDrawingAtPoint(px, py){
   let best = null, bestDist = 8; // tolérance en pixels
   list.forEach(d => {
     const segments = [];
-    if (d.type === 'trendline' && d.points){
+    if ((d.type === 'trendline' || d.type === 'measure') && d.points){
       const pts = d.points.map(toXY);
       if (pts[0] && pts[1]) segments.push(pts);
     } else if (d.type === 'channel' && d.base){
@@ -15385,6 +19478,16 @@ function wireWolfLaboChartClicks(){
       wolfLaboDrawPending.push({ time, price: wolfLaboSnapPrice(time, price0) });
       if (wolfLaboDrawPending.length >= 2){
         commitWolfLaboDrawing('trendline', wolfLaboDrawPending);
+        setWolfLaboDrawMode(null);
+      }
+    } else if (wolfLaboDrawMode === 'measure'){
+      // Ordre de clic conservé tel quel (point A = 1er clic, point B = 2e clic), jamais
+      // trié chronologiquement — la performance affichée va de A vers B, exactement dans
+      // l'ordre où l'utilisateur a cliqué (voir commitWolfLaboDrawing() : pas de tri pour
+      // ce type, contrairement à la ligne de tendance qui n'a pas cette contrainte).
+      wolfLaboDrawPending.push({ time, price: wolfLaboSnapPrice(time, price0) });
+      if (wolfLaboDrawPending.length >= 2){
+        commitWolfLaboDrawing('measure', wolfLaboDrawPending);
         setWolfLaboDrawMode(null);
       }
     } else if (wolfLaboDrawMode === 'channel'){
@@ -15451,7 +19554,7 @@ function renderWolfLaboHandles(){
   const symbol = currentWolfLaboSymbol();
   const d = wolfLaboSelectedDrawingId && symbol ? (wolfLaboDrawings[symbol] || []).find(x => x.id === wolfLaboSelectedDrawingId) : null;
   let points = [];
-  if (d && d.type === 'trendline' && d.points){
+  if (d && (d.type === 'trendline' || d.type === 'measure') && d.points){
     points = [
       { kind:'trend0', time:d.points[0].time, price:d.points[0].price },
       { kind:'trend1', time:d.points[1].time, price:d.points[1].price }
@@ -15474,6 +19577,35 @@ function renderWolfLaboHandles(){
     const y = wolfLaboCandleSeries.priceToCoordinate(p.price);
     if (x == null || y == null) return '';
     return `<div class="labo-handle${p.square ? ' labo-handle-width' : ''}" data-handle-kind="${p.kind}" style="left:${x}px;top:${y}px;"></div>`;
+  }).join('') + renderWolfLaboMeasureLabelsHtml(symbol);
+}
+// Étiquette flottante affichée pour CHAQUE mesure (pas seulement celle sélectionnée,
+// contrairement aux poignées ci-dessus) — c'est tout l'intérêt de l'outil : le résultat
+// reste lisible sur le graphique une fois les 2 clics posés, pas seulement pendant la
+// sélection. Performance calculée dans l'ordre du clic (point A → point B, jamais trié
+// chronologiquement, voir wireWolfLaboChartClicks()) : cliquer un sommet puis un creux
+// affiche donc une baisse en rouge, l'inverse une hausse en vert — comme sur TradingView.
+function renderWolfLaboMeasureLabelsHtml(symbol){
+  if (!symbol || !wolfLaboChart || !wolfLaboCandleSeries) return '';
+  const list = wolfLaboDrawings[symbol] || [];
+  return list.filter(d => d.type === 'measure' && d.points && d.points.length === 2).map(d => {
+    const [p0, p1] = d.points;
+    const x0 = wolfLaboChart.timeScale().timeToCoordinate(p0.time);
+    const x1 = wolfLaboChart.timeScale().timeToCoordinate(p1.time);
+    const y0 = wolfLaboCandleSeries.priceToCoordinate(p0.price);
+    const y1 = wolfLaboCandleSeries.priceToCoordinate(p1.price);
+    if (x0 == null || x1 == null || y0 == null || y1 == null) return '';
+    const pct = p0.price !== 0 ? ((p1.price / p0.price) - 1) * 100 : 0;
+    const diff = p1.price - p0.price;
+    const days = Math.round(Math.abs(new Date(p1.time).getTime() - new Date(p0.time).getTime()) / 86400000);
+    const up = diff >= 0;
+    const color = up ? THEME.green : THEME.red;
+    const sign = up ? '+' : '';
+    const midX = (x0 + x1) / 2;
+    const topY = Math.min(y0, y1) - 34;
+    const text = `${sign}${pct.toLocaleString('fr-FR', { minimumFractionDigits:1, maximumFractionDigits:1 })}% · ${sign}${diff.toLocaleString('fr-FR', { minimumFractionDigits:2, maximumFractionDigits:2 })} · ${days} j`;
+    const selected = d.id === wolfLaboSelectedDrawingId;
+    return `<div class="labo-measure-label${selected ? ' selected' : ''}" style="left:${midX}px;top:${topY}px;border-color:${color};color:${color};" data-measure-id="${d.id}">${escapeHtml(text)}</div>`;
   }).join('');
 }
 function wolfLaboContainerPoint(e){
@@ -16154,7 +20286,7 @@ function wolfLaboExperimentFieldHtml(label, value){
   </div>`;
 }
 function wolfLaboExperimentPdfImagesHtml(images){
-  return (images || []).map(src => `<img class="chain-pdf-chart-img" src="${src}" alt="" style="margin-bottom:8px;">`).join('');
+  return (images || []).map(src => `<img class="wl-pdf-img" src="${src}" alt="">`).join('');
 }
 function exportWolfLaboExperimentsAsPdf(){
   const panelsHtml = wolfLaboExperiments.map((exp, i) => {
@@ -16166,7 +20298,7 @@ function exportWolfLaboExperimentsAsPdf(){
       ${wolfLaboExperimentPdfImagesHtml(exp.observation.images)}
       ${wolfLaboExperimentFieldHtml('Conclusion', exp.conclusion.texte)}
       ${wolfLaboExperimentPdfImagesHtml(exp.conclusion.images)}`;
-    return chainPdfPanelWrap(exp.titre, inner, String(i + 1).padStart(2, '0'));
+    return chainPdfPanelWrap(exp.titre, inner, String(i + 1).padStart(2, '0'), 'wl-pdf-panel');
   }).join('');
   const area = document.getElementById('printArea');
   area.innerHTML = brandedPdfHeader(
@@ -16616,6 +20748,7 @@ document.querySelectorAll('.page-subnav-btn').forEach(btn => {
 });
 initSearch();
 initSectorGrid();
+initScreenerFilters();
 initDocumentsTabbar();
 loadFmpSymbols();
 initClassement();
@@ -16665,6 +20798,8 @@ document.getElementById('objectifsList').addEventListener('click', e => {
   if (loadBtn) applyObjectif(activeCompany, parseInt(loadBtn.dataset.idx, 10));
 });
 loadObjectifsBaseline();
+loadAnalyseScoreBaseline();
+loadCompetiteursBaseline();
 initWatchlist();
 loadWatchlistBaseline();
 initTierList();
@@ -16675,7 +20810,7 @@ initFicheModal();
 initAnalyseModal();
 initCerveauImagePicker();
 document.getElementById('openAnalyseTag').addEventListener('click', () => { if (activeCompany) openAnalyse(activeCompany); });
-loadCerveauData();
+cerveauDataReadyPromise = loadCerveauData();
 loadIdeesBaseline();
 loadRevueBaseline();
 initDividendPortfolio();

@@ -5,7 +5,7 @@
       "name": "static",
       "runtimeExecutable": "powershell.exe",
       "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ".claude/static-server.ps1"],
-      "port": 8137
+      "port": 8189
     }
   ]
 }

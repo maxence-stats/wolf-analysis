@@ -96,15 +96,20 @@ def resolve(input_path):
         fmp_name = profile.get("companyName")
         ok = name_matches(nom, fmp_name)
         results.append({"nom": nom, "ticker_sheet": ticker_sheet, "fmp_symbol": fmp_symbol,
-                         "status": "ok" if ok else "a_verifier", "fmp_name": fmp_name})
+                         "status": "ok" if ok else "a_verifier", "fmp_name": fmp_name,
+                         "isin": profile.get("isin"), "currency": profile.get("currency"),
+                         "exchange": profile.get("exchange")})
         tag = "  OK  " if ok else "VÉRIF."
         print(f"  [{tag}] {nom} ({ticker_sheet} -> {fmp_symbol}) — FMP: \"{fmp_name}\"")
 
-    OUTPUT_PATH.write_text(json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8")
+    out_path = OUTPUT_PATH
+    if "--output" in sys.argv:   # evite d'ecraser resolved_tickers.json d'un lot a l'autre
+        out_path = pathlib.Path(sys.argv[sys.argv.index("--output") + 1])
+    out_path.write_text(json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8")
     n_ok = sum(1 for r in results if r["status"] == "ok")
     n_review = len(results) - n_ok
     print(f"\n{n_ok}/{len(results)} résolus avec confiance, {n_review} à vérifier manuellement.")
-    print(f"Écrit : {OUTPUT_PATH}")
+    print(f"Écrit : {out_path}")
 
 
 def main():

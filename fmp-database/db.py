@@ -8,7 +8,7 @@ import config
 
 def get_connection():
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(config.DB_PATH)
+    conn = sqlite3.connect(config.DB_PATH, timeout=60)   # attend jusqu'a 60 s si une autre ecriture (ex. bouton Actualiser du Portefeuille IA) tient le verrou
     with open(config.MODULE_DIR / "schema.sql", encoding="utf-8") as f:
         conn.executescript(f.read())
     return conn

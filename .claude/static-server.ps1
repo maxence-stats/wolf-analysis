@@ -1,19 +1,428 @@
+param(
+  # Instance de TEST : -Port impose un port exact (pas de repli), -IaDir redirige le dossier
+  # d'ecriture du Portefeuille IA. Dans les deux cas le fichier .claude\server-port.txt n'est
+  # JAMAIS touche (il appartient au raccourci de l'utilisateur), et le dossier reel
+  # data\portefeuille-ia n'est jamais utilise si -IaDir est fourni.
+  [int]$Port = 0,
+  [string]$IaDir = "",
+  # Dossier de copies de securite EXTERNE au projet (par defaut : Documents\Wolf Analysis - sauvegardes
+  # pour l'instance reelle, aucun pour une instance de test sauf si ce parametre est fourni).
+  [string]$ExtBackupDir = "",
+  # Dossier des donnees « Mes portefeuilles » (PEA, CTO, Wolf Portfolio) et des multiples saisis. Instance de
+  # TEST : passer un dossier jetable, le vrai data\mes-portefeuilles n'est alors jamais touche.
+  [string]$StoreDir = ""
+)
 $root = (Resolve-Path "$PSScriptRoot\..").Path
-# Port change 2026-09-01 : 8091 est passe dans les plages de ports exclues par Windows
-# (Hyper-V/WSL2 reservent dynamiquement des plages, verifiable via
-# `netsh interface ipv4 show excludedportrange protocol=tcp`) - un nouveau
-# processus ne peut plus s'y binder tant que Windows ne liberera pas la plage
-# (souvent apres redemarrage). 8137 verifie libre au moment du changement.
-$port = 8137
+# Port change 2026-09-08 : 8189 est a son tour passe dans les plages de ports exclues
+# par Windows (meme symptome que 8091 le 2026-09-01 et 8137 le 2026-09-05 -
+# verifiable via `netsh interface ipv4 show excludedportrange protocol=tcp`) - un
+# nouveau processus ne peut plus s'y binder tant que Windows ne liberera pas la plage
+# (ces plages sont reservees dynamiquement, notamment par Hyper-V/WSL NAT, et
+# reapparaissent avec des ports differents au fil du temps). Ce port a change 4 fois
+# maintenant pour la meme raison - plutot que de coder un 5e port en dur "en esperant
+# qu'il tienne", le script tente maintenant le port prefere puis, si le bind echoue,
+# demande a l'OS un port libre garanti (TcpListener sur le port 0) et l'utilise a la
+# place. Le port REELLEMENT utilise est toujours ecrit dans .claude\server-port.txt
+# pour que "Lancer Wolf Analysis.bat" puisse le relire et ouvrir la bonne URL, quel
+# que soit le port choisi. Ca rend le raccourci Bureau auto-reparant face a cette
+# classe de bug Windows, sans intervention manuelle a chaque nouvelle exclusion.
+$preferredPort = 8189
+$portFile = Join-Path $PSScriptRoot "server-port.txt"
+$testInstance = ($Port -gt 0) -or ($IaDir -ne "") -or ($StoreDir -ne "")
+
+function Test-PortBindable($p){
+  try{
+    $probe = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, $p)
+    $probe.Start()
+    $probe.Stop()
+    return $true
+  }catch{
+    return $false
+  }
+}
+
+if ($Port -gt 0){
+  $port = $Port
+}elseif (Test-PortBindable $preferredPort){
+  $port = $preferredPort
+}else{
+  $probe = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, 0)
+  $probe.Start()
+  $port = $probe.LocalEndpoint.Port
+  $probe.Stop()
+  Write-Host "Port prefere $preferredPort indisponible (exclu par Windows) - port de secours $port choisi automatiquement."
+}
+
+if (-not $testInstance){
+  Set-Content -Path $portFile -Value $port -NoNewline -Encoding ascii
+}
+
+# Dossier de sauvegarde du Portefeuille IA (voir /api/ia/* plus bas).
+if ($IaDir -ne ""){ $iaDirPath = [System.IO.Path]::GetFullPath($IaDir) } else { $iaDirPath = Join-Path $root "data\portefeuille-ia" }
+$iaFile = Join-Path $iaDirPath "portefeuilles.json"
+$iaBackups = Join-Path $iaDirPath "backups"
+$iaStatus = Join-Path $iaDirPath "refresh-status.json"
+$iaRequiredKeys = @("chatgpt", "claude", "gemini", "grok")
+$iaAllowedKeys = @("chatgpt", "claude", "gemini", "grok", "sp500")
+if ($ExtBackupDir -ne ""){ $extBackup = [System.IO.Path]::GetFullPath($ExtBackupDir) }
+elseif (-not $testInstance){ $extBackup = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "Wolf Analysis - sauvegardes\portefeuille-ia" }
+else { $extBackup = "" }
+# « Mes portefeuilles » : un fichier JSON par nom autorise, memes protections que le Portefeuille IA
+# (revision, ecriture atomique, copies datees, copie hors projet, aucune operation effacee sans declaration).
+if ($StoreDir -ne ""){ $storeDirPath = [System.IO.Path]::GetFullPath($StoreDir) } else { $storeDirPath = Join-Path $root "data\mes-portefeuilles" }
+$storeNames = @("portefeuilles", "multiples")
+if ($StoreDir -ne ""){ $storeExt = "" } elseif (-not $testInstance){ $storeExt = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "Wolf Analysis - sauvegardes\mes-portefeuilles" } else { $storeExt = "" }
+$maxBody = 2MB
+$rootWithSep = $root.TrimEnd('\') + '\'
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
 $listener = New-Object System.Net.HttpListener
 $listener.Prefixes.Add("http://localhost:$port/")
 $listener.Start()
-Write-Host "Serving $root on http://localhost:$port/"
+Write-Host "Serving $root on http://localhost:$port/  (IA dir: $iaDirPath, store: $storeDirPath)"
 
 $mime = @{
   ".html" = "text/html"; ".htm" = "text/html"; ".css" = "text/css"; ".js" = "application/javascript";
   ".json" = "application/json"; ".png" = "image/png"; ".jpg" = "image/jpeg"; ".jpeg" = "image/jpeg";
   ".svg" = "image/svg+xml"; ".ico" = "image/x-icon"; ".woff" = "font/woff"; ".woff2" = "font/woff2";
+}
+
+function Send-Json($res, [int]$code, $obj){
+  $res.StatusCode = $code
+  $res.ContentType = "application/json; charset=utf-8"
+  $res.Headers.Add("Cache-Control", "no-cache, no-store, must-revalidate")
+  $bytes = $utf8NoBom.GetBytes(($obj | ConvertTo-Json -Depth 6 -Compress))
+  $res.ContentLength64 = $bytes.Length
+  $res.OutputStream.Write($bytes, 0, $bytes.Length)
+}
+
+# Garde-fous communs aux endpoints d'ecriture (/api/ia/save, /api/ia/refresh). Une page web
+# quelconque ouverte dans le navigateur de l'utilisateur pourrait tenter un POST vers
+# localhost : un en-tete personnalise + Content-Type json forcent une requete "preflight"
+# CORS que ce serveur ne valide jamais (donc bloquee par le navigateur), et l'en-tete Origin
+# doit etre exactement celui de cette instance.
+function Test-WriteGuards($req, $res){
+  if ($req.HttpMethod -ne "POST"){ Send-Json $res 405 @{ ok = $false; error = "POST requis" }; return $false }
+  if ($req.Headers["X-Wolf-IA"] -ne "1"){ Send-Json $res 403 @{ ok = $false; error = "en-tete manquant" }; return $false }
+  $origin = $req.Headers["Origin"]
+  if ($origin -and $origin -ne "http://localhost:$port"){ Send-Json $res 403 @{ ok = $false; error = "origine refusee" }; return $false }
+  if (-not ($req.ContentType -like "application/json*")){ Send-Json $res 415 @{ ok = $false; error = "application/json requis" }; return $false }
+  return $true
+}
+
+function Read-BodyBytes($req, $res){
+  $len = $req.ContentLength64
+  if ($len -lt 0){ Send-Json $res 411 @{ ok = $false; error = "longueur requise" }; return $null }
+  if ($len -gt $maxBody){ Send-Json $res 413 @{ ok = $false; error = "corps trop volumineux (2 Mo max)" }; return $null }
+  $ms = New-Object System.IO.MemoryStream
+  $req.InputStream.CopyTo($ms)
+  return $ms.ToArray()
+}
+
+function Get-TradeIds($state, $key){
+  $p = $state.portfolios.$key
+  if (-not $p -or -not $p.trades){ return @() }
+  return @($p.trades | ForEach-Object { [string]$_.id })
+}
+
+function Handle-IaSave($req, $res){
+  if (-not (Test-WriteGuards $req $res)){ return }
+  $bytes = Read-BodyBytes $req $res
+  if ($null -eq $bytes){ return }
+  # Decodage UTF-8 STRICT : les octets recus sont ecrits tels quels dans le fichier, un corps
+  # mal encode corromprait donc les accents de facon irreversible - on le refuse.
+  try { $text = (New-Object System.Text.UTF8Encoding($false, $true)).GetString($bytes) } catch { Send-Json $res 400 @{ ok = $false; error = "encodage UTF-8 invalide" }; return }
+  try { $b = $text | ConvertFrom-Json } catch { Send-Json $res 400 @{ ok = $false; error = "JSON invalide" }; return }
+  if (-not $b -or $b.version -ne 1 -or -not $b.portfolios){ Send-Json $res 400 @{ ok = $false; error = "schema inconnu" }; return }
+  $names = @($b.portfolios.PSObject.Properties.Name)
+  foreach ($k in $iaRequiredKeys){ if ($names -notcontains $k){ Send-Json $res 400 @{ ok = $false; error = "portefeuille manquant : $k" }; return } }
+  foreach ($n in $names){ if ($iaAllowedKeys -notcontains $n){ Send-Json $res 400 @{ ok = $false; error = "portefeuille inconnu : $n" }; return } }
+  foreach ($k in $iaAllowedKeys){
+    foreach ($t in @($b.portfolios.$k.trades | Where-Object { $null -ne $_ })){
+      if (-not $t.id -or ($t.type -ne "BUY" -and $t.type -ne "SELL" -and $t.type -ne "DIV") -or -not $t.symbol -or ("$($t.date)" -notmatch '^\d{4}-\d{2}-\d{2}$')){
+        Send-Json $res 400 @{ ok = $false; error = "operation invalide dans $k" }; return
+      }
+    }
+  }
+  $curRevision = 0
+  $cur = $null
+  if (Test-Path $iaFile -PathType Leaf){
+    try { $cur = [System.IO.File]::ReadAllText($iaFile, $utf8NoBom) | ConvertFrom-Json } catch { $cur = $null }
+    if ($cur -and $cur.revision){ $curRevision = [int]$cur.revision }
+    if ($null -eq $cur){ Send-Json $res 500 @{ ok = $false; error = "fichier actuel illisible - ecriture refusee par prudence" }; return }
+  }
+  if ([int]$b.baseRevision -ne $curRevision){ Send-Json $res 409 @{ ok = $false; error = "revision perimee"; revision = $curRevision }; return }
+  if ([int]$b.revision -ne ($curRevision + 1)){ Send-Json $res 400 @{ ok = $false; error = "revision incoherente" }; return }
+  # Invariant anti-perte (esprit de l'incident VINCI) : aucune operation deja enregistree ne peut
+  # disparaitre SAUF si le client la declare explicitement dans "deleted" (suppression voulue par
+  # l'utilisateur, 2 clics). Une sauvegarde d'un onglet perime ou bugue ne peut donc pas effacer
+  # d'operations par accident. Toute suppression force une copie datee (voir plus bas).
+  $removedAny = $false
+  if ($cur){
+    $declared = @($b.deleted | ForEach-Object { [string]$_ })
+    foreach ($k in $iaAllowedKeys){
+      $newIds = Get-TradeIds $b $k
+      $missing = @(Get-TradeIds $cur $k | Where-Object { $newIds -notcontains $_ })
+      $undeclared = @($missing | Where-Object { $declared -notcontains $_ })
+      if ($undeclared.Count -gt 0){ Send-Json $res 400 @{ ok = $false; error = "operation(s) supprimee(s) non declaree(s) dans $k" }; return }
+      if ($missing.Count -gt 0){ $removedAny = $true }
+    }
+  }
+  New-Item -ItemType Directory -Force -Path $iaDirPath | Out-Null
+  # Copie datee de la version precedente (au plus une par 10 min, 300 conservees).
+  if ($cur){
+    New-Item -ItemType Directory -Force -Path $iaBackups | Out-Null
+    $last = Get-ChildItem $iaBackups -Filter "portefeuilles-*.json" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($removedAny -or -not $last -or ((Get-Date) - $last.LastWriteTime).TotalMinutes -ge 10){
+      Copy-Item $iaFile (Join-Path $iaBackups ("portefeuilles-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".json"))
+      $old = @(Get-ChildItem $iaBackups -Filter "portefeuilles-*.json" | Sort-Object LastWriteTime -Descending | Select-Object -Skip 300)
+      foreach ($f in $old){ Remove-Item $f.FullName -ErrorAction SilentlyContinue }
+    }
+  }
+  # Ecriture atomique : fichier temporaire puis remplacement. [NullString]::Value est
+  # indispensable : en PowerShell un simple $null devient une chaine vide pour .NET, ce qui
+  # fait lever une exception a File.Replace (constate en test).
+  $tmp = $iaFile + ".tmp"
+  try {
+    [System.IO.File]::WriteAllBytes($tmp, $bytes)
+    if (Test-Path $iaFile -PathType Leaf){ [System.IO.File]::Replace($tmp, $iaFile, [NullString]::Value) } else { [System.IO.File]::Move($tmp, $iaFile) }
+  } catch {
+    Remove-Item $tmp -ErrorAction SilentlyContinue
+    Send-Json $res 500 @{ ok = $false; error = "ecriture impossible" }; return
+  }
+  # Copie de securite HORS du projet (Documents) : "derniere" a chaque enregistrement + une copie par jour
+  # (300 jours conserves). Protege contre toute operation sur le depot ou le dossier de l'appli.
+  if ($extBackup -ne ""){
+    try {
+      New-Item -ItemType Directory -Force -Path $extBackup | Out-Null
+      Copy-Item $iaFile (Join-Path $extBackup "portefeuilles-derniere.json") -Force
+      Copy-Item $iaFile (Join-Path $extBackup ("portefeuilles-" + (Get-Date -Format "yyyyMMdd") + ".json")) -Force
+      $oldExt = @(Get-ChildItem $extBackup -Filter "portefeuilles-2*.json" | Sort-Object Name -Descending | Select-Object -Skip 300)
+      foreach ($f in $oldExt){ Remove-Item $f.FullName -ErrorAction SilentlyContinue }
+    } catch { }
+  }
+  Send-Json $res 200 @{ ok = $true; revision = [int]$b.revision; savedAt = (Get-Date).ToString("o") }
+}
+
+function Handle-IaRefresh($req, $res){
+  if (-not (Test-WriteGuards $req $res)){ return }
+  # Refuse si un rafraichissement tourne deja (ou vient de finir).
+  if (Test-Path $iaStatus -PathType Leaf){
+    try {
+      $st = [System.IO.File]::ReadAllText($iaStatus, $utf8NoBom) | ConvertFrom-Json
+      $age = ((Get-Date) - (Get-Item $iaStatus).LastWriteTime).TotalSeconds
+      if ($st.state -eq "running" -and $age -lt 900){ Send-Json $res 409 @{ ok = $false; error = "rafraichissement deja en cours" }; return }
+      if ($age -lt 60 -and $st.state -ne "error"){ Send-Json $res 429 @{ ok = $false; error = "patiente une minute entre deux rafraichissements" }; return }
+    } catch { }
+  }
+  New-Item -ItemType Directory -Force -Path $iaDirPath | Out-Null
+  $script = Join-Path $root "fmp-database\refresh_portfolio_ia.py"
+  if (-not (Test-Path $script -PathType Leaf)){ Send-Json $res 500 @{ ok = $false; error = "script de rafraichissement introuvable" }; return }
+  $python = (Get-Command python -ErrorAction SilentlyContinue).Source
+  if (-not $python){ $python = (Get-Command py -ErrorAction SilentlyContinue).Source }
+  if (-not $python){ Send-Json $res 500 @{ ok = $false; error = "Python introuvable" }; return }
+  $init = @{ state = "running"; startedAt = (Get-Date).ToString("o"); done = 0; total = 0; current = ""; errors = @() } | ConvertTo-Json -Compress
+  [System.IO.File]::WriteAllText($iaStatus, $init, $utf8NoBom)
+  try {
+    Start-Process -FilePath $python -ArgumentList @("`"$script`"", "--ia-dir", "`"$iaDirPath`"") -WorkingDirectory (Join-Path $root "fmp-database") -WindowStyle Hidden | Out-Null
+  } catch {
+    $err = @{ state = "error"; message = "lancement impossible" } | ConvertTo-Json -Compress
+    [System.IO.File]::WriteAllText($iaStatus, $err, $utf8NoBom)
+    Send-Json $res 500 @{ ok = $false; error = "lancement impossible" }; return
+  }
+  Send-Json $res 202 @{ ok = $true; state = "running" }
+}
+
+# Cours en direct : le serveur interroge Yahoo Finance lui-meme (pas de CORS cote serveur, et bien
+# plus fiable que les relais gratuits du navigateur). Lecture seule, symbole strictement valide.
+function Handle-IaQuote($req, $res){
+  if ($req.HttpMethod -ne "GET"){ Send-Json $res 405 @{ ok = $false; error = "GET requis" }; return }
+  $sym = $req.QueryString["symbol"]
+  if (-not $sym -or $sym -notmatch '^[A-Za-z0-9.^=\-]{1,24}$'){ Send-Json $res 400 @{ ok = $false; error = "symbole invalide" }; return }
+  $url = "https://query1.finance.yahoo.com/v8/finance/chart/" + [System.Uri]::EscapeDataString($sym) + "?range=5d&interval=1d"
+  try {
+    $r = Invoke-WebRequest -UseBasicParsing -Headers @{ "User-Agent" = "Mozilla/5.0" } -TimeoutSec 8 -Uri $url
+    $m = ($r.Content | ConvertFrom-Json).chart.result[0].meta
+    $price = [double]$m.regularMarketPrice
+    if ($price -le 0){ Send-Json $res 502 @{ ok = $false; error = "cours indisponible" }; return }
+    $inv = [System.Globalization.CultureInfo]::InvariantCulture
+    $ccy = ([string]$m.currency) -replace '[^A-Za-z]', ''
+    $json = '{"ok":true,"price":' + $price.ToString("R", $inv) + ',"currency":"' + $ccy + '","time":' + ([long]$m.regularMarketTime) + '}'
+    $bytes = $utf8NoBom.GetBytes($json)
+    $res.StatusCode = 200
+    $res.ContentType = "application/json; charset=utf-8"
+    $res.Headers.Add("Cache-Control", "no-cache, no-store, must-revalidate")
+    $res.ContentLength64 = $bytes.Length
+    $res.OutputStream.Write($bytes, 0, $bytes.Length)
+  } catch {
+    Send-Json $res 502 @{ ok = $false; error = "Yahoo injoignable" }
+  }
+}
+
+# TradingView (donnees publiques du site, lecture seule) : recherche d'actions pour l'autocompletion et
+# instantane de ratios d'une entreprise absente de la liste suivie. Le navigateur ne peut pas les appeler
+# directement (CORS) : c'est le serveur local qui s'en charge. Symboles et texte strictement valides.
+function Send-RawJsonString($res, $json){
+  $bytes = $utf8NoBom.GetBytes($json)
+  $res.StatusCode = 200
+  $res.ContentType = "application/json; charset=utf-8"
+  $res.Headers.Add("Cache-Control", "no-cache, no-store, must-revalidate")
+  $res.ContentLength64 = $bytes.Length
+  $res.OutputStream.Write($bytes, 0, $bytes.Length)
+}
+function Get-TvText($url, $headers){
+  $r = Invoke-WebRequest -UseBasicParsing -Headers $headers -TimeoutSec 10 -Uri $url
+  return [System.Text.Encoding]::UTF8.GetString($r.RawContentStream.ToArray())
+}
+function Handle-TvSearch($req, $res){
+  if ($req.HttpMethod -ne "GET"){ Send-Json $res 405 @{ ok = $false; error = "GET requis" }; return }
+  $q = $req.QueryString["q"]
+  if (-not $q -or $q.Length -gt 60 -or $q -match '[ -]'){ Send-Json $res 400 @{ ok = $false; error = "recherche invalide" }; return }
+  # all=1 (onglet Mes portefeuilles) : actions ET fonds/ETF ; sinon actions seulement (recherche de l'onglet Analyse).
+  $allTypes = ($req.QueryString["all"] -eq "1")
+  $stype = "stock"; if ($allTypes){ $stype = "" }
+  $url = "https://symbol-search.tradingview.com/symbol_search/v3/?text=" + [System.Uri]::EscapeDataString($q) + "&hl=0&lang=fr&search_type=" + $stype + "&domain=production"
+  try {
+    $txt = Get-TvText $url @{ "User-Agent" = "Mozilla/5.0"; "Origin" = "https://www.tradingview.com"; "Referer" = "https://www.tradingview.com/" }
+    $j = $txt | ConvertFrom-Json
+    $items = @()
+    foreach ($s in $j.symbols){
+      if ($items.Count -ge 10){ break }
+      if ($s.type -ne "stock" -and $s.type -ne "dr" -and -not ($allTypes -and $s.type -eq "fund")){ continue }
+      $ex = [string]$s.prefix
+      if (-not $ex){ $ex = [string]$s.source_id }
+      $items += @{ symbol = ($ex + ":" + [string]$s.symbol); name = [string]$s.description; exchange = [string]$s.exchange; currency = [string]$s.currency_code; country = [string]$s.country; type = [string]$s.type; logoid = [string]$s.logoid }
+    }
+    Send-Json $res 200 @{ ok = $true; results = $items }
+  } catch {
+    Send-Json $res 502 @{ ok = $false; error = "TradingView injoignable" }
+  }
+}
+function Handle-TvSnapshot($req, $res){
+  if ($req.HttpMethod -ne "GET"){ Send-Json $res 405 @{ ok = $false; error = "GET requis" }; return }
+  $sym = $req.QueryString["symbol"]
+  if (-not $sym -or $sym -notmatch '^[A-Za-z0-9_.!&-]{1,24}:[A-Za-z0-9_.!&-]{1,24}$'){ Send-Json $res 400 @{ ok = $false; error = "symbole invalide" }; return }
+  $cols = "description,currency,exchange,sector,industry,close,market_cap_basic,price_earnings_ttm,earnings_per_share_diluted_ttm,price_free_cash_flow_ttm,free_cash_flow_per_share_ttm,free_cash_flow_ttm,neg_capital_expenditures_ttm,total_revenue_ttm,dps_common_stock_prim_issue_fy,dividends_yield,return_on_invested_capital_fy,operating_margin,total_shares_outstanding_fundamental,cash_n_short_term_invest_fq,net_debt_fq,logoid,fundamental_currency_code,ebitda_ttm,ebitda_fy,ebitda_fy_h,total_debt_fq,book_value_per_share_fq,enterprise_value_ebitda_ttm,enterprise_value_ebitda_current,price_book_fq"
+  $url = "https://scanner.tradingview.com/symbol?symbol=" + [System.Uri]::EscapeDataString($sym) + "&fields=" + $cols + "&no_404=true"
+  try {
+    $txt = Get-TvText $url @{ "User-Agent" = "Mozilla/5.0" }
+    if (-not $txt -or $txt.Trim().Length -lt 3 -or $txt.Trim() -eq "{}"){ Send-Json $res 404 @{ ok = $false; error = "symbole inconnu de TradingView" }; return }
+    Send-RawJsonString $res ('{"ok":true,"symbol":"' + $sym + '","data":' + $txt.Trim() + '}')
+  } catch {
+    Send-Json $res 502 @{ ok = $false; error = "TradingView injoignable" }
+  }
+}
+
+# ---------------- « Mes portefeuilles » : stockage fichier + historique TradingView ----------------
+function Get-StoreName($req, $res){
+  $n = $req.QueryString["name"]
+  if (-not $n -or $storeNames -notcontains $n){ Send-Json $res 400 @{ ok = $false; error = "nom de fichier inconnu" }; return $null }
+  return $n
+}
+# Identifiants de toutes les operations (accounts.<compte>.ops[].id) : aucune ne doit disparaitre sans etre declaree.
+function Get-StoreOpIds($state){
+  $ids = @()
+  if ($state -and $state.accounts){
+    foreach ($p in $state.accounts.PSObject.Properties){ if ($p.Value.ops){ $ids += @($p.Value.ops | ForEach-Object { [string]$_.id }) } }
+  }
+  return $ids
+}
+function Handle-StoreLoad($req, $res){
+  $n = Get-StoreName $req $res; if (-not $n){ return }
+  $f = Join-Path $storeDirPath ($n + ".json")
+  if (-not (Test-Path $f -PathType Leaf)){ Send-RawJsonString $res '{"ok":true,"data":null}'; return }
+  $txt = [System.IO.File]::ReadAllText($f, $utf8NoBom)
+  Send-RawJsonString $res ('{"ok":true,"file":' + (ConvertTo-Json $f -Compress) + ',"data":' + $txt + '}')
+}
+function Handle-StoreSave($req, $res){
+  if (-not (Test-WriteGuards $req $res)){ return }
+  $n = Get-StoreName $req $res; if (-not $n){ return }
+  $bytes = Read-BodyBytes $req $res
+  if ($null -eq $bytes){ return }
+  try { $text = (New-Object System.Text.UTF8Encoding($false, $true)).GetString($bytes) } catch { Send-Json $res 400 @{ ok = $false; error = "encodage UTF-8 invalide" }; return }
+  try { $b = $text | ConvertFrom-Json } catch { Send-Json $res 400 @{ ok = $false; error = "JSON invalide" }; return }
+  if (-not $b -or $b.version -ne 1){ Send-Json $res 400 @{ ok = $false; error = "schema inconnu" }; return }
+  $f = Join-Path $storeDirPath ($n + ".json")
+  $bk = Join-Path $storeDirPath "backups"
+  $cur = $null; $curRevision = 0
+  if (Test-Path $f -PathType Leaf){
+    try { $cur = [System.IO.File]::ReadAllText($f, $utf8NoBom) | ConvertFrom-Json } catch { $cur = $null }
+    if ($null -eq $cur){ Send-Json $res 500 @{ ok = $false; error = "fichier actuel illisible - ecriture refusee par prudence" }; return }
+    if ($cur.revision){ $curRevision = [int]$cur.revision }
+  }
+  if ([int]$b.baseRevision -ne $curRevision){ Send-Json $res 409 @{ ok = $false; error = "revision perimee"; revision = $curRevision }; return }
+  if ([int]$b.revision -ne ($curRevision + 1)){ Send-Json $res 400 @{ ok = $false; error = "revision incoherente" }; return }
+  $removedAny = $false
+  if ($cur -and $n -eq "portefeuilles"){
+    $declared = @($b.deleted | ForEach-Object { [string]$_ })
+    $newIds = Get-StoreOpIds $b
+    $missing = @(Get-StoreOpIds $cur | Where-Object { $newIds -notcontains $_ })
+    $undeclared = @($missing | Where-Object { $declared -notcontains $_ })
+    if ($undeclared.Count -gt 0){ Send-Json $res 400 @{ ok = $false; error = "operation(s) supprimee(s) non declaree(s)" }; return }
+    if ($missing.Count -gt 0){ $removedAny = $true }
+  }
+  New-Item -ItemType Directory -Force -Path $storeDirPath | Out-Null
+  if ($cur){
+    New-Item -ItemType Directory -Force -Path $bk | Out-Null
+    $last = Get-ChildItem $bk -Filter ($n + "-*.json") -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($removedAny -or -not $last -or ((Get-Date) - $last.LastWriteTime).TotalMinutes -ge 10){
+      Copy-Item $f (Join-Path $bk ($n + "-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".json"))
+      $old = @(Get-ChildItem $bk -Filter ($n + "-*.json") | Sort-Object LastWriteTime -Descending | Select-Object -Skip 300)
+      foreach ($o in $old){ Remove-Item $o.FullName -ErrorAction SilentlyContinue }
+    }
+  }
+  $tmp = $f + ".tmp"
+  try {
+    [System.IO.File]::WriteAllBytes($tmp, $bytes)
+    if (Test-Path $f -PathType Leaf){ [System.IO.File]::Replace($tmp, $f, [NullString]::Value) } else { [System.IO.File]::Move($tmp, $f) }
+  } catch {
+    Remove-Item $tmp -ErrorAction SilentlyContinue
+    Send-Json $res 500 @{ ok = $false; error = "ecriture impossible" }; return
+  }
+  if ($storeExt -ne ""){
+    try {
+      New-Item -ItemType Directory -Force -Path $storeExt | Out-Null
+      Copy-Item $f (Join-Path $storeExt ($n + "-derniere.json")) -Force
+      Copy-Item $f (Join-Path $storeExt ($n + "-" + (Get-Date -Format "yyyyMMdd") + ".json")) -Force
+      $oldExt = @(Get-ChildItem $storeExt -Filter ($n + "-2*.json") | Sort-Object Name -Descending | Select-Object -Skip 300)
+      foreach ($o in $oldExt){ Remove-Item $o.FullName -ErrorAction SilentlyContinue }
+    } catch { }
+  }
+  Send-Json $res 200 @{ ok = $true; revision = [int]$b.revision; savedAt = (Get-Date).ToString("o") }
+}
+# Clotures quotidiennes TradingView (websocket public, via tv-data\tv_history.py ; cache disque d'une journee).
+function Handle-TvHistory($req, $res){
+  if ($req.HttpMethod -ne "GET"){ Send-Json $res 405 @{ ok = $false; error = "GET requis" }; return }
+  $syms = [string]$req.QueryString["symbols"]
+  $from = [string]$req.QueryString["from"]
+  if (-not $from){ $from = "2026-01-01" }
+  if ($from -notmatch '^\d{4}-\d{2}-\d{2}$'){ Send-Json $res 400 @{ ok = $false; error = "date invalide" }; return }
+  $list = @($syms -split ',' | Where-Object { $_ -match '^[A-Za-z0-9_.!&-]{1,24}:[A-Za-z0-9_.!&-]{1,24}$' })
+  if ($list.Count -eq 0 -or $list.Count -gt 80){ Send-Json $res 400 @{ ok = $false; error = "symboles invalides" }; return }
+  $script = Join-Path $root "tv-data\tv_history.py"
+  $python = (Get-Command python -ErrorAction SilentlyContinue).Source
+  if (-not $python){ $python = (Get-Command py -ErrorAction SilentlyContinue).Source }
+  if (-not $python){ Send-Json $res 500 @{ ok = $false; error = "Python introuvable" }; return }
+  $cache = Join-Path $storeDirPath "cache-prix"
+  $ttl = "1800"; if ($req.QueryString["fresh"] -eq "1"){ $ttl = "0" }
+  try {
+    $out = & $python $script --symbols ($list -join ',') --from $from --cache $cache --ttl $ttl 2>$null | Out-String
+    $out = $out.Trim()
+    if (-not $out.StartsWith("{")){ Send-Json $res 502 @{ ok = $false; error = "historique TradingView indisponible" }; return }
+    Send-RawJsonString $res $out
+  } catch {
+    Send-Json $res 502 @{ ok = $false; error = "historique TradingView indisponible" }
+  }
+}
+
+# Fichiers qui ne doivent jamais etre servis (base FMP de 12 Go, depot git, secrets).
+function Test-Denied($rel){
+  $r = "/" + ($rel -replace '\\', '/').TrimStart('/')
+  if ($r -match '^/\.git(/|$)') { return $true }
+  if ($r -match '^/fmp-database/data(/|$)') { return $true }
+  if ($r -match '^/data/mes-portefeuilles(/|$)') { return $true }   # donnees perso : seulement via /api/store/load
+  if ($r -match '\.(sqlite|sqlite3|db|env|pem|key)$') { return $true }
+  return $false
 }
 
 while ($listener.IsListening) {
@@ -22,25 +431,66 @@ while ($listener.IsListening) {
   $res = $context.Response
   try {
     $path = [System.Uri]::UnescapeDataString($req.Url.AbsolutePath)
-    if ($path -eq "/") { $path = "/index.html" }
-    $filePath = Join-Path $root ($path.TrimStart('/'))
-    if (Test-Path $filePath -PathType Leaf) {
-      $ext = [System.IO.Path]::GetExtension($filePath)
-      $ct = $mime[$ext]
-      if (-not $ct) { $ct = "application/octet-stream" }
-      $res.ContentType = $ct
-      $res.Headers.Add("Cache-Control", "no-cache, no-store, must-revalidate")
-      $bytes = [System.IO.File]::ReadAllBytes($filePath)
-      $res.ContentLength64 = $bytes.Length
-      $res.OutputStream.Write($bytes, 0, $bytes.Length)
+    if ($path -eq "/api/ia/ping") {
+      New-Item -ItemType Directory -Force -Path $iaDirPath | Out-Null
+      Send-Json $res 200 @{ ok = $true; writable = $true; v = 10; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
+    } elseif ($path -eq "/api/ia/save") {
+      Handle-IaSave $req $res
+    } elseif ($path -eq "/api/ia/refresh") {
+      Handle-IaRefresh $req $res
+    } elseif ($path -eq "/api/ia/quote") {
+      Handle-IaQuote $req $res
+    } elseif ($path -eq "/api/tv/search") {
+      Handle-TvSearch $req $res
+    } elseif ($path -eq "/api/tv/snapshot") {
+      Handle-TvSnapshot $req $res
+    } elseif ($path -eq "/api/store/load") {
+      Handle-StoreLoad $req $res
+    } elseif ($path -eq "/api/store/save") {
+      Handle-StoreSave $req $res
+    } elseif ($path -eq "/api/tv/history") {
+      Handle-TvHistory $req $res
     } else {
-      $res.StatusCode = 404
-      $msg = [System.Text.Encoding]::UTF8.GetBytes("404 Not Found: $path")
-      $res.OutputStream.Write($msg, 0, $msg.Length)
+      if ($path -eq "/") { $path = "/index.html" }
+      $filePath = [System.IO.Path]::GetFullPath((Join-Path $root ($path.TrimStart('/'))))
+      # Le dossier data/portefeuille-ia/ est toujours servi depuis le dossier de CETTE instance
+      # ($iaDirPath) : une instance de test (-IaDir) ne doit jamais lire le vrai journal. Les
+      # sauvegardes datees (backups/) ne sont pas servies.
+      $iaPrefix = "/data/portefeuille-ia/"
+      $iaMapped = $false
+      if ($path.StartsWith($iaPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $iaMapped = $true
+        $iaRoot = $iaDirPath.TrimEnd('\') + '\'
+        $filePath = [System.IO.Path]::GetFullPath((Join-Path $iaDirPath $path.Substring($iaPrefix.Length)))
+      }
+      # Le chemin canonique doit rester SOUS la racine (bloque ..%2f) et hors liste noire.
+      if ($iaMapped) {
+        $denyIa = (-not $filePath.StartsWith($iaRoot, [System.StringComparison]::OrdinalIgnoreCase)) -or ($filePath.Substring($iaRoot.Length) -match '^backups(\\|$)')
+      } else {
+        $denyIa = (-not $filePath.StartsWith($rootWithSep, [System.StringComparison]::OrdinalIgnoreCase)) -or (Test-Denied $filePath.Substring($rootWithSep.Length))
+      }
+      if ($denyIa) {
+        $res.StatusCode = 403
+        $msg = [System.Text.Encoding]::UTF8.GetBytes("403 Forbidden")
+        $res.OutputStream.Write($msg, 0, $msg.Length)
+      } elseif (Test-Path $filePath -PathType Leaf) {
+        $ext = [System.IO.Path]::GetExtension($filePath)
+        $ct = $mime[$ext]
+        if (-not $ct) { $ct = "application/octet-stream" }
+        $res.ContentType = $ct
+        $res.Headers.Add("Cache-Control", "no-cache, no-store, must-revalidate")
+        $bytes = [System.IO.File]::ReadAllBytes($filePath)
+        $res.ContentLength64 = $bytes.Length
+        $res.OutputStream.Write($bytes, 0, $bytes.Length)
+      } else {
+        $res.StatusCode = 404
+        $msg = [System.Text.Encoding]::UTF8.GetBytes("404 Not Found")
+        $res.OutputStream.Write($msg, 0, $msg.Length)
+      }
     }
   } catch {
-    $res.StatusCode = 500
+    try { $res.StatusCode = 500 } catch { }
   } finally {
-    $res.OutputStream.Close()
+    try { $res.OutputStream.Close() } catch { }
   }
 }

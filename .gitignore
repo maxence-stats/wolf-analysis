@@ -43,3 +43,30 @@ data/prices-*.json
 data/ranking-summary.json
 data/logos/
 data/logos-manifest.json
+
+# Portefeuille IA (2026-09-19) : données de marché DÉRIVÉES de FMP (mêmes CGU que
+# data/prices-*.json) — dividendes/splits, change, indice de référence, métadonnées de
+# symboles. Régénérées par fmp-database/export_events.py, export_fx.py,
+# export_benchmarks.py, export_symbols_meta.py et refresh_portfolio_ia.py.
+data/events-*.json
+data/fx-*.json
+data/bench-*.json
+data/symbols-meta.json
+# Sauvegardes horodatées et état du bouton "Actualiser" : locaux, jamais à publier.
+# (data/portefeuille-ia/portefeuilles.json, lui, EST versionné — c'est le journal des
+# opérations, pas une donnée FMP ; data/ai-logos/ aussi.)
+data/portefeuille-ia/backups/
+data/portefeuille-ia/refresh-status.json
+data/portefeuille-ia/*.tmp
+
+# TradingView (2026-10-27) : données de valorisation issues de l'abonnement TradingView de
+# l'utilisateur (licence personnelle, dépôt public => jamais publiées). Le CODE de tv-data/ reste suivi.
+data/tv-*.json
+tv-data/raw/
+tv-data/raw-div/
+
+# Mes portefeuilles (PEA, CTO, Wolf Portfolio) : donnees personnelles, jamais publiees
+data/mes-portefeuilles/
+
+# Port reellement utilise par le serveur local (ecrit a chaque lancement)
+.claude/server-port.txt

@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<link rel="stylesheet" href="css/style.css?v=20260901c">
+<link rel="stylesheet" href="css/style.css?v=20261108f">
 </head>
 <body>
 <div class="wrap">
@@ -77,7 +77,9 @@
     <div class="page-subnav" id="portfolioSubnav" style="display:none;">
       <button class="page-subnav-btn active" data-page="pagePortfolio">Wolf Portfolio</button>
       <button class="page-subnav-btn" data-page="pageDividende">Dividende</button>
+      <button class="page-subnav-btn" data-page="pageMesPortefeuilles">📒 Mes portefeuilles</button>
       <button class="page-subnav-btn" data-page="pagePerso">Perso (PEA/CTO)</button>
+      <button class="page-subnav-btn" data-page="pagePortefeuilleIA">Portefeuille IA</button>
       <button class="page-subnav-btn" data-page="pageConstruction">Construction de portefeuille</button>
     </div>
 
@@ -87,6 +89,7 @@
       <button class="page-subnav-btn" data-page="pageWatchlist">Watchlist</button>
       <button class="page-subnav-btn" data-page="pageComparaison">Comparaison</button>
       <button class="page-subnav-btn" data-page="pageTierList">Tier List</button>
+      <button class="page-subnav-btn" data-page="pageFiltres">Filtres</button>
     </div>
 
     <div class="page-subnav" id="analyseSubnav" style="display:flex;">
@@ -144,7 +147,7 @@
       <div class="ratio-card"><div class="k">Prix juste</div><div class="v" id="rPrixJuste">—</div><div class="sub">valorisation intrinsèque</div></div>
       <div class="ratio-card"><div class="k">Prix cible</div><div class="v" id="rPrixCible">—</div><div class="sub">seuil d'achat, marge de sécurité</div></div>
       <div class="ratio-card"><div class="k">Écart de valeur</div><div class="v" id="rEcart">—</div><div class="sub">entre prix juste et prix cible</div></div>
-      <div class="ratio-card"><div class="k">Rendement du dividende</div><div class="v" id="rRendDiv">—</div><div class="sub">sur prix actuel</div></div>
+      <div class="ratio-card"><div class="k">Rendement du dividende</div><div class="v" id="rRendDiv">—</div><div class="sub" id="rRendDivSub">sur prix actuel</div></div>
       <div class="ratio-card"><div class="k">Rendement total estimé, 5 ans</div><div class="v" id="rRend5">—</div><div class="sub">retour à la juste valeur + dividende</div></div>
       <div class="ratio-card"><div class="k">FCF PEG</div><div class="v" id="rFcfpeg">—</div><div class="sub">prix / FCF rapporté à la croissance</div></div>
       <div class="ratio-card"><div class="k">Médiane P/FCF</div><div class="v" id="rMedFcf">—</div><div class="sub">multiple médian historique</div></div>
@@ -268,6 +271,7 @@
              réglages par bande, enregistrement automatique) — voir
              activateWolfLaboForAnalyse() côté app.js. -->
         <div class="range-buttons" id="stockCandleDrawToolbar" style="display:none;">
+          <button type="button" data-draw="measure" title="Comme sur TradingView : clique un point A puis un point B pour mesurer la performance (prix et %) entre les deux">📏 Mesure</button>
           <button type="button" data-draw="channel" title="Comme sur TradingView : 2 clics pour une borne (support ou résistance), 3e clic pour l'autre">📐 Canal (3 clics)</button>
           <button type="button" id="stockCandleAutoChannelBtn" title="Zoome/déplace-toi sur la période voulue avant de cliquer — calculé uniquement sur ce qui est visible à l'écran">🤖 Canal auto (période visible)</button>
           <button type="button" class="labo-toggle-btn active" id="stockCandleMagnetBtn" title="Aimant : accroche les tracés aux prix réels (O/H/L/C) de la bougie la plus proche">🧲 Aimant</button>
@@ -414,6 +418,19 @@
         <div class="chart-holder"><canvas id="chartCash"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['cash'], &quot;Trésorerie &amp; investissements&quot;, this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
       </div>
     </div>
+
+    <!-- Scoring qualitatif — Avantage concurrentiel / Qualité / Valorisation, saisi ici
+         (analyseScoreStore, par entreprise), lu en lecture seule dans la fiche Analyse
+         développée du Cerveau numérique (voir analyseScoreBlockHtml côté app.js). -->
+    <div class="section-label">🐺 Wolf Score</div>
+    <div class="analyse-score-card" id="analyseScoreCard"></div>
+
+    <!-- Section 2 — Concurrents & parts de marché, saisie manuelle (aucune donnée FMP
+         équivalente : FMP ne donne jamais de part de marché, et la marge par segment
+         encore moins — voir échange avec l'utilisateur). Même onglet Analyse que le
+         Wolf Score, juste en dessous — pas dans la fiche Cerveau numérique. -->
+    <div class="section-label">🏁 Concurrents &amp; parts de marché</div>
+    <div class="analyse-score-card" id="competitorsCard"></div>
     </div>
 
     <div id="pageValorisation" class="page">
@@ -426,6 +443,8 @@
         <button class="active" data-metric="fcf" onclick="setValorisationMetric('fcf')">Valoriser avec le FCF</button>
         <button data-metric="ocf" onclick="setValorisationMetric('ocf')">Valoriser avec l'OCF</button>
         <button data-metric="per" onclick="setValorisationMetric('per')">Valoriser avec le PER</button>
+        <button data-metric="ev" onclick="setValorisationMetric('ev')">Valoriser avec l'EV/EBITDA</button>
+        <button data-metric="pb" onclick="setValorisationMetric('pb')">Valoriser avec le P/B</button>
         <button class="objectifs-export" style="margin-left:auto;" onclick="exportValorisationFullAsPdf()">🖨 Exporter PDF</button>
       </div>
 
@@ -455,6 +474,44 @@
       <div id="voMetricHistoryContent"></div>
 
       <div class="scenario-grid" id="scenarioGrid"></div>
+
+      <!-- Calculatrice de valorisation (2026-11-08) : EV/EBITDA « à la main » + calcul libre. Préremplie avec
+           l'entreprise affichée (TradingView en direct), tout est modifiable ; rien n'est enregistré. -->
+      <div class="section-label">🧮 Calculatrice</div>
+      <div class="valo-calc-card">
+        <div class="valo-calc-col">
+          <div class="valo-calc-head"><h3>EV/EBITDA — prix théorique et rendement à 5 ans</h3>
+            <button type="button" class="zoom-btn objectifs-export" id="valoCalcRefill" title="Reprendre les chiffres de l'entreprise affichée">↻ Entreprise</button></div>
+          <div class="valo-calc-grid">
+            <label>Cours actuel<input type="text" inputmode="decimal" data-calc="prix"></label>
+            <label>EBITDA actuel / action<input type="text" inputmode="decimal" data-calc="ebitda"></label>
+            <label>Multiple EV/EBITDA moyen<input type="text" inputmode="decimal" data-calc="mult" placeholder="ex. 9,5 ou 8 9 10"></label>
+            <label>Dette nette / action<input type="text" inputmode="decimal" data-calc="dette" placeholder="négatif = trésorerie"></label>
+            <label>CAGR EBITDA (%/an)<input type="text" inputmode="decimal" data-calc="cagr"></label>
+            <label>Multiple de sortie (5a)<input type="text" inputmode="decimal" data-calc="multSortie" placeholder="vide = même multiple"></label>
+            <label>Dette nette future / action<input type="text" inputmode="decimal" data-calc="detteFut" placeholder="vide = dette actuelle"></label>
+            <label>Horizon (années)<input type="text" inputmode="decimal" data-calc="annees" value="5"></label>
+          </div>
+          <div class="valo-calc-results" id="valoCalcResults"></div>
+          <div class="valo-calc-formula" id="valoCalcFormula"></div>
+          <details class="valo-calc-convert"><summary>Convertir un total en « par action »</summary>
+            <div class="valo-calc-grid">
+              <label>Montant total<input type="text" inputmode="decimal" id="valoCalcTotal" placeholder="ex. 4 200 000 000"></label>
+              <label>Nombre d'actions<input type="text" inputmode="decimal" id="valoCalcShares"></label>
+            </div>
+            <div class="valo-calc-convert-row"><span id="valoCalcPerShare">—</span>
+              <button type="button" class="zoom-btn objectifs-export" data-calc-send="ebitda">→ EBITDA / action</button>
+              <button type="button" class="zoom-btn objectifs-export" data-calc-send="dette">→ Dette nette / action</button></div>
+          </details>
+        </div>
+        <div class="valo-calc-col">
+          <div class="valo-calc-head"><h3>Calcul libre</h3></div>
+          <input type="text" class="valo-calc-free" id="valoCalcFree" placeholder="ex. 12,4 * 9,5 - 8,2   ou   (104/72)^(1/5)" autocomplete="off">
+          <div class="valo-calc-free-result" id="valoCalcFreeResult">=</div>
+          <p class="valo-intro" style="margin-top:6px;">Opérations : + − * / ^ ( ). Virgule ou point pour les décimales. Entrée = garde le résultat dans l'historique.</p>
+          <ul class="valo-calc-history" id="valoCalcHistory"></ul>
+        </div>
+      </div>
 
       <div class="section-label">Historique de vos objectifs</div>
       <div class="objectifs-card">
@@ -525,7 +582,21 @@
 
       <div class="section-label">Composition</div>
       <div class="portfolio-composition">
-        <div class="portfolio-holdings-list" id="portfolioHoldingsList"></div>
+        <div>
+          <div class="chart-card-head" style="margin-bottom:10px;">
+            <div><h3 style="margin:0;">Détail des positions</h3></div>
+            <div class="chart-card-actions">
+              <div class="labo-dropdown" data-dropdown="pfListImgExport">
+                <button type="button" class="labo-dropdown-btn" id="portfolioListImageExportBtn" title="Exporter la liste en image">⭳ Image ▾</button>
+                <div class="labo-dropdown-menu">
+                  <button type="button" data-portfolio-list-img-format="png">PNG</button>
+                  <button type="button" data-portfolio-list-img-format="jpeg">JPEG</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="portfolio-holdings-list" id="portfolioHoldingsList"></div>
+        </div>
         <div class="chart-card portfolio-donut-card">
           <div class="chart-card-head">
             <div><h3>Répartition</h3><p>Poids de chaque position, cash inclus</p></div>
@@ -619,6 +690,10 @@
         </div>
       </div>
     </div>
+
+    <div id="pagePortefeuilleIA" class="page"></div>
+    <!-- Mes portefeuilles (PEA, CTO, PEA + CTO, Wolf Portfolio) : saisie des transactions, fichier sur disque, js/mes-portefeuilles.js -->
+    <div id="pageMesPortefeuilles" class="page"></div>
 
     <div id="pagePerso" class="page">
       <div class="section-label">Portefeuille Perso — PEA &amp; CTO</div>
@@ -739,8 +814,30 @@
 
     <div id="pageSecteur" class="page">
       <div class="section-label">Répartition par secteur (GICS)</div>
-      <p class="valo-intro">Les 72 entreprises du Sheet + toute entreprise que tu as ajoutée à ta Watchlist (base FMP élargie) — l'anneau coloré indique la liste : <span style="color:#F0C877;">■</span> 🐺 Wolf Company · <span style="color:#4FD1A5;">■</span> Liste d'achat · <span style="color:#D9A441;">■</span> Idée du moment · <span style="color:#4A9FE0;">■</span> À surveiller · <span style="color:#8B7FE8;">■</span> À analyser. Clic sur un logo → fiche entreprise.</p>
+      <p class="valo-intro" id="sectorIntroText">Les entreprises du Sheet + toute entreprise que tu as ajoutée à ta Watchlist. Clic sur un logo → fiche entreprise.</p>
+      <div class="sector-toolbar">
+        <label for="sectorWatchlistFilter">Filtrer par liste</label>
+        <select id="sectorWatchlistFilter" class="search-input">
+          <option value="">Toutes les entreprises</option>
+        </select>
+        <label class="sector-full-universe-toggle" for="sectorFullUniverseToggle">
+          <input type="checkbox" id="sectorFullUniverseToggle">
+          Afficher toute la base FMP (~1670 entreprises)
+        </label>
+      </div>
       <div class="sector-grid" id="sectorGrid"></div>
+    </div>
+
+    <div id="pageFiltres" class="page">
+      <div class="section-label">Filtres (screener)</div>
+      <p class="valo-intro">Combine des critères sur toute la base FMP (~1670 entreprises) — seules les entreprises qui répondent à TOUS les filtres actifs restent affichées, classées dans les 11 secteurs. Clic sur un logo → fiche entreprise.</p>
+      <div class="screener-filter-list" id="screenerFilterList"></div>
+      <div class="screener-filter-toolbar">
+        <button class="zoom-btn objectifs-export" id="screenerAddFilterBtn">+ Ajouter un filtre</button>
+        <button class="zoom-btn" id="screenerResetFiltersBtn">Réinitialiser</button>
+        <span class="screener-result-count" id="screenerResultCount"></span>
+      </div>
+      <div class="sector-grid" id="screenerGrid"></div>
     </div>
 
     <div id="pageClassement" class="page">
@@ -761,6 +858,11 @@
           <button type="button" data-topn="all">Tout</button>
         </div>
         <button type="button" class="labo-toggle-btn active" id="classementCapMultipleBtn" title="Plafonne le multiple P/FCF utilisé pour le Prix Juste à 25x quand la médiane historique le dépasse — jamais appliqué à un objectif que tu as toi-même enregistré en Valorisation">🧢 Plafonner à 25x</button>
+        <div class="range-buttons" id="classementPeaButtons" title="Domiciliation réelle de l'entreprise (profil FMP), pas la place de cotation du ticker — approximation UE/EEE pour l'éligibilité PEA, à vérifier au cas par cas avant un ordre réel">
+          <button type="button" data-pea="all" class="active">Tous les pays</button>
+          <button type="button" data-pea="pea">🇪🇺 Éligible PEA</button>
+          <button type="button" data-pea="france">🇫🇷 France</button>
+        </div>
         <button class="zoom-btn objectifs-export" id="classementExportPdfBtn">🖨 Exporter PDF</button>
       </div>
       <p class="chart-hint" id="classementCoverageNote"></p>
@@ -799,7 +901,12 @@
           <div class="search-suggestions" id="watchlistSuggestions"></div>
         </div>
         <button class="zoom-btn objectifs-export" id="watchlistExportBtn">⭳ Exporter</button>
+        <select id="watchlistExportListSelect" class="search-input" style="width:auto;min-width:190px;">
+          <option value="">Toutes les listes</option>
+        </select>
         <button class="zoom-btn objectifs-export" id="watchlistExportPdfBtn">🖨 Exporter PDF</button>
+        <button class="zoom-btn objectifs-export" id="watchlistExportPngBtn" title="Exporter en PNG">🖼️ PNG</button>
+        <button class="zoom-btn objectifs-export" id="watchlistExportJpegBtn" title="Exporter en JPEG">📷 JPEG</button>
       </div>
 
       <div class="watchlist-pool" id="watchlistPool"></div>
@@ -808,7 +915,10 @@
     </div>
 
     <div id="pageComparaison" class="page">
-      <div class="section-label">Comparaison multi-entreprises</div>
+      <div class="section-label" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <span>Comparaison multi-entreprises</span>
+        <button class="zoom-btn objectifs-export" onclick="exportComparaisonAsPdf()">🖨 Exporter PDF</button>
+      </div>
       <p class="valo-intro">Filtre par secteur GICS si besoin (facultatif, le mélange entre secteurs reste possible), coche les entreprises à comparer — sans limite de nombre.</p>
 
       <div class="chart-card comparaison-picker-card">
@@ -826,7 +936,10 @@
       <div class="chart-card wide">
         <div class="chart-card-head">
           <div><h3>Comparaison — indexé base 100</h3><p>Active n'importe quelle métrique pour les entreprises sélectionnées</p></div>
-          <div class="chart-card-actions"><button class="zoom-btn" onclick="openComparaisonZoom()" aria-label="Agrandir">⤢</button></div>
+          <div class="chart-card-actions">
+            <button class="zoom-btn" onclick="exportComparaisonAsPdf()" title="Exporter en PDF" aria-label="Exporter en PDF">🖨</button>
+            <button class="zoom-btn" onclick="openComparaisonZoom()" aria-label="Agrandir">⤢</button>
+          </div>
         </div>
         <div class="range-buttons" id="comparaisonRangeButtons">
           <button data-range="1">1a</button>
@@ -880,6 +993,8 @@
         </select>
         <button class="zoom-btn objectifs-export" id="tierListExportBtn">⭳ Exporter</button>
         <button class="zoom-btn objectifs-export" id="tierListExportPdfBtn">🖨 Exporter PDF</button>
+        <button class="zoom-btn objectifs-export" id="tierListExportPngBtn" title="Exporter en PNG">🖼️ PNG</button>
+        <button class="zoom-btn objectifs-export" id="tierListExportJpegBtn" title="Exporter en JPEG">📷 JPEG</button>
         <button class="zoom-btn" id="tierListResetBtn" title="Remet toutes les entreprises classées dans le pool">↺ Réinitialiser</button>
       </div>
       <div class="tierlist-sector-browse" id="tierListSectorBrowse" style="display:none;"></div>
@@ -1406,6 +1521,7 @@
 
           <div class="range-buttons" id="wolfLaboDrawToolbar">
             <button type="button" data-draw="trendline">📈 Ligne de tendance</button>
+            <button type="button" data-draw="measure" title="Comme sur TradingView : clique un point A puis un point B pour mesurer la performance (prix et %) entre les deux">📏 Mesure</button>
             <button type="button" data-draw="channel" title="Comme sur TradingView : 2 clics pour une borne (support ou résistance), 3e clic pour l'autre">📐 Canal (3 clics)</button>
             <button type="button" id="wolfLaboAutoChannelBtn" title="Zoome/déplace-toi sur la période voulue avant de cliquer — calculé uniquement sur ce qui est visible à l'écran">🤖 Canal auto (période visible)</button>
             <button type="button" id="wolfLaboPenToggle">✏️ Dessiner</button>
@@ -1646,6 +1762,8 @@
       <button class="cerveau-btn-cancel" id="analyseNewBtn">+ Nouvelle fiche vierge</button>
       <button class="cerveau-btn-cancel" id="analyseDeleteBtn">🗑 Supprimer cette fiche</button>
       <button class="cerveau-btn-cancel" id="analyseExportPdfBtn">🖨 Exporter PDF</button>
+      <button class="cerveau-btn-cancel" id="analyseExportSlidesBtn">🎬 Exporter en diaporama</button>
+      <button class="cerveau-btn-cancel" id="analyseDiskBackupBtn" title="Sauvegarde continue sur un vrai fichier de ton disque, indépendante du navigateur.">🔒 Sauvegarde sur disque</button>
       <span class="analyse-updated" id="analyseUpdatedLabel"></span>
       <button class="refresh-btn" id="analyseSaveBtn">💾 Enregistrer</button>
     </div>
@@ -1691,7 +1809,10 @@
   </div>
 </div>
 
-<script src="js/app.js?v=20260901c"></script>
+<script src="js/app.js?v=20261108f"></script>
+<script src="js/portefeuille-ia.js?v=20260920g"></script>
+<script src="js/mes-portefeuilles.js?v=20261108f"></script>
+<script src="js/valo-multiples.js?v=20261108d"></script>
 </body>
 </html>
 

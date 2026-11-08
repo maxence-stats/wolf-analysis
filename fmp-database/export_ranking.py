@@ -38,6 +38,21 @@ Champs par entreprise :
                   explosif une année donnée vient quasi toujours d'un FCF proche de zéro
                   cette année-là, pas d'une vraie valorisation de marché soutenue ; laissé
                   brut sinon, PAS de plafond appliqué ici)
+  pays         -> code pays ISO2 du profil FMP (ex. "FR", "NL", "CH"...), utilisé côté
+                  site pour le filtre "Éligible PEA"/"France" du Classement — voir
+                  load_country_map() ci-dessous, PAS déduit du suffixe du ticker (une
+                  entreprise peut être cotée sur une place et domiciliée dans un autre
+                  pays : TotalEnergies coté "TTE" au NYSE mais domicilié en France,
+                  ASML coté "ASML" au Nasdaq mais domicilié aux Pays-Bas — vérifié en
+                  base, le ticker seul aurait donné un résultat faux).
+
+  Champs ajoutés le 2026-09-08 pour le screener (onglet Filtres) — même source
+  (chartsHistory, déjà téléchargé), dernière valeur annuelle disponible pour un
+  ratio "instantané", cagr() pour un taux de croissance (mêmes garde-fous que
+  cagr_div10 : None si série trop courte ou signe incohérent) :
+  margeOp, roic, payoutRatio, detteOCF, pOcf, per -> dernière valeur de la série
+  correspondante dans chartsHistory
+  cagrCA10, cagrFcf10 -> CAGR sur les 10 dernières années dispo de ca/fcfParAction
 
   prixJuste et ecartPrix ne sont PLUS calculés dans ce script : le site les recalcule
   côté client (renderClassement()/classementValuationFor() dans app.js) à partir de
@@ -173,6 +188,29 @@ def load_sector_map(conn):
     return out
 
 
+def load_country_map(conn):
+    """symbol -> code pays ISO2 (profil FMP, champ "country") — domiciliation réelle
+    de l'entreprise, pas la place de cotation du symbole (voir docstring en tête de
+    fichier)."""
+    cur = conn.cursor()
+    cur.execute("SELECT DISTINCT symbol FROM raw_data WHERE category='profile'")
+    symbols = [r[0] for r in cur.fetchall()]
+    out = {}
+    for sym in symbols:
+        cur.execute(
+            "SELECT payload FROM raw_data WHERE category='profile' AND symbol=? ORDER BY id DESC LIMIT 1",
+            (sym,),
+        )
+        row = cur.fetchone()
+        if not row:
+            continue
+        profile = json.loads(row[0])
+        if isinstance(profile, list):
+            profile = profile[0] if profile else {}
+        out[sym] = profile.get("country") or None
+    return out
+
+
 def cagr(values):
     """CAGR entre le premier et le dernier point d'une série annuelle — None si la série
     est trop courte ou si un bout est nul/négatif (CAGR non défini financièrement)."""
@@ -188,7 +226,7 @@ def cagr(values):
     return ((last / first) ** (1 / n) - 1) * 100
 
 
-def compute_entry(symbol, name_map, sector_map):
+def compute_entry(symbol, name_map, sector_map, country_map):
     doc_path = DATA_DIR / f"documents-{symbol}.json"
     price_path = DATA_DIR / f"prices-{symbol}.json"
     if not doc_path.exists() or not price_path.exists():
@@ -293,10 +331,25 @@ def compute_entry(symbol, name_map, sector_map):
     if rendement_div is not None and rendement_div > MAX_PLAUSIBLE_YIELD_PCT:
         rendement_div = None  # incohérence probable (ex. devise du dividende ≠ devise du prix)
 
+    def last_value(field):
+        vals = [v for v in (ch.get(field) or []) if v is not None]
+        return vals[-1] if vals else None
+
+    marge_op = last_value("margeOp")
+    roic = last_value("roic")
+    payout_ratio = last_value("payoutRatio")
+    dette_ocf = last_value("detteOCF")
+    p_ocf = last_value("pOcf")
+    per = last_value("per")
+    ca_series = [v for v in (ch.get("ca") or []) if v is not None]
+    cagr_ca10 = cagr(ca_series[-11:]) if len(ca_series) >= 2 else None
+    cagr_fcf10 = cagr(fcf_series[-11:]) if len(fcf_series) >= 2 else None
+
     return {
         "nom": name_map.get(symbol, doc.get("companyName") or symbol),
         "symbol": symbol,
         "secteur": sector_map.get(symbol),
+        "pays": country_map.get(symbol),
         "prixActuel": round(prix_actuel, 4),
         "dividende": round(dividende, 4) if dividende is not None else None,
         "rendementDiv": round(rendement_div, 4) if rendement_div is not None else None,
@@ -304,6 +357,14 @@ def compute_entry(symbol, name_map, sector_map):
         "fcfParAction": round(fcf_actuel, 4) if fcf_actuel is not None else None,
         "fcfBase": round(fcf_base, 4) if fcf_base is not None else None,
         "medianePFCF": round(mediane_pfcf, 4) if mediane_pfcf is not None else None,
+        "margeOp": round(marge_op, 4) if marge_op is not None else None,
+        "roic": round(roic, 4) if roic is not None else None,
+        "payoutRatio": round(payout_ratio, 4) if payout_ratio is not None else None,
+        "detteOCF": round(dette_ocf, 4) if dette_ocf is not None else None,
+        "pOcf": round(p_ocf, 4) if p_ocf is not None else None,
+        "per": round(per, 4) if per is not None else None,
+        "cagrCA10": round(cagr_ca10, 4) if cagr_ca10 is not None else None,
+        "cagrFcf10": round(cagr_fcf10, 4) if cagr_fcf10 is not None else None,
     }
 
 
@@ -311,6 +372,7 @@ def main():
     conn = db.get_connection()
     name_map = load_name_map()
     sector_map = load_sector_map(conn)
+    country_map = load_country_map(conn)
     company_name_map = load_company_name_map(conn)
 
     cur = conn.cursor()
@@ -325,7 +387,7 @@ def main():
         if symbol in dup_skip:
             skipped += 1
             continue
-        entry = compute_entry(symbol, name_map, sector_map)
+        entry = compute_entry(symbol, name_map, sector_map, country_map)
         if entry:
             out.append(entry)
         else:

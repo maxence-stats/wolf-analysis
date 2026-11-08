@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><title>Tests valo multiples</title>
+<style>body{font-family:system-ui,sans-serif;background:#0D1013;color:#E9EBEE;padding:20px}.ok{color:#4FD1A5}.ko{color:#E5636B}li{margin:3px 0}</style>
+</head><body>
+<h1>Tests — EV/EBITDA lissé et Price-to-Book</h1>
+<p id="summary"></p><ul id="out"></ul>
+<script src="../js/valo-multiples.js"></script>
+<script>
+const V = window.VALO_MULTIPLES, out = document.getElementById('out');
+let pass = 0, fail = 0;
+const near = (a, b, eps = 1e-6) => typeof a === 'number' && Math.abs(a - b) < eps;
+function t(name, cond, detail){ cond ? pass++ : fail++; out.insertAdjacentHTML('beforeend', '<li class="' + (cond ? 'ok' : 'ko') + '">' + (cond ? '✔ ' : '✖ ') + name + (cond ? '' : ' — ' + JSON.stringify(detail)) + '</li>'); }
+
+// 1) Industrielle endettée : EBITDA moyen 5 ans 5 000 M, 9x, dette nette 12 000 M, 500 M d'actions, cours 50
+let r = V.calculateEvEbitdaFairValue({ ebitda: 5000e6, multiple: 9, netDebt: 12000e6, shares: 500e6, price: 50 });
+t('Industrielle : EV cible = 45 000 M', near(r.evCible, 45000e6), r);
+t('Industrielle : capitalisation cible = 33 000 M', near(r.capCible, 33000e6), r);
+t('Industrielle : prix cible = 66 €', near(r.prixCible, 66), r);
+t('Industrielle : sous-évaluée (50 < 66), écart −24,2 %', r.sousEvaluee === true && near(r.ecart, 50 / 66 - 1), r);
+
+// 2) Trésorerie nette (dette nette négative) : elle s'AJOUTE à la valeur des actions
+r = V.calculateEvEbitdaFairValue({ ebitda: 5000e6, multiple: 9, netDebt: -2000e6, shares: 500e6, price: 100 });
+t('Trésorerie nette : prix cible = (45 000 + 2 000) / 500 = 94 €', near(r.prixCible, 94) && r.tresorerieNette === true, r);
+t('Trésorerie nette : surévaluée (100 > 94)', r.sousEvaluee === false, r);
+
+// 3) Cas d'erreur EV/EBITDA
+t('Actions = 0 → erreur (pas de division par zéro)', V.calculateEvEbitdaFairValue({ ebitda: 1e9, multiple: 8, netDebt: 0, shares: 0, price: 10 }).ok === false);
+t('EBITDA négatif → erreur', V.calculateEvEbitdaFairValue({ ebitda: -1e9, multiple: 8, netDebt: 0, shares: 1e6, price: 10 }).ok === false);
+t('Multiple absent → erreur', V.calculateEvEbitdaFairValue({ ebitda: 1e9, multiple: null, netDebt: 0, shares: 1e6, price: 10 }).ok === false);
+t('Dette > EV cible → erreur (valeur des actions nulle)', V.calculateEvEbitdaFairValue({ ebitda: 1e9, multiple: 5, netDebt: 6e9, shares: 1e6, price: 10 }).ok === false);
+
+// 4) Banque en décote : actif net 100 €/action, P/B historique 0,8x, cours 65 €
+r = V.calculatePbFairValue({ bookValuePerShare: 100, multiple: 0.8, price: 65 });
+t('Banque : prix cible P/B = 80 €', near(r.prixCible, 80), r);
+t('Banque : P/B actuel = 0,65x', near(r.pbActuel, 0.65), r);
+t('Banque : signal de décote (0,65 < 0,8 et < 1)', r.opportunite === true && r.sousHisto && r.sousActifNet, r);
+t('Banque : sous-évaluée, écart −18,75 %', r.sousEvaluee === true && near(r.ecart, -0.1875), r);
+
+// 5) Cas d'erreur P/B
+t('Actif net négatif → erreur', V.calculatePbFairValue({ bookValuePerShare: -5, multiple: 1, price: 10 }).ok === false);
+t('Multiple P/B absent → erreur mais P/B actuel donné', (r = V.calculatePbFairValue({ bookValuePerShare: 50, multiple: null, price: 40 })).ok === false && near(r.pbActuel, 0.8), r);
+
+// 6) Outils
+const p = V.parseMultipleInput('8,2 9,1 10,4');
+t('Saisie liste « 8,2 9,1 10,4 » → moyenne 9,233 (3 valeurs)', p && p.count === 3 && near(p.value, 27.7 / 3), p);
+t('Saisie « 10,5x » → 10,5', near((V.parseMultipleInput('10,5x') || {}).value, 10.5));
+t('Saisie vide → null', V.parseMultipleInput('  ') === null);
+const a = V.averageLastYears([10, 8, 6, 4, 2, 100], 5);
+t('Moyenne 5 derniers exercices (récent en premier) = 6', a && near(a.value, 6) && a.count === 5, a);
+// ebitda_fy_h est déjà dans la devise de cotation (livres pour Londres) : inchangé, sauf ×100 pour un titre en pence
+const m = V.fromSnapshot({ currency: 'EUR', ebitda_fy_h: [1000, 800, null], close: 10, price_book_fq: 1 });
+t('Historique EBITDA gardé tel quel (devise de cotation)', m.ebitdaHist[0] === 1000 && m.ebitdaHist[1] === 800 && m.ebitdaHist[2] === null && m.serverOk, m);
+const g = V.fromSnapshot({ currency: 'GBX', ebitda_fy_h: [10], close: 4930, price_book_fq: 1 });
+t('Titre coté en pence : historique ×100', g.ebitdaHist[0] === 1000, g);
+t('CAGR EBITDA 2 ans (récent en premier) : 100 -> 121 = 10 %', Math.abs(V.cagrRecentFirst([121, 110, 100], 2) - 10) < 1e-9);
+t('Ancien serveur (champs absents) détecté', V.fromSnapshot({ close: 10 }).serverOk === false);
+
+// 7) Scénarios EV/EBITDA à 5 ans (méthode 2026-11-08) — tout par action
+// EBITDA 10 €/action, 9x, dette nette 20 €/action, cours 60 €, CAGR 5 %
+let s = V.evEbitdaScenario({ ebitdaPS: 10, multiple: 9, cagr: 5, detteNettePS: 20, prix: 60 });
+t('Valeur actuelle = 10 × 9 − 20 = 70 €', near(s.prixTheoActuel, 70), s);
+t('EBITDA futur = 10 × 1,05^5 = 12,7628', near(s.ebitdaFuturPS, 10 * Math.pow(1.05, 5)), s);
+t('Dette future absente → dette actuelle (hypothèse signalée)', s.detteFutureAuto === true && near(s.detteNetteFuturePS, 20), s);
+const pf = 10 * Math.pow(1.05, 5) * 9 - 20;
+t('Prix 5 ans = 12,7628 × 9 − 20 = 94,87 €', near(s.prixFutur, pf), s);
+t('Potentiel total = (94,87 / 60 − 1) × 100', near(s.potentielTotal, (pf / 60 - 1) * 100), s);
+t('Rendement annualisé = (94,87 / 60)^(1/5) − 1', near(s.rendementAnnualise, (Math.pow(pf / 60, 0.2) - 1) * 100), s);
+t('Dette retirée UNE seule fois (pas 2 × 20)', near(s.prixTheoActuel + 20, 90), s);
+// Les 3 scénarios : pessimiste / réaliste / optimiste avec dette future propre à chacun
+const base = { ebitdaPS: 10, detteNettePS: 20, prix: 60 };
+const pess = V.evEbitdaScenario(Object.assign({}, base, { cagr: 0, multiple: 7, detteNetteFuturePS: 25 }));
+const real = V.evEbitdaScenario(Object.assign({}, base, { cagr: 5, multiple: 9, detteNetteFuturePS: 15 }));
+const opti = V.evEbitdaScenario(Object.assign({}, base, { cagr: 10, multiple: 11, detteNetteFuturePS: 5 }));
+t('Pessimiste : 10 × 7 − 25 = 45 € dans 5 ans', near(pess.prixFutur, 45) && near(pess.potentielTotal, -25), pess);
+t('Réaliste : 12,7628 × 9 − 15', near(real.prixFutur, 10 * Math.pow(1.05, 5) * 9 - 15), real);
+t('Optimiste : 16,1051 × 11 − 5', near(opti.prixFutur, 10 * Math.pow(1.1, 5) * 11 - 5), opti);
+t('Ordre pessimiste < réaliste < optimiste', pess.prixFutur < real.prixFutur && real.prixFutur < opti.prixFutur);
+// Trésorerie nette (dette négative) : s'ajoute
+s = V.evEbitdaScenario({ ebitdaPS: 10, multiple: 8, cagr: 0, detteNettePS: -5, prix: 80 });
+t('Trésorerie nette 5 €/action : 10 × 8 + 5 = 85 €', near(s.prixTheoActuel, 85) && near(s.prixFutur, 85), s);
+// Multiple de sortie différent
+s = V.evEbitdaScenario({ ebitdaPS: 10, multiple: 10, multipleSortie: 8, cagr: 0, detteNettePS: 0, prix: 100 });
+t('Multiple de sortie 8x : prix 5 ans 80 €, actuel 100 €', near(s.prixFutur, 80) && near(s.prixTheoActuel, 100), s);
+// Dette > EV : prix ramené à 0 et signalé
+s = V.evEbitdaScenario({ ebitdaPS: 1, multiple: 5, cagr: 0, detteNettePS: 10, prix: 10 });
+t('Dette > EV → prix 0 et signal', s.prixTheoActuel === 0 && s.negatif === true, s);
+t('Cours absent → potentiel null (pas de division par 0)', V.evEbitdaScenario({ ebitdaPS: 10, multiple: 9, prix: 0 }).potentielTotal === null);
+t('EBITDA manquant → erreur', V.evEbitdaScenario({ multiple: 9, prix: 10 }).ok === false);
+
+// 8) EV/EBITDA historique saisi : moyennes 5/10/15/20 ans, médiane, multiples des scénarios
+const yrs = {}; for (let y = 2006; y <= 2025; y++) yrs[y] = y >= 2021 ? 20 : y >= 2016 ? 10 : 8;   // 5 × 20, 5 × 10, 10 × 8
+const hs = V.evHistoryStats(yrs);
+t('20 années saisies', hs.count === 20 && hs.first === 2006 && hs.last === 2025, hs);
+t('Moyenne 5 ans = 20 (années les plus récentes)', near(hs.avgs[5].value, 20), hs.avgs);
+t('Moyenne 10 ans = 15', near(hs.avgs[10].value, 15), hs.avgs);
+t('Moyenne 15 ans = 12', near(hs.avgs[15].value, (100 + 50 + 40) / 15), hs.avgs);
+t('Moyenne 20 ans = (100 + 50 + 80) / 20 = 11,5', near(hs.avgs[20].value, 11.5), hs.avgs);
+t('Médiane = 9 (entre 8 et 10)', near(hs.median, 9), hs);
+t('Réaliste = médiane des moyennes (15 et 12,67 -> 13,83), toujours entre pessimiste et optimiste', near(hs.medianAvg, (15 + 190 / 15) / 2) && hs.minAvg <= hs.medianAvg && hs.medianAvg <= hs.maxAvg, hs);
+t('Pessimiste = plus basse des moyennes (11,5), optimiste = plus haute (20)', near(hs.minAvg, 11.5) && near(hs.maxAvg, 20), hs);
+const hs2 = V.evHistoryStats({ 2023: 11, 2024: 12, 2025: 13, 2019: 'x', 2018: -4 });
+t('Valeurs invalides ignorées ; 3 années -> pas de moyenne 10/15/20 répétée', hs2.count === 3 && near(hs2.median, 12) && near(hs2.minAvg, 12) && near(hs2.maxAvg, 12), hs2);
+t('Aucune saisie -> count 0', V.evHistoryStats({}).count === 0);
+
+document.getElementById('summary').innerHTML = '<b class="' + (fail ? 'ko' : 'ok') + '">' + pass + ' réussis, ' + fail + ' échoués</b>';
+window.__testResult = { pass, fail };
+</script>
+</body></html>

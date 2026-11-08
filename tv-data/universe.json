@@ -1,0 +1,618 @@
+{
+ "TotalEnergies": {
+  "tv": "EURONEXT:TTE",
+  "yahoo": "TTE.PA",
+  "fmp": "TTE",
+  "secteur": "Energie",
+  "sousSecteur": "Pétrolz & Gaz"
+ },
+ "Air Liquide": {
+  "tv": "EURONEXT:AI",
+  "yahoo": "AI.PA",
+  "fmp": "AI.PA",
+  "secteur": "Matériaux",
+  "sousSecteur": "Chimie"
+ },
+ "LVMH": {
+  "tv": "EURONEXT:MC",
+  "yahoo": "MC.PA",
+  "fmp": "MC.PA",
+  "secteur": "Consommation discrétionnaire",
+  "sousSecteur": "Vêtements, accessoires et produits de luxe"
+ },
+ "Ferrari": {
+  "tv": "MIL:RACE",
+  "yahoo": "RACE.MI",
+  "fmp": "RACE",
+  "secteur": "Consommation discrétionnaire",
+  "sousSecteur": "Constructeurs Automobiles"
+ },
+ "Verallia": {
+  "tv": "EURONEXT:VRLA",
+  "yahoo": "VRLA.PA",
+  "fmp": "VRLA.PA",
+  "secteur": "Matériaux",
+  "sousSecteur": "Emballages (Verre)"
+ },
+ "Nestlé": {
+  "tv": "SIX:NESN",
+  "yahoo": "NESN.SW",
+  "fmp": "NESN.SW",
+  "secteur": "Consommation de base",
+  "sousSecteur": "Produits alimentaires emballés"
+ },
+ "Schneider Electric": {
+  "tv": "EURONEXT:SU",
+  "yahoo": "SU.PA",
+  "fmp": "SU.PA",
+  "secteur": "Industrie",
+  "sousSecteur": "Équipements électriques"
+ },
+ "Hermès": {
+  "tv": "EURONEXT:RMS",
+  "yahoo": "RMS.PA",
+  "fmp": "RMS.PA",
+  "secteur": "Consommation discrétionnaire",
+  "sousSecteur": "Articles de Luxe"
+ },
+ "ASML": {
+  "tv": "EURONEXT:ASML",
+  "yahoo": "ASML.AS",
+  "fmp": "ASML",
+  "secteur": "Technologies de l'information",
+  "sousSecteur": "Équipement Semi-conducteurs"
+ },
+ "Taiwan Semiconductor (ADR)": {
+  "tv": "NYSE:TSM",
+  "yahoo": "TSM",
+  "fmp": "TSM",
+  "secteur": "Technologies de l'information",
+  "sousSecteur": "Semi-conducteurs"
+ },
+ "Atlas Copco AB": {
+  "tv": "OMXSTO:ATCO_A",
+  "yahoo": "ATCO-A.ST",
+  "fmp": "ATCO-A.ST",
+  "secteur": "Industrie",
+  "sousSecteur": "Machines-Outils"
+ },
+ "Gaztransport & Technigaz": {
+  "tv": "EURONEXT:GTT",
+  "yahoo": "GTT.PA",
+  "fmp": "GTT.PA",
+  "secteur": "Energie",
+  "sousSecteur": "Équipement Énergétique"
+ },
+ "Dassault Systèmes": {
+  "tv": "EURONEXT:DSY",
+  "yahoo": "DSY.PA",
+  "fmp": "DSY.PA",
+  "secteur": "Technologies de l'information",
+  "sousSecteur": "Logiciels d'Application"
+ },
+ "Dassault Aviation": {
+  "tv": "EURONEXT:AM",
+  "yahoo": "AM.PA",
+  "fmp": "AM.PA",
+  "secteur": "Industrie",
+  "sousSecteur": "Aérospatiale & Défense"
+ },
+ "VINCI": {
+  "tv": "EURONEXT:DG",
+  "yahoo": "DG.PA",
+  "fmp": "DG.PA",
+  "secteur": "Industrie",
+  "sousSecteur": "Construction & Ingénierie"
+ },
+ "EssilorLuxottica": {
+  "tv": "EURONEXT:EL",
+  "yahoo": "EL.PA",
+  "fmp": "EL.PA",
+  "secteur": "Consommation discrétionnaire",
+  "sousSecteur": "Équipement de Soins de Santé"
+ },
+ "Pernod Ricard": {
+  "tv": "EURONEXT:RI",
+  "yahoo": "RI.PA",
+  "fmp": "RI.PA",
+  "secteur": "Consommation de base",
+  "sousSecteur": "Boissons Alcoolisées"
+ },
+ "FDJ United": {
+  "tv": "EURONEXT:FDJU",
+  "yahoo": "FDJU.PA",
+  "fmp": "FDJU.PA",
+  "secteur": "Consommation discrétionnaire",
+  "sousSecteur": "Jeux d'argent et paris"
+ },
+ "Bouygues": {
+  "tv": "EURONEXT:EN",
+  "yahoo": "EN.PA",
+  "fmp": "EN.PA",
+  "secteur": "Industrie",
+  "sousSecteur": "Conglomérat diversifié (BTP, télécoms, médias)"
+ },
+ "Michelin": {
+  "tv": "EURONEXT:ML",
+  "yahoo": "ML.PA",
+  "fmp": "ML.PA",
+  "secteur": "Consommation discrétionnaire",
+  "sousSecteur": "Pneumatiques / Équipementiers automobiles"
+ },
+ "Edenred": {
+  "tv": "EURONEXT:EDEN",
+  "yahoo": "EDEN.PA",
+  "fmp": "EDEN.PA",
+  "secteur": "Industrie",
+  "sousSecteur": "Services aux entreprises (solutions de paiement prépayé)"
+ },
+ "Microsoft": {
+  "tv": "NASDAQ:MSFT",
+  "yahoo": "MSFT",
+  "fmp": "MSFT",
+  "secteur": "Technologies de l'information",
+  "sousSecteur": "Logiciels (cloud, systèmes d'exploitation, entreprise)"
+ },
+ "Airbus": {
+  "tv": "EURONEXT:AIR",
+  "yahoo": "AIR.PA",
+  "fmp": "AIR.PA",
+  "secteur": "Industrie",
+  "sousSecteur": "Aéronautique et défense"
+ },
+ "Veolia": {
+  "tv": "EURONEXT:VIE",
+  "yahoo": "VIE.PA",
+  "fmp": "VIE.PA",
+  "secteur": "Services publics",
+  "sousSecteur": "Eau, déchets, énergie (utilities)"
+ },
+ "Sanofi": {
+  "tv": "EURONEXT:SAN",
+  "yahoo": "SAN.PA",
+  "fmp": "SAN.PA",
+  "secteur": "Santé",
+  "sousSecteur": "Pharmaceutique"
+ },
+ "Credit Agricole": {
+  "tv": "EURONEXT:ACA",
+  "yahoo": "ACA.PA",
+  "fmp": "ACA.PA",
+  "secteur": "Finance",
+  "sousSecteur": "Banques"
+ },
+ "BNP Paribas": {
+  "tv": "EURONEXT:BNP",
+  "yahoo": "BNP.PA",
+  "fmp": "BNP.PA",
+  "secteur": "Finance",
+  "sousSecteur": "Banques"
+ },
+ "Thales SA": {
+  "tv": "EURONEXT:HO",
+  "yahoo": "HO.PA",
+  "fmp": "HO.PA",
+  "secteur": "Industrie",
+  "sousSecteur": "Aéronautique et défense"
+ },
+ "SAP": {
+  "tv": "XETR:SAP",
+  "yahoo": "SAP.DE",
+  "fmp": "SAP",
+  "secteur": "Technologies de l'information",
+  "sousSecteur": "Logiciels (ERP, cloud d'entreprise)"
+ },
+ "Copart": {
+  "tv": "NASDAQ:CPRT",
+  "yahoo": "CPRT",
+  "fmp": "CPRT",
+  "secteur": "Industrie",
+  "sousSecteur": "Vente aux enchères de véhicules (services aux entreprises)"
+ },
+ "Chipotle Mexican Grill": {
+  "tv": "NYSE:CMG",
+  "yahoo": "CMG",
+  "fmp": "CMG",
+  "secteur": "Consommation discrétionnaire",
+  "sousSecteur": "Restauration"
+ },
+ "Domino's": {
+  "tv": "NASDAQ:DPZ",
+  "yahoo": "DPZ",
+  "fmp": "DPZ",
+  "secteur": "Consommation discretionnaire",
+  "sousSecteur": "Restaurants"
+ },
+ "Costco Wholesale": {
+  "tv": "NASDAQ:COST",
+  "yahoo": "COST",
+  "fmp": "COST",
+  "secteur": "Consommation de base",
+  "sousSecteur": "Distribution de produits de consommation courante (clubs entrepôts)"
+ },
+ "Iberdrola": {
+  "tv": "BME:IBE",
+  "yahoo": "IBE.MC",
+  "fmp": "IBE.MC",
+  "secteur": "Services aux collectivités",
+  "sousSecteur": "Électricité multi-activités (production, distribution, réseaux)"
+ },
+ "ResMed": {
+  "tv": "NYSE:RMD",
+  "yahoo": "RMD",
+  "fmp": "RMD",
+  "secteur": "Santé",
+  "sousSecteur": "Équipements médicaux (dispositifs respiratoires / apnée du sommeil)"
+ },
+ "Ipsos": {
+  "tv": "EURONEXT:IPS",
+  "yahoo": "IPS.PA",
+  "fmp": "IPS.PA",
+  "secteur": "Industrie",
+  "sousSecteur": "Services de conseil et d'études de marché (recherche marketing)"
+ },
+ "Zoetis": {
+  "tv": "NYSE:ZTS",
+  "yahoo": "ZTS",
+  "fmp": "ZTS",
+  "secteur": "Santé",
+  "sousSecteur": "Santé animale (médicaments et vaccins vétérinaires)"
+ },
+ "NVIDIA": {
+  "tv": "NASDAQ:NVDA",
+  "yahoo": "NVDA",
+  "fmp": "NVDA",
+  "secteur": "Technologie de l'information",
+  "sousSecteur": "Semi-conducteurs (GPU, calcul accéléré / IA, data center)"
+ },
+ "Alphabet": {
+  "tv": "NASDAQ:GOOGL",
+  "yahoo": "GOOGL",
+  "fmp": "GOOGL",
+  "secteur": "Services de communication",
+  "sousSecteur": "Services Internet (recherche, publicité, cloud)"
+ },
+ "COINBASE": {
+  "tv": "NASDAQ:COIN",
+  "yahoo": "COIN",
+  "fmp": "COIN",
+  "secteur": "Services financiers",
+  "sousSecteur": "Marchés de capitaux (plateforme d'échange de cryptomonnaies)"
+ },
+ "Societe Generale": {
+  "tv": "EURONEXT:GLE",
+  "yahoo": "GLE.PA",
+  "fmp": "GLE.PA",
+  "secteur": "Services financiers",
+  "sousSecteur": "Banques"
+ },
+ "AXA": {
+  "tv": "EURONEXT:CS",
+  "yahoo": "CS.PA",
+  "fmp": "CS.PA",
+  "secteur": "Services financiers",
+  "sousSecteur": "Assurance"
+ },
+ "Euronext": {
+  "tv": "EURONEXT:ENX",
+  "yahoo": "ENX.PA",
+  "fmp": "ENX.PA",
+  "secteur": "Services financiers",
+  "sousSecteur": "Marches financiers (Bourses)"
+ },
+ "Amundi": {
+  "tv": "EURONEXT:AMUN",
+  "yahoo": "AMUN.PA",
+  "fmp": "AMUN.PA",
+  "secteur": "Services financiers",
+  "sousSecteur": "Gestion d'actifs"
+ },
+ "Xiaomi Corporation": {
+  "tv": "HKEX:1810",
+  "yahoo": "1810.HK",
+  "fmp": "1810.HK",
+  "secteur": "Technologie",
+  "sousSecteur": "Électronique grand public"
+ },
+ "Adobe Inc.": {
+  "tv": "NASDAQ:ADBE",
+  "yahoo": "ADBE",
+  "fmp": "ADBE",
+  "secteur": "Technologie",
+  "sousSecteur": "Logiciels"
+ },
+ "Tencent Holdings": {
+  "tv": "HKEX:700",
+  "yahoo": "0700.HK",
+  "fmp": "0700.HK",
+  "secteur": "Services de communication",
+  "sousSecteur": "Internet, jeux vidéo et médias sociaux"
+ },
+ "Kelly Partners Group Holdings": {
+  "tv": "ASX:KPG",
+  "yahoo": "KPG.AX",
+  "fmp": "KPG.AX",
+  "secteur": "Industrie",
+  "sousSecteur": "Services de conseil comptable et professionnel (cabinets d'expertise comptable)"
+ },
+ "AutoZone": {
+  "tv": "NYSE:AZO",
+  "yahoo": "AZO",
+  "fmp": "AZO",
+  "secteur": "Consommation discrétionnaire",
+  "sousSecteur": "Distribution spécialisée de pièces automobiles"
+ },
+ "Xylem": {
+  "tv": "NYSE:XYL",
+  "yahoo": "XYL",
+  "fmp": "XYL",
+  "secteur": "Industrie",
+  "sousSecteur": "Équipements de traitement et gestion de l'eau"
+ },
+ "Kinsale Capital Group": {
+  "tv": "NYSE:KNSL",
+  "yahoo": "KNSL",
+  "fmp": "KNSL",
+  "secteur": "Services financiers",
+  "sousSecteur": "Assurance spécialisée (excess and surplus lines)"
+ },
+ "Home Depot, Inc.": {
+  "tv": "NYSE:HD",
+  "yahoo": "HD",
+  "fmp": "HD",
+  "secteur": "Consommation discrétionnaire",
+  "sousSecteur": "Distribution spécialisée (bricolage et amélioration de l'habitat)"
+ },
+ "Coca-Cola Company": {
+  "tv": "NYSE:KO",
+  "yahoo": "KO",
+  "fmp": "KO",
+  "secteur": "Consommation de base",
+  "sousSecteur": "Boissons"
+ },
+ "PEPSICO": {
+  "tv": "NASDAQ:PEP",
+  "yahoo": "PEP",
+  "fmp": "PEP",
+  "secteur": "Consommation de base",
+  "sousSecteur": "Boissons & Snacking"
+ },
+ "Tesla": {
+  "tv": "NASDAQ:TSLA",
+  "yahoo": "TSLA",
+  "fmp": "TSLA",
+  "secteur": "Consommation Discrétionnaire",
+  "sousSecteur": "Automobiles"
+ },
+ "Salesforce": {
+  "tv": "NYSE:CRM",
+  "yahoo": "CRM",
+  "fmp": "CRM",
+  "secteur": "Technologie de l'Information",
+  "sousSecteur": "Logiciels"
+ },
+ "S&P Global": {
+  "tv": "NYSE:SPGI",
+  "yahoo": "SPGI",
+  "fmp": "SPGI",
+  "secteur": "Services Financiers",
+  "sousSecteur": "Agences de Notation / Données Financières"
+ },
+ "Booking": {
+  "tv": "NASDAQ:BKNG",
+  "yahoo": "BKNG",
+  "fmp": "BKNG",
+  "secteur": "Consommation Discrétionnaire",
+  "sousSecteur": "Voyages en Ligne / Réservation"
+ },
+ "Constellation Software": {
+  "tv": "TSX:CSU",
+  "yahoo": "CSU.TO",
+  "fmp": "CSU.TO",
+  "secteur": "Technologie de l'Information",
+  "sousSecteur": "Logiciels"
+ },
+ "Equasens": {
+  "tv": "EURONEXT:EQS",
+  "yahoo": "EQS.PA",
+  "fmp": "EQS.PA",
+  "secteur": "Technologie de l'Information",
+  "sousSecteur": "Logiciels de Santé"
+ },
+ "Mastercard": {
+  "tv": "NYSE:MA",
+  "yahoo": "MA",
+  "fmp": "MA",
+  "secteur": "Services Financiers",
+  "sousSecteur": "Traitement de Paiements"
+ },
+ "McDonald's": {
+  "tv": "NYSE:MCD",
+  "yahoo": "MCD",
+  "fmp": "MCD",
+  "secteur": "Consommation Discrétionnaire",
+  "sousSecteur": "Restauration"
+ },
+ "Visa": {
+  "tv": "NYSE:V",
+  "yahoo": "V",
+  "fmp": "V",
+  "secteur": "Services Financiers",
+  "sousSecteur": "Traitement de Paiements"
+ },
+ "Nemetschek": {
+  "tv": "XETR:NEM",
+  "yahoo": "NEM.DE",
+  "fmp": "NEM.DE",
+  "secteur": "Technologie de l'Information",
+  "sousSecteur": "Logiciels"
+ },
+ "MSCI": {
+  "tv": "NYSE:MSCI",
+  "yahoo": "MSCI",
+  "fmp": "MSCI",
+  "secteur": "Services Financiers",
+  "sousSecteur": "Données et Analyses Financières"
+ },
+ "Meta": {
+  "tv": "NASDAQ:META",
+  "yahoo": "META",
+  "fmp": "META",
+  "secteur": "Technologie de l'Information",
+  "sousSecteur": "Médias Sociaux / Interactifs"
+ },
+ "Amazon": {
+  "tv": "NASDAQ:AMZN",
+  "yahoo": "AMZN",
+  "fmp": "AMZN",
+  "secteur": "Consommation discrétionnaire",
+  "sousSecteur": "Distribution / Commerce en ligne"
+ },
+ "Intercontinental Exchange": {
+  "tv": "NYSE:ICE",
+  "yahoo": "ICE",
+  "fmp": "ICE",
+  "secteur": "Finance",
+  "sousSecteur": "Marchés financiers / Bourses"
+ },
+ "Rollins": {
+  "tv": "NYSE:ROL",
+  "yahoo": "ROL",
+  "fmp": "ROL",
+  "secteur": "Industrie",
+  "sousSecteur": "Services de lutte antiparasitaire"
+ },
+ "STERIS": {
+  "tv": "NYSE:STE",
+  "yahoo": "STE",
+  "fmp": "STE",
+  "secteur": "Santé",
+  "sousSecteur": "Équipements médicaux / Stérilisation"
+ },
+ "Prysmian": {
+  "tv": "MIL:PRY",
+  "yahoo": "PRY.MI",
+  "fmp": "PRYMY",
+  "secteur": "Industrie",
+  "sousSecteur": "Câbles et fils électriques"
+ },
+ "Nexans": {
+  "tv": "EURONEXT:NEX",
+  "yahoo": "NEX.PA",
+  "fmp": "NEX.PA",
+  "secteur": "Industrie",
+  "sousSecteur": "Câbles et fils électriques"
+ },
+ "DMG Mori": {
+  "tv": "TSE:6141",
+  "yahoo": "",
+  "fmp": "",
+  "secteur": "Industrie",
+  "sousSecteur": "Machines-outils"
+ },
+ "Minerals Technologies": {
+  "tv": "NYSE:MTX",
+  "yahoo": "",
+  "fmp": "",
+  "secteur": "Matériaux",
+  "sousSecteur": "Chimie de spécialité"
+ },
+ "Eaton": {
+  "tv": "NYSE:ETN",
+  "yahoo": "",
+  "fmp": "",
+  "secteur": "Industrie",
+  "sousSecteur": "Équipements électriques"
+ },
+ "Unilever (ADR)": {
+  "tv": "NYSE:UL",
+  "yahoo": "",
+  "fmp": "",
+  "secteur": "Consommation de base",
+  "sousSecteur": "Produits ménagers et d'hygiène"
+ },
+ "Interactive Brokers": {
+  "tv": "NASDAQ:IBKR",
+  "yahoo": "",
+  "fmp": "",
+  "secteur": "Finance",
+  "sousSecteur": "Courtage en ligne"
+ },
+ "Freeport-McMoRan": {
+  "tv": "NYSE:FCX",
+  "yahoo": "",
+  "fmp": "",
+  "secteur": "Matériaux",
+  "sousSecteur": "Cuivre et métaux"
+ },
+ "Mondelez": {
+  "tv": "NASDAQ:MDLZ",
+  "yahoo": "",
+  "fmp": "",
+  "secteur": "Consommation de base",
+  "sousSecteur": "Confiserie et biscuits"
+ },
+ "Barclays": {
+  "tv": "LSE:BARC",
+  "yahoo": "",
+  "fmp": "",
+  "secteur": "Finance",
+  "sousSecteur": "Banques"
+ },
+ "Paccar": {
+  "tv": "NASDAQ:PCAR",
+  "yahoo": "",
+  "fmp": "",
+  "secteur": "Industrie",
+  "sousSecteur": "Camions"
+ },
+ "Brown & Brown": {
+  "tv": "NYSE:BRO",
+  "yahoo": "",
+  "fmp": "",
+  "secteur": "Finance",
+  "sousSecteur": "Courtage en assurance"
+ },
+ "C.H. Robinson": {
+  "tv": "NASDAQ:CHRW",
+  "yahoo": "",
+  "fmp": "",
+  "secteur": "Industrie",
+  "sousSecteur": "Logistique et fret"
+ },
+ "Somnigroup": {
+  "tv": "NYSE:SGI",
+  "yahoo": "",
+  "fmp": "",
+  "secteur": "Consommation discrétionnaire",
+  "sousSecteur": "Literie"
+ },
+ "Modine": {
+  "tv": "NYSE:MOD",
+  "yahoo": "",
+  "fmp": "",
+  "secteur": "Industrie",
+  "sousSecteur": "Refroidissement et thermique"
+ },
+ "Cheesecake Factory": {
+  "tv": "NASDAQ:CAKE",
+  "yahoo": "",
+  "fmp": "",
+  "secteur": "Consommation discrétionnaire",
+  "sousSecteur": "Restaurants"
+ },
+ "Kanadevia": {
+  "tv": "TSE:7004",
+  "yahoo": "",
+  "fmp": "",
+  "secteur": "Industrie",
+  "sousSecteur": "Ingénierie environnementale"
+ },
+ "ICTSI": {
+  "tv": "PSE:ICT",
+  "yahoo": "",
+  "fmp": "",
+  "secteur": "Industrie",
+  "sousSecteur": "Terminaux portuaires"
+ }
+}
