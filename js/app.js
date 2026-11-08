@@ -6332,10 +6332,8 @@ const MOBILE_NAV_MANIFEST = [
   { page:'pageDocuments', label:'Documents financiers', indent:true },
   { page:'pageRevenus', label:'Revenus', indent:true },
   { group:'💼 Portefeuille', items:[
-    { page:'pagePortfolio', label:'Wolf Portfolio' },
     { page:'pageDividende', label:'Dividende' },
     { page:'pageMesPortefeuilles', label:'Mes portefeuilles' },
-    { page:'pagePerso', label:'Perso (PEA/CTO)' },
     { page:'pagePortefeuilleIA', label:'Portefeuille IA' },
     { page:'pageConstruction', label:'Construction de portefeuille' }
   ] },
@@ -12244,6 +12242,7 @@ function applyEvHistoryToScenarios(nom){
     const inp = document.getElementById('vo-' + s.key + '-mult'); if (inp) inp.value = scenarioValues[s.key].multiple;
     updateScenarioCard(s, hist, latest.prixActuel);
   });
+  markScenarioEdited();
 }
 function wireEvHistoryCard(nom){
   const V = window.VALO_MULTIPLES;
@@ -12322,6 +12321,8 @@ function renderValorisation(nom){
     // EV/EBITDA avec historique annuel saisi : pessimiste = plus basse des moyennes 5/10/15/20 ans, réaliste = médiane,
     // optimiste = plus haute des moyennes (demande de l'utilisateur, 2026-11-08).
     const evPick = valorisationMetric === 'ev' && vInputs.evStats ? { pessimiste: vInputs.evStats.minAvg, realiste: vInputs.evStats.medianAvg, optimiste: vInputs.evStats.maxAvg }[s.key] : null;
+    const cur = (currentScenarioFor(nom, valorisationMetric) || {})[s.key];
+    if (cur && isFinite(cur.multiple) && isFinite(cur.cagr)){ scenarioValues[s.key] = { cagr: cur.cagr, multiple: cur.multiple, rachat: cur.rachat || 0, detteFuture: cur.detteFuture != null ? cur.detteFuture : null }; return; }
     scenarioValues[s.key] = saved ? { cagr: saved.cagr, multiple: saved.multiple, rachat: saved.rachat || 0, detteFuture: saved.detteFuture != null ? saved.detteFuture : null } : {
       cagr: cagrHist != null ? +(cagrHist + s.deltaCagr).toFixed(1) : 0,
       multiple: evPick != null ? +evPick.toFixed(1) : medianeHist != null ? Math.max(0, +(medianeHist + dMult).toFixed(dec)) : 0,
@@ -12563,6 +12564,7 @@ function wireScenarioCard(s, hist, prixActuel){
     scenarioValues[s.key].rachat = parseFloat(rachatInput.value) || 0;
     syncQuickButtons();
     updateScenarioCard(s, hist, prixActuel);
+    markScenarioEdited();
   }
   cagrInput.addEventListener('input', update);
   multInput.addEventListener('input', update);
@@ -12579,10 +12581,12 @@ function wireScenarioCard(s, hist, prixActuel){
       const v = parseFloat(String(detteInput.value).replace(',', '.'));
       scenarioValues[s.key].detteFuture = isNaN(v) ? null : v;
       updateScenarioCard(s, hist, prixActuel);
+      markScenarioEdited();
     });
     if (detteReset) detteReset.addEventListener('click', () => {
       scenarioValues[s.key].detteFuture = null; detteInput.value = '';
       updateScenarioCard(s, hist, prixActuel);
+      markScenarioEdited();
     });
   }
 
@@ -12771,6 +12775,81 @@ function loadObjectifsLocal(){
 
 function persistObjectifsLocal(){
   try{ localStorage.setItem(OBJECTIFS_LS_KEY, JSON.stringify(objectifsStore)); }catch(e){ /* quota / navigateur privé */ }
+  scheduleObjectifsFileSave();
+}
+
+/* ---- Objectifs + scénarios en cours dans un FICHIER (2026-11-08, demande de l'utilisateur : « il ne faut pas que ça se
+   supprime ») : data/mes-portefeuilles/objectifs.json via le serveur local (copies datées, copie mensuelle, copie dans
+   Documents). Le navigateur (localStorage, cloisonné par port : incident VINCI) n'est plus qu'une copie de confort.
+   Contenu : { objectifs: {nom:[...]}, courant: {nom:{metric:{scenarios, at}}} = derniers réglages des curseurs, enregistrés
+   automatiquement 1,5 s après chaque modification et repris à la réouverture, supprimes: [...] = corbeille des objectifs. */
+let objectifsFile = null;
+let objectifsFileTimer = null, objectifsFileSaving = false, objectifsFileDirty = false;
+let lastDeletedObjectif = null;
+function objectifKey(o){ return (o.metric || 'fcf') + '|' + o.date + '|' + JSON.stringify(o.scenarios || {}); }
+function dedupeObjectifs(store){
+  const out = {};
+  Object.keys(store || {}).forEach(nom => {
+    const seen = new Set();
+    out[nom] = (store[nom] || []).filter(o => { const k = objectifKey(o); if (seen.has(k)) return false; seen.add(k); return true; });
+  });
+  return out;
+}
+async function loadObjectifsFile(){
+  try{
+    const r = await fetch('/api/store/load?name=objectifs', { cache:'no-store' });
+    const j = await r.json();
+    if (!j.ok) return;
+    objectifsFile = j.data || { version:1, revision:0, objectifs:{}, courant:{}, supprimes:[] };
+    objectifsFile.courant = objectifsFile.courant || {}; objectifsFile.supprimes = objectifsFile.supprimes || [];
+    const before = JSON.stringify(dedupeObjectifs(objectifsFile.objectifs || {}));
+    // Fusion SANS perte : tout ce que le navigateur avait déjà (localStorage, socle) rejoint le fichier.
+    objectifsStore = dedupeObjectifs(mergeObjectifs(objectifsFile.objectifs || {}, objectifsStore));
+    try{ localStorage.setItem(OBJECTIFS_LS_KEY, JSON.stringify(objectifsStore)); }catch(e){}
+    if (JSON.stringify(objectifsStore) !== before) scheduleObjectifsFileSave(0);
+    if (activeCompany){ renderObjectifsHistory(activeCompany); if (document.getElementById('pageValorisation').classList.contains('active')) renderValorisation(activeCompany); }
+  }catch(e){ /* serveur local absent : on reste sur le navigateur, sans rien perdre */ }
+}
+function scheduleObjectifsFileSave(delay){
+  if (!objectifsFile) return;
+  objectifsFileDirty = true;
+  clearTimeout(objectifsFileTimer);
+  objectifsFileTimer = setTimeout(saveObjectifsFile, delay == null ? 1500 : delay);
+}
+async function saveObjectifsFile(retry){
+  if (!objectifsFile || !objectifsFileDirty) return;
+  if (objectifsFileSaving){ scheduleObjectifsFileSave(); return; }
+  objectifsFileSaving = true; objectifsFileDirty = false;
+  const body = { version:1, revision:(objectifsFile.revision || 0) + 1, baseRevision:objectifsFile.revision || 0, savedAt:new Date().toISOString(),
+    objectifs: objectifsStore, courant: objectifsFile.courant, supprimes: objectifsFile.supprimes };
+  try{
+    const r = await fetch('/api/store/save?name=objectifs', { method:'POST', headers:{ 'Content-Type':'application/json', 'X-Wolf-IA':'1' }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 409 && !retry){
+      // un autre onglet a écrit : on relit, on fusionne (sans perte) et on réessaie une fois
+      const keep = { courant: objectifsFile.courant, supprimes: objectifsFile.supprimes };
+      const rr = await fetch('/api/store/load?name=objectifs', { cache:'no-store' }).then(x => x.json());
+      objectifsFile = rr.data || objectifsFile;
+      objectifsStore = dedupeObjectifs(mergeObjectifs(objectifsFile.objectifs || {}, objectifsStore));
+      objectifsFile.courant = Object.assign({}, objectifsFile.courant || {}, keep.courant);
+      objectifsFile.supprimes = (objectifsFile.supprimes || []).concat((keep.supprimes || []).filter(x => !(objectifsFile.supprimes || []).some(y => y.deletedAt === x.deletedAt)));
+      objectifsFileSaving = false; objectifsFileDirty = true; return saveObjectifsFile(true);
+    }
+    if (r.ok && j.ok){ objectifsFile.revision = j.revision; updateObjectifsSaveLabel('💾 Enregistré dans le fichier à ' + new Date().toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit', second:'2-digit' })); }
+    else { objectifsFileDirty = true; updateObjectifsSaveLabel('⚠ Enregistrement fichier refusé (' + (j.error || r.status) + ') — gardé dans le navigateur'); }
+  }catch(e){ objectifsFileDirty = true; updateObjectifsSaveLabel('⚠ Serveur local injoignable — gardé dans le navigateur, nouvel essai à la prochaine modification'); }
+  objectifsFileSaving = false;
+}
+function updateObjectifsSaveLabel(t){ const el = document.getElementById('objectifsSaveStatus'); if (el) el.textContent = t; }
+// Réglages des curseurs en cours (enregistrés automatiquement, repris à la réouverture de l'entreprise).
+function markScenarioEdited(){
+  if (!objectifsFile || !activeCompany) return;
+  const c = objectifsFile.courant[activeCompany] = objectifsFile.courant[activeCompany] || {};
+  c[valorisationMetric] = { scenarios: JSON.parse(JSON.stringify(scenarioValues)), at: new Date().toISOString() };
+  scheduleObjectifsFileSave();
+}
+function currentScenarioFor(nom, metric){
+  return objectifsFile && objectifsFile.courant[nom] && objectifsFile.courant[nom][metric] ? objectifsFile.courant[nom][metric].scenarios : null;
 }
 
 function saveObjectif(nom){
@@ -12792,8 +12871,9 @@ function renderObjectifsHistory(nom){
   const box = document.getElementById('objectifsList');
   if (!box) return;
   const entries = (objectifsStore[nom] || []).map((e, i) => ({ e, realIdx: i })).reverse();
+  const undo = lastDeletedObjectif && lastDeletedObjectif.nom === nom ? '<div class="objectifs-undo">Objectif supprimé. <button type="button" class="mp-ghost" data-objectif-undo>↶ Annuler</button></div>' : '';
   if (entries.length === 0){
-    box.innerHTML = '<div class="objectifs-empty">Aucun objectif enregistré pour cette entreprise.</div>';
+    box.innerHTML = undo + '<div class="objectifs-empty">Aucun objectif enregistré pour cette entreprise.</div>';
     return;
   }
   const groups = [];
@@ -12819,6 +12899,7 @@ function renderObjectifsHistory(nom){
     }).join('');
     return `<div class="objectifs-date-group"><span class="objectifs-date-label">${g.date}</span><div class="objectifs-date-row">${cards}</div></div>`;
   }).join('');
+  if (undo) box.insertAdjacentHTML('afterbegin', undo);
 }
 
 function applyObjectif(nom, idx){
@@ -12841,6 +12922,7 @@ function applyObjectif(nom, idx){
   const hist = companies[nom];
   const latest = hist[hist.length - 1];
   SCENARIOS.forEach(s => updateScenarioCard(s, hist, latest.prixActuel));
+  markScenarioEdited();
 }
 
 // Connecte l'onglet Analyse à l'onglet Valorisation : affiche un résumé compact du
@@ -20789,7 +20871,20 @@ document.getElementById('objectifsList').addEventListener('click', e => {
   if (!activeCompany) return;
   const delBtn = e.target.closest('.del[data-idx]');
   if (delBtn){
-    objectifsStore[activeCompany].splice(parseInt(delBtn.dataset.idx, 10), 1);
+    const removed = objectifsStore[activeCompany].splice(parseInt(delBtn.dataset.idx, 10), 1)[0];
+    if (removed){
+      lastDeletedObjectif = { nom: activeCompany, entry: removed, deletedAt: new Date().toISOString() };
+      if (objectifsFile) objectifsFile.supprimes.push(lastDeletedObjectif);
+    }
+    persistObjectifsLocal();
+    renderObjectifsHistory(activeCompany);
+    return;
+  }
+  const undoBtn = e.target.closest('[data-objectif-undo]');
+  if (undoBtn && lastDeletedObjectif && lastDeletedObjectif.nom === activeCompany){
+    (objectifsStore[activeCompany] = objectifsStore[activeCompany] || []).push(lastDeletedObjectif.entry);
+    if (objectifsFile) objectifsFile.supprimes = objectifsFile.supprimes.filter(x => x !== lastDeletedObjectif);
+    lastDeletedObjectif = null;
     persistObjectifsLocal();
     renderObjectifsHistory(activeCompany);
     return;
@@ -20797,7 +20892,7 @@ document.getElementById('objectifsList').addEventListener('click', e => {
   const loadBtn = e.target.closest('.load[data-idx]');
   if (loadBtn) applyObjectif(activeCompany, parseInt(loadBtn.dataset.idx, 10));
 });
-loadObjectifsBaseline();
+loadObjectifsBaseline().then(loadObjectifsFile);
 loadAnalyseScoreBaseline();
 loadCompetiteursBaseline();
 initWatchlist();

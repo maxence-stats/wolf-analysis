@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<link rel="stylesheet" href="css/style.css?v=20261108f">
+<link rel="stylesheet" href="css/style.css?v=20261108g">
 </head>
 <body>
 <div class="wrap">
@@ -63,7 +63,7 @@
 
     <div class="page-nav">
       <button class="page-nav-btn active" data-page="pageAnalyse">Analyse</button>
-      <button class="page-nav-btn" data-page="pagePortfolio" data-group="portfolio">💼 Portefeuille</button>
+      <button class="page-nav-btn" data-page="pageMesPortefeuilles" data-group="portfolio">💼 Portefeuille</button>
       <button class="page-nav-btn" data-page="pageSecteur" data-group="screener">🔍 Screener</button>
       <button class="page-nav-btn" data-page="pageCerveau">Cerveau numérique</button>
       <button class="page-nav-btn" data-page="pageAlertes">Alertes</button>
@@ -75,10 +75,10 @@
     </div>
 
     <div class="page-subnav" id="portfolioSubnav" style="display:none;">
-      <button class="page-subnav-btn active" data-page="pagePortfolio">Wolf Portfolio</button>
+      <!-- 2026-11-08 : les anciennes pages « Wolf Portfolio » et « Perso (PEA/CTO) » (lues dans le Google Sheet) sont retirées
+           de la navigation : tout passe par « Mes portefeuilles » (fichier sur disque). Leur code reste en place, inactif. -->
+      <button class="page-subnav-btn active" data-page="pageMesPortefeuilles">📒 Mes portefeuilles</button>
       <button class="page-subnav-btn" data-page="pageDividende">Dividende</button>
-      <button class="page-subnav-btn" data-page="pageMesPortefeuilles">📒 Mes portefeuilles</button>
-      <button class="page-subnav-btn" data-page="pagePerso">Perso (PEA/CTO)</button>
       <button class="page-subnav-btn" data-page="pagePortefeuilleIA">Portefeuille IA</button>
       <button class="page-subnav-btn" data-page="pageConstruction">Construction de portefeuille</button>
     </div>
@@ -520,8 +520,8 @@
           <button class="zoom-btn objectifs-export" id="exportObjectifsBtn" title="Exporter tous les objectifs en JSON">⭳ Exporter</button>
         </div>
         <div class="objectifs-list" id="objectifsList"></div>
-        <p class="objectifs-note">Sauvegardé dans ce navigateur. Utilise « Exporter » pour transmettre le fichier
-          et le rendre disponible sur tous tes appareils.</p>
+        <p class="objectifs-note">Objectifs ET réglages en cours des curseurs enregistrés automatiquement dans un fichier sur ton PC
+          (data/mes-portefeuilles/objectifs.json, copies datées + copie mensuelle + copie dans Documents). <span id="objectifsSaveStatus"></span></p>
       </div>
     </div>
 
@@ -1809,9 +1809,9 @@
   </div>
 </div>
 
-<script src="js/app.js?v=20261108g"></script>
+<script src="js/app.js?v=20261108h"></script>
 <script src="js/portefeuille-ia.js?v=20260920g"></script>
-<script src="js/mes-portefeuilles.js?v=20261108f"></script>
+<script src="js/mes-portefeuilles.js?v=20261108g"></script>
 <script src="js/valo-multiples.js?v=20261108d"></script>
 </body>
 </html>

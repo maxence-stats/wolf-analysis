@@ -2266,3 +2266,18 @@
 .mp-acc-warn{font-size:14px;color:var(--gold);vertical-align:middle;}
 .ev-hist-now{border:1px solid rgba(217,164,65,0.45);}
 .scenario-quick-btn.scenario-quick-now{border-color:rgba(217,164,65,0.6);color:var(--gold-2);}
+
+/* Mes portefeuilles — verrou : montants en euros floutés sur les données fictives (2026-11-08) */
+.mp-blur,.mp-locked .mp-kpi b,.mp-locked .mp-kpi small,.mp-locked .mp-h-val,.mp-locked .mp-pos-name small,.mp-locked .mp-pos-px,
+.mp-locked .mp-pos-val b,.mp-locked .mp-pos-pv b,.mp-locked .mp-donut-center b,.mp-locked .mp-month-sub span:nth-child(n+4) b,
+.mp-locked .mp-trade-res small,.mp-locked .mp-j-amt,.mp-locked .mp-j-what small,.mp-locked .mp-stats-kv small,.mp-locked .mp-stats-kv div:nth-child(4) small
+{filter:blur(7px);user-select:none;}
+.mp-locked .mp-kpi b.mp-noblur{filter:none;}
+.mp-relock{display:flex;justify-content:flex-end;}
+
+.mp-trash{margin-top:14px;border-top:1px solid rgba(255,255,255,0.06);padding-top:10px;}
+.mp-trash summary{cursor:pointer;font-size:12.5px;color:var(--text-dim);margin-bottom:6px;}
+.mp-trash .mp-j-row{opacity:.8;}
+.mp-banner>span:last-child{display:flex;gap:6px;align-items:center;}
+.objectifs-undo{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--text-dim);margin-bottom:8px;}
+#objectifsSaveStatus{color:var(--gold);}

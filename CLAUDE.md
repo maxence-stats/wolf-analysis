@@ -616,6 +616,26 @@ Les anciennes pages Sheet (Wolf Portfolio, Perso) sont conservées telles quelle
 - **Historique TradingView : UNE seule connexion websocket** pour tous les symboles (6 connexions parallèles = 429 Too Many
   Requests, constaté) ; repli sur le dernier cache connu. Serveur ping v=9.
 - `INIT.achatDate` = vraie date du premier achat (durée de détention dans les statistiques).
+- **Verrou (2026-11-08)** : sans le code de l'onglet Perso (`persoUnlocked`), PEA / CTO / PEA + CTO affichent un portefeuille
+  FICTIF (`fakeOps()` : titres publics, quantités rondes) avec tous les montants en euros FLOUTÉS (`.mp-locked`, `.mp-blur`) ;
+  les vrais chiffres ne sont pas calculés, saisie et suppression désactivées. Le Wolf Portfolio reste réel. « 🔒 Verrouiller »
+  pour revenir au mode fictif. Navigation : 💼 ouvre directement « Mes portefeuilles » ; les anciennes pages Sheet
+  « Wolf Portfolio » et « Perso (PEA/CTO) » sont retirées de la navigation (code conservé, inactif). Le Google Sheet ne sert
+  plus que pour la Macroéconomie.
+- **Corbeille** : une opération supprimée part dans `D.trash` (même fichier) avec sa copie Wolf ; « ↶ Annuler » juste après,
+  ou « ↶ Restaurer » depuis la corbeille sous le journal (`restore(group)`).
+- **Copie MENSUELLE** (serveur v=11, `Ensure-MonthlySnapshot`) : au premier accès de chaque mois (démarrage, lecture ou
+  enregistrement), `<dossier>\mensuel\<nom>-AAAA-MM.json` est figé AVANT toute modification du mois, pour portefeuilles,
+  multiples, objectifs et le Portefeuille IA, dans le projet ET dans `Documents\Wolf Analysis - sauvegardes`. Jamais purgé.
+- **Objectifs de valorisation dans un FICHIER** (`data/mes-portefeuilles/objectifs.json`, nom de store `objectifs`) : objectifs
+  enregistrés + réglages en cours des curseurs (`courant[nom][metric]`, sauvés 1,5 s après chaque modification via
+  `markScenarioEdited()`, repris en priorité à la réouverture) + corbeille `supprimes` (« ↶ Annuler »). localStorage n'est plus
+  qu'une copie ; au chargement tout ce que le navigateur avait est fusionné dans le fichier (`dedupeObjectifs`).
+- **EV/EBITDA historique automatique : IMPOSSIBLE en anonyme** (vérifié 2026-11-08) : l'indicateur TradingView
+  `STD;Fund_enterprise_value_ebitda_fy` existe mais le websocket anonyme refuse toute étude (« study_limit_exceeded ») ; ni le
+  scanner public ni le connecteur MCP n'exposent l'EV ou la trésorerie historiques (seulement EBITDA, dette totale, BPA, résultat).
+  Seule piste exacte : utiliser la session TradingView de l'utilisateur (cookie `sessionid` stocké localement) — non fait,
+  nécessite son accord.
 - **Import initial (2026-11-08)** : CTO depuis le relevé Saxo (86 opérations, liquidités = 2 038,46 € au centime ; essais SRD à
   découvert Saint-Gobain / Dassault Systèmes / Dassault Aviation exclus à la demande de l'utilisateur, leur résultat net
   −232,49 € passé en un RETRAIT daté du 03/08) ; PEA depuis captures Crédit Agricole + positions au 01/01/2026 valorisées au

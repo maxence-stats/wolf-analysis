@@ -288,7 +288,23 @@ let searchTimer = null;
 let cache = null;   // calculs du rendu en cours
 
 const persoOk = () => { try { return typeof persoUnlocked !== 'undefined' && !!persoUnlocked; } catch(e){ return false; } };
-const accOps = k => k === 'perso' ? D.accounts.pea.ops.concat(D.accounts.cto.ops) : (D.accounts[k] ? D.accounts[k].ops : []);
+/* VERROU (code de l'onglet Perso) : tant que PEA/CTO sont verrouillés, l'appli calcule et affiche un portefeuille
+   FICTIF (titres publics du Wolf, quantités rondes) et floute tous les montants en euros — les vrais chiffres ne sont
+   même pas calculés. Le Wolf Portfolio, public, reste toujours réel et lisible. */
+const isLockedAcc = k => k !== 'wolf' && !persoOk();
+const FAKE = { pea: [['EURONEXT:AI', 10], ['EURONEXT:MC', 3], ['XETR:NEM', 12]], cto: [['NYSE:MA', 2], ['NYSE:SPGI', 2], ['NASDAQ:CPRT', 20]] };
+function fakeOps(k){
+  const list = k === 'perso' ? FAKE.pea.concat(FAKE.cto) : FAKE[k] || [];
+  const ops = [{ id: 'fake-cash-' + k, date: '2026-01-01', type: 'DEPOT', eur: k === 'perso' ? 2300 : k === 'pea' ? 1500 : 800 }];
+  list.forEach(([sym, q], i) => {
+    const pe = E.priceEur(S, sym, '2025-12-31');
+    if (pe) ops.push({ id: 'fake-' + k + i, date: '2026-01-01', type: 'INIT', symbol: sym, qty: q, pruEur: +(pe * 0.9).toFixed(2), eur: +(q * pe).toFixed(2) });
+  });
+  const sell = list[1], pe2 = sell ? E.priceEur(S, sell[0], '2026-06-15') : null;
+  if (pe2) ops.push({ id: 'fake-sell-' + k, date: '2026-06-15', type: 'SELL', symbol: sell[0], qty: sell[1], px: pe2, ccy: 'EUR', fx: 1, fee: 0, eur: +(sell[1] * pe2).toFixed(2) });
+  return ops;
+}
+const accOps = k => isLockedAcc(k) ? fakeOps(k) : k === 'perso' ? D.accounts.pea.ops.concat(D.accounts.cto.ops) : (D.accounts[k] ? D.accounts[k].ops : []);
 const symName = sym => (D.symbols[sym] && D.symbols[sym].nom) || (S[sym] && S[sym].name) || sym;
 const symCcy = sym => (D.symbols[sym] && D.symbols[sym].ccy) || (S[sym] && S[sym].ccy) || 'EUR';
 const newId = acc => acc + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
@@ -379,29 +395,29 @@ function render(){
   Object.values(charts).forEach(c => { try { c.destroy(); } catch(e){} }); charts = {};
   if (!serverOk){ page.innerHTML = titleHtml() + `<div class="mp-banner err">⚠ Le serveur local n'est pas à jour ou pas lancé. Ferme la fenêtre du serveur puis relance le raccourci <b>« Wolf Analysis »</b> du Bureau.</div>`; return; }
   if (loadErr || !D){ page.innerHTML = titleHtml() + `<div class="mp-banner err">⚠ Fichier illisible (${esc(loadErr)}) : aucune écriture ne sera faite.</div>`; return; }
-  const locked = ui.acc !== 'wolf' && !persoOk();
+  const locked = isLockedAcc(ui.acc);
   cache = {};
-  ['pea', 'cto', 'perso', 'wolf'].forEach(k => { if (k === 'wolf' || persoOk()) cache[k] = compute(k); });
+  ['pea', 'cto', 'perso', 'wolf'].forEach(k => { cache[k] = compute(k); });
   const c = cache[ui.acc];
   let body;
-  if (locked){
-    body = `<div class="mp-card mp-lock"><div class="mp-lock-ico">🔒</div><div><b>PEA et CTO sont verrouillés</b><p>Même code que l'onglet « Perso ».</p></div>
-      <input type="password" inputmode="numeric" maxlength="8" id="mpLockInput" placeholder="Code"><button class="refresh-btn" id="mpLockBtn">Déverrouiller</button></div>`;
-  } else if (!c){
+  const lockBar = locked ? `<div class="mp-card mp-lock"><div class="mp-lock-ico">🔒</div><div><b>Chiffres fictifs et montants floutés</b><p>Les vrais montants du PEA et du CTO s'affichent avec ton code.</p></div>
+      <input type="password" inputmode="numeric" maxlength="8" id="mpLockInput" placeholder="Code"><button class="refresh-btn" id="mpLockBtn">Déverrouiller</button></div>`
+    : ui.acc !== 'wolf' ? `<div class="mp-relock"><button class="mp-ghost" id="mpRelockBtn" title="Revenir aux chiffres fictifs floutés (avant une vidéo, par exemple)">🔒 Verrouiller</button></div>` : '';
+  if (!c){
     body = toolbarHtml() + `<div class="mp-card mp-empty">Aucune opération sur ce compte pour l'instant. Commence par « + Versement » ou « + Achat ».</div>`;
   } else if (!histAt){
     body = `<div class="mp-card mp-empty">⏳ Lecture des cours TradingView…</div>`;
   } else {
     body = (c.missing.length ? `<div class="mp-banner err">⚠ Cours introuvables pour ${c.missing.map(s => esc(symName(s))).join(', ')} : les valeurs et performances affichées sont incomplètes. Clique sur « ↻ Cours » dans un moment.</div>` : '')
-      + toolbarHtml()
+      + lockBar + toolbarHtml()
       + `<div class="mp-grid"><div class="mp-card mp-span2">${chartCardHtml(c)}</div><div class="mp-card">${kpiHtml(c)}</div></div>`
       + `<div class="mp-grid"><div class="mp-card mp-span2">${positionsHtml(c)}</div><div class="mp-card">${allocationHtml(c)}</div></div>`
       + `<div class="mp-grid mp-grid-eq"><div class="mp-card">${monthsHtml(c)}</div><div class="mp-card">${statsHtml(c)}</div></div>`
       + `<div class="mp-card">${journalHtml()}</div>`;
   }
-  page.innerHTML = `<div class="mp">${titleHtml()}${accountCardsHtml()}${body}</div>` + (ui.modal ? `<div class="mp-modal-bg" id="mpModalBg"><div class="mp-modal" id="mpModal">${modalHtml()}</div></div>` : '');
+  page.innerHTML = `<div class="mp${locked ? ' mp-locked' : ''}">${titleHtml()}${accountCardsHtml()}${body}</div>` + (ui.modal ? `<div class="mp-modal-bg" id="mpModalBg"><div class="mp-modal" id="mpModal">${modalHtml()}</div></div>` : '');
   wire();
-  if (!locked && c && typeof Chart !== 'undefined'){ drawPerfChart(c); drawDonut(c); }
+  if (c && histAt && typeof Chart !== 'undefined'){ drawPerfChart(c); drawDonut(c, locked); }
   if (ui.modal) wireModal();
 }
 function titleHtml(){
@@ -411,7 +427,7 @@ function titleHtml(){
     <div class="mp-title-right">${histLoading ? '<span class="mp-pill">⏳ Cours TradingView…</span>' : histAt ? `<span class="mp-pill">Cours de ${histAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : ''}
       ${nErr ? `<span class="mp-pill warn" title="${esc(Object.keys(histErr).join(', '))}">⚠ ${nErr} cours manquant(s)</span>` : ''}
       <button class="mp-ghost" data-mp-refresh title="Relire les cours TradingView">↻ Cours</button></div></div>
-    ${ui.msg ? `<div class="mp-banner ${ui.msg.err ? 'err' : 'ok'}">${esc(ui.msg.text)}<button class="mp-x" data-mp-msgx>✕</button></div>` : ''}`;
+    ${ui.msg ? `<div class="mp-banner ${ui.msg.err ? 'err' : 'ok'}"><span>${esc(ui.msg.text)}</span><span>${ui.msg.undo ? `<button class="mp-ghost" data-mp-restore="${esc(ui.msg.undo)}">↶ Annuler</button>` : ''}<button class="mp-x" data-mp-msgx>✕</button></span></div>` : ''}`;
 }
 function accountCardsHtml(){
   return `<div class="mp-accounts">${ACCOUNTS.map(a => {
@@ -419,14 +435,14 @@ function accountCardsHtml(){
     const v = c ? c.now.value : null, p = c && c.perf ? c.perf.twr * 100 : null;
     return `<button class="mp-acc ${ui.acc === a.k ? 'active' : ''} ${a.k === 'perso' ? 'mp-acc-sum' : ''}" data-mp-acc="${a.k}">
       <span class="mp-acc-top"><span class="mp-acc-ico">${a.icon}</span><span><b>${a.label}</b><small>${a.sub}</small></span></span>
-      <span class="mp-acc-val">${lockedA ? '•••••• €' : histLoading && !histAt ? '…' : eur(v, 0)}${c && c.missing.length && !lockedA ? ' <span class="mp-acc-warn" title="Cours manquants : valeur incomplète">⚠</span>' : ''}</span>
-      <span class="mp-acc-perf ${lockedA ? '' : cls(p)}">${lockedA ? '🔒 verrouillé' : pct(p) + (ui.year === 'all' ? ' depuis le début' : ' en ' + ui.year)}</span></button>`;
+      <span class="mp-acc-val${lockedA ? ' mp-blur' : ''}">${histLoading && !histAt ? '…' : eur(v, 0)}${c && c.missing.length && !lockedA ? ' <span class="mp-acc-warn" title="Cours manquants : valeur incomplète">⚠</span>' : ''}</span>
+      <span class="mp-acc-perf ${cls(p)}">${lockedA ? '🔒 chiffres fictifs' : pct(p) + (ui.year === 'all' ? ' depuis le début' : ' en ' + ui.year)}</span></button>`;
   }).join('')}</div>`;
 }
 function toolbarHtml(){
   const years = [...new Set(Object.values(D.accounts).flatMap(a => a.ops.map(o => o.date.slice(0, 4))))].sort();
   const ys = ['all'].concat(years).map(y => `<button class="${String(ui.year) === String(y) ? 'active' : ''}" data-mp-year="${y}">${y === 'all' ? 'Depuis le début' : y}</button>`).join('');
-  const canAdd = ui.acc !== 'perso';
+  const canAdd = ui.acc !== 'perso' && !isLockedAcc(ui.acc);
   const quick = canAdd ? ['BUY', 'SELL', 'DIV', 'DEPOT'].map(t => `<button class="mp-quick mp-q-${t}" data-mp-add="${t}"><span>${TYPE_ICON[t]}</span>${TYPE_LABEL[t]}</button>`).join('')
     + `<button class="mp-quick" data-mp-add="RETRAIT">Autre…</button>` : `<span class="mp-hint">Pour saisir, choisis le PEA ou le CTO.</span>`;
   return `<div class="mp-toolbar"><div class="mp-seg">${ys}</div><div class="mp-quicks">${quick}</div></div>`;
@@ -489,14 +505,14 @@ function allocationHtml(c){
   return `<h3 class="mp-h">Répartition</h3><div class="mp-donut"><canvas id="mpDonut"></canvas><div class="mp-donut-center"><small>Valeur</small><b>${eur(c.now.value, 0)}</b></div></div>
     <div class="mp-alloc-legend" id="mpAllocLegend"></div>`;
 }
-function drawDonut(c){
+function drawDonut(c, locked){
   const cv = document.getElementById('mpDonut'); if (!cv) return;
   const rows = positionRows(c).filter(r => r.val > 0);
   const labels = rows.map(r => symName(r.sym)).concat(c.now.cash > 0.5 ? ['Liquidités'] : []);
   const vals = rows.map(r => r.val).concat(c.now.cash > 0.5 ? [c.now.cash] : []);
   const colors = labels.map((_, i) => i === rows.length ? '#3A434D' : PALETTE[i % PALETTE.length]);
   charts.donut = new Chart(cv.getContext('2d'), { type: 'doughnut', data: { labels, datasets: [{ data: vals, backgroundColor: colors, borderColor: '#151A1F', borderWidth: 2 }] },
-    options: { responsive: true, maintainAspectRatio: false, cutout: '72%', plugins: { legend: { display: false }, tooltip: { callbacks: { label: x => ' ' + x.label + ' : ' + eur(x.parsed) + ' (' + num(x.parsed / c.now.value * 100, 1) + ' %)' } } } } });
+    options: { responsive: true, maintainAspectRatio: false, cutout: '72%', plugins: { legend: { display: false }, tooltip: { callbacks: { label: x => ' ' + x.label + (locked ? '' : ' : ' + eur(x.parsed)) + ' (' + num(x.parsed / c.now.value * 100, 1) + ' %)' } } } } });
   const lg = document.getElementById('mpAllocLegend');
   if (lg) lg.innerHTML = labels.map((l, i) => `<div><i style="background:${colors[i]}"></i><span>${esc(l)}</span><b>${num(vals[i] / c.now.value * 100, 1)} %</b></div>`).join('');
 }
@@ -550,9 +566,17 @@ function journalHtml(){
       <div class="mp-j-what">${what}${o.note ? `<em>${esc(o.note)}</em>` : ''}</div>
       <span class="mp-typepill mp-c-${o.type}">${TYPE_LABEL[o.type]}${ui.acc === 'perso' ? ' · ' + accOfOp(o.id).toUpperCase() : ''}${o.linkedTo ? ' · copie' : ''}</span>
       <b class="mp-j-amt ${o.type === 'INIT' ? '' : cls(o.eur)}">${o.type === 'INIT' ? eur(o.eur) : o.eur ? sEur(o.eur) : '—'}</b>
-      ${ui.acc !== 'perso' ? `<button class="mp-del ${ui.delConfirm === o.id ? 'confirm' : ''}" data-mp-del="${esc(o.id)}" title="Supprimer">${ui.delConfirm === o.id ? 'Confirmer' : '🗑'}</button>` : '<span></span>'}</div>`;
+      ${ui.acc !== 'perso' && !isLockedAcc(ui.acc) ? `<button class="mp-del ${ui.delConfirm === o.id ? 'confirm' : ''}" data-mp-del="${esc(o.id)}" title="Supprimer">${ui.delConfirm === o.id ? 'Confirmer' : '🗑'}</button>` : '<span></span>'}</div>`;
   });
-  return `<div class="mp-h-row"><h3 class="mp-h">Journal des opérations <small>${ops.length}</small></h3></div><div class="mp-journal">${html}</div>
+  const trash = isLockedAcc(ui.acc) ? [] : (D.trash || []).filter(t => ui.acc === 'perso' ? t.acc !== 'wolf' : t.acc === ui.acc).slice().reverse();
+  const groups = [...new Set(trash.map(t => t.group))];
+  const trashHtml = !groups.length ? '' : `<details class="mp-trash"><summary>🗑 Corbeille (${groups.length}) — opérations supprimées, restaurables</summary>
+    ${groups.map(g => { const it = trash.filter(t => t.group === g), o = it[0].op;
+      return `<div class="mp-j-row"><span class="mp-j-date">${o.date.slice(8, 10)}</span>${o.symbol ? logoHtml(o.symbol, 30) : `<span class="mp-logo mp-logo-txt">${TYPE_ICON[o.type]}</span>`}
+        <div class="mp-j-what"><b>${esc(TYPE_LABEL[o.type])}${o.symbol ? ' ' + esc(symName(o.symbol)) : ''}</b><small>du ${fmtD(o.date)} · supprimée le ${fmtD(it[0].deletedAt.slice(0, 10))}${it.length > 1 ? ' · avec sa copie Wolf' : ''}</small></div>
+        <span class="mp-typepill">${it[0].acc.toUpperCase()}</span><b class="mp-j-amt">${o.type === 'INIT' ? eur(o.eur) : sEur(o.eur)}</b>
+        <button class="mp-ghost" data-mp-restore="${esc(g)}">↶ Restaurer</button></div>`; }).join('')}</details>`;
+  return `<div class="mp-h-row"><h3 class="mp-h">Journal des opérations <small>${ops.length}</small></h3></div><div class="mp-journal">${html}</div>${trashHtml}
     ${ops.length > 30 ? `<button class="mp-ghost" data-mp-allops>${ui.showAllOps ? 'Voir moins' : 'Voir les ' + ops.length + ' opérations'}</button>` : ''}`;
 }
 
@@ -726,12 +750,32 @@ async function del(id){
     const chk = E.validate(D.accounts[k].ops.filter(o => !ids.includes(o.id)));
     if (!chk.ok){ ui.msg = { err: true, text: 'Suppression impossible : ' + chk.errors[0] }; ui.delConfirm = null; render(); return; }
   }
-  const backup = {};
+  const backup = {}, trashBefore = (D.trash || []).slice();
   targets.forEach(([k]) => { backup[k] = D.accounts[k].ops.slice(); });
+  // CORBEILLE : une opération supprimée n'est jamais perdue, elle part dans D.trash (dans le même fichier) et se restaure
+  // d'un clic (« ↶ Annuler » juste après, ou plus tard depuis la corbeille sous le journal).
+  const deletedAt = new Date().toISOString(), group = 'g-' + Date.now().toString(36);
+  D.trash = trashBefore.concat(targets.map(([k, x]) => ({ acc: k, op: D.accounts[k].ops.find(o => o.id === x), deletedAt, group })));
   targets.forEach(([k, x]) => { D.accounts[k].ops = D.accounts[k].ops.filter(o => o.id !== x); });
-  try { await save(targets.map(t => t[1])); ui.msg = { text: 'Opération supprimée' + (targets.length > 1 ? ' (et sa copie sur le Wolf Portfolio)' : '') + '. Une copie datée de l\'ancien fichier est conservée.' }; }
-  catch(e){ Object.keys(backup).forEach(k => { D.accounts[k].ops = backup[k]; }); ui.msg = { err: true, text: e.message }; }
+  try { await save(targets.map(t => t[1])); ui.msg = { text: 'Opération supprimée' + (targets.length > 1 ? ' (et sa copie sur le Wolf Portfolio)' : '') + ' — elle est dans la corbeille.', undo: group }; }
+  catch(e){ Object.keys(backup).forEach(k => { D.accounts[k].ops = backup[k]; }); D.trash = trashBefore; ui.msg = { err: true, text: e.message }; }
   ui.delConfirm = null; render();
+}
+// Restaure un groupe d'opérations supprimées ensemble (une opération perso + sa copie Wolf) depuis la corbeille.
+async function restore(group){
+  const items = (D.trash || []).filter(t => t.group === group);
+  if (!items.length) return;
+  for (const k of new Set(items.map(t => t.acc))){
+    const chk = E.validate(D.accounts[k].ops.concat(items.filter(t => t.acc === k).map(t => t.op)));
+    if (!chk.ok){ ui.msg = { err: true, text: 'Restauration impossible : ' + chk.errors[0] }; render(); return; }
+  }
+  const backup = {}, trashBefore = D.trash.slice();
+  items.forEach(t => { backup[t.acc] = backup[t.acc] || D.accounts[t.acc].ops.slice(); });
+  items.forEach(t => { if (!D.accounts[t.acc].ops.some(o => o.id === t.op.id)) D.accounts[t.acc].ops.push(t.op); });
+  D.trash = D.trash.filter(t => t.group !== group);
+  try { await save(); ui.msg = { text: '↶ Opération restaurée' + (items.length > 1 ? ' (avec sa copie sur le Wolf Portfolio)' : '') + '.' }; }
+  catch(e){ Object.keys(backup).forEach(k => { D.accounts[k].ops = backup[k]; }); D.trash = trashBefore; ui.msg = { err: true, text: e.message }; }
+  render();
 }
 async function searchSymbols(q){
   const f = ui.modal; if (!f) return;
@@ -796,9 +840,16 @@ function wire(){
         render();
       } else { inp.value = ''; inp.placeholder = 'Code incorrect'; } };
     lk.addEventListener('click', go); page.querySelector('#mpLockInput').addEventListener('keydown', e => { if (e.key === 'Enter') go(); }); }
+  const rl = page.querySelector('#mpRelockBtn');
+  if (rl) rl.addEventListener('click', () => {
+    try { persoUnlocked = false; localStorage.removeItem('wolfAnalysisPersoUnlocked'); } catch(e){}
+    if (typeof renderPersoLockUI === 'function') renderPersoLockUI();
+    render();
+  });
   const io = page.querySelector('#mpIncludeOpen'); if (io) io.addEventListener('change', () => { ui.includeOpen = io.checked; render(); });
   const all = page.querySelector('[data-mp-allops]'); if (all) all.addEventListener('click', () => { ui.showAllOps = !ui.showAllOps; render(); });
   page.querySelectorAll('[data-mp-del]').forEach(b => b.addEventListener('click', () => del(b.dataset.mpDel)));
+  page.querySelectorAll('[data-mp-restore]').forEach(b => b.addEventListener('click', () => restore(b.dataset.mpRestore)));
 }
 
 async function onShow(){

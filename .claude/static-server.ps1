@@ -70,7 +70,7 @@ else { $extBackup = "" }
 # « Mes portefeuilles » : un fichier JSON par nom autorise, memes protections que le Portefeuille IA
 # (revision, ecriture atomique, copies datees, copie hors projet, aucune operation effacee sans declaration).
 if ($StoreDir -ne ""){ $storeDirPath = [System.IO.Path]::GetFullPath($StoreDir) } else { $storeDirPath = Join-Path $root "data\mes-portefeuilles" }
-$storeNames = @("portefeuilles", "multiples")
+$storeNames = @("portefeuilles", "multiples", "objectifs")
 if ($StoreDir -ne ""){ $storeExt = "" } elseif (-not $testInstance){ $storeExt = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "Wolf Analysis - sauvegardes\mes-portefeuilles" } else { $storeExt = "" }
 $maxBody = 2MB
 $rootWithSep = $root.TrimEnd('\') + '\'
@@ -169,6 +169,7 @@ function Handle-IaSave($req, $res){
     }
   }
   New-Item -ItemType Directory -Force -Path $iaDirPath | Out-Null
+  Ensure-MonthlySnapshot $iaFile "portefeuilles-ia" @($iaDirPath, $extBackup)
   # Copie datee de la version precedente (au plus une par 10 min, 300 conservees).
   if ($cur){
     New-Item -ItemType Directory -Force -Path $iaBackups | Out-Null
@@ -313,6 +314,30 @@ function Handle-TvSnapshot($req, $res){
   }
 }
 
+# ---------------- Copie MENSUELLE (2026-11-08, demande de l'utilisateur : « une copie tous les premiers du mois ») ----------------
+# Le premier accès d'un nouveau mois (démarrage du serveur, lecture ou enregistrement) fige l'état du fichier AVANT toute
+# modification du mois, dans <dossier>\mensuel\<nom>-AAAA-MM.json ET dans la copie hors projet (Documents). Jamais purgées :
+# c'est l'historique long terme. Une copie existante n'est jamais réécrite.
+function Ensure-MonthlySnapshot($src, $name, $dirs){
+  if (-not (Test-Path $src -PathType Leaf)){ return }
+  $stamp = Get-Date -Format "yyyy-MM"
+  foreach ($d in $dirs){
+    if (-not $d){ continue }
+    try {
+      $m = Join-Path $d "mensuel"
+      $dst = Join-Path $m ($name + "-" + $stamp + ".json")
+      if (-not (Test-Path $dst -PathType Leaf)){
+        New-Item -ItemType Directory -Force -Path $m | Out-Null
+        Copy-Item $src $dst
+      }
+    } catch { }
+  }
+}
+function Ensure-AllMonthlySnapshots(){
+  foreach ($n in $storeNames){ Ensure-MonthlySnapshot (Join-Path $storeDirPath ($n + ".json")) $n @($storeDirPath, $storeExt) }
+  Ensure-MonthlySnapshot $iaFile "portefeuilles-ia" @($iaDirPath, $extBackup)
+}
+
 # ---------------- « Mes portefeuilles » : stockage fichier + historique TradingView ----------------
 function Get-StoreName($req, $res){
   $n = $req.QueryString["name"]
@@ -330,6 +355,7 @@ function Get-StoreOpIds($state){
 function Handle-StoreLoad($req, $res){
   $n = Get-StoreName $req $res; if (-not $n){ return }
   $f = Join-Path $storeDirPath ($n + ".json")
+  Ensure-MonthlySnapshot $f $n @($storeDirPath, $storeExt)
   if (-not (Test-Path $f -PathType Leaf)){ Send-RawJsonString $res '{"ok":true,"data":null}'; return }
   $txt = [System.IO.File]::ReadAllText($f, $utf8NoBom)
   Send-RawJsonString $res ('{"ok":true,"file":' + (ConvertTo-Json $f -Compress) + ',"data":' + $txt + '}')
@@ -362,6 +388,7 @@ function Handle-StoreSave($req, $res){
     if ($missing.Count -gt 0){ $removedAny = $true }
   }
   New-Item -ItemType Directory -Force -Path $storeDirPath | Out-Null
+  Ensure-MonthlySnapshot $f $n @($storeDirPath, $storeExt)
   if ($cur){
     New-Item -ItemType Directory -Force -Path $bk | Out-Null
     $last = Get-ChildItem $bk -Filter ($n + "-*.json") -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -425,6 +452,7 @@ function Test-Denied($rel){
   return $false
 }
 
+try { Ensure-AllMonthlySnapshots } catch { }
 while ($listener.IsListening) {
   $context = $listener.GetContext()
   $req = $context.Request
@@ -433,7 +461,7 @@ while ($listener.IsListening) {
     $path = [System.Uri]::UnescapeDataString($req.Url.AbsolutePath)
     if ($path -eq "/api/ia/ping") {
       New-Item -ItemType Directory -Force -Path $iaDirPath | Out-Null
-      Send-Json $res 200 @{ ok = $true; writable = $true; v = 10; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
+      Send-Json $res 200 @{ ok = $true; writable = $true; v = 11; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
     } elseif ($path -eq "/api/ia/save") {
       Handle-IaSave $req $res
     } elseif ($path -eq "/api/ia/refresh") {
