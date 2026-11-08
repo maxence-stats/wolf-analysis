@@ -12213,7 +12213,7 @@ function evHistoryCardHtml(nom){
       <div class="ratio-card"><div class="k">Moyenne 20 ans</div><div class="v">${avg(20)}</div></div>
       <div class="ratio-card"><div class="k">Médiane des années</div><div class="v">${fx(st.median)}</div><div class="sub">${st.count || 0} année(s) · min ${fx(st.min)} · max ${fx(st.max)}</div></div>
     </div>
-    ${st.count && st.max < 3 ? `<div class="mp-banner err" style="margin:8px 0;">⚠ Valeurs très basses (toutes ≤ ${fx(st.max)}) : un EV/EBITDA se situe en général entre 5x et 30x (Schneider aujourd'hui : 16,27x). Vérifie la saisie ou décoche « Utiliser cet historique » ; sinon les prix des scénarios tombent à 0 €.</div>` : ''}
+    ${st.count && st.max < 3 ? `<div class="mp-banner err" style="margin:8px 0;">⚠ Valeurs très basses (toutes ≤ ${fx(st.max)}) : un EV/EBITDA se situe en général entre 5x et 30x${cur != null ? ' (actuel de cette entreprise : ' + fx(cur) + ')' : ''}. Vérifie la saisie ou décoche « Utiliser cet historique » ; sinon les prix des scénarios tombent à 0 €.</div>` : ''}
     <p class="valo-intro" style="margin:6px 0;">Scénarios proposés : <b class="neg">pessimiste ${fx(st.minAvg)}</b> (plus basse des moyennes) · <b>réaliste ${fx(st.medianAvg)}</b> (médiane des moyennes) · <b class="pos">optimiste ${fx(st.maxAvg)}</b> (plus haute des moyennes).</p>
     <div class="ev-hist-actions">
       <label class="mp-check"><input type="checkbox" id="evHistUse" ${h.use !== false ? 'checked' : ''}> Utiliser cet historique pour remplir les scénarios</label>
