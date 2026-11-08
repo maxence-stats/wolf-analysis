@@ -50,6 +50,12 @@ t('Janvier : +10 %', near(rows[0].r, 0.1, 1e-3), rows);
 t('Février : 0 % malgré 1 000 € versés', near(rows[1].r, 0, 1e-9), rows);
 t('TWR cumulé +10 %', near(E.chain(rows), 0.1, 1e-3), rows);
 
+// Période quelconque : février seul (départ = valeur au 31/01, apport de 1 000 € neutre) et pas quotidien
+const feb = E.periodRows(ops3, S3, { today: '2026-02-28', from: '2026-01-31', to: '2026-02-28', step: 'month' });
+t('Période février seule : départ à 1 100 €, rendement 0 %', feb.length === 1 && near(feb[0].v0, 1100) && near(E.chain(feb), 0, 1e-9), feb);
+const daily = E.periodRows(ops3, S3, { today: '2026-02-28', from: '2026-01-31', to: '2026-02-28', step: 'day' });
+t('Pas quotidien : seulement des jours ouvrés, même résultat chaîné', daily.length >= 19 && daily.every(r => { const wd = new Date(r.to + 'T00:00:00Z').getUTCDay(); return r.to === '2026-02-28' || (wd !== 0 && wd !== 6); }) && near(E.chain(daily), 0, 1e-9), daily.length);
+
 // Position de départ (INIT) : comptée comme apport à sa valeur ; sans prix de revient -> marquée « depuis début suivi »
 r = E.replay([{ id: 'i', date: '2026-01-01', type: 'INIT', symbol: 'X:T', qty: 10, eur: 1000 }, { id: 'j', date: '2026-02-01', type: 'SELL', symbol: 'X:T', qty: 10, eur: 1100 }]);
 t('INIT vendu : +10 % mesuré depuis le début du suivi', r.trades.length === 1 && near(r.trades[0].pct, 10) && r.trades[0].fromInit === true, r.trades);

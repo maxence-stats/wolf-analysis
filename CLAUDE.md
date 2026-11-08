@@ -622,6 +622,14 @@ Les anciennes pages Sheet (Wolf Portfolio, Perso) sont conservées telles quelle
   pour revenir au mode fictif. Navigation : 💼 ouvre directement « Mes portefeuilles » ; les anciennes pages Sheet
   « Wolf Portfolio » et « Perso (PEA/CTO) » sont retirées de la navigation (code conservé, inactif). Le Google Sheet ne sert
   plus que pour la Macroéconomie.
+- **Périodes et agrandir (2026-11-08)** : barre « 1 mois / 3 mois / 6 mois / Cette année / Depuis le début / Année… /
+  Période… (du … au …) » (`ui.period`, `periodRange()`) appliquée aux cartes de comptes, au graphique, aux indicateurs, au mois
+  par mois, aux statistiques (positions clôturées dans la période) et au journal. Moteur `periodRows(ops, S, {from, to, step})` :
+  pas quotidien (jours ouvrés) ≤ 62 jours, hebdomadaire ≤ 200 jours, mensuel au-delà. Bouton ⤢ sur le graphique et le camembert
+  (`openZoom()`, fenêtre plein écran, graphique recréé APRÈS la mise en page sinon Chart.js le dessine petit dans un coin).
+  Camembert : logos des titres en bulles autour de l'anneau (plugins d'app.js `portfolioSegmentLogosPlugin`,
+  `portfolioCenterImagePlugin`), loup au centre pour le Wolf, grandes et petites lignes ALTERNÉES (sinon logos qui se
+  chevauchent), logo « € » en SVG data URI pour les liquidités.
 - **Corbeille** : une opération supprimée part dans `D.trash` (même fichier) avec sa copie Wolf ; « ↶ Annuler » juste après,
   ou « ↶ Restaurer » depuis la corbeille sous le journal (`restore(group)`).
 - **Copie MENSUELLE** (serveur v=11, `Ensure-MonthlySnapshot`) : au premier accès de chaque mois (démarrage, lecture ou

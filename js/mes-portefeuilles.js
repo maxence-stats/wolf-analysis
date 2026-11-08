@@ -143,18 +143,31 @@ function valueAt(ops, S, iso){
 }
 /* Série mensuelle : bornes = veille de la 1re opération, puis chaque fin de mois, puis aujourd'hui.
    Rendement de chaque mois en Modified Dietz : (V1 − V0 − F) / (V0 + Σ poids × F). */
-function monthly(ops, S, opts = {}){
+/* Lignes de performance sur une période : bornes = début (veille de la 1re opération, ou opts.from), puis chaque jour
+   ouvré / chaque semaine / chaque fin de mois (opts.step), puis la fin (opts.to ou aujourd'hui). Rendement de chaque
+   intervalle en Modified Dietz : (V1 − V0 − F) / (V0 + Σ poids × F). */
+function periodRows(ops, S, opts = {}){
   const sorted = sortOps(ops);
   if (!sorted.length) return [];
   const today = opts.today || isoToday();
-  const start = addDays(sorted[0].date, -1);
+  const firstPrev = addDays(sorted[0].date, -1);
+  const start = opts.from && opts.from > firstPrev ? opts.from : firstPrev;
+  const end = opts.to && opts.to < today ? opts.to : today;
+  if (start >= end) return [];
+  const step = opts.step || 'month';
   const bounds = [start];
-  let m = monthEnd(sorted[0].date);
-  while (m < today){ bounds.push(m); m = monthEnd(addDays(m, 1)); }
-  if (bounds[bounds.length - 1] !== today) bounds.push(today);
+  if (step === 'day'){
+    for (let d = addDays(start, 1); d < end; d = addDays(d, 1)){ const wd = new Date(toTime(d)).getUTCDay(); if (wd !== 0 && wd !== 6) bounds.push(d); }
+  } else if (step === 'week'){
+    for (let d = addDays(start, 7); d < end; d = addDays(d, 7)) bounds.push(d);
+  } else {
+    let m = monthEnd(start) === start ? monthEnd(addDays(start, 1)) : monthEnd(start);
+    while (m < end){ bounds.push(m); m = monthEnd(addDays(m, 1)); }
+  }
+  if (bounds[bounds.length - 1] !== end) bounds.push(end);
   const flows = replay(ops).flows;
   const rows = [];
-  let prev = { value: 0 };
+  let prev = start === firstPrev ? { value: 0 } : valueAt(ops, S, start);
   for (let i = 1; i < bounds.length; i++){
     const a = bounds[i - 1], b = bounds[i];
     const v = valueAt(ops, S, b);
@@ -168,6 +181,7 @@ function monthly(ops, S, opts = {}){
   }
   return rows;
 }
+function monthly(ops, S, opts = {}){ return periodRows(ops, S, Object.assign({}, opts, { step: 'month' })); }
 function chain(rows){ return rows.reduce((acc, r) => acc * (1 + r.r), 1) - 1; }
 function benchRows(rows, S, sym, toEurFx){
   return rows.map(r => {
@@ -252,7 +266,7 @@ function mirrorOp(op, ratio, wolfOps, persoHeldBefore){
     note: 'Reproduit depuis ' + (op._acc || 'le portefeuille perso').toUpperCase() + ' (× ' + String(ratio).replace('.', ',') + ')', source: 'miroir' });
 }
 
-window.MP_ENGINE = { sortOps, replay, validate, makeSeries, at, priceEur, valueAt, monthly, chain, benchRows, xirr, periodPerf,
+window.MP_ENGINE = { sortOps, replay, validate, makeSeries, at, priceEur, valueAt, monthly, periodRows, chain, benchRows, xirr, periodPerf,
   tradeStats, openAsTrades, netAmount, mirrorOp, daysBetween, isoToday, addDays, monthEnd };
 
 /* ======================= INTERFACE (refonte 2026-11-08 : cartes de comptes, deux colonnes, logos, saisie en fenêtre) ======================= */
@@ -282,7 +296,7 @@ const PALETTE = ['#D9A441', '#4A9FE0', '#F0C877', '#2F7DBF', '#B8862E', '#7FBFEF
 let D = null, serverOk = false, storeFile = '', loadErr = null;
 let S = {};
 let histErr = {}, histLoading = false, histAt = null;
-let ui = { acc: 'pea', year: 'all', modal: null, delConfirm: null, msg: null, showAllOps: false, includeOpen: false, saving: false };
+let ui = { acc: 'pea', period: { k: 'all' }, modal: null, delConfirm: null, msg: null, showAllOps: false, includeOpen: false, saving: false };
 let charts = {};
 let searchTimer = null;
 let cache = null;   // calculs du rendu en cours
@@ -367,31 +381,55 @@ async function loadHistory(fresh){
   histLoading = false; render();
 }
 
+/* ---------- période affichée ----------
+   { k:'all' } depuis le début · '1m' / '3m' / '6m' glissants · 'ytd' depuis le 1er janvier · 'y' une année · 'custom' du … au …
+   Bornes : from = veille du 1er jour inclus (valeur de départ), to = dernier jour inclus. */
+function minusMonths(iso, n){ const d = new Date(toTimeUi(iso)); d.setUTCMonth(d.getUTCMonth() - n); return d.toISOString().slice(0, 10); }
+function toTimeUi(iso){ return Date.parse(iso + 'T00:00:00Z'); }
+function periodRange(){
+  const p = ui.period, t = E.isoToday();
+  if (p.k === '1m') return { from: minusMonths(t, 1), to: t, label: 'sur 1 mois' };
+  if (p.k === '3m') return { from: minusMonths(t, 3), to: t, label: 'sur 3 mois' };
+  if (p.k === '6m') return { from: minusMonths(t, 6), to: t, label: 'sur 6 mois' };
+  if (p.k === 'ytd') return { from: (+t.slice(0, 4) - 1) + '-12-31', to: t, label: 'depuis le 1er janvier' };
+  if (p.k === 'y') return { from: (p.year - 1) + '-12-31', to: p.year + '-12-31', label: 'en ' + p.year };
+  if (p.k === 'custom' && p.from && p.to) return { from: E.addDays(p.from, -1), to: p.to, label: 'du ' + fmtD(p.from) + ' au ' + fmtD(p.to) };
+  return { from: null, to: null, label: null };
+}
+const inRange = (d, r) => (!r.from || d > r.from) && (!r.to || d <= r.to);
+
 /* ---------- calculs ---------- */
 function compute(acc){
   const ops = accOps(acc);
   if (!ops.length) return null;
   const today = E.isoToday();
-  const rows = E.monthly(ops, S, { today });
-  const from = ui.year === 'all' ? '0000' : (ui.year - 1) + '-12-31';
-  const to = ui.year === 'all' ? '9999' : ui.year + '-12-31';
-  const perf = E.periodPerf(ops, S, rows, from, to);
+  const range = periodRange();
+  const first = E.addDays(E.sortOps(ops)[0].date, -1);
+  const span = E.daysBetween(range.from && range.from > first ? range.from : first, range.to && range.to < today ? range.to : today);
+  const step = span <= 62 ? 'day' : span <= 200 ? 'week' : 'month';
+  const rows = E.periodRows(ops, S, { today, from: range.from, to: range.to, step });
+  const perf = rows.length ? E.periodPerf(ops, S, rows, '0000', '9999') : null;
   const sel = perf ? perf.rows : [];
   const cac = E.benchRows(sel, S, D.config.cac || 'EURONEXT:PX1');
   const spx = E.benchRows(sel, S, D.config.spx || 'SP:SPX', 'FX_IDC:EURUSD');
+  // tableau « mois par mois » : toujours des mois, sur la même période
+  const mrows = step === 'month' ? rows : E.periodRows(ops, S, { today, from: range.from, to: range.to, step: 'month' });
+  const mcac = step === 'month' ? cac : E.benchRows(mrows, S, D.config.cac || 'EURONEXT:PX1');
+  const mspx = step === 'month' ? spx : E.benchRows(mrows, S, D.config.spx || 'SP:SPX', 'FX_IDC:EURUSD');
   const now = E.valueAt(ops, S, today);
   const st = E.replay(ops);
-  let trades = st.trades.filter(t => ui.year === 'all' || t.close.slice(0, 4) === String(ui.year));
+  let trades = st.trades.filter(t => inRange(t.close, range));
   if (ui.includeOpen) trades = trades.concat(E.openAsTrades(st, S, today));
   // Cours manquant = valeur sous-estimée : on le dit au lieu d'afficher un chiffre faux sans prévenir.
   const missing = [...new Set(now.missing.concat(...rows.map(r => r.missing)))];
-  return { acc, ops, rows, perf, cac, spx, now, st, stats: E.tradeStats(trades), trades, today, cacT: E.chain(cac), spxT: E.chain(spx), missing };
+  return { acc, ops, rows, perf, cac, spx, mrows, mcac, mspx, step, range, now, st, stats: E.tradeStats(trades), trades, today, cacT: E.chain(cac), spxT: E.chain(spx), missing };
 }
 
 /* ---------- rendu de la page ---------- */
 function render(){
   const page = document.getElementById(PAGE_ID);
   if (!page || !page.classList.contains('active')) return;
+  closeZoom();
   Object.values(charts).forEach(c => { try { c.destroy(); } catch(e){} }); charts = {};
   if (!serverOk){ page.innerHTML = titleHtml() + `<div class="mp-banner err">⚠ Le serveur local n'est pas à jour ou pas lancé. Ferme la fenêtre du serveur puis relance le raccourci <b>« Wolf Analysis »</b> du Bureau.</div>`; return; }
   if (loadErr || !D){ page.innerHTML = titleHtml() + `<div class="mp-banner err">⚠ Fichier illisible (${esc(loadErr)}) : aucune écriture ne sera faite.</div>`; return; }
@@ -436,12 +474,17 @@ function accountCardsHtml(){
     return `<button class="mp-acc ${ui.acc === a.k ? 'active' : ''} ${a.k === 'perso' ? 'mp-acc-sum' : ''}" data-mp-acc="${a.k}">
       <span class="mp-acc-top"><span class="mp-acc-ico">${a.icon}</span><span><b>${a.label}</b><small>${a.sub}</small></span></span>
       <span class="mp-acc-val${lockedA ? ' mp-blur' : ''}">${histLoading && !histAt ? '…' : eur(v, 0)}${c && c.missing.length && !lockedA ? ' <span class="mp-acc-warn" title="Cours manquants : valeur incomplète">⚠</span>' : ''}</span>
-      <span class="mp-acc-perf ${cls(p)}">${lockedA ? '🔒 chiffres fictifs' : pct(p) + (ui.year === 'all' ? ' depuis le début' : ' en ' + ui.year)}</span></button>`;
+      <span class="mp-acc-perf ${cls(p)}">${lockedA ? '🔒 chiffres fictifs' : pct(p) + ' ' + (periodRange().label || 'depuis le début')}</span></button>`;
   }).join('')}</div>`;
 }
 function toolbarHtml(){
-  const years = [...new Set(Object.values(D.accounts).flatMap(a => a.ops.map(o => o.date.slice(0, 4))))].sort();
-  const ys = ['all'].concat(years).map(y => `<button class="${String(ui.year) === String(y) ? 'active' : ''}" data-mp-year="${y}">${y === 'all' ? 'Depuis le début' : y}</button>`).join('');
+  const years = [...new Set(Object.values(D.accounts).flatMap(a => a.ops.map(o => o.date.slice(0, 4))))].sort().reverse();
+  const P = ui.period;
+  const b = (k, l) => `<button class="${P.k === k ? 'active' : ''}" data-mp-period="${k}">${l}</button>`;
+  const ys = b('1m', '1 mois') + b('3m', '3 mois') + b('6m', '6 mois') + b('ytd', 'Cette année') + b('all', 'Depuis le début')
+    + `<select class="mp-year-sel ${P.k === 'y' ? 'active' : ''}" data-mp-yearsel><option value="">Année…</option>${years.map(y => `<option value="${y}" ${P.k === 'y' && P.year === +y ? 'selected' : ''}>${y}</option>`).join('')}</select>`
+    + b('custom', 'Période…')
+    + (P.k === 'custom' ? `<span class="mp-custom">du <input type="date" data-mp-from value="${esc(P.from || '')}"> au <input type="date" data-mp-to value="${esc(P.to || E.isoToday())}"> <button class="mp-ghost" data-mp-applyrange>OK</button></span>` : '');
   const canAdd = ui.acc !== 'perso' && !isLockedAcc(ui.acc);
   const quick = canAdd ? ['BUY', 'SELL', 'DIV', 'DEPOT'].map(t => `<button class="mp-quick mp-q-${t}" data-mp-add="${t}"><span>${TYPE_ICON[t]}</span>${TYPE_LABEL[t]}</button>`).join('')
     + `<button class="mp-quick" data-mp-add="RETRAIT">Autre…</button>` : `<span class="mp-hint">Pour saisir, choisis le PEA ou le CTO.</span>`;
@@ -449,7 +492,7 @@ function toolbarHtml(){
 }
 function kpiHtml(c){
   const p = c.perf; if (!p) return '';
-  const per = ui.year === 'all' ? 'depuis le ' + fmtD(E.addDays(p.rows[0].from, 1)) : 'en ' + ui.year;
+  const per = c.range.label || 'depuis le ' + fmtD(E.addDays(p.rows[0].from, 1));
   const k = (label, val, sub, kl) => `<div class="mp-kpi"><span>${label}</span><b class="${kl || ''}">${val}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
   return `<h3 class="mp-h">Performance <small>${per}</small></h3><div class="mp-kpis">
     ${k('Plus-value', sEur(p.gain), 'hors apports', cls(p.gain))}
@@ -460,25 +503,33 @@ function kpiHtml(c){
     ${k('vs S&P 500 (€)', pct((p.twr - c.spxT) * 100), 'S&P 500 : ' + pct(c.spxT * 100), cls(p.twr - c.spxT))}
   </div>`;
 }
+function perfLegendHtml(c){
+  return `<div class="mp-legend"><span><i style="background:#D9A441"></i>${esc(ACCOUNTS.find(a => a.k === c.acc).label)} <b class="${cls(c.perf && c.perf.twr)}">${pct(c.perf ? c.perf.twr * 100 : null)}</b></span>
+    <span><i style="background:#4A9FE0"></i>CAC 40 <b>${pct(c.cacT * 100)}</b></span><span><i style="background:#E9EBEE"></i>S&P 500 (€) <b>${pct(c.spxT * 100)}</b></span></div>`;
+}
 function chartCardHtml(c){
-  return `<div class="mp-h-row"><h3 class="mp-h">Ma performance face aux indices</h3>
-    <div class="mp-legend"><span><i style="background:#D9A441"></i>${esc(ACCOUNTS.find(a => a.k === c.acc).label)} <b class="${cls(c.perf && c.perf.twr)}">${pct(c.perf ? c.perf.twr * 100 : null)}</b></span>
-    <span><i style="background:#4A9FE0"></i>CAC 40 <b>${pct(c.cacT * 100)}</b></span><span><i style="background:#E9EBEE"></i>S&P 500 (€) <b>${pct(c.spxT * 100)}</b></span></div></div>
+  return `<div class="mp-h-row"><h3 class="mp-h">Ma performance face aux indices <small>${esc(c.range.label || 'depuis le début')}</small></h3>
+    <div class="mp-h-tools">${perfLegendHtml(c)}<button class="mp-zoom-btn" data-mp-zoom="perf" title="Agrandir">⤢</button></div></div>
     <div class="mp-chart-box"><canvas id="mpChart"></canvas></div>`;
+}
+// Config Chart.js de la courbe de performance (reconstruite à chaque appel : une config ne se partage pas entre 2 instances).
+function buildPerfConfig(ctx, c, big){
+  const cum = rows => { let a = 1; return [0].concat(rows.map(r => { a *= 1 + r.r; return +((a - 1) * 100).toFixed(2); })); };
+  const dates = [E.addDays(c.perf.rows[0].from, 1)].concat(c.perf.rows.map(r => r.to));
+  const labels = c.step === 'month' ? dates.map(d => MOIS[+d.slice(5, 7) - 1].slice(0, 4) + '. ' + d.slice(2, 4)) : dates.map(d => d.slice(8, 10) + '/' + d.slice(5, 7));
+  const grad = ctx.createLinearGradient(0, 0, 0, big ? 620 : 260); grad.addColorStop(0, 'rgba(217,164,65,0.28)'); grad.addColorStop(1, 'rgba(217,164,65,0)');
+  const fs = big ? 14 : 11;
+  return { type: 'line', data: { labels, datasets: [
+    { label: ACCOUNTS.find(a => a.k === c.acc).label, data: cum(c.perf.rows), borderColor: '#D9A441', backgroundColor: grad, fill: true, borderWidth: big ? 3.5 : 2.5, pointRadius: 0, pointHoverRadius: 5, tension: 0.3 },
+    { label: 'CAC 40', data: cum(c.cac), borderColor: '#4A9FE0', borderWidth: big ? 2.2 : 1.6, pointRadius: 0, tension: 0.3 },
+    { label: 'S&P 500 (€)', data: cum(c.spx), borderColor: 'rgba(233,235,238,0.75)', borderWidth: big ? 2 : 1.4, borderDash: [4, 4], pointRadius: 0, tension: 0.3 } ] },
+    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: !!big, position: 'top', labels: { color: '#E9EBEE', usePointStyle: true, font: { size: fs } } }, tooltip: { callbacks: { label: x => ' ' + x.dataset.label + ' : ' + pct(x.parsed.y) } } },
+      scales: { x: { grid: { display: false }, ticks: { color: '#8B93A0', maxTicksLimit: big ? 14 : 8, font: { size: fs } } }, y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#8B93A0', font: { size: fs }, callback: v => v + ' %' } } } } };
 }
 function drawPerfChart(c){
   const cv = document.getElementById('mpChart'); if (!cv || !c.perf) return;
-  const cum = rows => { let a = 1; return [0].concat(rows.map(r => { a *= 1 + r.r; return +((a - 1) * 100).toFixed(2); })); };
-  const labels = [E.addDays(c.perf.rows[0].from, 1)].concat(c.perf.rows.map(r => r.to)).map(d => MOIS[+d.slice(5, 7) - 1].slice(0, 4) + '. ' + d.slice(2, 4));
-  const ctx = cv.getContext('2d');
-  const grad = ctx.createLinearGradient(0, 0, 0, 260); grad.addColorStop(0, 'rgba(217,164,65,0.28)'); grad.addColorStop(1, 'rgba(217,164,65,0)');
-  charts.perf = new Chart(ctx, { type: 'line', data: { labels, datasets: [
-    { label: 'Portefeuille', data: cum(c.perf.rows), borderColor: '#D9A441', backgroundColor: grad, fill: true, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 4, tension: 0.3 },
-    { label: 'CAC 40', data: cum(c.cac), borderColor: '#4A9FE0', borderWidth: 1.6, pointRadius: 0, tension: 0.3 },
-    { label: 'S&P 500 (€)', data: cum(c.spx), borderColor: 'rgba(233,235,238,0.75)', borderWidth: 1.4, borderDash: [4, 4], pointRadius: 0, tension: 0.3 } ] },
-    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: x => ' ' + x.dataset.label + ' : ' + pct(x.parsed.y) } } },
-      scales: { x: { grid: { display: false }, ticks: { color: '#8B93A0', maxTicksLimit: 8 } }, y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#8B93A0', callback: v => v + ' %' } } } } });
+  charts.perf = new Chart(cv.getContext('2d'), buildPerfConfig(cv.getContext('2d'), c, false));
 }
 function positionRows(c){
   const today = c.today;
@@ -502,31 +553,103 @@ function positionsHtml(c){
       <div class="mp-pos-val"><b>${eur(c.now.cash)}</b><small>${num(c.now.cash / total * 100, 1)} %</small></div><div></div></div></div>`;
 }
 function allocationHtml(c){
-  return `<h3 class="mp-h">Répartition</h3><div class="mp-donut"><canvas id="mpDonut"></canvas><div class="mp-donut-center"><small>Valeur</small><b>${eur(c.now.value, 0)}</b></div></div>
+  const wolf = c.acc === 'wolf';
+  return `<div class="mp-h-row"><h3 class="mp-h">Répartition</h3><button class="mp-zoom-btn" data-mp-zoom="donut" title="Agrandir">⤢</button></div>
+    <div class="mp-donut ${wolf ? 'mp-donut-wolf' : ''}"><canvas id="mpDonut"></canvas>${wolf ? '' : `<div class="mp-donut-center"><small>Valeur</small><b>${eur(c.now.value, 0)}</b></div>`}</div>
+    ${wolf ? `<div class="mp-donut-total">Valeur <b>${eur(c.now.value, 0)}</b></div>` : ''}
     <div class="mp-alloc-legend" id="mpAllocLegend"></div>`;
 }
-function drawDonut(c, locked){
-  const cv = document.getElementById('mpDonut'); if (!cv) return;
-  const rows = positionRows(c).filter(r => r.val > 0);
+/* Camembert : logos des titres en « bulles » autour de l'anneau (plugins d'app.js portfolioSegmentLogosPlugin /
+   portfolioCenterImagePlugin, déjà utilisés par l'ancien onglet Wolf) et, pour le Wolf Portfolio, le loup au centre. */
+// Logo « € » des liquidités (SVG en data URI : aucun appel réseau, jamais de « L » générique sur l'anneau).
+const CASH_LOGO = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><circle cx="32" cy="32" r="32" fill="#1B2128"/><text x="32" y="43" font-family="Arial" font-size="32" font-weight="700" text-anchor="middle" fill="#D9A441">€</text></svg>');
+function donutData(c){
+  // Grandes et petites lignes ALTERNÉES autour de l'anneau : triées par taille, les petites se retrouvaient côte à
+  // côte et leurs logos se chevauchaient.
+  const sorted = positionRows(c).filter(r => r.val > 0);
+  const rows = [];
+  for (let i = 0, j = sorted.length - 1; i <= j; i++, j--){ rows.push(sorted[i]); if (i !== j) rows.push(sorted[j]); }
   const labels = rows.map(r => symName(r.sym)).concat(c.now.cash > 0.5 ? ['Liquidités'] : []);
   const vals = rows.map(r => r.val).concat(c.now.cash > 0.5 ? [c.now.cash] : []);
   const colors = labels.map((_, i) => i === rows.length ? '#3A434D' : PALETTE[i % PALETTE.length]);
-  charts.donut = new Chart(cv.getContext('2d'), { type: 'doughnut', data: { labels, datasets: [{ data: vals, backgroundColor: colors, borderColor: '#151A1F', borderWidth: 2 }] },
-    options: { responsive: true, maintainAspectRatio: false, cutout: '72%', plugins: { legend: { display: false }, tooltip: { callbacks: { label: x => ' ' + x.label + (locked ? '' : ' : ' + eur(x.parsed)) + ' (' + num(x.parsed / c.now.value * 100, 1) + ' %)' } } } } });
+  const logos = rows.map(r => logoUrl(r.sym)).concat(c.now.cash > 0.5 ? [CASH_LOGO] : []);
+  return { rows, labels, vals, colors, logos };
+}
+function buildDonutConfig(c, locked, big){
+  const d = donutData(c), wolf = c.acc === 'wolf';
+  const plugins = [];
+  if (typeof portfolioSegmentLogosPlugin === 'function') plugins.push(portfolioSegmentLogosPlugin());
+  if (wolf && typeof portfolioCenterImagePlugin === 'function') plugins.push(portfolioCenterImagePlugin());
+  const ds = { data: d.vals, backgroundColor: d.colors, borderColor: '#151A1F', borderWidth: big ? 3 : 2, hoverOffset: 8 };
+  ds._logos = d.logos;
+  return { type: 'doughnut', data: { labels: d.labels, datasets: [ds] }, plugins,
+    options: { responsive: true, maintainAspectRatio: false, cutout: wolf ? '56%' : '64%', layout: { padding: big ? 84 : 80 },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: x => ' ' + x.label + (locked ? '' : ' : ' + eur(x.parsed)) + ' (' + num(x.parsed / c.now.value * 100, 1) + ' %)' } } } } };
+}
+function preloadDonutImages(c, chart){
+  const urls = donutData(c).logos.filter(Boolean);
+  if (c.acc === 'wolf' && typeof WOLF_LOGO_URL !== 'undefined') urls.push(WOLF_LOGO_URL);
+  if (typeof loadImageCached !== 'function') return;
+  urls.forEach(u => loadImageCached(u).then(img => { if (img && chart && chart.ctx) chart.draw(); }));
+}
+function drawDonut(c, locked){
+  const cv = document.getElementById('mpDonut'); if (!cv) return;
+  charts.donut = new Chart(cv.getContext('2d'), buildDonutConfig(c, locked, false));
+  preloadDonutImages(c, charts.donut);
+  const d = donutData(c);
   const lg = document.getElementById('mpAllocLegend');
-  if (lg) lg.innerHTML = labels.map((l, i) => `<div><i style="background:${colors[i]}"></i><span>${esc(l)}</span><b>${num(vals[i] / c.now.value * 100, 1)} %</b></div>`).join('');
+  if (lg) lg.innerHTML = d.labels.map((l, i) => `<div><i style="background:${d.colors[i]}"></i>${d.rows[i] ? logoHtml(d.rows[i].sym, 18) : '<span class="mp-logo mp-logo-txt" style="width:18px;height:18px;font-size:10px">€</span>'}<span>${esc(l)}</span><b>${num(d.vals[i] / c.now.value * 100, 1)} %</b></div>`).join('');
+}
+/* Agrandir (⤢) : fenêtre plein écran avec le même graphique reconstruit en grand. */
+function openZoom(kind){
+  const c = cache && cache[ui.acc]; if (!c || !c.perf) return;
+  const locked = isLockedAcc(ui.acc);
+  const acc = ACCOUNTS.find(a => a.k === ui.acc);
+  closeZoom();
+  const el = document.createElement('div');
+  el.className = 'mp-modal-bg mp-zoom-bg'; el.id = 'mpZoom';
+  const d = kind === 'donut' ? donutData(c) : null;
+  const side = kind === 'donut' ? `<div class="mp-zoom-side${locked ? ' mp-locked' : ''}">${d.labels.map((l, i) => `<div class="mp-zoom-row"><i style="background:${d.colors[i]}"></i>${d.rows[i] ? logoHtml(d.rows[i].sym, 30) : '<span class="mp-logo mp-logo-txt" style="width:30px;height:30px">€</span>'}
+      <span class="mp-zoom-name">${esc(l)}</span><b>${num(d.vals[i] / c.now.value * 100, 1)} %</b><small class="mp-blur-if">${eur(d.vals[i], 0)}</small></div>`).join('')}
+      <div class="mp-zoom-row mp-zoom-total"><span class="mp-zoom-name">Total</span><b></b><small class="mp-blur-if">${eur(c.now.value, 0)}</small></div></div>` : '';
+  el.innerHTML = `<div class="mp-zoom-panel ${locked ? 'mp-locked' : ''}">
+    <div class="mp-modal-head"><div class="mp-zoom-title">${kind === 'donut' && c.acc === 'wolf' ? '<span class="mp-zoom-wolf">🐺</span>' : ''}<h3>${kind === 'donut' ? 'Répartition' : 'Performance face aux indices'} · ${esc(acc.label)}</h3>
+      <small>${esc(c.range.label || 'depuis le début')}${locked ? ' · chiffres fictifs' : ''}</small></div><button class="mp-x" data-mp-zoomclose>✕</button></div>
+    ${kind === 'perf' ? perfLegendHtml(c) : ''}
+    <div class="mp-zoom-body ${kind === 'donut' ? 'mp-zoom-body-donut' : ''}"><div class="mp-zoom-canvas"><canvas id="mpZoomCanvas"></canvas></div>${side}</div>
+    <div class="mp-zoom-foot">Données TradingView · Wolf Analysis${typeof WOLF_LOGO_URL !== 'undefined' ? ` <img src="${esc(WOLF_LOGO_URL)}" alt="">` : ''}</div></div>`;
+  document.body.appendChild(el);
+  el.addEventListener('mousedown', e => { if (e.target === el) closeZoom(); });
+  el.querySelector('[data-mp-zoomclose]').addEventListener('click', closeZoom);
+  document.addEventListener('keydown', zoomEsc);
+  // Graphique créé APRÈS la mise en page de la fenêtre (sinon Chart.js le dimensionne sur une taille provisoire et le
+  // dessine petit dans un coin), puis redimensionné une fois de plus par sécurité.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const cv = document.getElementById('mpZoomCanvas'); if (!cv) return;
+    const ctx = cv.getContext('2d');
+    charts.zoom = new Chart(ctx, kind === 'donut' ? buildDonutConfig(c, locked, true) : buildPerfConfig(ctx, c, true));
+    if (kind === 'donut') preloadDonutImages(c, charts.zoom);
+    setTimeout(() => { if (charts.zoom) charts.zoom.resize(); }, 120);
+  }));
+}
+function zoomEsc(e){ if (e.key === 'Escape') closeZoom(); }
+function closeZoom(){
+  const el = document.getElementById('mpZoom'); if (el) el.remove();
+  if (charts.zoom){ try { charts.zoom.destroy(); } catch(e){} delete charts.zoom; }
+  document.removeEventListener('keydown', zoomEsc);
 }
 function monthsHtml(c){
   if (!c.perf) return '';
   const opsOf = r => E.sortOps(c.ops).filter(o => o.date > r.from && o.date <= r.to && o.type !== 'INIT');
-  const items = c.perf.rows.map((r, i) => {
+  if (!c.mrows || !c.mrows.length) return '<h3 class="mp-h">Mois par mois</h3><div class="mp-empty">Pas de mois complet sur cette période.</div>';
+  const items = c.mrows.map((r, i) => {
     const ops = opsOf(r);
     const chips = ops.filter(o => o.symbol).slice(0, 8).map(o => `<span class="mp-chip mp-c-${o.type}" title="${esc(TYPE_LABEL[o.type] + ' ' + symName(o.symbol) + ' le ' + fmtD(o.date) + ' : ' + sEur(o.eur))}">${logoHtml(o.symbol, 16)}${esc(TYPE_LABEL[o.type])} ${esc(symName(o.symbol))}</span>`).join('');
     const money = ops.filter(o => o.type === 'DEPOT' || o.type === 'RETRAIT').reduce((s, o) => s + o.eur, 0);
-    const diff = r.r - c.cac[i].r;
+    const diff = r.r - c.mcac[i].r;
     return `<div class="mp-month">
       <div class="mp-month-head"><b>${monthLabel(r.to)}${r.to === c.today ? ' <small>en cours</small>' : ''}</b><span class="mp-pillv ${cls(r.r)}">${pct(r.r * 100)}</span></div>
-      <div class="mp-month-sub"><span>CAC 40 <b class="${cls(c.cac[i].r)}">${pct(c.cac[i].r * 100)}</b></span><span>S&P 500 <b class="${cls(c.spx[i].r)}">${pct(c.spx[i].r * 100)}</b></span>
+      <div class="mp-month-sub"><span>CAC 40 <b class="${cls(c.mcac[i].r)}">${pct(c.mcac[i].r * 100)}</b></span><span>S&P 500 <b class="${cls(c.mspx[i].r)}">${pct(c.mspx[i].r * 100)}</b></span>
         <span>écart CAC <b class="${cls(diff)}">${pct(diff * 100)}</b></span><span>valeur fin de mois <b>${eur(r.v1, 0)}</b></span>${money ? `<span>argent versé <b>${sEur(money, 0)}</b></span>` : ''}</div>
       ${chips ? `<div class="mp-chips">${chips}${ops.filter(o => o.symbol).length > 8 ? `<span class="mp-chip">+${ops.filter(o => o.symbol).length - 8}</span>` : ''}</div>` : ''}</div>`;
   }).reverse().join('');
@@ -542,7 +665,7 @@ function statsHtml(c){
   const list = trades.map(t => `<div class="mp-trade">${logoHtml(t.symbol, 26)}<div class="mp-trade-name"><b>${esc(symName(t.symbol))}</b>
       <small>${fmtD(t.open)} → ${t.close ? fmtD(t.close) : 'en cours'} · ${d(t.days)}${t.fromInit ? ' · <span class="mp-tag" title="Prix d\'achat inconnu : mesuré depuis la valeur au début du suivi">depuis le début du suivi</span>' : ''}</small></div>
       <div class="mp-trade-res ${cls(t.pnl)}"><b>${pct(t.pct)}</b><small>${sEur(t.pnl)}</small></div></div>`).join('');
-  return `<h3 class="mp-h">Mes transactions <small>${ui.year === 'all' ? 'toutes' : 'clôturées en ' + ui.year}</small></h3>
+  return `<h3 class="mp-h">Mes transactions <small>${c.range.label ? 'clôturées ' + c.range.label : 'toutes'}</small></h3>
     <div class="mp-stats-top">${ring}<div class="mp-stats-kv">
       <div><span>Gagnantes / perdantes</span><b>${s.wins} / ${s.losses}</b></div>
       <div><span>Gain moyen quand je gagne</span><b class="pos">${pct(s.avgWinPct)}</b><small>en ${d(s.avgDaysWin)}</small></div>
@@ -553,7 +676,8 @@ function statsHtml(c){
     <div class="mp-trades">${list || '<div class="mp-empty">Aucune position vendue sur la période.</div>'}</div>`;
 }
 function journalHtml(){
-  const ops = E.sortOps(accOps(ui.acc)).reverse().filter(o => ui.year === 'all' || o.date.slice(0, 4) === String(ui.year));
+  const range = periodRange();
+  const ops = E.sortOps(accOps(ui.acc)).reverse().filter(o => o.type === 'INIT' ? !range.from : inRange(o.date, range));
   const shown = ui.showAllOps ? ops : ops.slice(0, 30);
   let cur = '', html = '';
   shown.forEach(o => {
@@ -828,7 +952,17 @@ function wireModal(){
 function wire(){
   const page = document.getElementById(PAGE_ID);
   page.querySelectorAll('[data-mp-acc]').forEach(b => b.addEventListener('click', () => { ui.acc = b.dataset.mpAcc; ui.msg = null; ui.delConfirm = null; render(); }));
-  page.querySelectorAll('[data-mp-year]').forEach(b => b.addEventListener('click', () => { ui.year = b.dataset.mpYear === 'all' ? 'all' : +b.dataset.mpYear; render(); }));
+  page.querySelectorAll('[data-mp-period]').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.mpPeriod;
+    if (k === 'custom'){ ui.period = { k: 'custom', from: ui.period.from || E.addDays(E.isoToday(), -90), to: ui.period.to || E.isoToday(), pending: true }; render(); return; }
+    ui.period = { k }; render();
+  }));
+  const ysel = page.querySelector('[data-mp-yearsel]'); if (ysel) ysel.addEventListener('change', () => { if (ysel.value){ ui.period = { k: 'y', year: +ysel.value }; render(); } });
+  const ap = page.querySelector('[data-mp-applyrange]');
+  if (ap) ap.addEventListener('click', () => {
+    const f = page.querySelector('[data-mp-from]').value, t = page.querySelector('[data-mp-to]').value;
+    if (f && t && f < t){ ui.period = { k: 'custom', from: f, to: t }; render(); }
+  });
   page.querySelectorAll('[data-mp-add]').forEach(b => b.addEventListener('click', () => openModal(b.dataset.mpAdd)));
   const rf = page.querySelector('[data-mp-refresh]'); if (rf) rf.addEventListener('click', () => loadHistory(true));
   const mx = page.querySelector('[data-mp-msgx]'); if (mx) mx.addEventListener('click', () => { ui.msg = null; render(); });
@@ -849,6 +983,7 @@ function wire(){
   const io = page.querySelector('#mpIncludeOpen'); if (io) io.addEventListener('change', () => { ui.includeOpen = io.checked; render(); });
   const all = page.querySelector('[data-mp-allops]'); if (all) all.addEventListener('click', () => { ui.showAllOps = !ui.showAllOps; render(); });
   page.querySelectorAll('[data-mp-del]').forEach(b => b.addEventListener('click', () => del(b.dataset.mpDel)));
+  page.querySelectorAll('[data-mp-zoom]').forEach(b => b.addEventListener('click', () => openZoom(b.dataset.mpZoom)));
   page.querySelectorAll('[data-mp-restore]').forEach(b => b.addEventListener('click', () => restore(b.dataset.mpRestore)));
 }
 
