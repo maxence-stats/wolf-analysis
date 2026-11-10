@@ -26,14 +26,29 @@ const GRAPHS = { ca: ['Chiffre d\'affaires (M)', 'line'], fcfParAction: ['FCF pa
   roic: ['ROIC (%)', 'line'], actions: ['Actions en circulation (M)', 'line'], pFcf: ['P/FCF', 'bar'], prixActuel: ['Cours (fin d\'exercice)', 'line'] };
 const T = (titre, icon, kids) => ({ titre, icon, kids: kids || [] });
 const BUILTIN = {
-  'wolf-entreprise': { id: 'wolf-entreprise', nom: 'Analyse d\'entreprise — trame Wolf', type: 'entreprise', builtin: true, tree: T('', '', [
-    T('Présentation', '🏢', [T('Histoire', ''), T('Activité', ''), T('Chiffres clés', '')]),
-    T('Business model', '⚙️', [T('Segments', ''), T('Répartition géographique', ''), T('Clients', '')]),
-    T('Marché & secteur', '🌍', [T('Taille du marché', ''), T('Concurrents', ''), T('Chaîne de valeur', '')]),
-    T('Avantage concurrentiel', '🏰'),
-    T('Finances', '📊', [T('Croissance', ''), T('Marges & rentabilité', ''), T('Bilan & dette', ''), T('Cash-flow', '')]),
-    T('Valorisation', '💰', [T('Scénarios', ''), T('Prix d\'achat', '')]),
-    T('Management & actionnariat', '👔'), T('Risques', '⚠️'), T('Catalyseurs & perspectives', '🚀'), T('Actualités', '📰'), T('Conclusion', '✅')]) },
+  // Trame complète en 18 points (checklist de l'utilisateur du 2026-11-10, qui reprend l'ancienne « Analyse développée » :
+  // présentation, revenus par pays / secteur, concurrents, marché, moat, activités, perspectives, risques, actionnariat,
+  // ratios, conclusion). « Activité 1 » est à DUPLIQUER (⧉) pour chaque grande activité d'un groupe diversifié.
+  'wolf-entreprise': { id: 'wolf-entreprise', nom: 'Analyse d\'entreprise — trame Wolf complète (18 points)', type: 'entreprise', builtin: true, tree: T('', '', [
+    T('1. Présentation', '🏢', [T('Histoire & dates clés'), T('Activités'), T('Implantation'), T('Dirigeants')]),
+    T('2. Modèle économique', '⚙️', [T('Comment elle gagne de l\'argent'), T('Clients'), T('Produits & services'), T('Récurrence des revenus'), T('Structure des coûts')]),
+    T('3. Répartition du chiffre d\'affaires', '🧩', [T('Par pays & régions'), T('Par secteurs & activités'), T('Par filiales'), T('Évolution historique')]),
+    T('4. Analyse des segments', '📊', [T('Activité 1 (à dupliquer ⧉)', '', [T('Chiffre d\'affaires & croissance'), T('Marge opérationnelle & rentabilité'), T('Contribution aux résultats'), T('Marché'), T('Concurrence'), T('Moat'), T('Perspectives')])]),
+    T('5. Marché', '🌍', [T('Taille (TAM / SAM / SOM)'), T('Croissance'), T('Tendances'), T('Réglementation'), T('Facteurs cycliques')]),
+    T('6. Chaîne de valeur', '🔗', [T('Fournisseurs'), T('Clients & distributeurs'), T('Position de l\'entreprise'), T('Dépendances stratégiques')]),
+    T('7. Avantage concurrentiel (moat)', '🏰', [T('Marque'), T('Coûts de changement'), T('Économies d\'échelle'), T('Brevets & technologie'), T('Effet de réseau'), T('Coûts de production'), T('Barrières à l\'entrée')]),
+    T('8. Concurrence', '🎯', [T('Concurrents par activité'), T('Parts de marché'), T('Positionnement'), T('Forces & faiblesses'), T('Substituts & risque de remplacement'), T('Conclusion sur la concurrence')]),
+    T('9. Perspectives de croissance', '🚀', [T('Moteurs organiques'), T('Acquisitions'), T('Nouveaux marchés'), T('Investissements & innovations'), T('Perspectives par segment')]),
+    T('10. Risques', '⚠️', [T('Opérationnels'), T('Financiers'), T('Réglementaires'), T('Géopolitiques'), T('Technologiques'), T('Concurrentiels'), T('Dépendance clients / fournisseurs')]),
+    T('11. Management & gouvernance', '👔', [T('Dirigeants & historique'), T('Stratégie'), T('Rémunération'), T('Qualité de l\'exécution'), T('Décisions passées')]),
+    T('12. Actionnariat', '🧑‍🤝‍🧑', [T('Principaux actionnaires'), T('Fondateurs'), T('Investisseurs institutionnels'), T('Flottant'), T('Conflits d\'intérêts éventuels')]),
+    T('13. Allocation du capital', '💸', [T('Dividendes'), T('Rachats d\'actions'), T('Acquisitions'), T('Désendettement'), T('Investissements'), T('Rendement du capital investi')]),
+    T('14. Analyse financière historique', '📈', [T('Chiffre d\'affaires'), T('Marges'), T('Bénéfices'), T('Cash-flow'), T('Dette'), T('Dilution'), T('ROIC / ROE'), T('Ratios financiers')]),
+    T('15. Qualité financière', '🔬', [T('Conversion des bénéfices en trésorerie'), T('Besoin en fonds de roulement'), T('Dépenses d\'investissement'), T('Solidité du bilan'), T('Cyclicité')]),
+    T('16. Valorisation', '💰', [T('Méthodes adaptées au secteur'), T('Hypothèses'), T('Scénario pessimiste'), T('Scénario central'), T('Scénario optimiste'), T('Valeur intrinsèque & marge de sécurité')]),
+    T('17. Wolf Score', '🐺', [T('Critères'), T('Notation'), T('Justification')]),
+    T('18. Conclusion', '✅', [T('Points forts'), T('Points faibles'), T('Risques majeurs'), T('Qualité globale'), T('À surveiller'), T('Thèse d\'investissement')]),
+    T('Actualités', '📰')]) },
   'wolf-chaine': { id: 'wolf-chaine', nom: 'Chaîne de valeur — 4 maillons', type: 'chaine', builtin: true, tree: T('', '', [
     T('Amont', '⛏️'), T('Transformation', '🏭'), T('Distribution', '🚚'), T('Services & aval', '🛒')]) },
   'vide': { id: 'vide', nom: 'Carte vide', type: 'libre', builtin: true, tree: T('', '', []) }
@@ -227,6 +242,23 @@ function deleteNode(nid){
   trash({ kind: 'node', docId: d.id, verId: v.id, parent: n.parent, index, data }, 'Branche « ' + (n.titre || 'sans titre') + ' »' + (ids.length > 1 ? ' (' + ids.length + ' nœuds)' : ''));
   touch(); renderMap();
 }
+// Copie complète d'une branche (sous-branches et contenu des fiches), insérée juste après l'originale. Les liens vers un dossier
+// d'entreprise ne sont pas recopiés (un dossier n'apparaît qu'une fois dans une chaîne).
+function duplicateNode(nid){
+  const v = ver(), src = v.nodes[nid]; if (!src || nid === v.root) return;
+  const copy = (id, parent, top) => {
+    const o = v.nodes[id], c = JSON.parse(JSON.stringify(o)); c.id = uid('n'); c.parent = parent; c.kids = []; delete c.link;
+    (c.blocks || []).forEach(b => { b.id = uid('b'); });
+    if (top){ c.titre = (o.titre || '').replace(/\s*\(à dupliquer ⧉\)/, '').replace(/\s+\d+$/, '') + ' ' + (v.nodes[o.parent].kids.length + 1); if (typeof c.y === 'number') c.y += 70; }
+    else if (typeof c.y === 'number') c.y += 70;
+    v.nodes[c.id] = c;
+    o.kids.forEach(k => { if (v.nodes[k] && !v.nodes[k].link) c.kids.push(copy(k, c.id, false)); });
+    return c.id;
+  };
+  const par = v.nodes[src.parent], id = copy(nid, src.parent, true);
+  par.kids.splice(par.kids.indexOf(nid) + 1, 0, id);
+  ui.sel = id; ui.pop = null; touch(); renderMap();
+}
 function addNode(parentId, o){
   const v = ver(), p = v.nodes[parentId]; if (!p) return null;
   const id = uid('n');
@@ -385,6 +417,7 @@ function nodeHtml(d, v, n){
     const i = isRoot ? -1 : v.nodes[n.parent].kids.indexOf(n.id);
     h += '<div class="at-actions"><button type="button" data-act="add" title="Nouvelle branche (Tab)">＋ Branche</button>' + (d.type === 'chaine' ? '<button type="button" data-act="addco" title="Rattacher un dossier d\'entreprise à ce maillon">＋ Entreprise</button>' : '') +
       '<button type="button" data-act="fiche" title="Ouvrir la fiche (double-clic)">📄 Fiche</button>' + (link ? '' : '<button type="button" data-act="rename" title="Renommer (F2)">✏</button>') + '<button type="button" data-act="style" title="Icône et couleur">🎨</button>' +
+      (isRoot || link ? '' : '<button type="button" data-act="dup" title="Dupliquer cette branche (structure et contenu)">⧉</button>') +
       (isRoot ? '' : (v.mode !== 'libre' ? '<button type="button" data-act="up"' + (i <= 0 ? ' disabled' : '') + '>↑</button><button type="button" data-act="down"' + (i >= v.nodes[n.parent].kids.length - 1 ? ' disabled' : '') + '>↓</button>' : '') + '<button type="button" data-act="del" title="Mettre à la corbeille (Suppr)">🗑</button>') + '</div>';
     if (ui.pop === 'style') h += '<div class="at-pop" data-nopan><div class="at-pop-colors">' + PALETTE.map(c => '<button type="button" class="at-dot' + (n.color === c ? ' on' : '') + '" style="background:' + c + '" data-color="' + c + '"></button>').join('') + '<button type="button" class="at-btn sm" data-color="">Auto</button></div>' +
       '<div class="at-pop-icons">' + ICONS.map(i2 => '<button type="button" data-icon="' + i2 + '">' + i2 + '</button>').join('') + '<button type="button" data-icon="">∅</button></div></div>';
@@ -528,6 +561,7 @@ function nodeAction(act, id){
   if (act === 'rename'){ ui.editing = id; ui.pop = null; return renderMap(); }
   if (act === 'style' || act === 'addco'){ ui.pop = ui.pop === act ? null : act; return renderMap(); }
   if (act === 'del') return deleteNode(id);
+  if (act === 'dup') return duplicateNode(id);
   if (act === 'up' || act === 'down'){ const ks = v.nodes[n.parent].kids, i = ks.indexOf(id), j = i + (act === 'up' ? -1 : 1); if (j < 0 || j >= ks.length) return; ks.splice(i, 1); ks.splice(j, 0, id); touch(); return renderMap(); }
 }
 function wireMap(){
