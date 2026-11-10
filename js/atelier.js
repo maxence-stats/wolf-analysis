@@ -56,6 +56,9 @@ const BUILTIN = {
 
 /* ---------- état ---------- */
 let D = null, serverOk = false, loadErr = null, storeFile = '';
+// RO = site public (aucun serveur local) : copie publiée, lecture seule. Rien ne s'enregistre, aucun outil de modification.
+let RO = false, publishedAt = null;
+const isRo = () => ui.video || RO;
 let dirty = false, saving = false, saveTimer = null, lastSaved = null, saveErr = null, conflict = false, pendingDeleted = [];
 const ui = { docId: null, sel: null, video: false, fiche: null, draw: null, modal: null, toast: null, side: true, q: '', open: {}, editing: null, pop: null };
 const cam = { x: 0, y: 0, k: 1 };
@@ -67,7 +70,7 @@ const uid = p => (p || 'n') + Date.now().toString(36) + Math.random().toString(3
 const today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 const frDate = iso => { if (!iso) return ''; const p = String(iso).slice(0, 10).split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : iso; };
 const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
-const mediaUrl = f => '/api/atelier/media?f=' + encodeURIComponent(f);
+const mediaUrl = f => RO ? 'data/public/media/' + encodeURIComponent(f) : '/api/atelier/media?f=' + encodeURIComponent(f);
 const sectors = () => (typeof GICS_SECTORS !== 'undefined' ? GICS_SECTORS : []);
 const sectorLabel = k => { const s = sectors().find(x => x.key === k); return s ? s.label : ''; };
 function sectorKeyFromText(txt){
@@ -132,7 +135,16 @@ function findCompany(name){
 /* ---------- persistance ---------- */
 async function load(){
   try { const p = await fetch('/api/ia/ping', { cache: 'no-store' }); const j = await p.json(); serverOk = !!(j && j.ok && j.v >= 12); } catch(e){ serverOk = false; }
-  if (!serverOk){ D = null; return; }
+  if (!serverOk){
+    // pas de serveur local (téléphone, autre ordinateur) : on lit la copie publiée sur le site
+    try {
+      const r = await fetch('data/public/atelier.json?_=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) throw new Error('aucune copie publiée');
+      D = await r.json(); D.docs = D.docs || {}; D.templates = {}; D.trash = [];
+      RO = true; serverOk = true; loadErr = null; publishedAt = D.publishedAt || null;
+    } catch(e){ D = null; }
+    return;
+  }
   try {
     const r = await fetch('/api/store/load?name=atelier', { cache: 'no-store' }); const j = await r.json();
     if (!j.ok) throw new Error(j.error || 'lecture impossible');
@@ -143,6 +155,7 @@ async function load(){
   } catch(e){ loadErr = e.message; D = null; }
 }
 function markDirty(){
+  if (RO) return;
   dirty = true; saveErr = null; statusLabel();
   clearTimeout(saveTimer); saveTimer = setTimeout(save, 700);
 }
@@ -165,6 +178,7 @@ async function save(keepalive){
 function statusLabel(){
   const el = $('atStatus'); if (!el) return;
   let t, c = '';
+  if (RO){ el.textContent = '🌐 Lecture seule' + (publishedAt ? ' · publié le ' + frDate(publishedAt) : ''); el.className = 'at-status wait'; return; }
   if (conflict){ t = '⚠ Modifié dans un autre onglet'; c = 'err'; }
   else if (saveErr){ t = '⚠ Non enregistré : ' + saveErr + ' (nouvel essai…)'; c = 'err'; }
   else if (saving || dirty){ t = '… enregistrement'; c = 'wait'; }
@@ -278,11 +292,11 @@ function renderShell(){
   charts.forEach(c => { try { c.destroy(); } catch(e){} }); charts = [];
   if (!serverOk || !D){
     pg.innerHTML = '<div class="at-off"><h2>🗂 Atelier d\'analyses</h2><p>' + (loadErr ? 'Lecture impossible : ' + esc(loadErr) : 'Le serveur local ne répond pas, ou c\'est une ancienne version.') +
-      '</p><p>Ferme l\'appli puis relance le raccourci Bureau <b>« Wolf Analysis »</b>. Rien n\'est modifiable tant que la sauvegarde sur le disque n\'est pas disponible : aucune donnée ne reste seulement en mémoire.</p><button type="button" class="at-btn gold" id="atRetry">Réessayer</button></div>';
+      '</p><p>Ferme l\'appli puis relance le raccourci Bureau <b>« Wolf Analysis »</b>. Rien n\'est modifiable tant que la sauvegarde sur le disque n\'est pas disponible : aucune donnée ne reste seulement en mémoire.</p><p class="at-faint">Sur un téléphone ou un autre ordinateur : aucune analyse n\'a encore été publiée en ligne (bouton « 🌐 Publier en ligne » sur le PC).</p><button type="button" class="at-btn gold" id="atRetry">Réessayer</button></div>';
     $('atRetry').onclick = onShow.bind(null, true); return;
   }
   const d = doc();
-  pg.className = 'page active at-page' + (ui.video ? ' at-video' : '') + (ui.side ? '' : ' at-noside');
+  pg.className = 'page active at-page' + (ui.video ? ' at-video' : '') + (ui.side ? '' : ' at-noside') + (RO ? ' at-ro' : '');
   pg.innerHTML = (conflict ? '<div class="at-conflict">⚠ Ce fichier a été modifié depuis un autre onglet : tes dernières modifications ici ne sont pas enregistrées. <button type="button" class="at-btn" id="atReload">Recharger la dernière version</button></div>' : '') +
     '<div class="at-layout"><aside class="at-side" id="atSide">' + sideHtml() + '</aside><section class="at-main" id="atMain">' + (d ? mainHtml(d) : homeHtml()) + '</section></div>' +
     '<div id="atFicheHost"></div><div id="atModalHost"></div>';
@@ -351,7 +365,8 @@ function crumbHtml(d){
     parts.push('<button type="button" class="at-crumb" data-open="' + cd.id + '">🔗 ' + esc(cd.titre) + '</button>');
     if (mail && mail.id !== cv.root) parts.push(esc(mail.titre));
   }
-  return parts.length ? parts.join(' › ') : '<span class="at-faint">Non rangé — ⚙ pour choisir un secteur</span>';
+  const chip = d.type === 'entreprise' && window.PRIX_UI ? window.PRIX_UI.chip(d.titre) : '';
+  return (parts.length ? parts.join(' › ') : '<span class="at-faint">' + (RO ? '' : 'Non rangé — ⚙ pour choisir un secteur') + '</span>') + chip;
 }
 function mainHtml(d){
   const v = ver(d);
@@ -368,7 +383,7 @@ function mainHtml(d){
     '<button type="button" class="at-btn sm" data-props title="Nom, secteur, logo, version">⚙</button><button type="button" class="at-btn sm gold" data-video title="Masque tout l\'habillage pour la vidéo">🎬 Mode vidéo</button></div>' + drawBar +
     '<div class="at-view' + (ui.draw ? ' drawing' : '') + '" id="atView"><div class="at-world" id="atWorld"><svg class="at-svg" id="atSvg"><g id="atStrokes"></g><g id="atEdges"></g></svg><div id="atNodes"></div></div>' +
     '<div class="at-vbar"><button type="button" data-zoom="-1">−</button><button type="button" data-fit>⤢</button><button type="button" data-zoom="1">＋</button>' + (ui.video ? '<button type="button" data-exp="0" title="Tout replier">⏮</button><button type="button" class="gold" data-video>✕ Quitter le mode vidéo</button>' : '') + '</div>' +
-    '<div class="at-hint">' + (ui.video ? 'Clic sur une branche : elle se déplie · 📄 : ouvre la fiche · F : vue d\'ensemble' : 'Clic : sélectionner · Double-clic : ouvrir la fiche · Tab : nouvelle branche · Entrée : même niveau · F2 : renommer · Suppr : corbeille') + '</div></div>';
+    '<div class="at-hint">' + (isRo() ? 'Clic sur une branche : elle se déplie · 📄 : ouvre la fiche · F : vue d\'ensemble' : 'Clic : sélectionner · Double-clic : ouvrir la fiche · Tab : nouvelle branche · Entrée : même niveau · F2 : renommer · Suppr : corbeille') + '</div></div>';
 }
 
 /* ====================== CARTE MENTALE ====================== */
@@ -413,7 +428,7 @@ function nodeHtml(d, v, n){
   if (nb) h += '<button type="button" class="at-badge" data-act="fiche" title="Ouvrir la fiche (' + nb + ' contenu' + (nb > 1 ? 's' : '') + ')">📄 ' + nb + '</button>';
   if (link) h += '<button type="button" class="at-badge" data-act="golink" title="Ouvrir le dossier de cette entreprise">📁</button>';
   if (n.kids.length) h += '<button type="button" class="at-chev" data-act="toggle" title="' + (n.collapsed ? 'Déplier' : 'Replier') + '">' + (n.collapsed ? '＋' + hidden : '−') + '</button>';
-  if (ui.sel === n.id && !ui.video && !ui.draw && ui.editing !== n.id){
+  if (ui.sel === n.id && !isRo() && !ui.draw && ui.editing !== n.id){
     const i = isRoot ? -1 : v.nodes[n.parent].kids.indexOf(n.id);
     h += '<div class="at-actions"><button type="button" data-act="add" title="Nouvelle branche (Tab)">＋ Branche</button>' + (d.type === 'chaine' ? '<button type="button" data-act="addco" title="Rattacher un dossier d\'entreprise à ce maillon">＋ Entreprise</button>' : '') +
       '<button type="button" data-act="fiche" title="Ouvrir la fiche (double-clic)">📄 Fiche</button>' + (link ? '' : '<button type="button" data-act="rename" title="Renommer (F2)">✏</button>') + '<button type="button" data-act="style" title="Icône et couleur">🎨</button>' +
@@ -582,7 +597,7 @@ function wireMap(){
     if (ui.draw){ const p = world(e); drag = { kind: 'draw', pts: [p] }; try { view.setPointerCapture(e.pointerId); } catch(err){ /* pointeur déjà relâché */ } return; }
     const nel = e.target.closest('.at-node');
     drag = { kind: nel ? 'node' : 'pan', id: nel && nel.dataset.id, sx: e.clientX, sy: e.clientY, cx: cam.x, cy: cam.y, moved: false };
-    if (nel && v.mode === 'libre' && !ui.video){ const ids = [drag.id].concat(descendants(v, drag.id)); drag.start = ids.map(i => ({ n: v.nodes[i], x: v.nodes[i].x, y: v.nodes[i].y })); }
+    if (nel && v.mode === 'libre' && !isRo()){ const ids = [drag.id].concat(descendants(v, drag.id)); drag.start = ids.map(i => ({ n: v.nodes[i], x: v.nodes[i].x, y: v.nodes[i].y })); }
     try { view.setPointerCapture(e.pointerId); } catch(err){ /* pointeur déjà relâché */ }
   });
   view.addEventListener('pointermove', e => {
@@ -606,11 +621,11 @@ function wireMap(){
     if (g.moved){ if (g.kind === 'node' && g.start) touch(); return; }
     if (g.kind === 'pan'){ if (ui.sel || ui.pop){ ui.sel = null; ui.pop = null; renderMap(); } return; }
     const n = v.nodes[g.id]; if (!n) return;
-    if (ui.video){ if (n.kids.length) toggle(n.id); else if (n.link) openDoc(n.link); else openFiche(n.id); return; }
+    if (isRo()){ if (n.kids.length) toggle(n.id); else if (n.link) openDoc(n.link); else openFiche(n.id); return; }
     if (ui.sel !== n.id || ui.pop){ ui.sel = n.id; ui.pop = null; renderMap(); }
   };
   view.addEventListener('pointerup', up); view.addEventListener('pointercancel', up);
-  view.addEventListener('dblclick', e => { const nel = e.target.closest('.at-node'); if (nel && !ui.video && !ui.draw && !e.target.closest('button,[contenteditable="true"],[data-nopan]')) openFiche(nel.dataset.id); });
+  view.addEventListener('dblclick', e => { const nel = e.target.closest('.at-node'); if (nel && !isRo() && !ui.draw && !e.target.closest('button,[contenteditable="true"],[data-nopan]')) openFiche(nel.dataset.id); });
   view.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     const nel = b.closest('.at-node'), id = nel && nel.dataset.id, v = ver();
@@ -632,7 +647,7 @@ document.addEventListener('keydown', e => {
   if (ui.fiche || ui.modal || e.ctrlKey || e.metaKey || e.altKey) return;
   const v = ver();
   if (e.key === 'f' || e.key === 'F'){ e.preventDefault(); return fitAll(true); }
-  if (ui.video || !ui.sel || !v.nodes[ui.sel]) return;
+  if (isRo() || !ui.sel || !v.nodes[ui.sel]) return;
   const n = v.nodes[ui.sel];
   if (e.key === 'Tab'){ e.preventDefault(); nodeAction('add', n.id); }
   else if (e.key === 'Enter'){ e.preventDefault(); nodeAction('add', n.parent || n.id); }
@@ -645,7 +660,7 @@ document.addEventListener('keydown', e => {
 function ficheNode(){ const v = ver(); return v && ui.fiche ? v.nodes[ui.fiche] : null; }
 function openFiche(id){
   const v = ver(), n = v.nodes[id]; if (!n) return;
-  if (n.link && D.docs[n.link] && ui.video) return openDoc(n.link);
+  if (n.link && D.docs[n.link] && isRo()) return openDoc(n.link);
   const el = els[id]; ui.ficheFrom = el ? el.getBoundingClientRect() : null;
   ui.fiche = id; ui.sel = id; ui.pop = null; renderFiche(true);
 }
@@ -678,7 +693,7 @@ function blockHtml(b, i, n, ro){
 }
 function renderFiche(animate){
   const host = $('atFicheHost'), d = doc(), v = ver(), n = ficheNode(); if (!host || !n){ if (host) host.innerHTML = ''; return; }
-  const ro = ui.video, link = n.link && D.docs[n.link], titre = link ? link.titre : n.titre, sc = host.querySelector('.at-fiche-body'), st = sc ? sc.scrollTop : 0;
+  const ro = isRo(), link = n.link && D.docs[n.link], titre = link ? link.titre : n.titre, sc = host.querySelector('.at-fiche-body'), st = sc ? sc.scrollTop : 0;
   charts.forEach(c => { try { c.destroy(); } catch(e){} }); charts = [];
   host.innerHTML = '<div class="at-fiche' + (animate ? '' : ' on') + (ro ? ' ro' : '') + '" style="--c:' + colorOf(v, n) + '"><div class="at-fiche-in"><header class="at-fiche-head">' +
     (n.id === v.root ? docLogo(d, 44) : (n.icon ? '<span class="at-fiche-ico">' + esc(n.icon) + '</span>' : '')) + '<div><small>' + esc([d.titre].concat(pathTo(v, n).slice(1)).join(' › ')) + '</small><h2>' + (esc(titre) || 'Sans titre') + '</h2></div>' +
@@ -693,7 +708,7 @@ function renderFiche(animate){
   n.blocks.forEach(b => { if (b.type === 'tv') refreshTv(b); if (b.type === 'graph') drawGraph(b); });
 }
 function flushFiche(){
-  const n = ficheNode(), host = $('atFicheHost'); if (!n || !host || ui.video) return;
+  const n = ficheNode(), host = $('atFicheHost'); if (!n || !host || isRo()) return;
   let ch = false;
   host.querySelectorAll('.at-block').forEach(el => { const b = n.blocks.find(x => x.id === el.dataset.b), t = el.querySelector('.at-text[contenteditable]'); if (b && t){ const h = clean(t.innerHTML); if (h !== (b.html || '')){ b.html = h; ch = true; } } });
   if (ch) touch();
@@ -718,7 +733,7 @@ function wireFiche(f, n){
   const bOf = el => { const a = el.closest('.at-block'); return a && n.blocks.find(x => x.id === a.dataset.b); };
   f.addEventListener('click', e => {
     if (e.target === f) return closeFiche();
-    const im = e.target.closest('[data-light]'); if (im && (ui.video || !e.target.closest('button'))) return openLight(im.dataset.light);
+    const im = e.target.closest('[data-light]'); if (im && (isRo() || !e.target.closest('button'))) return openLight(im.dataset.light);
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.fclose !== undefined) return closeFiche();
     if (b.dataset.golink !== undefined) return openDoc(n.link);
@@ -751,15 +766,15 @@ function wireFiche(f, n){
   f.addEventListener('change', e => { const t = e.target, blk = bOf(t); if (blk && t.dataset.metric !== undefined){ blk.metric = t.value; touch(); drawGraph(blk); } });
   f.addEventListener('focusout', e => { if (e.target.classList && e.target.classList.contains('at-text')) flushFiche(); });
   f.addEventListener('paste', e => {
-    if (ui.video) return;
+    if (isRo()) return;
     const files = [...((e.clipboardData && e.clipboardData.files) || [])].filter(x => x.type.startsWith('image/'));
     const blk = bOf(e.target);
     if (files.length){ e.preventDefault(); addImages(files, blk && blk.type !== 'tv' && blk.type !== 'graph' ? blk.id : null); return; }
     if (e.target.closest && e.target.closest('.at-text')){ e.preventDefault(); document.execCommand('insertText', false, (e.clipboardData || window.clipboardData).getData('text/plain')); }
   });
-  f.addEventListener('dragover', e => { if (!ui.video && e.dataTransfer && [...e.dataTransfer.types].includes('Files')){ e.preventDefault(); f.classList.add('drop'); } });
+  f.addEventListener('dragover', e => { if (!isRo() && e.dataTransfer && [...e.dataTransfer.types].includes('Files')){ e.preventDefault(); f.classList.add('drop'); } });
   f.addEventListener('dragleave', () => f.classList.remove('drop'));
-  f.addEventListener('drop', e => { f.classList.remove('drop'); if (ui.video) return; const files = [...(e.dataTransfer ? e.dataTransfer.files : [])].filter(x => x.type.startsWith('image/')); if (files.length){ e.preventDefault(); const blk = bOf(e.target); addImages(files, blk && blk.type !== 'tv' && blk.type !== 'graph' ? blk.id : null); } });
+  f.addEventListener('drop', e => { f.classList.remove('drop'); if (isRo()) return; const files = [...(e.dataTransfer ? e.dataTransfer.files : [])].filter(x => x.type.startsWith('image/')); if (files.length){ e.preventDefault(); const blk = bOf(e.target); addImages(files, blk && blk.type !== 'tv' && blk.type !== 'graph' ? blk.id : null); } });
 }
 function pickImages(blockId){
   const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/png,image/jpeg,image/webp,image/gif'; inp.multiple = true;
@@ -883,6 +898,7 @@ function wireShell(){
     const ds = b.dataset;
     if (b.id === 'atReload'){ load().then(() => { if (ui.docId && !(D && D.docs[ui.docId])) ui.docId = null; renderShell(); if (doc()) requestAnimationFrame(() => fitAll(false)); }); return; }
     if (ds.home !== undefined){ ui.docId = null; return renderShell(); }
+    if (ds.goprix !== undefined){ if (window.PRIX_UI) window.PRIX_UI.show(ds.goprix); return; }
     if (ds.open) return openDoc(ds.open);
     if (ds.new !== undefined){ ui.modal = { kind: 'new', type: ds.new || 'entreprise' }; return renderModal(); }
     if (ds.tog){ ui.open[ds.tog] = ui.open[ds.tog] === false; $('atSide').innerHTML = sideHtml(); statusLabel(); return wireSearch(); }
@@ -918,5 +934,22 @@ async function onShow(force){
   if (doc()) requestAnimationFrame(() => fitAll(false));
 }
 document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-page="' + PAGE_ID + '"]'); if (b) setTimeout(onShow, 0); });
-window.ATELIER_UI = { onShow, _state: () => ({ D, ui, cam, pos, sizes }) };
+// Ouvre le dossier d'une entreprise (créé avec le modèle d'analyse s'il n'existe pas encore) — appelé par la liste de prix.
+async function openFor(name, o){
+  if (!D) await load();
+  if (!D) return;
+  let d = Object.values(D.docs).find(x => x.type === 'entreprise' && norm(x.titre) === norm(name));
+  if (!d){ if (RO) return; d = createDoc({ type: 'entreprise', titre: name, tpl: 'wolf-entreprise', secteur: (o && o.secteur) || '', sousSecteur: (o && o.sousSecteur) || '', logo: (o && o.logo) || '' }); }
+  if (typeof switchPage === 'function') switchPage(PAGE_ID);
+  openDoc(d.id);
+}
+// Copie destinée au site public : tout sauf la corbeille. Liste des images réellement utilisées.
+async function snapshot(){
+  if (!D || RO) await load();
+  if (!D || RO) return null;
+  const media = new Set();
+  Object.values(D.docs).forEach(d => d.versions.forEach(v => Object.values(v.nodes).forEach(n => (n.blocks || []).forEach(b => (b.imgs || []).forEach(i => media.add(i.f))))));
+  return { data: { version: 1, publishedAt: new Date().toISOString(), docs: D.docs }, media: [...media] };
+}
+window.ATELIER_UI = { onShow, openFor, snapshot, hasDoc: name => !!(D && Object.values(D.docs).some(x => x.type === 'entreprise' && norm(x.titre) === norm(name))), _state: () => ({ D, ui, cam, pos, sizes, RO }) };
 })();

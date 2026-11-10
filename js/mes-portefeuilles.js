@@ -294,6 +294,8 @@ const CCYS = ['EUR', 'USD', 'CAD', 'GBP', 'GBX', 'CHF', 'SEK', 'DKK', 'NOK', 'JP
 const PALETTE = ['#D9A441', '#4A9FE0', '#F0C877', '#2F7DBF', '#B8862E', '#7FBFEF', '#8C6A2A', '#9AD0F5', '#E8B860', '#3E6E99', '#C9A35E', '#5B8DB8'];
 
 let D = null, serverOk = false, storeFile = '', loadErr = null;
+// RO = site public (aucun serveur local) : seule la copie publiée du Wolf Portfolio est lue, en lecture seule.
+let RO = false, publishedAt = null, rawHist = {};
 let S = {};
 let histErr = {}, histLoading = false, histAt = null;
 let ui = { acc: 'pea', period: { k: 'all' }, modal: null, delConfirm: null, msg: null, showAllOps: false, includeOpen: false, saving: false };
@@ -340,7 +342,16 @@ function logoHtml(sym, size){
 /* ---------- persistance ---------- */
 async function load(){
   try { const p = await fetch('/api/ia/ping', { cache: 'no-store' }); const j = await p.json(); serverOk = !!(j && j.ok && j.v >= 9); } catch(e){ serverOk = false; }
-  if (!serverOk){ D = null; return; }
+  if (!serverOk){
+    try {
+      const r = await fetch('data/public/portefeuille-wolf.json?_=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) throw new Error('aucune copie publiée');
+      const j = await r.json();
+      D = j.D; S = {}; Object.keys(j.hist || {}).forEach(k => { S[k] = Object.assign(E.makeSeries(j.hist[k]), { name: j.hist[k].name }); });
+      RO = true; serverOk = true; loadErr = null; publishedAt = j.at || null; histAt = new Date(j.at || Date.now()); histErr = {}; ui.acc = 'wolf';
+    } catch(e){ D = null; }
+    return;
+  }
   try {
     const r = await fetch('/api/store/load?name=portefeuilles', { cache: 'no-store' }); const j = await r.json();
     if (!j.ok) throw new Error(j.error || 'lecture impossible');
@@ -351,6 +362,7 @@ async function load(){
   } catch(e){ loadErr = e.message; D = null; }
 }
 async function save(deleted){
+  if (RO) throw new Error('Lecture seule : cette page est la copie publiée.');
   if (!serverOk || !D) throw new Error('Serveur local injoignable : rien n\'a été enregistré.');
   const body = Object.assign({}, D, { revision: (D.revision || 0) + 1, baseRevision: D.revision || 0, deleted: deleted || [], savedAt: new Date().toISOString() });
   const r = await fetch('/api/store/save?name=portefeuilles', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Wolf-IA': '1' }, body: JSON.stringify(body) });
@@ -366,14 +378,14 @@ function neededSymbols(){
   return [...syms];
 }
 async function loadHistory(fresh){
-  if (!D) return;
+  if (!D || RO) return;
   histLoading = true; render();
   const first = Object.values(D.accounts).flatMap(a => a.ops.map(o => o.date)).sort()[0] || D.config.debut;
   try {
     const r = await fetch('/api/tv/history?symbols=' + encodeURIComponent(neededSymbols().join(',')) + '&from=' + E.addDays(first, -40) + (fresh ? '&fresh=1' : ''), { cache: 'no-store' });
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || 'historique indisponible');
-    Object.keys(j.data).forEach(k => { S[k] = Object.assign(E.makeSeries(j.data[k]), { name: j.data[k].name }); });
+    Object.keys(j.data).forEach(k => { rawHist[k] = j.data[k]; S[k] = Object.assign(E.makeSeries(j.data[k]), { name: j.data[k].name }); });
     histErr = j.errors || {}; histAt = new Date();
     const retry = Object.keys(histErr).filter(k => !/symbol_error|cours du/.test(histErr[k]));
     if (retry.length && !fresh && !loadHistory._retried){ loadHistory._retried = true; setTimeout(() => loadHistory(true), 15000); }
@@ -431,6 +443,7 @@ function render(){
   if (!page || !page.classList.contains('active')) return;
   closeZoom();
   Object.values(charts).forEach(c => { try { c.destroy(); } catch(e){} }); charts = {};
+  if (!serverOk && location.protocol === 'https:'){ page.innerHTML = `<div class="mp-card mp-empty">Le Wolf Portfolio n'a pas encore été publié en ligne.</div>`; return; }
   if (!serverOk){ page.innerHTML = titleHtml() + `<div class="mp-banner err">⚠ Le serveur local n'est pas à jour ou pas lancé. Ferme la fenêtre du serveur puis relance le raccourci <b>« Wolf Analysis »</b> du Bureau.</div>`; return; }
   if (loadErr || !D){ page.innerHTML = titleHtml() + `<div class="mp-banner err">⚠ Fichier illisible (${esc(loadErr)}) : aucune écriture ne sera faite.</div>`; return; }
   const locked = isLockedAcc(ui.acc);
@@ -453,7 +466,7 @@ function render(){
       + `<div class="mp-grid mp-grid-eq"><div class="mp-card">${monthsHtml(c)}</div><div class="mp-card">${statsHtml(c)}</div></div>`
       + `<div class="mp-card">${journalHtml()}</div>`;
   }
-  page.innerHTML = `<div class="mp${locked ? ' mp-locked' : ''}">${titleHtml()}${accountCardsHtml()}${body}</div>` + (ui.modal ? `<div class="mp-modal-bg" id="mpModalBg"><div class="mp-modal" id="mpModal">${modalHtml()}</div></div>` : '');
+  page.innerHTML = `<div class="mp${locked ? ' mp-locked' : ''}${RO ? ' mp-ro' : ''}">${titleHtml()}${accountCardsHtml()}${body}</div>` + (ui.modal ? `<div class="mp-modal-bg" id="mpModalBg"><div class="mp-modal" id="mpModal">${modalHtml()}</div></div>` : '');
   wire();
   if (c && histAt && typeof Chart !== 'undefined'){ drawPerfChart(c); drawDonut(c, locked); }
   if (ui.modal) wireModal();
@@ -461,7 +474,7 @@ function render(){
 function titleHtml(){
   const nErr = Object.keys(histErr).length;
   return `<div class="mp-title"><div><div class="section-label" style="margin:0;">📒 Mes portefeuilles</div>
-      <p>Fichier sur ton PC, sauvegardé à chaque saisie (copies datées + copie dans Documents) · cours TradingView</p></div>
+      <p>${RO ? 'Wolf Portfolio · copie publiée le ' + (publishedAt ? new Date(publishedAt).toLocaleDateString('fr-FR') + ' à ' + new Date(publishedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '') + ' · lecture seule' : 'Fichier sur ton PC, sauvegardé à chaque saisie (copies datées + copie dans Documents) · cours TradingView'}</p></div>
     <div class="mp-title-right">${histLoading ? '<span class="mp-pill">⏳ Cours TradingView…</span>' : histAt ? `<span class="mp-pill">Cours de ${histAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : ''}
       ${nErr ? `<span class="mp-pill warn" title="${esc(Object.keys(histErr).join(', '))}">⚠ ${nErr} cours manquant(s)</span>` : ''}
       <button class="mp-ghost" data-mp-refresh title="Relire les cours TradingView">↻ Cours</button></div></div>
@@ -485,7 +498,7 @@ function toolbarHtml(){
     + `<select class="mp-year-sel ${P.k === 'y' ? 'active' : ''}" data-mp-yearsel><option value="">Année…</option>${years.map(y => `<option value="${y}" ${P.k === 'y' && P.year === +y ? 'selected' : ''}>${y}</option>`).join('')}</select>`
     + b('custom', 'Période…')
     + (P.k === 'custom' ? `<span class="mp-custom">du <input type="date" data-mp-from value="${esc(P.from || '')}"> au <input type="date" data-mp-to value="${esc(P.to || E.isoToday())}"> <button class="mp-ghost" data-mp-applyrange>OK</button></span>` : '');
-  const canAdd = ui.acc !== 'perso' && !isLockedAcc(ui.acc);
+  const canAdd = ui.acc !== 'perso' && !isLockedAcc(ui.acc) && !RO;
   const quick = canAdd ? ['BUY', 'SELL', 'DIV', 'DEPOT'].map(t => `<button class="mp-quick mp-q-${t}" data-mp-add="${t}"><span>${TYPE_ICON[t]}</span>${TYPE_LABEL[t]}</button>`).join('')
     + `<button class="mp-quick" data-mp-add="RETRAIT">Autre…</button>` : `<span class="mp-hint">Pour saisir, choisis le PEA ou le CTO.</span>`;
   return `<div class="mp-toolbar"><div class="mp-seg">${ys}</div><div class="mp-quicks">${quick}</div></div>`;
@@ -995,5 +1008,21 @@ document.addEventListener('click', e => {
   const b = e.target.closest && e.target.closest('[data-page="' + PAGE_ID + '"]');
   if (b) setTimeout(onShow, 0);
 });
-window.MP_UI = { onShow, render, reload: async () => { await load(); await loadHistory(); }, _state: () => ({ D, S, histErr, ui }) };
+// Copie destinée au site public : UNIQUEMENT le Wolf Portfolio (opérations, titres et cours qu'il utilise). Les opérations du
+// PEA et du CTO, la corbeille et les titres qui ne sont qu'en PEA / CTO ne quittent jamais le PC.
+async function publicSnapshot(){
+  if (RO) return null;
+  await load(); if (!D) return null;
+  await loadHistory();
+  const wolf = D.accounts.wolf || { label: 'Wolf Portfolio', ops: [] };
+  const syms = new Set([D.config.cac || 'EURONEXT:PX1', D.config.spx || 'SP:SPX', 'FX_IDC:EURUSD']);
+  wolf.ops.forEach(o => { if (o.symbol) syms.add(o.symbol); });
+  [...syms].forEach(s => { const c = symCcy(s).toUpperCase(); if (c !== 'EUR' && !s.startsWith('FX_IDC:')) syms.add('FX_IDC:EUR' + (c === 'GBX' ? 'GBP' : c)); });
+  const symbols = {}; wolf.ops.forEach(o => { if (o.symbol && D.symbols[o.symbol]) symbols[o.symbol] = D.symbols[o.symbol]; });
+  const hist = {}; [...syms].forEach(s => { if (rawHist[s]) hist[s] = rawHist[s]; });
+  const ops = wolf.ops.map(o => { const c = Object.assign({}, o); delete c.linkedTo; delete c.note; return c; });
+  return { version: 1, at: new Date().toISOString(), hist,
+    D: { version: 1, revision: 0, config: D.config, symbols, accounts: { pea: { label: 'PEA', ops: [] }, cto: { label: 'CTO', ops: [] }, wolf: { label: wolf.label || 'Wolf Portfolio', ops, public: true } }, trash: [] } };
+}
+window.MP_UI = { onShow, render, publicSnapshot, reload: async () => { await load(); await loadHistory(); }, _state: () => ({ D, S, histErr, ui }) };
 })();

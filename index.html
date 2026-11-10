@@ -4,10 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Wolf Analysis</title>
+<!-- Appli installable sur téléphone (2026-11-10) : icône sur l'écran d'accueil, plein écran. Pas de service worker : aucune
+     mise en cache en plus, le site reste toujours à jour (voir js/publier.js). -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0D1013">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Wolf Analysis">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<link rel="stylesheet" href="css/style.css?v=20261110a">
+<link rel="stylesheet" href="css/style.css?v=20261110d">
 </head>
 <body>
 <div class="wrap">
@@ -42,7 +52,7 @@
     <div class="active-company-label" id="activeCompanyLabel"></div>
     <div class="sync-status">
       <span class="sync-dot" id="syncDot"></span>
-      <span id="syncLabel">Connexion au Google Sheet…</span>
+      <span id="syncLabel">Chargement des données…</span>
       <button class="refresh-btn" id="refreshBtn">↻ Mettre à jour</button>
     </div>
   </div>
@@ -50,11 +60,11 @@
 
   <div id="loadingScreen">
     <div class="spinner"></div>
-    <p>Récupération des données en direct depuis le Google Sheet…</p>
+    <p>Chargement des données…</p>
   </div>
 
   <div id="errorScreen" style="display:none;">
-    <h3>Impossible de lire le Google Sheet</h3>
+    <h3>Impossible de charger les données</h3>
     <p id="errorDetail">Vérifie que le fichier est bien publié sur le web pour l'onglet « DATA BASE 20 ans », via <code>Fichier → Partager → Publier sur le web</code> (choisis bien cet onglet précis, pas "Document entier"), avec le format CSV.</p>
     <p><button class="refresh-btn" onclick="loadData()">↻ Mettre à jour</button></p>
   </div>
@@ -66,6 +76,7 @@
       <button class="page-nav-btn" data-page="pageMesPortefeuilles" data-group="portfolio">💼 Portefeuille</button>
       <button class="page-nav-btn" data-page="pageSecteur" data-group="screener">🔍 Screener</button>
       <button class="page-nav-btn" data-page="pageAtelier">🗂 Atelier d'analyses</button>
+      <button class="page-nav-btn" data-page="pagePrix">🎯 Prix par secteur</button>
       <button class="page-nav-btn" data-page="pageCerveau">Cerveau numérique</button>
       <button class="page-nav-btn" data-page="pageAlertes">Alertes</button>
       <button class="page-nav-btn" data-page="pageIdees">Idées</button>
@@ -698,6 +709,9 @@
 
     <!-- Atelier d'analyses (2026-11-10) : cartes mentales interactives, voir js/atelier.js -->
     <div id="pageAtelier" class="page"></div>
+
+    <!-- Prix par secteur (2026-11-10) : voir js/liste-prix.js -->
+    <div id="pagePrix" class="page"></div>
 
     <div id="pagePerso" class="page">
       <div class="section-label">Portefeuille Perso — PEA &amp; CTO</div>
@@ -1813,11 +1827,13 @@
   </div>
 </div>
 
-<script src="js/app.js?v=20261110a"></script>
+<script src="js/app.js?v=20261110d"></script>
 <script src="js/portefeuille-ia.js?v=20260920g"></script>
-<script src="js/mes-portefeuilles.js?v=20261110a"></script>
+<script src="js/mes-portefeuilles.js?v=20261110d"></script>
 <script src="js/valo-multiples.js?v=20261108d"></script>
-<script src="js/atelier.js?v=20261110c"></script>
+<script src="js/liste-prix.js?v=20261110d"></script>
+<script src="js/atelier.js?v=20261110d"></script>
+<script src="js/publier.js?v=20261110d"></script>
 <script src="js/stylo.js?v=20261110a"></script>
 </body>
 </html>

@@ -70,7 +70,12 @@ else { $extBackup = "" }
 # « Mes portefeuilles » : un fichier JSON par nom autorise, memes protections que le Portefeuille IA
 # (revision, ecriture atomique, copies datees, copie hors projet, aucune operation effacee sans declaration).
 if ($StoreDir -ne ""){ $storeDirPath = [System.IO.Path]::GetFullPath($StoreDir) } else { $storeDirPath = Join-Path $root "data\mes-portefeuilles" }
-$storeNames = @("portefeuilles", "multiples", "objectifs", "atelier")
+$storeNames = @("portefeuilles", "multiples", "objectifs", "atelier", "prix")
+# Publication en ligne (2026-11-10) : copies en LECTURE SEULE servies par le site public (GitHub Pages) quand il n'y a pas de
+# serveur local. Une instance de test ecrit dans son propre dossier et ne lance JAMAIS git.
+if ($testInstance){ $publicDir = Join-Path $storeDirPath "public-test" } else { $publicDir = Join-Path $root "data\public" }
+$publicNames = @("portefeuille-wolf.json", "atelier.json", "prix.json")
+$maxPublic = 40MB
 # Atelier d'analyses (2026-11-10) : images dans un dossier a part (jamais supprimees par le serveur), cache TradingView.
 $atelierMedia = Join-Path $storeDirPath "atelier-media"
 $tvCacheDir = Join-Path $storeDirPath "cache-tv"
@@ -89,7 +94,7 @@ Write-Host "Serving $root on http://localhost:$port/  (IA dir: $iaDirPath, store
 $mime = @{
   ".html" = "text/html"; ".htm" = "text/html"; ".css" = "text/css"; ".js" = "application/javascript";
   ".json" = "application/json"; ".png" = "image/png"; ".jpg" = "image/jpeg"; ".jpeg" = "image/jpeg";
-  ".svg" = "image/svg+xml"; ".ico" = "image/x-icon"; ".woff" = "font/woff"; ".woff2" = "font/woff2";
+  ".svg" = "image/svg+xml"; ".ico" = "image/x-icon"; ".woff" = "font/woff"; ".woff2" = "font/woff2"; ".webmanifest" = "application/manifest+json";
 }
 
 function Send-Json($res, [int]$code, $obj){
@@ -367,6 +372,60 @@ function Handle-TvMemo($req, $res){
     Send-Json $res 200 @{ ok = $true }
   } catch { Send-Json $res 500 @{ ok = $false; error = "ecriture impossible" } }
 }
+# Publication : 1) /api/publish/file?name=... recoit chaque copie telle quelle (preparee par l'appli : Wolf Portfolio seul,
+# jamais PEA ni CTO) ; 2) /api/publish/go copie les images citees et les donnees de l'onglet Analyse, puis envoie sur GitHub.
+function Handle-PublishFile($req, $res){
+  if (-not (Test-WriteGuards $req $res)){ return }
+  $n = [string]$req.QueryString["name"]
+  if ($publicNames -notcontains $n){ Send-Json $res 400 @{ ok = $false; error = "nom de fichier inconnu" }; return }
+  $bytes = Read-BodyBytes $req $res $maxPublic
+  if ($null -eq $bytes){ return }
+  if ($bytes.Length -lt 2 -or $bytes[0] -ne 123){ Send-Json $res 400 @{ ok = $false; error = "JSON attendu" }; return }
+  try {
+    New-Item -ItemType Directory -Force -Path $publicDir | Out-Null
+    $f = Join-Path $publicDir $n; $tmp = $f + ".tmp"
+    [System.IO.File]::WriteAllBytes($tmp, $bytes)
+    if (Test-Path $f -PathType Leaf){ [System.IO.File]::Replace($tmp, $f, [NullString]::Value) } else { [System.IO.File]::Move($tmp, $f) }
+    Send-Json $res 200 @{ ok = $true }
+  } catch { Send-Json $res 500 @{ ok = $false; error = "ecriture impossible" } }
+}
+function Handle-PublishGo($req, $res){
+  if (-not (Test-WriteGuards $req $res)){ return }
+  $bytes = Read-BodyBytes $req $res
+  if ($null -eq $bytes){ return }
+  try { $b = (New-Object System.Text.UTF8Encoding($false, $true)).GetString($bytes) | ConvertFrom-Json } catch { Send-Json $res 400 @{ ok = $false; error = "JSON invalide" }; return }
+  try {
+    New-Item -ItemType Directory -Force -Path (Join-Path $publicDir "media") | Out-Null
+    $nMedia = 0
+    foreach ($m in @($b.media)){
+      $name = [string]$m
+      if ($name -notmatch '^[a-z0-9-]{8,60}\.(png|jpg|webp|gif)$'){ continue }
+      $src = Join-Path $atelierMedia $name; $dst = Join-Path $publicDir ("media\" + $name)
+      if ((Test-Path $src -PathType Leaf) -and -not (Test-Path $dst -PathType Leaf)){ Copy-Item $src $dst }
+      if (Test-Path $dst -PathType Leaf){ $nMedia++ }
+    }
+    $tv = Join-Path $root "data\tv-analyse.json"
+    $tvOk = $false
+    if ($b.tv -and (Test-Path $tv -PathType Leaf)){ Copy-Item $tv (Join-Path $publicDir "tv-analyse.json") -Force; $tvOk = $true }
+    $stamp = (Get-Date).ToString("o")
+    [System.IO.File]::WriteAllText((Join-Path $publicDir "info.json"), ('{"at":"' + $stamp + '"}'), $utf8NoBom)
+  } catch { Send-Json $res 500 @{ ok = $false; error = "preparation impossible" }; return }
+  if ($testInstance){ Send-Json $res 200 @{ ok = $true; test = $true; media = $nMedia; tv = $tvOk; dir = $publicDir }; return }
+  $git = (Get-Command git -ErrorAction SilentlyContinue).Source
+  if (-not $git){ Send-Json $res 500 @{ ok = $false; error = "git introuvable sur ce PC" }; return }
+  $env:GIT_TERMINAL_PROMPT = "0"
+  $log = ""
+  try {
+    $log += (& $git -C $root add -- "data/public" 2>&1 | Out-String)
+    $pending = (& $git -C $root status --porcelain -- "data/public" 2>&1 | Out-String).Trim()
+    if ($pending){ $log += (& $git -C $root commit -m ("Publication en ligne du " + (Get-Date -Format "dd/MM/yyyy HH:mm")) -- "data/public" 2>&1 | Out-String) }
+    $push = (& $git -C $root push origin HEAD 2>&1 | Out-String)
+    $pushed = ($LASTEXITCODE -eq 0)
+    $log += $push
+    if (-not $pushed){ Send-Json $res 502 @{ ok = $false; error = "envoi sur GitHub refuse ou impossible"; log = $log }; return }
+    Send-Json $res 200 @{ ok = $true; media = $nMedia; tv = $tvOk; changed = [bool]$pending; at = $stamp }
+  } catch { Send-Json $res 500 @{ ok = $false; error = "git a echoue"; log = $log } }
+}
 # Images de l'Atelier d'analyses : un fichier par image, nom genere ici, JAMAIS supprime ni ecrase par le serveur.
 function Handle-AtelierMedia($req, $res){
   if ($req.HttpMethod -eq "GET"){
@@ -564,7 +623,7 @@ while ($listener.IsListening) {
     $path = [System.Uri]::UnescapeDataString($req.Url.AbsolutePath)
     if ($path -eq "/api/ia/ping") {
       New-Item -ItemType Directory -Force -Path $iaDirPath | Out-Null
-      Send-Json $res 200 @{ ok = $true; writable = $true; v = 12; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
+      Send-Json $res 200 @{ ok = $true; writable = $true; v = 13; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
     } elseif ($path -eq "/api/ia/save") {
       Handle-IaSave $req $res
     } elseif ($path -eq "/api/ia/refresh") {
@@ -581,6 +640,10 @@ while ($listener.IsListening) {
       Handle-StoreSave $req $res
     } elseif ($path -eq "/api/tv/memo") {
       Handle-TvMemo $req $res
+    } elseif ($path -eq "/api/publish/file") {
+      Handle-PublishFile $req $res
+    } elseif ($path -eq "/api/publish/go") {
+      Handle-PublishGo $req $res
     } elseif ($path -eq "/api/atelier/media") {
       Handle-AtelierMedia $req $res
     } elseif ($path -eq "/api/tv/history") {

@@ -403,7 +403,7 @@ function setSync(state){
   const label = document.getElementById('syncLabel');
   if (state === 'loading'){
     dot.classList.add('stale');
-    label.textContent = 'Connexion au Google Sheet…';
+    label.textContent = 'Chargement des données…';
   } else if (state === 'error'){
     dot.classList.add('stale');
     label.textContent = 'Échec de connexion';
@@ -556,7 +556,9 @@ function handleTvAnalyseData(data){
 }
 
 async function loadTvAnalyse(){
-  const res = await fetch('data/tv-analyse.json?_=' + Date.now(), { cache:'no-store' });
+  let res = await fetch('data/tv-analyse.json?_=' + Date.now(), { cache:'no-store' });
+  // site public : le fichier n'existe pas (git-ignoré), on lit la copie publiée par « 🌐 Publier en ligne »
+  if (!res.ok) res = await fetch('data/public/tv-analyse.json?_=' + Date.now(), { cache:'no-store' });
   if (!res.ok) throw new Error('data/tv-analyse.json introuvable (HTTP ' + res.status + ')');
   const data = await res.json();
   handleTvAnalyseData(data);
@@ -791,6 +793,7 @@ function tvApplySnapshotToRow(row, d, tv){
   if (d.currency) row.devise = d.currency;
 }
 async function tvLiveRefresh(nom){
+  if (!/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) return;   // site public : pas de serveur local, on affiche la copie publiée telle quelle
   const hist = companies[nom];
   if (!hist || !hist.length) return;
   if (Date.now() - (tvLiveLast[nom] || 0) < 30000) return;
@@ -6407,6 +6410,7 @@ const MOBILE_NAV_MANIFEST = [
     { page:'pageFiltres', label:'Filtres' }
   ] },
   { page:'pageAtelier', label:"🗂 Atelier d'analyses" },
+  { page:'pagePrix', label:'🎯 Prix par secteur' },
   { page:'pageCerveau', label:'Cerveau numérique' },
   { page:'pageAlertes', label:'Alertes' },
   { page:'pageIdees', label:'Idées' },
