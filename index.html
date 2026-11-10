@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<link rel="stylesheet" href="css/style.css?v=20261108h">
+<link rel="stylesheet" href="css/style.css?v=20261110a">
 </head>
 <body>
 <div class="wrap">
@@ -65,6 +65,7 @@
       <button class="page-nav-btn active" data-page="pageAnalyse">Analyse</button>
       <button class="page-nav-btn" data-page="pageMesPortefeuilles" data-group="portfolio">💼 Portefeuille</button>
       <button class="page-nav-btn" data-page="pageSecteur" data-group="screener">🔍 Screener</button>
+      <button class="page-nav-btn" data-page="pageAtelier">🗂 Atelier d'analyses</button>
       <button class="page-nav-btn" data-page="pageCerveau">Cerveau numérique</button>
       <button class="page-nav-btn" data-page="pageAlertes">Alertes</button>
       <button class="page-nav-btn" data-page="pageIdees">Idées</button>
@@ -479,7 +480,7 @@
            l'entreprise affichée (TradingView en direct), tout est modifiable ; rien n'est enregistré. -->
       <div class="section-label">🧮 Calculatrice</div>
       <div class="valo-calc-card">
-        <div class="valo-calc-col">
+        <div class="valo-calc-col" id="valoCalcEvCol">
           <div class="valo-calc-head"><h3>EV/EBITDA — prix théorique et rendement à 5 ans</h3>
             <button type="button" class="zoom-btn objectifs-export" id="valoCalcRefill" title="Reprendre les chiffres de l'entreprise affichée">↻ Entreprise</button></div>
           <div class="valo-calc-grid">
@@ -694,6 +695,9 @@
     <div id="pagePortefeuilleIA" class="page"></div>
     <!-- Mes portefeuilles (PEA, CTO, PEA + CTO, Wolf Portfolio) : saisie des transactions, fichier sur disque, js/mes-portefeuilles.js -->
     <div id="pageMesPortefeuilles" class="page"></div>
+
+    <!-- Atelier d'analyses (2026-11-10) : cartes mentales interactives, voir js/atelier.js -->
+    <div id="pageAtelier" class="page"></div>
 
     <div id="pagePerso" class="page">
       <div class="section-label">Portefeuille Perso — PEA &amp; CTO</div>
@@ -1809,10 +1813,12 @@
   </div>
 </div>
 
-<script src="js/app.js?v=20261108h"></script>
+<script src="js/app.js?v=20261110a"></script>
 <script src="js/portefeuille-ia.js?v=20260920g"></script>
-<script src="js/mes-portefeuilles.js?v=20261108i"></script>
+<script src="js/mes-portefeuilles.js?v=20261110a"></script>
 <script src="js/valo-multiples.js?v=20261108d"></script>
+<script src="js/atelier.js?v=20261110a"></script>
+<script src="js/stylo.js?v=20261110a"></script>
 </body>
 </html>
 

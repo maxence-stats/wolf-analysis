@@ -70,7 +70,12 @@ else { $extBackup = "" }
 # « Mes portefeuilles » : un fichier JSON par nom autorise, memes protections que le Portefeuille IA
 # (revision, ecriture atomique, copies datees, copie hors projet, aucune operation effacee sans declaration).
 if ($StoreDir -ne ""){ $storeDirPath = [System.IO.Path]::GetFullPath($StoreDir) } else { $storeDirPath = Join-Path $root "data\mes-portefeuilles" }
-$storeNames = @("portefeuilles", "multiples", "objectifs")
+$storeNames = @("portefeuilles", "multiples", "objectifs", "atelier")
+# Atelier d'analyses (2026-11-10) : images dans un dossier a part (jamais supprimees par le serveur), cache TradingView.
+$atelierMedia = Join-Path $storeDirPath "atelier-media"
+$tvCacheDir = Join-Path $storeDirPath "cache-tv"
+$maxBodyAtelier = 12MB
+$maxMedia = 25MB
 if ($StoreDir -ne ""){ $storeExt = "" } elseif (-not $testInstance){ $storeExt = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "Wolf Analysis - sauvegardes\mes-portefeuilles" } else { $storeExt = "" }
 $maxBody = 2MB
 $rootWithSep = $root.TrimEnd('\') + '\'
@@ -110,10 +115,11 @@ function Test-WriteGuards($req, $res){
   return $true
 }
 
-function Read-BodyBytes($req, $res){
+function Read-BodyBytes($req, $res, $limit = 0){
+  if ($limit -le 0){ $limit = $maxBody }
   $len = $req.ContentLength64
   if ($len -lt 0){ Send-Json $res 411 @{ ok = $false; error = "longueur requise" }; return $null }
-  if ($len -gt $maxBody){ Send-Json $res 413 @{ ok = $false; error = "corps trop volumineux (2 Mo max)" }; return $null }
+  if ($len -gt $limit){ Send-Json $res 413 @{ ok = $false; error = "corps trop volumineux" }; return $null }
   $ms = New-Object System.IO.MemoryStream
   $req.InputStream.CopyTo($ms)
   return $ms.ToArray()
@@ -305,13 +311,99 @@ function Handle-TvSnapshot($req, $res){
   if (-not $sym -or $sym -notmatch '^[A-Za-z0-9_.!&-]{1,24}:[A-Za-z0-9_.!&-]{1,24}$'){ Send-Json $res 400 @{ ok = $false; error = "symbole invalide" }; return }
   $cols = "description,currency,exchange,sector,industry,close,market_cap_basic,price_earnings_ttm,earnings_per_share_diluted_ttm,price_free_cash_flow_ttm,free_cash_flow_per_share_ttm,free_cash_flow_ttm,neg_capital_expenditures_ttm,total_revenue_ttm,dps_common_stock_prim_issue_fy,dividends_yield,return_on_invested_capital_fy,operating_margin,total_shares_outstanding_fundamental,cash_n_short_term_invest_fq,net_debt_fq,logoid,fundamental_currency_code,ebitda_ttm,ebitda_fy,ebitda_fy_h,total_debt_fq,book_value_per_share_fq,enterprise_value_ebitda_ttm,enterprise_value_ebitda_current,price_book_fq"
   $url = "https://scanner.tradingview.com/symbol?symbol=" + [System.Uri]::EscapeDataString($sym) + "&fields=" + $cols + "&no_404=true"
-  try {
-    $txt = Get-TvText $url @{ "User-Agent" = "Mozilla/5.0" }
-    if (-not $txt -or $txt.Trim().Length -lt 3 -or $txt.Trim() -eq "{}"){ Send-Json $res 404 @{ ok = $false; error = "symbole inconnu de TradingView" }; return }
-    Send-RawJsonString $res ('{"ok":true,"symbol":"' + $sym + '","data":' + $txt.Trim() + '}')
-  } catch {
-    Send-Json $res 502 @{ ok = $false; error = "TradingView injoignable" }
+  # Cache disque (2026-11-10) : chaque reponse reussie est gardee ; cached=1 = reponse immediate depuis le cache s'il existe ;
+  # si TradingView ne repond pas (2 essais), la derniere reponse connue est renvoyee avec "stale":true (jamais un ecran vide).
+  $cf = Join-Path $tvCacheDir (($sym -replace '[^A-Za-z0-9_.-]', '_') + ".json")
+  if ($req.QueryString["cached"] -eq "1" -and (Test-Path $cf -PathType Leaf)){
+    try {
+      $c = [System.IO.File]::ReadAllText($cf, $utf8NoBom)
+      $at = (Get-Item $cf).LastWriteTimeUtc.ToString("o")
+      Send-RawJsonString $res ('{"ok":true,"symbol":"' + $sym + '","cached":true,"at":"' + $at + '","data":' + $c + '}'); return
+    } catch { }
   }
+  $txt = $null; $unknown = $false
+  foreach ($try in 1..2){
+    try {
+      $t = Get-TvText $url @{ "User-Agent" = "Mozilla/5.0" }
+      if (-not $t -or $t.Trim().Length -lt 3 -or $t.Trim() -eq "{}"){ $unknown = $true; break }
+      $t = $t.Trim()
+      if ($t.StartsWith("{")){ $txt = $t; break }
+    } catch { }
+    Start-Sleep -Milliseconds 400
+  }
+  if ($txt){
+    try { New-Item -ItemType Directory -Force -Path $tvCacheDir | Out-Null; [System.IO.File]::WriteAllText($cf, $txt, $utf8NoBom) } catch { }
+    Send-RawJsonString $res ('{"ok":true,"symbol":"' + $sym + '","data":' + $txt + '}'); return
+  }
+  if (Test-Path $cf -PathType Leaf){
+    try {
+      $c = [System.IO.File]::ReadAllText($cf, $utf8NoBom)
+      $at = (Get-Item $cf).LastWriteTimeUtc.ToString("o")
+      Send-RawJsonString $res ('{"ok":true,"symbol":"' + $sym + '","stale":true,"at":"' + $at + '","data":' + $c + '}'); return
+    } catch { }
+  }
+  if ($unknown){ Send-Json $res 404 @{ ok = $false; error = "symbole inconnu de TradingView" }; return }
+  Send-Json $res 502 @{ ok = $false; error = "TradingView injoignable" }
+}
+# Memoire des fiches TradingView deja demandees (noms -> symboles, dernieres fiches) : un FICHIER, pour ne plus dependre du
+# stockage du navigateur (perdu a chaque changement de port). Le client fusionne puis renvoie l'ensemble.
+function Handle-TvMemo($req, $res){
+  $f = Join-Path $tvCacheDir "memo.json"
+  if ($req.HttpMethod -eq "GET"){
+    if (-not (Test-Path $f -PathType Leaf)){ Send-RawJsonString $res '{"ok":true,"data":null}'; return }
+    try { Send-RawJsonString $res ('{"ok":true,"data":' + [System.IO.File]::ReadAllText($f, $utf8NoBom) + '}') } catch { Send-RawJsonString $res '{"ok":true,"data":null}' }
+    return
+  }
+  if (-not (Test-WriteGuards $req $res)){ return }
+  $bytes = Read-BodyBytes $req $res $maxBodyAtelier
+  if ($null -eq $bytes){ return }
+  try { $text = (New-Object System.Text.UTF8Encoding($false, $true)).GetString($bytes); $b = $text | ConvertFrom-Json } catch { Send-Json $res 400 @{ ok = $false; error = "JSON invalide" }; return }
+  if (-not $b -or $null -eq $b.symbols -or $null -eq $b.onDemand){ Send-Json $res 400 @{ ok = $false; error = "schema inconnu" }; return }
+  try {
+    New-Item -ItemType Directory -Force -Path $tvCacheDir | Out-Null
+    $tmp = $f + ".tmp"
+    [System.IO.File]::WriteAllBytes($tmp, $bytes)
+    if (Test-Path $f -PathType Leaf){ [System.IO.File]::Replace($tmp, $f, [NullString]::Value) } else { [System.IO.File]::Move($tmp, $f) }
+    Send-Json $res 200 @{ ok = $true }
+  } catch { Send-Json $res 500 @{ ok = $false; error = "ecriture impossible" } }
+}
+# Images de l'Atelier d'analyses : un fichier par image, nom genere ici, JAMAIS supprime ni ecrase par le serveur.
+function Handle-AtelierMedia($req, $res){
+  if ($req.HttpMethod -eq "GET"){
+    $n = [string]$req.QueryString["f"]
+    if ($n -notmatch '^[a-z0-9-]{8,60}\.(png|jpg|webp|gif)$'){ Send-Json $res 400 @{ ok = $false; error = "nom invalide" }; return }
+    $p = Join-Path $atelierMedia $n
+    if (-not (Test-Path $p -PathType Leaf)){ $res.StatusCode = 404; return }
+    $ext = [System.IO.Path]::GetExtension($p)
+    $ctOut = $mime[$ext]; if ($ext -eq ".webp"){ $ctOut = "image/webp" } elseif ($ext -eq ".gif"){ $ctOut = "image/gif" }
+    $res.ContentType = $ctOut
+    $res.Headers.Add("Cache-Control", "private, max-age=31536000, immutable")
+    $res.Headers.Add("X-Content-Type-Options", "nosniff")
+    $bytes = [System.IO.File]::ReadAllBytes($p)
+    $res.ContentLength64 = $bytes.Length
+    $res.OutputStream.Write($bytes, 0, $bytes.Length)
+    return
+  }
+  if ($req.HttpMethod -ne "POST"){ Send-Json $res 405 @{ ok = $false; error = "POST requis" }; return }
+  if ($req.Headers["X-Wolf-IA"] -ne "1"){ Send-Json $res 403 @{ ok = $false; error = "en-tete manquant" }; return }
+  $origin = $req.Headers["Origin"]
+  if ($origin -and $origin -ne "http://localhost:$port"){ Send-Json $res 403 @{ ok = $false; error = "origine refusee" }; return }
+  $extMap = @{ "image/png" = "png"; "image/jpeg" = "jpg"; "image/webp" = "webp"; "image/gif" = "gif" }
+  $ct = ([string]$req.ContentType).Split(';')[0].Trim().ToLower()
+  $e = $extMap[$ct]
+  if (-not $e){ Send-Json $res 415 @{ ok = $false; error = "format d'image non pris en charge (png, jpg, webp, gif)" }; return }
+  $bytes = Read-BodyBytes $req $res $maxMedia
+  if ($null -eq $bytes){ return }
+  if ($bytes.Length -lt 16){ Send-Json $res 400 @{ ok = $false; error = "image vide" }; return }
+  $name = (Get-Date -Format "yyyyMMdd-HHmmss") + "-" + ([Guid]::NewGuid().ToString("N").Substring(0, 10)) + "." + $e
+  try {
+    New-Item -ItemType Directory -Force -Path $atelierMedia | Out-Null
+    [System.IO.File]::WriteAllBytes((Join-Path $atelierMedia $name), $bytes)
+    if ($storeExt -ne ""){
+      try { $em = Join-Path $storeExt "atelier-media"; New-Item -ItemType Directory -Force -Path $em | Out-Null; [System.IO.File]::WriteAllBytes((Join-Path $em $name), $bytes) } catch { }
+    }
+    Send-Json $res 200 @{ ok = $true; file = $name }
+  } catch { Send-Json $res 500 @{ ok = $false; error = "ecriture impossible" } }
 }
 
 # ---------------- Copie MENSUELLE (2026-11-08, demande de l'utilisateur : « une copie tous les premiers du mois ») ----------------
@@ -363,11 +455,13 @@ function Handle-StoreLoad($req, $res){
 function Handle-StoreSave($req, $res){
   if (-not (Test-WriteGuards $req $res)){ return }
   $n = Get-StoreName $req $res; if (-not $n){ return }
-  $bytes = Read-BodyBytes $req $res
+  $lim = 0; if ($n -eq "atelier"){ $lim = $maxBodyAtelier }
+  $bytes = Read-BodyBytes $req $res $lim
   if ($null -eq $bytes){ return }
   try { $text = (New-Object System.Text.UTF8Encoding($false, $true)).GetString($bytes) } catch { Send-Json $res 400 @{ ok = $false; error = "encodage UTF-8 invalide" }; return }
   try { $b = $text | ConvertFrom-Json } catch { Send-Json $res 400 @{ ok = $false; error = "JSON invalide" }; return }
   if (-not $b -or $b.version -ne 1){ Send-Json $res 400 @{ ok = $false; error = "schema inconnu" }; return }
+  if ($n -eq "atelier" -and $null -eq $b.docs){ Send-Json $res 400 @{ ok = $false; error = "schema inconnu" }; return }
   $f = Join-Path $storeDirPath ($n + ".json")
   $bk = Join-Path $storeDirPath "backups"
   $cur = $null; $curRevision = 0
@@ -385,6 +479,15 @@ function Handle-StoreSave($req, $res){
     $missing = @(Get-StoreOpIds $cur | Where-Object { $newIds -notcontains $_ })
     $undeclared = @($missing | Where-Object { $declared -notcontains $_ })
     if ($undeclared.Count -gt 0){ Send-Json $res 400 @{ ok = $false; error = "operation(s) supprimee(s) non declaree(s)" }; return }
+    if ($missing.Count -gt 0){ $removedAny = $true }
+  }
+  # Atelier : aucun dossier (docs.<id>) ne disparait sans etre declare dans deleted ; toute disparition force une copie datee.
+  if ($cur -and $n -eq "atelier" -and $cur.docs){
+    $declared = @($b.deleted | ForEach-Object { [string]$_ })
+    $newIds = @($b.docs.PSObject.Properties | ForEach-Object { $_.Name })
+    $missing = @($cur.docs.PSObject.Properties | ForEach-Object { $_.Name } | Where-Object { $newIds -notcontains $_ })
+    $undeclared = @($missing | Where-Object { $declared -notcontains $_ })
+    if ($undeclared.Count -gt 0){ Send-Json $res 400 @{ ok = $false; error = "dossier(s) supprime(s) non declare(s)" }; return }
     if ($missing.Count -gt 0){ $removedAny = $true }
   }
   New-Item -ItemType Directory -Force -Path $storeDirPath | Out-Null
@@ -461,7 +564,7 @@ while ($listener.IsListening) {
     $path = [System.Uri]::UnescapeDataString($req.Url.AbsolutePath)
     if ($path -eq "/api/ia/ping") {
       New-Item -ItemType Directory -Force -Path $iaDirPath | Out-Null
-      Send-Json $res 200 @{ ok = $true; writable = $true; v = 11; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
+      Send-Json $res 200 @{ ok = $true; writable = $true; v = 12; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
     } elseif ($path -eq "/api/ia/save") {
       Handle-IaSave $req $res
     } elseif ($path -eq "/api/ia/refresh") {
@@ -476,6 +579,10 @@ while ($listener.IsListening) {
       Handle-StoreLoad $req $res
     } elseif ($path -eq "/api/store/save") {
       Handle-StoreSave $req $res
+    } elseif ($path -eq "/api/tv/memo") {
+      Handle-TvMemo $req $res
+    } elseif ($path -eq "/api/atelier/media") {
+      Handle-AtelierMedia $req $res
     } elseif ($path -eq "/api/tv/history") {
       Handle-TvHistory $req $res
     } else {

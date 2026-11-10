@@ -160,7 +160,9 @@ function persoSimpleHash(str){
 }
 const PERSO_LOCK_HASH = 1598844; // hash de persoSimpleHash('4242')
 let persoUnlocked = false;
-try{ persoUnlocked = localStorage.getItem('wolfAnalysisPersoUnlocked') === '1'; }catch(e){ /* localStorage indisponible */ }
+// 2026-11-10 : le déverrouillage n'est PLUS mémorisé d'une ouverture à l'autre (demande : rien de perso visible à l'écran
+// par défaut, notamment en vidéo). À chaque ouverture de l'appli, PEA / CTO sont verrouillés et floutés.
+try{ localStorage.removeItem('wolfAnalysisPersoUnlocked'); }catch(e){ /* localStorage indisponible */ }
 
 // Portefeuille fictif affiché tant que verrouillé — mêmes formes de données que
 // persoDataReal (voir parsePersoBlock/parsePersoCashImmo), valeurs rondes et
@@ -216,8 +218,7 @@ function renderPersoLockUI(){
   const input = document.getElementById('persoLockInput');
   const submit = () => {
     if (persoSimpleHash(input.value.trim()) === PERSO_LOCK_HASH){
-      persoUnlocked = true;
-      try{ localStorage.setItem('wolfAnalysisPersoUnlocked', '1'); }catch(e){ /* localStorage indisponible */ }
+      persoUnlocked = true;   // pour cette ouverture seulement (jamais mémorisé)
       renderPersoLockUI();
       renderPersoPortfolio();
     } else {
@@ -574,6 +575,36 @@ function tvOnDemandRead(){
 }
 function tvOnDemandWrite(store){
   try{ localStorage.setItem(TV_ONDEMAND_LS, JSON.stringify(store)); }catch(e){ /* stockage indisponible : fiche gardée en mémoire seulement */ }
+  tvMemoPushSoon();
+}
+// Mémoire FICHIER (serveur local, /api/tv/memo) des fiches déjà demandées et des symboles trouvés : le stockage du navigateur
+// est cloisonné par port (un changement de port = tout paraît perdu). Fusion sans jamais rien retirer : le plus récent gagne.
+let tvMemoTimer = null, tvMemoLoaded = false;
+function tvMemoPushSoon(){
+  if (!tvMemoLoaded) return;   // jamais d'écriture avant d'avoir lu le fichier (sinon un navigateur vide l'écraserait)
+  clearTimeout(tvMemoTimer);
+  tvMemoTimer = setTimeout(() => {
+    let onDemand = {}, symbols = {};
+    try{ onDemand = JSON.parse(localStorage.getItem(TV_ONDEMAND_LS) || '{}') || {}; symbols = JSON.parse(localStorage.getItem('wolfTvSymbolMap') || '{}') || {}; }catch(e){ return; }
+    fetch('/api/tv/memo', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Wolf-IA': '1' }, body: JSON.stringify({ onDemand, symbols }) }).catch(() => { /* serveur fermé : le navigateur garde sa copie */ });
+  }, 1500);
+}
+async function tvMemoPull(){
+  try{
+    const res = await fetch('/api/tv/memo', { cache: 'no-store' });
+    if (!(res.headers.get('content-type') || '').includes('json')) return false;
+    const j = await res.json();
+    tvMemoLoaded = !!j.ok;
+    if (!j.ok || !j.data) return false;
+    let changed = false;
+    const od = tvOnDemandRead(), sm = tvSymbolMapRead();
+    Object.keys(j.data.onDemand || {}).forEach(nom => { const e = j.data.onDemand[nom]; if (e && e.tv && (!od[nom] || (e.at || 0) > (od[nom].at || 0))){ od[nom] = e; changed = true; } });
+    Object.keys(j.data.symbols || {}).forEach(nom => { if (!sm[nom] && j.data.symbols[nom]){ sm[nom] = j.data.symbols[nom]; changed = true; } });
+    if (changed){
+      try{ localStorage.setItem(TV_ONDEMAND_LS, JSON.stringify(od)); localStorage.setItem('wolfTvSymbolMap', JSON.stringify(sm)); }catch(e){ /* stockage indisponible */ }
+    }
+    return changed;
+  }catch(e){ return false; }
 }
 function tvRowsFromSnapshot(tv, d){
   const num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
@@ -609,15 +640,25 @@ function tvOnDemandDisplayName(d, fallback){
 const TV_MONEY_FIELDS = ['earnings_per_share_diluted_ttm', 'free_cash_flow_per_share_ttm', 'dps_common_stock_prim_issue_fy',
   'free_cash_flow_ttm', 'neg_capital_expenditures_ttm', 'total_revenue_ttm', 'cash_n_short_term_invest_fq', 'net_debt_fq',
   'ebitda_ttm', 'ebitda_fy', 'total_debt_fq', 'book_value_per_share_fq'];   // ebitda_fy_h : recalé sur ebitda_fy (js/valo-multiples.js)
-async function tvRawSnapshot(tv){
-  const res = await fetch('/api/tv/snapshot?symbol=' + encodeURIComponent(tv), { cache: 'no-store' });
+// 2026-11-10 — fiabilité : le serveur garde sur le disque la dernière réponse de chaque symbole. `cachedFirst` = réponse
+// immédiate depuis ce cache (affichage instantané), puis une lecture en direct la remplace. Si TradingView ne répond pas,
+// le serveur renvoie la dernière réponse connue (`stale`) : `tvSnapMeta[tv]` dit d'où viennent les chiffres affichés.
+const tvSnapMeta = {};
+async function tvRawSnapshot(tv, cachedFirst){
+  let res = null, lastErr = null;
+  for (let i = 0; i < 2 && !res; i++){
+    try{ res = await fetch('/api/tv/snapshot?symbol=' + encodeURIComponent(tv) + (cachedFirst ? '&cached=1' : ''), { cache: 'no-store' }); }
+    catch(e){ lastErr = e; await new Promise(r => setTimeout(r, 500)); }
+  }
+  if (!res) throw new Error('serveur local injoignable' + (lastErr && lastErr.message ? ' (' + lastErr.message + ')' : ''));
   if (!(res.headers.get('content-type') || '').includes('json')) throw new Error('serveur à redémarrer');
   const j = await res.json();
   if (!j.ok) throw new Error(j.error || 'TradingView indisponible');
+  tvSnapMeta[tv] = { cached: !!(j.cached || j.stale), stale: !!j.stale, at: j.at ? Date.parse(j.at) : Date.now() };
   return j.data;
 }
-async function tvFetchSnapshot(tv){
-  const d = await tvRawSnapshot(tv);
+async function tvFetchSnapshot(tv, cachedFirst){
+  const d = await tvRawSnapshot(tv, cachedFirst);
   const close = d.close;
   // Taux déduit de la cohérence PER = cours / BPA (ou P/FCF = cours / FCF par action) : si les comptes étaient dans la
   // devise du cours, le taux vaudrait 1. C'est exactement le taux que TradingView a lui-même appliqué.
@@ -704,7 +745,7 @@ const TV_FMP_SUFFIX_EXCHANGES = { PA: ['EURONEXT'], AS: ['EURONEXT'], BR: ['EURO
   T: ['TSE'], AX: ['ASX'], KS: ['KRX'], SS: ['SSE'], SZ: ['SZSE'], NS: ['NSE'], BO: ['BSE'], SI: ['SGX'], TW: ['TWSE'] };
 let tvLiveLast = {};
 function tvSymbolMapRead(){ try{ return JSON.parse(localStorage.getItem(TV_SYMBOL_MAP_LS) || '{}') || {}; }catch(e){ return {}; } }
-function tvSymbolMapWrite(m){ try{ localStorage.setItem(TV_SYMBOL_MAP_LS, JSON.stringify(m)); }catch(e){ /* stockage indisponible */ } }
+function tvSymbolMapWrite(m){ try{ localStorage.setItem(TV_SYMBOL_MAP_LS, JSON.stringify(m)); }catch(e){ /* stockage indisponible */ } tvMemoPushSoon(); }
 async function tvResolveSymbol(nom){
   const cached = tvSymbolMapRead()[nom];
   if (cached) return cached;
@@ -755,11 +796,28 @@ async function tvLiveRefresh(nom){
   if (Date.now() - (tvLiveLast[nom] || 0) < 30000) return;
   tvLiveLast[nom] = Date.now();
   const latest = hist[hist.length - 1];
-  const label = document.getElementById('activeCompanyLabel');
+  const setLabel = (txt, warn) => {
+    const l2 = document.getElementById('activeCompanyLabel');
+    if (l2 && activeCompany === nom) l2.innerHTML = 'Entreprise sélectionnée : <b>' + fmpDisplayName(nom) + '</b> <span style="color:var(' + (warn ? '--gold' : '--text-faint') + ');font-size:11px;">· ' + txt + '</span>';
+  };
+  const fmtAt = t => { const d = new Date(t); return d.toLocaleDateString('fr-FR') + ' à ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); };
   try{
     const tv = (latest.tvSource && String(latest.ticker).includes(':')) ? latest.ticker : (latest.tvSymbol || await tvResolveSymbol(nom));
-    if (!tv) return;
+    if (!tv){ setLabel('⚠ symbole TradingView introuvable pour cette entreprise : chiffres non actualisés', true); tvLiveLast[nom] = 0; return; }
+    // 1) première fois dans cette ouverture : la dernière réponse gardée sur le disque s'affiche tout de suite
+    if (!latest.tvLiveAt && !latest.tvCacheShown){
+      latest.tvCacheShown = true;
+      try{
+        const c = await tvFetchSnapshot(tv, true);
+        if (tvSnapMeta[tv] && tvSnapMeta[tv].cached){
+          tvApplySnapshotToRow(latest, c, tv); latest.tvLiveAt = 0;   // 0 = pas encore lu en direct
+          if (activeCompany === nom){ renderCompany(nom); setLabel('données TradingView gardées du ' + fmtAt(tvSnapMeta[tv].at) + ', mise à jour en cours…'); }
+        }
+      }catch(e){ /* pas de cache : on attend le direct */ }
+    }
+    // 2) lecture en direct (le serveur renvoie sa dernière réponse connue si TradingView ne répond pas)
     const snap = await tvFetchSnapshot(tv);
+    const meta = tvSnapMeta[tv] || {};
     tvApplySnapshotToRow(latest, snap, tv);
     if (latest.tvPartial){
       const store = tvOnDemandRead();
@@ -767,16 +825,19 @@ async function tvLiveRefresh(nom){
     }
     if (activeCompany === nom){
       renderCompany(nom);   // le garde 30 s empêche toute boucle
-      const l2 = document.getElementById('activeCompanyLabel');
-      if (l2) l2.innerHTML = 'Entreprise sélectionnée : <b>' + fmpDisplayName(nom) + '</b> <span style="color:var(--text-faint);font-size:11px;">· TradingView en direct à ' + new Date().toLocaleTimeString('fr-FR') + '</span>';
+      if (meta.stale){ setLabel('⚠ TradingView ne répond pas : chiffres gardés du ' + fmtAt(meta.at) + ' (nouvel essai à la prochaine ouverture de la fiche)', true); tvLiveLast[nom] = 0; }
+      else setLabel('TradingView en direct à ' + new Date().toLocaleTimeString('fr-FR'));
     }
   }catch(e){
-    if (label && activeCompany === nom) label.title = 'TradingView en direct indisponible : ' + (e && e.message ? e.message : 'erreur');
+    tvLiveLast[nom] = 0;   // un échec ne bloque pas l'essai suivant pendant 30 s
+    setLabel('⚠ TradingView indisponible (' + (e && e.message ? e.message : 'erreur') + ') : chiffres affichés non actualisés', true);
   }
 }
 
 function finishCompaniesLoad(){
   tvOnDemandRestore();
+  // fiches gardées dans le FICHIER du serveur (survit à un changement de port) : fusion puis nouvelle restauration
+  tvMemoPull().then(changed => { if (changed) tvOnDemandRestore(); tvMemoPushSoon(); });
   Object.keys(companies).forEach(nom => companies[nom].sort((a,b) => a.annee - b.annee));
 
   const names = Object.keys(companies);
@@ -6345,6 +6406,7 @@ const MOBILE_NAV_MANIFEST = [
     { page:'pageTierList', label:'Tier List' },
     { page:'pageFiltres', label:'Filtres' }
   ] },
+  { page:'pageAtelier', label:"🗂 Atelier d'analyses" },
   { page:'pageCerveau', label:'Cerveau numérique' },
   { page:'pageAlertes', label:'Alertes' },
   { page:'pageIdees', label:'Idées' },
@@ -12459,6 +12521,9 @@ function renderValoCalculator(nom){
   const hist = companies[nom]; const latest = hist && hist[hist.length - 1];
   const hasTv = !!(latest && latest.tvMultiples);
   if (nom !== valoCalcNom || (hasTv && !valoCalcHadTv)){ valoCalcHadTv = hasTv; valoCalcFill(nom); }
+  // La calculatrice EV/EBITDA n'apparaît QUE pour la méthode EV/EBITDA (demande du 2026-11-10) ; le calcul libre reste partout.
+  const evCol = document.getElementById('valoCalcEvCol'), card = document.querySelector('.valo-calc-card');
+  if (evCol && card){ const isEv = valorisationMetric === 'ev'; evCol.style.display = isEv ? '' : 'none'; card.classList.toggle('valo-calc-solo', !isEv); }
 }
 let valoCalcHadTv = false;
 

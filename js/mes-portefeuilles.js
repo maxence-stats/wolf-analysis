@@ -969,7 +969,7 @@ function wire(){
   const lk = page.querySelector('#mpLockBtn');
   if (lk){ const go = () => { const inp = page.querySelector('#mpLockInput'), v = inp.value.trim();
       if (typeof persoSimpleHash === 'function' && typeof PERSO_LOCK_HASH !== 'undefined' && persoSimpleHash(v) === PERSO_LOCK_HASH){
-        try { persoUnlocked = true; localStorage.setItem('wolfAnalysisPersoUnlocked', '1'); } catch(e){}
+        try { persoUnlocked = true; } catch(e){}   // jamais mémorisé : reverrouillé à la prochaine ouverture
         if (typeof renderPersoLockUI === 'function') renderPersoLockUI();
         render();
       } else { inp.value = ''; inp.placeholder = 'Code incorrect'; } };

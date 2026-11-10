@@ -650,6 +650,40 @@ Les anciennes pages Sheet (Wolf Portfolio, Perso) sont conservées telles quelle
   31/12/2025 (vente Stoxx 600 du 28/08 comptée comme un versement de 711,03 €, à la demande de l'utilisateur ; liquidités de
   départ 695,22 € DÉDUITES du Sheet, à vérifier) ; Wolf depuis le journal du Sheet (cash 6 936,05 € vs 6 933,12 € au Sheet).
 
+### Onglet « 🗂 Atelier d'analyses » — cartes mentales interactives (fait, 2026-11-10)
+Nouvel onglet principal (`#pageAtelier`, `js/atelier.js`, CSS `.at-*` en fin de `style.css`), À CÔTÉ du Cerveau numérique (qui
+reste intact, décision de l'utilisateur). Répertoire visuel de toutes les analyses, pensé pour les vidéos YouTube.
+- **Un dossier = une carte mentale** (logo au centre, branches qui se déplient avec animation, caméra zoom/déplacement). Trois
+  types : `entreprise`, `chaine` (chaîne de valeur d'un secteur : un nœud peut pointer vers un dossier d'entreprise, `node.link`,
+  et le dossier garde `chaine:{doc,node}` pour son fil d'Ariane), `libre`. Rangement : secteur GICS > sous-secteur > dossiers.
+- **Deux mises en page par version** : `pieuvre` (rangement automatique, `autoLayout`) ou `libre` (`node.x/y`, glisser un nœud
+  déplace sa branche). **Versions** : copie complète datée (`doc.versions[]`, `doc.cur`). **Modèles** : `D.templates` (structure
+  sans contenu) + modèles intégrés `BUILTIN` (trame Wolf d'analyse, chaîne à 4 maillons, vide).
+- **Fiche d'un nœud** (plein écran, animée depuis le nœud) : blocs `texte`, `image`, `actu` (datée, source), `tv` (chiffres
+  TradingView en direct via `tvFetchSnapshot`, dernier relevé gardé dans le bloc), `graph` (historique de `companies[...]`).
+  Images : fichier, Ctrl+V, glisser-déposer. Bloc pleine largeur ou moitié.
+- **Mode vidéo** (`ui.video`) : page en plein écran sans habillage, lecture seule, clic = déplier / ouvrir la fiche, F = vue
+  d'ensemble. L'utilisateur a choisi « clic libre seulement » (pas de parcours enregistré).
+- **Données = un FICHIER** `data/mes-portefeuilles/atelier.json` (nom de store `atelier`, git-ignoré), mêmes protections que
+  Mes portefeuilles (révision/409, écriture atomique, copies datées, copie Documents, copie mensuelle) + le serveur refuse toute
+  disparition de `docs.<id>` non déclarée dans `deleted`. Enregistrement automatique 0,7 s après chaque modification, état
+  affiché (« 💾 Enregistré à … »). **Rien n'est supprimé pour de bon** : nœuds, blocs, versions, dessins et dossiers vont dans
+  `D.trash` (corbeille + « ↶ Annuler »). **Images = fichiers séparés** `data/mes-portefeuilles/atelier-media/`
+  (`POST/GET /api/atelier/media`, noms générés par le serveur, JAMAIS supprimées, copiées aussi dans Documents).
+  **Règle absolue : ne jamais écrire ce fichier à la main ; tests sur instance jetable `-StoreDir <tmp>` avec des noms factices.**
+- **Stylo d'écran** (`js/stylo.js`, toutes les pages) : bouton ✏️ en bas à gauche ou Alt+D ; stylo, surligneur, laser (s'efface
+  seul), « 🖱 Cliquer dessous », C = effacer, Ctrl+Z, Échap. Éphémère. Les dessins GARDÉS avec une carte = bouton « 🖌 Dessin »
+  de l'Atelier (`version.strokes`, coordonnées de la carte).
+- **Serveur v=12** : `/api/atelier/media`, store `atelier` (corps ≤ 12 Mo), **cache TradingView** : chaque réponse de
+  `/api/tv/snapshot` est gardée dans `data/mes-portefeuilles/cache-tv/` ; `cached=1` = réponse immédiate du cache ; si TradingView
+  ne répond pas (2 essais) la dernière réponse connue revient avec `stale:true`. `/api/tv/memo` = fichier des fiches à la demande
+  et des symboles trouvés (`wolfTvOnDemand`, `wolfTvSymbolMap` ne dépendent plus du port). Côté appli (`tvLiveRefresh`) : cache
+  affiché tout de suite, puis direct ; l'état est écrit à côté du nom (« en direct à … », « chiffres gardés du … », ou l'erreur).
+- **Divers du 2026-11-10** : le déverrouillage PEA/CTO n'est plus mémorisé (reverrouillé et flouté à chaque ouverture) ; la
+  calculatrice EV/EBITDA n'apparaît que pour la méthode EV/EBITDA (le calcul libre reste) ; garde-fou responsive global
+  (`:where(#dashboard …) :where(*){min-width:0}` en fin de `style.css`, spécificité nulle) qui supprime les débordements
+  horizontaux des grilles (Analyse à ~900 px, scénarios à ~620 px).
+
 ### Onglet Portefeuille IA (fait, 2026-09-19)
 Sous-onglet de « 💼 Portefeuille » : 4 portefeuilles simulés (ChatGPT, Claude, Gemini, Grok, logos
 dans `data/ai-logos/`), 10 000 € chacun, l'utilisateur y enregistre à la main les achats/ventes que
