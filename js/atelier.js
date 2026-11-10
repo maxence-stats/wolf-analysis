@@ -29,7 +29,7 @@ const BUILTIN = {
   // Trame complète en 18 points (checklist de l'utilisateur du 2026-11-10, qui reprend l'ancienne « Analyse développée » :
   // présentation, revenus par pays / secteur, concurrents, marché, moat, activités, perspectives, risques, actionnariat,
   // ratios, conclusion). « Activité 1 » est à DUPLIQUER (⧉) pour chaque grande activité d'un groupe diversifié.
-  'wolf-entreprise': { id: 'wolf-entreprise', nom: 'Analyse d\'entreprise — trame Wolf complète (18 points)', type: 'entreprise', builtin: true, tree: T('', '', [
+  'wolf-entreprise': { id: 'wolf-entreprise', nom: 'Template analyse — 10/11/2026', type: 'entreprise', builtin: true, tree: T('', '', [
     T('1. Présentation', '🏢', [T('Histoire & dates clés'), T('Activités'), T('Implantation'), T('Dirigeants')]),
     T('2. Modèle économique', '⚙️', [T('Comment elle gagne de l\'argent'), T('Clients'), T('Produits & services'), T('Récurrence des revenus'), T('Structure des coûts')]),
     T('3. Répartition du chiffre d\'affaires', '🧩', [T('Par pays & régions'), T('Par secteurs & activités'), T('Par filiales'), T('Évolution historique')]),
