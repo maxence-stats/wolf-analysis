@@ -763,6 +763,12 @@ reste intact, décision de l'utilisateur). Répertoire visuel de toutes les anal
   Anton, fond uni #121418 à quadrillage léger, signature DISCRÈTE en bas (tête de loup + « Wolf Academy Invest », sans pastille).
   Rejeté : Roboto Slab / Lora / JetBrains Mono, petites étiquettes espacées, filets (« trop Claude Code »). Récap = barres Wolf vs
   CAC 40 vs S&P 500 + logos des opérations. Logos TradingView chargés en CORS (jamais d'image sans CORS : sinon export impossible).
+  **Ajouts (2026-11-11, suite)** : PLUS de quadrillage ; 4 thèmes au choix (`THEMES` : Nuit, Blanc, Beige, Or — surlignage inversé
+  noir/or sur fond clair, `setTheme()`) ; TOUS les textes et chiffres d'un post sont modifiables (`P.t(clé, libellé, valeur)` dans
+  chaque bloc, panneau « ✏ Modifier les textes et chiffres », corrections dans `ui.opts.ov`, effacées si on change de donnée) ;
+  `P.info` = encadré de vérification (source des chiffres ; pour les résultats : « à vérifier sur le communiqué » + chiffres bruts) ;
+  Valorisation : source AU CHOIX, « Prix par secteur » (ta simulation : pessimiste / réaliste / optimiste, `PRIX_UI.pubItems().sc`)
+  ou « Fiche Analyse » ; Performance d'une action affiche le logo.
   WOLF PORTFOLIO SEULEMENT (jamais PEA/CTO). Boutons « 📤 » : journal et mois par mois du Wolf (mes-portefeuilles), tag
   « 📤 Publier » de l'onglet Analyse, menu ⋯ d'une carte de l'Atelier, en-tête de secteur de Prix par secteur ->
   `WOLF_PUB.open(modèle, réglages)`. Réglages gardés par modèle (localStorage `wolfPubPrefs`, simple confort).

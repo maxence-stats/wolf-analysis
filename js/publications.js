@@ -13,8 +13,20 @@
 'use strict';
 const PAGE_ID = 'pagePublications';
 const W = 1080, HS = { f1: 1080, f45: 1350, f916: 1920 };
-const C = { bg: '#121418', card: '#1B1F25', card2: '#242A31', line: '#2A2F36', text: '#F4F5F7', dim: '#9AA1AB', faint: '#6F7782',
-  gold: '#F2B33D', gold2: '#FFD27A', green: '#3DDC97', red: '#FF5C64', blue: '#4A9FE0', white: '#FFFFFF' };
+// Thèmes de couleur des posts (fond uni, sans quadrillage). « Nuit » = sombre ; « Blanc » et « Beige » = clairs, surlignage
+// INVERSÉ (bande noire, texte or) pour se démarquer ; « Or » = fond doré, texte noir.
+const THEMES = {
+  nuit:  { label: 'Nuit',  bg: '#111315', bg2: '#15181C', card: '#1C2026', card2: '#262B32', ink: '#F4F5F7', ink2: '#D3D7DD', dim: '#9AA1AB', faint: '#6F7782', track: '#2A2F36', grid: 'rgba(255,255,255,.06)',
+    hlBg: '#F2B33D', hlInk: '#111111', sig: 'rgba(242,243,245,.7)', edge: 'rgba(255,255,255,.08)', shadow: 'rgba(0,0,0,.45)', wolfBg: '#0B0D10', gold: '#F2B33D', gold2: '#FFD27A', green: '#3DDC97', red: '#FF5C64' },
+  blanc: { label: 'Blanc', bg: '#FFFFFF', bg2: '#FFFFFF', card: '#F1F2F4', card2: '#E4E6E9', ink: '#121316', ink2: '#2E3238', dim: '#6B717B', faint: '#9AA0A8', track: '#E2E4E7', grid: 'rgba(0,0,0,.07)',
+    hlBg: '#121316', hlInk: '#F2B33D', sig: 'rgba(18,19,22,.62)', edge: 'rgba(0,0,0,.07)', shadow: 'rgba(0,0,0,.14)', wolfBg: '#121316', gold: '#D8941B', gold2: '#F2B33D', green: '#0FA968', red: '#E0434C' },
+  beige: { label: 'Beige', bg: '#F3ECDF', bg2: '#F6F0E6', card: '#E8DDC9', card2: '#DDCFB6', ink: '#1C1813', ink2: '#3B3228', dim: '#7A6E5E', faint: '#A49883', track: '#DACCB3', grid: 'rgba(60,40,10,.08)',
+    hlBg: '#1C1813', hlInk: '#F2B33D', sig: 'rgba(28,24,19,.62)', edge: 'rgba(60,40,10,.10)', shadow: 'rgba(60,40,10,.18)', wolfBg: '#1C1813', gold: '#C98516', gold2: '#E9A83A', green: '#1B9660', red: '#CF3E48' },
+  or:    { label: 'Or',    bg: '#F2B33D', bg2: '#F5BF57', card: 'rgba(18,19,22,.10)', card2: 'rgba(18,19,22,.18)', ink: '#121316', ink2: '#2B2414', dim: '#5E4A1E', faint: '#7A6230', track: 'rgba(18,19,22,.18)', grid: 'rgba(18,19,22,.12)',
+    hlBg: '#121316', hlInk: '#F2B33D', sig: 'rgba(18,19,22,.7)', edge: 'rgba(18,19,22,.12)', shadow: 'rgba(80,50,0,.25)', wolfBg: '#121316', gold: '#121316', gold2: '#3A2C10', green: '#0B6B42', red: '#A3202A' },
+};
+const C = Object.assign({ blue: '#4A9FE0', white: '#FFFFFF', line: '#2A2F36' }, THEMES.nuit);
+function setTheme(k){ Object.assign(C, THEMES[k] || THEMES.nuit); }
 const F = { title: 'Anton, Impact, "Arial Narrow", sans-serif', body: '"Plus Jakarta Sans", "Segoe UI", sans-serif' };
 const WOLF = 'data/wolf-tete.png';
 const SERIES = [C.gold, C.blue, C.green, '#B8A1F0', '#F08A4B', '#5CC8D7', C.red, '#8FA3B8'];
@@ -93,10 +105,12 @@ async function wolf(){
 const up = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
 function mk(fmt){
   const c = document.createElement('canvas'); c.width = W; c.height = HS[fmt]; const x = c.getContext('2d');
-  const g = x.createRadialGradient(W / 2, c.height * 0.4, 50, W / 2, c.height * 0.4, c.height * 0.8); g.addColorStop(0, '#1A1D22'); g.addColorStop(1, C.bg);
+  const g = x.createRadialGradient(W / 2, c.height * 0.4, 50, W / 2, c.height * 0.4, c.height * 0.8); g.addColorStop(0, C.bg2); g.addColorStop(1, C.bg);
   x.fillStyle = g; x.fillRect(0, 0, W, c.height);
-  x.fillStyle = 'rgba(255,255,255,0.028)'; for (let i = 0; i < W; i += 72) x.fillRect(i, 0, 2, c.height); for (let j = 0; j < c.height; j += 72) x.fillRect(0, j, W, 2);
-  return { c, x, fmt, H: c.height, L: 76, R: W - 76, CW: W - 152, big: fmt === 'f916', small: fmt === 'f1' };
+  const P = { c, x, fmt, H: c.height, L: 76, R: W - 76, CW: W - 152, big: fmt === 'f916', small: fmt === 'f1', ov: {}, fields: [], info: null };
+  // Texte modifiable à la main : chaque texte affiché est enregistré (clé, libellé, valeur d'origine) ; une valeur saisie le remplace.
+  P.t = (key, label, val) => { if (val == null || val === '') return val; if (!P.fields.some(f => f.key === key)) P.fields.push({ key, label, val: String(val) }); const v = P.ov[key]; return v != null && v !== '' ? v : val; };
+  return P;
 }
 function txt(x, s, X, Y, f, col, align){ x.font = f; x.fillStyle = col; x.textAlign = align || 'left'; x.textBaseline = 'alphabetic'; x.fillText(s, X, Y); }
 function wrap(x, s, f, maxW){
@@ -124,22 +138,23 @@ function logoC(x, im, cx, cy, r, name){
 }
 // logo en tuile arrondie (façon icône d'appli), avec ombre
 function logoT(x, im, X, Y, s, name){
-  x.save(); x.shadowColor = 'rgba(0,0,0,.45)'; x.shadowBlur = 36; x.shadowOffsetY = 16; rr(x, X, Y, s, s, s * 0.26, '#FFFFFF'); x.restore();
+  x.save(); x.shadowColor = C.shadow; x.shadowBlur = 36; x.shadowOffsetY = 16; rr(x, X, Y, s, s, s * 0.26, '#FFFFFF'); x.restore();
   x.save(); rr(x, X, Y, s, s, s * 0.26); x.clip(); if (im) drawLogo(x, im, X + s / 2, Y + s / 2, s / 2); else fallbackMark(x, X + s / 2, Y + s / 2, s / 2, name); x.restore();
-  rr(x, X, Y, s, s, s * 0.26, null, 'rgba(255,255,255,.08)');
+  rr(x, X, Y, s, s, s * 0.26, null, C.edge);
 }
 // Signature discrète en bas (sans pastille) + source au-dessus
 async function frame(P, label, source){
   const x = P.x, head = await loadImg(WOLF), cy = P.H - 64;
   x.font = BD(700, 28); const tw = x.measureText('Wolf Academy Invest').width, s = 46, tot = s + 14 + tw, X0 = (W - tot) / 2;
   if (head){ const k = s / Math.max(head.width, head.height); x.globalAlpha = 0.9; x.drawImage(head, X0, cy - head.height * k / 2, head.width * k, head.height * k); x.globalAlpha = 1; }
-  txt(x, 'Wolf Academy Invest', X0 + s + 14, cy + 10, BD(700, 28), 'rgba(242,243,245,.72)');
+  txt(x, 'Wolf Academy Invest', X0 + s + 14, cy + 10, BD(700, 28), C.sig);
   if (source) txt(x, source, W / 2, P.H - 118, BD(500, 23), C.faint, 'center');
 }
 function compose(P, blocks){
   blocks = blocks.filter(Boolean);
   const top = P.big ? 150 : 96, bot = P.H - 156, area = bot - top, n = blocks.length;
   for (let guard = 0; guard < 20; guard++){ const tot = blocks.reduce((s, b) => s + b.h, 0) + 30 * n; if (tot <= area) break; const r = blocks.slice().reverse().find(b => b.shrink && b.shrink()); if (!r) break; }
+  blocks = blocks.filter(b => b.h > 0);
   blocks = blocks.filter(b => b.h > 0); const sum = blocks.reduce((s, b) => s + b.h, 0), m = blocks.length;
   const gap = m > 1 ? Math.max(24, Math.min(P.big ? 110 : 64, (area - sum) / (m + 1))) : 0;
   // le titre reste en haut ; le reste est centré dans l'espace qui suit
@@ -153,37 +168,42 @@ function compose(P, blocks){
 const B = {
   // Titre condensé en capitales SANS accents + surlignage or (sous-titre ou, à défaut, sur-titre)
   title(P, eyebrow, title, sub){
+    title = P.t('titre', 'Titre', title); sub = P.t('surl', 'Surlignage', sub || eyebrow || ''); eyebrow = null;
     const x = P.x, size = P.small ? 116 : 132, T = up(title), lines = wrap(x, T, TT(size), P.CW).slice(0, 3);
     const hl = sub || eyebrow || '', hf = BD(800, P.small ? 36 : 40);
     x.font = hf; let hlTxt = hl; while (hlTxt && x.measureText(hlTxt).width > P.CW - 40) hlTxt = hlTxt.slice(0, -2);
     if (hlTxt !== hl) hlTxt = hlTxt.trim() + '…';
     const h = lines.length * size * 0.94 + (hl ? 26 + (P.small ? 54 : 60) : 0);
     return { h, draw(y){
-      lines.forEach((l, i) => txt(x, l, P.L, y + size * 0.86 + i * size * 0.94, TT(size), '#F4F5F7'));
-      if (hl){ const Y = y + lines.length * size * 0.94 + 26, hh = P.small ? 54 : 60; x.font = hf; const w = x.measureText(hlTxt).width + 34; rr(x, P.L, Y, w, hh, 9, C.gold); txt(x, hlTxt, P.L + 17, Y + hh * 0.72, hf, '#111111'); }
+      lines.forEach((l, i) => txt(x, l, P.L, y + size * 0.86 + i * size * 0.94, TT(size), C.ink));
+      if (hl){ const Y = y + lines.length * size * 0.94 + 26, hh = P.small ? 54 : 60; x.font = hf; const w = x.measureText(hlTxt).width + 34; rr(x, P.L, Y, w, hh, 9, C.hlBg); txt(x, hlTxt, P.L + 17, Y + hh * 0.72, hf, C.hlInk); }
     } };
   },
   big(P, value, color, caption){
+    value = P.t('chiffre', 'Grand chiffre', value); caption = P.t('chiffreTxt', 'Texte sous le grand chiffre', caption);
     const x = P.x, size = P.small ? 210 : P.big ? 270 : 250, cf = BD(600, P.small ? 32 : 37);
     const k = fit(x, value, TT('%'), size, P.CW, 90);
     const caps = caption ? wrap(x, caption, cf, P.CW).slice(0, 2) : [];
     return { h: k * 0.92 + (caps.length ? 16 + caps.length * 46 : 0), draw(y){
-      txt(x, value, P.L - 4, y + k * 0.86, TT(k), color || '#F4F5F7');
-      caps.forEach((c, i) => txt(x, c, P.L, y + k * 0.92 + 16 + 36 + i * 46, cf, '#D8DCE1'));
+      txt(x, value, P.L - 4, y + k * 0.86, TT(k), color || C.ink);
+      caps.forEach((c, i) => txt(x, c, P.L, y + k * 0.92 + 16 + 36 + i * 46, cf, C.ink2));
     } };
   },
   kpis(P, items){
+    items = items.filter(Boolean).map((it, i) => Object.assign({}, it, { l: P.t('k' + i + 'l', 'Case ' + (i + 1) + ' : titre', it.l), v: P.t('k' + i + 'v', 'Case ' + (i + 1) + ' : chiffre', it.v) }));
     items = items.filter(Boolean).slice(0, 3); const x = P.x, n = items.length, g = 20, w = (P.CW - g * (n - 1)) / n, h = P.small ? 140 : 160;
-    return { h, draw(y){ items.forEach((it, i) => { const X = P.L + i * (w + g); rr(x, X, y, w, h, 26, C.card);
+    const blk = { h, shrink(){ if (!blk.h || P.big) return false; blk.h = 0; return true; }, draw(y){ if (!blk.h) return; items.forEach((it, i) => { const X = P.L + i * (w + g); rr(x, X, y, w, h, 26, C.card);
       txt(x, it.l, X + 28, y + 50, BD(600, 27), C.dim);
-      const k = fit(x, it.v, TT('%'), P.small ? 52 : 58, w - 56, 26); txt(x, it.v, X + 28, y + 50 + 16 + k * 0.95, TT(k), it.c || '#F4F5F7'); }); } };
+      const k = fit(x, it.v, TT('%'), P.small ? 52 : 58, w - 56, 26); txt(x, it.v, X + 28, y + 50 + 16 + k * 0.95, TT(k), it.c || C.ink); }); } };
+    return blk;
   },
   head(P, im, name, tag, tagColor, sub){
+    name = P.t('nom', 'Nom', name); tag = P.t('etiq', 'Étiquette', tag);
     const x = P.x, s = P.small ? 170 : 200, h = s;
     return { h, draw(y){
       logoT(x, im, P.L, y, s, name);
       const X = P.L + s + 40, N = up(name), k = fit(x, N, TT('%'), P.small ? 92 : 108, P.R - X, 44);
-      txt(x, N, X, y + s / 2 + (tag ? -2 : k * 0.35), TT(k), '#F4F5F7');
+      txt(x, N, X, y + s / 2 + (tag ? -2 : k * 0.35), TT(k), C.ink);
       if (tag){ const tf = BD(800, P.small ? 30 : 33); x.font = tf; const tw = x.measureText(tag).width + 70, th = P.small ? 54 : 60, Y = y + s / 2 + 22;
         const bg = tagColor === C.red ? 'rgba(255,92,100,.16)' : tagColor === C.green ? 'rgba(61,220,151,.16)' : 'rgba(242,179,61,.16)';
         rr(x, X, Y, tw, th, th / 2, bg); x.beginPath(); x.arc(X + 26, Y + th / 2, 7, 0, Math.PI * 2); x.fillStyle = tagColor || C.gold; x.fill(); txt(x, tag, X + 46, Y + th * 0.68, tf, tagColor || C.gold); }
@@ -191,53 +211,58 @@ const B = {
     } };
   },
   pills(P, items){
+    items = items.filter(Boolean).map((it, i) => Object.assign({}, it, { v: P.t('p' + i, it.l, it.v) }));
     const x = P.x, h = 62;
     return { h, draw(y){ let X = P.L; items.filter(Boolean).forEach(it => { x.font = BD(600, 27); const w1 = x.measureText(it.l + '  ').width; x.font = BD(800, 27); const w = w1 + x.measureText(it.v).width + 44;
-      rr(x, X, y, w, h, 16, C.card); txt(x, it.l, X + 22, y + 41, BD(600, 27), C.dim); txt(x, it.v, X + 22 + w1, y + 41, BD(800, 27), it.c || '#F4F5F7'); X += w + 14; }); } };
+      rr(x, X, y, w, h, 16, C.card); txt(x, it.l, X + 22, y + 41, BD(600, 27), C.dim); txt(x, it.v, X + 22 + w1, y + 41, BD(800, 27), it.c || C.ink); X += w + 14; }); } };
   },
   rows(P, items){
+    items = items.map((it, i) => Object.assign({}, it, { name: P.t('l' + i + 'n', 'Ligne ' + (i + 1) + ' : nom', it.name), sub: P.t('l' + i + 's', 'Ligne ' + (i + 1) + ' : détail', it.sub), mid: P.t('l' + i + 'm', 'Ligne ' + (i + 1) + ' : date', it.mid), right: P.t('l' + i + 'r', 'Ligne ' + (i + 1) + ' : chiffre', it.right) }));
     const x = P.x, rh = items.length <= 3 ? (P.small ? 112 : 128) : P.small ? 92 : 106, g = 14;
     const blk = { h: items.length * (rh + g) - g, shrink(){ if (!items.length) return false; items = items.slice(0, -1); blk.h = items.length ? items.length * (rh + g) - g : 0; return true; }, draw(y){ items.forEach((it, i) => { const Y = y + i * (rh + g); rr(x, P.L, Y, P.CW, rh, 22, C.card);
       const s = rh - 30; logoT(x, it.img, P.L + 15, Y + 15, s, it.name);
       const X = P.L + 15 + s + 24, rightW = it.right ? 250 : 0;
       const k = fit(x, it.name, BD(800, '%'), 34, P.R - X - rightW - (it.mid ? 230 : 0) - 20, 20);
-      txt(x, it.name, X, Y + rh / 2 + (it.sub ? -4 : 12), BD(800, k), '#F4F5F7');
+      txt(x, it.name, X, Y + rh / 2 + (it.sub ? -4 : 12), BD(800, k), C.ink);
       if (it.sub) txt(x, it.sub, X, Y + rh / 2 + 32, BD(500, 24), C.dim);
       if (it.mid) txt(x, it.mid, P.R - rightW - 30, Y + rh / 2 + 11, BD(800, 28), C.gold, 'right');
       if (it.pill){ const pf = BD(800, 27); x.font = pf; const w = x.measureText(it.right).width + 58; rr(x, P.R - 22 - w, Y + rh / 2 - 26, w, 52, 26, it.pillBg);
         x.beginPath(); x.arc(P.R - 22 - w + 22, Y + rh / 2, 7, 0, Math.PI * 2); x.fillStyle = it.rightColor; x.fill(); txt(x, it.right, P.R - 22 - w + 38, Y + rh / 2 + 10, pf, it.rightColor); }
-      else if (it.right){ txt(x, it.right, P.R - 26, Y + rh / 2 + (it.rightSub ? 0 : 15), TT(P.small ? 40 : 46), it.rightColor || '#F4F5F7', 'right');
+      else if (it.right){ txt(x, it.right, P.R - 26, Y + rh / 2 + (it.rightSub ? 0 : 15), TT(P.small ? 40 : 46), it.rightColor || C.ink, 'right');
         if (it.rightSub) txt(x, it.rightSub, P.R - 26, Y + rh / 2 + 34, BD(500, 21), C.dim, 'right'); }
     }); } };
     return blk;
   },
   rings(P, items, max){
+    items = items.map((it, i) => Object.assign({}, it, { label: P.t('r' + i + 'l', 'Logo ' + (i + 1) + ' : étiquette', it.label), text: P.t('r' + i + 'v', 'Logo ' + (i + 1) + ' : chiffre', it.text) }));
     const x = P.x, cols = items.length <= 3 ? items.length : items.length <= 8 ? 4 : 5, rowsN = Math.ceil(items.length / cols), cw = P.CW / cols;
     const r = Math.min(cw * 0.36, P.small ? 66 : 74), rowH = 2 * r + (P.small ? 132 : 162);
     const blk = { h: rowsN * rowH, shrink(){ if (items.length <= cols) return false; items = items.slice(0, items.length - cols); blk.h = Math.ceil(items.length / cols) * rowH; return true; }, draw(y){ items.forEach((it, i) => { const cx = P.L + cw * (i % cols) + cw / 2, Y = y + Math.floor(i / cols) * rowH, cy = Y + 52 + r + 14;
-      txt(x, it.label, cx, Y + 34, BD(700, P.small ? 26 : 30), '#C9CED5', 'center');
-      x.beginPath(); x.arc(cx, cy, r + 13, 0, Math.PI * 2); x.strokeStyle = '#2A2F36'; x.lineWidth = 9; x.stroke();
+      txt(x, it.label, cx, Y + 34, BD(700, P.small ? 26 : 30), C.ink2, 'center');
+      x.beginPath(); x.arc(cx, cy, r + 13, 0, Math.PI * 2); x.strokeStyle = C.track; x.lineWidth = 9; x.stroke();
       const f = Math.max(0.02, Math.min(1, (it.ring != null ? it.ring : it.v / max)));
       x.beginPath(); x.arc(cx, cy, r + 13, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2); x.strokeStyle = C.gold; x.lineCap = 'round'; x.stroke(); x.lineCap = 'butt';
       logoC(x, it.img, cx, cy, r, it.name);
-      if (i < 3){ const bx = cx - r - 4, by = cy - r + 4; x.save(); x.shadowColor = 'rgba(0,0,0,.4)'; x.shadowBlur = 12; x.beginPath(); x.arc(bx, by, 24, 0, Math.PI * 2); x.fillStyle = C.gold; x.fill(); x.restore(); txt(x, String(i + 1), bx, by + 9, BD(800, 25), '#111111', 'center'); }
-      txt(x, it.text, cx, cy + r + 70, TT(P.small ? 50 : 56), '#F4F5F7', 'center');
+      if (i < 3){ const bx = cx - r - 4, by = cy - r + 4; x.save(); x.shadowColor = 'rgba(0,0,0,.4)'; x.shadowBlur = 12; x.beginPath(); x.arc(bx, by, 24, 0, Math.PI * 2); x.fillStyle = C.hlBg; x.fill(); x.restore(); txt(x, String(i + 1), bx, by + 9, BD(800, 25), C.hlInk, 'center'); }
+      txt(x, it.text, cx, cy + r + 70, TT(P.small ? 50 : 56), C.ink, 'center');
     }); } };
     return blk;
   },
   bars(P, items, max){
+    items = items.map((it, i) => Object.assign({}, it, { text: P.t('b' + i, 'Barre ' + (i + 1) + ' (' + it.name + ')', it.text) }));
     const x = P.x, rh = P.small ? 66 : 78, g = P.small ? 16 : 22;
     const blk = { h: items.length * (rh + g) - g, shrink(){ if (items.length <= 2) return false; items = items.slice(0, -1); blk.h = items.length * (rh + g) - g; return true; }, draw(y){ items.forEach((it, i) => { const Y = y + i * (rh + g), r = rh / 2; logoC(x, it.img, P.L + r, Y + r, r, it.name);
       const X = P.L + 2 * r + 22, tw = 170, bw = P.R - X - tw - 16, f = Math.max(0.01, Math.min(1, Math.abs(it.v) / max));
       rr(x, X, Y + rh * 0.16, bw, rh * 0.68, rh * 0.22, C.card);
       const grd = x.createLinearGradient(X, 0, X + bw * f, 0); grd.addColorStop(0, it.v < 0 ? '#9C3F45' : C.gold); grd.addColorStop(1, it.v < 0 ? C.red : C.gold2);
       rr(x, X, Y + rh * 0.16, Math.max(rh * 0.44, bw * f), rh * 0.68, rh * 0.22, grd);
-      txt(x, it.text, P.R, Y + r + 17, TT(P.small ? 44 : 50), '#F4F5F7', 'right');
+      txt(x, it.text, P.R, Y + r + 17, TT(P.small ? 44 : 50), C.ink, 'right');
     }); } };
     return blk;
   },
   // Barres verticales de comparaison (portefeuille contre indices), valeurs au-dessus, étiquette et pastille dessous
   cmpBars(P, items){
+    items = items.map((it, i) => Object.assign({}, it, { text: P.t('c' + i + 'v', it.label + ' : chiffre', it.text), label: P.t('c' + i + 'l', 'Barre ' + (i + 1) + ' : nom', it.label) }));
     const x = P.x;
     const blk = { h: P.small ? 470 : P.big ? 680 : 560, shrink(){ if (blk.h <= 380) return false; blk.h -= 60; return true; }, draw(y){ const h = blk.h;
       const n = items.length, bw = Math.min(230, (P.CW - 60 * (n - 1)) / n), gap = (P.CW - bw * n) / Math.max(1, n - 1), base = y + h - 150, top = y + 90;
@@ -245,20 +270,21 @@ const B = {
       items.forEach((it, i) => { const X = P.L + i * (bw + gap), bh = Math.max(16, Math.abs(it.v) / mx * (base - top)), by = base - bh;
         let fill = it.color; if (it.grad){ fill = x.createLinearGradient(0, by, 0, by + bh); fill.addColorStop(0, C.gold2); fill.addColorStop(1, C.gold); }
         rr(x, X, by, bw, bh, Math.min(28, bh / 2, bw / 6), fill);
-        txt(x, it.text, X + bw / 2, by - 22, TT(P.small ? 62 : 72), it.v > 0.05 ? C.green : it.v < -0.05 ? C.red : '#F4F5F7', 'center');
+        txt(x, it.text, X + bw / 2, by - 22, TT(P.small ? 62 : 72), it.v > 0.05 ? C.green : it.v < -0.05 ? C.red : C.ink, 'center');
         const s = 84, ly = base + 26;
-        if (it.img){ rr(x, X + bw / 2 - s / 2, ly, s, s, 22, '#0B0D10', it.ring || null); const k = (s - 14) / Math.max(it.img.width, it.img.height); x.drawImage(it.img, X + bw / 2 - it.img.width * k / 2, ly + s / 2 - it.img.height * k / 2, it.img.width * k, it.img.height * k); }
+        if (it.img){ rr(x, X + bw / 2 - s / 2, ly, s, s, 22, C.wolfBg, it.ring || null); const k = (s - 14) / Math.max(it.img.width, it.img.height); x.drawImage(it.img, X + bw / 2 - it.img.width * k / 2, ly + s / 2 - it.img.height * k / 2, it.img.width * k, it.img.height * k); }
         else { rr(x, X + bw / 2 - s / 2, ly, s, s, 22, it.chip || '#C9CED5'); const t = it.short || ''; const k = fit(x, t, TT('%'), 40, s - 12, 18); txt(x, t, X + bw / 2, ly + s / 2 + k * 0.36, TT(k), '#111111', 'center'); }
-        txt(x, it.label, X + bw / 2, ly + s + 40, BD(800, 29), '#F4F5F7', 'center');
+        txt(x, it.label, X + bw / 2, ly + s + 40, BD(800, 29), C.ink, 'center');
       });
     } };
     return blk;
   },
   // Rangée de logos (opérations du mois) avec pastille + / −
   logoRow(P, items, caption){
+    caption = P.t('logosTxt', 'Texte au-dessus des logos', caption);
     const x = P.x, s = P.small ? 104 : 124, h = s + (caption ? 64 : 0);
     const blk = { h, draw(y){
-      if (caption) txt(x, caption, W / 2, y + 34, BD(700, 30), '#C9CED5', 'center');
+      if (caption) txt(x, caption, W / 2, y + 34, BD(700, 30), C.ink2, 'center');
       const n = items.length, g = 26, tot = n * s + (n - 1) * g; let X = (W - tot) / 2; const Y = y + (caption ? 64 : 0);
       items.forEach(it => { logoT(x, it.img, X, Y, s, it.name); if (it.badge){ x.beginPath(); x.arc(X + s - 6, Y + s - 6, 24, 0, Math.PI * 2); x.fillStyle = it.badgeColor; x.fill(); x.lineWidth = 6; x.strokeStyle = C.bg; x.stroke(); txt(x, it.badge, X + s - 6, Y + s + 4, BD(800, 28), '#111111', 'center'); } X += s + g; });
     }, shrink(){ if (!items.length) return false; items = []; blk.h = 0; return true; } };
@@ -281,8 +307,8 @@ const B = {
       const min = lo - pad, max = hi + pad, X0 = P.L + 10, X1 = P.R - 10, Y0 = y + 24, Y1 = y + h - 50;
       const n = Math.max(...series.map(s => s.values.length)), px = i => X0 + (X1 - X0) * i / Math.max(1, n - 1), py = v => Y1 - (v - min) / (max - min) * (Y1 - Y0);
       rr(x, P.L - 6, y, P.CW + 12, h, 26, C.card);
-      for (let k = 1; k < 4; k++){ x.fillStyle = 'rgba(255,255,255,.05)'; x.fillRect(X0, Y0 + (Y1 - Y0) * k / 4, X1 - X0, 2); }
-      if (opts.zero && min < 0 && max > 0){ x.setLineDash([8, 10]); x.strokeStyle = 'rgba(255,255,255,.25)'; x.lineWidth = 2; x.beginPath(); x.moveTo(X0, py(0)); x.lineTo(X1, py(0)); x.stroke(); x.setLineDash([]); }
+      for (let k = 1; k < 4; k++){ x.fillStyle = C.grid; x.fillRect(X0, Y0 + (Y1 - Y0) * k / 4, X1 - X0, 2); }
+      if (opts.zero && min < 0 && max > 0){ x.setLineDash([8, 10]); x.strokeStyle = C.track; x.lineWidth = 2; x.beginPath(); x.moveTo(X0, py(0)); x.lineTo(X1, py(0)); x.stroke(); x.setLineDash([]); }
       let lastLab = null;
       (opts.hlines || []).slice().sort((a, b) => b.v - a.v).forEach(l => { x.setLineDash([12, 10]); x.strokeStyle = l.color; x.lineWidth = 3; x.beginPath(); x.moveTo(X0, py(l.v)); x.lineTo(X1, py(l.v)); x.stroke(); x.setLineDash([]);
         let ly = py(l.v) - 44; if (lastLab != null && ly < lastLab + 42) ly = py(l.v) + 8; lastLab = ly;
@@ -308,16 +334,17 @@ const B = {
       items.forEach((it, i) => { const Y = y + (h - rowH * items.length) / 2 + i * rowH + rowH / 2;
         rr(x, LX, Y - 8, 22, 16, 5, it.color || SERIES[i % SERIES.length]);
         const NX = it.sym ? LX + 100 : LX + 42; if (it.sym) logoT(x, it.img, LX + 38, Y - rowH * 0.34, rowH * 0.68, it.name);
-        const k = fit(x, it.name, BD(700, '%'), 29, P.R - NX - 130, 18); txt(x, it.name, NX, Y + 10, BD(700, k), '#F4F5F7');
-        txt(x, fr(it.v / tot * 100, 1) + ' %', P.R, Y + 14, TT(38), '#F4F5F7', 'right'); });
+        const k = fit(x, it.name, BD(700, '%'), 29, P.R - NX - 130, 18); txt(x, it.name, NX, Y + 10, BD(700, k), C.ink);
+        txt(x, fr(it.v / tot * 100, 1) + ' %', P.R, Y + 14, TT(38), C.ink, 'right'); });
     } };
   },
   duel(P, a, b){
+    a = Object.assign({}, a, { value: P.t('dav', a.name + ' : montant', a.value), sub: P.t('das', a.name + ' : multiple', a.sub) }); b = Object.assign({}, b, { value: P.t('dbv', b.name + ' : montant', b.value), sub: P.t('dbs', b.name + ' : multiple', b.sub) });
     const x = P.x, h = P.small ? 360 : 410;
     return { h, draw(y){ [a, b].forEach((s, i) => { const w = (P.CW - 22) / 2, X = P.L + i * (w + 22); rr(x, X, y, w, h, 28, C.card);
       const ls = P.small ? 120 : 140; logoT(x, s.img, X + w / 2 - ls / 2, y + 34, ls, s.name);
       const k = fit(x, s.name, BD(800, '%'), 30, w - 40, 18); txt(x, s.name, X + w / 2, y + 34 + ls + 50, BD(800, k), C.dim, 'center');
-      const kk = fit(x, s.value, TT('%'), P.small ? 78 : 92, w - 40, 30); txt(x, s.value, X + w / 2, y + 34 + ls + 56 + kk, TT(kk), s.win ? C.green : '#F4F5F7', 'center');
+      const kk = fit(x, s.value, TT('%'), P.small ? 78 : 92, w - 40, 30); txt(x, s.value, X + w / 2, y + 34 + ls + 56 + kk, TT(kk), s.win ? C.green : C.ink, 'center');
       txt(x, s.sub, X + w / 2, y + h - 26, BD(700, 26), C.dim, 'center'); }); } };
   },
   image(P, im, maxH){
@@ -325,10 +352,11 @@ const B = {
     return { h: h + 40, draw(y){ rr(x, P.L, y, P.CW, h + 40, 26, C.card); x.drawImage(im, P.L + (P.CW - w) / 2, y + 20, w, h); } };
   },
   para(P, s, maxLines){
+    s = P.t('texte', 'Texte', s);
     const x = P.x, f = BD(500, P.small ? 32 : 36), lines = wrap(x, s, f, P.CW - 60).slice(0, maxLines || 10), lh = P.small ? 46 : 52;
-    return { h: lines.length * lh + 50, draw(y){ rr(x, P.L, y, P.CW, lines.length * lh + 50, 26, C.card); lines.forEach((l, i) => txt(x, l, P.L + 30, y + 25 + lh * (i + 1) - 12, f, '#F4F5F7')); } };
+    return { h: lines.length * lh + 50, draw(y){ rr(x, P.L, y, P.CW, lines.length * lh + 50, 26, C.card); lines.forEach((l, i) => txt(x, l, P.L + 30, y + 25 + lh * (i + 1) - 12, f, C.ink)); } };
   },
-  note(P, s){ const x = P.x; const blk = { h: 34, shrink(){ if (!blk.h) return false; blk.h = 0; return true; }, draw(y){ if (blk.h) txt(x, s, P.L, y + 26, BD(500, 24), C.faint); } }; return blk; },
+  note(P, s){ s = P.t('note', 'Note en bas', s); const x = P.x; const blk = { h: 34, shrink(){ if (!blk.h) return false; blk.h = 0; return true; }, draw(y){ if (blk.h) txt(x, s, P.L, y + 26, BD(500, 24), C.faint); } }; return blk; },
 };
 const cap = (P, s, m, l) => P.small ? s : P.big ? l : m;   // nombre d'éléments selon le format
 
@@ -435,6 +463,8 @@ const T = [
     const d = await snap(co.sym, true); if (!d || !isNum(d.earnings_per_share_fq) || !isNum(d.earnings_per_share_forecast_fq)) throw new Error('TradingView ne donne pas encore le dernier résultat de ' + co.name + '.');
     const beat = d.earnings_per_share_fq >= d.earnings_per_share_forecast_fq, sur = isNum(d.eps_surprise_percent_fq) ? d.eps_surprise_percent_fq : (d.earnings_per_share_fq / d.earnings_per_share_forecast_fq - 1) * 100;
     const ccy = d.fundamental_currency_code || d.currency, rev = isNum(d.revenue_fq) && isNum(d.revenue_forecast_fq) ? (d.revenue_fq / d.revenue_forecast_fq - 1) * 100 : null, date = tsIso(d.earnings_release_date);
+    P.info = '⚠ À vérifier sur le communiqué de ' + co.name + ' avant de publier. TradingView : publié le ' + (date ? frDate(date) : '?') + ' · BPA ' + money(d.earnings_per_share_fq, ccy) + ' (attendu ' + money(d.earnings_per_share_forecast_fq, ccy) + ')' +
+      (isNum(d.revenue_fq) ? ' · CA ' + fr(d.revenue_fq / 1e9, 2) + ' Md ' + (CUR[ccy] || ccy) + ' (attendu ' + fr(d.revenue_forecast_fq / 1e9, 2) + ')' : '') + '. Corrige un chiffre plus bas si besoin.';
     return [B.title(P, null, o.titre || 'Résultats', o.sous || (date ? 'Publiés le ' + frDate(date) : 'Dernier trimestre') + ' · face au consensus'), B.head(P, await logoFor(co), co.name, beat ? 'Battu' : 'Manqué', beat ? C.green : C.red),
       B.big(P, beat ? 'BATTU' : 'MANQUÉ', beat ? C.green : C.red, 'Bénéfice par action ' + sgn(sur) + ' par rapport au consensus'),
       B.kpis(P, [{ l: 'BPA publié', v: money(d.earnings_per_share_fq, ccy) }, { l: 'BPA attendu', v: money(d.earnings_per_share_forecast_fq, ccy) }, { l: 'CA vs attendu', v: sgn(rev), c: rev >= 0 ? C.green : C.red }])];
@@ -446,22 +476,42 @@ const T = [
     const R = RANGES.find(r => r[0] === (o.range || '1a')) || RANGES[3], from = addD(today(), -R[2]), h = await history(co.sym, from);
     const i0 = h.d.findIndex(x => x >= from), d = h.d.slice(Math.max(0, i0)), c = h.c.slice(Math.max(0, i0)); if (c.length < 2) throw new Error('Pas assez de cours.');
     const chg = (c[c.length - 1] / c[0] - 1) * 100, yrs = R[2] / 365.25, step = Math.ceil(c.length / 400), vals = c.filter((_, i) => i % step === 0 || i === c.length - 1);
-    return [B.title(P, 'Sur ' + R[1], o.titre || co.name, o.sous || null), B.big(P, sgn(chg), chg >= 0 ? C.green : C.red, 'de ' + money(c[0], h.ccy) + ' à ' + money(c[c.length - 1], h.ccy) + ' (hors dividendes)'),
+    return [B.title(P, null, o.titre || 'Performance', o.sous || 'Sur ' + R[1]), B.head(P, await logoFor(co), co.name, null), B.big(P, sgn(chg), chg >= 0 ? C.green : C.red, 'de ' + money(c[0], h.ccy) + ' à ' + money(c[c.length - 1], h.ccy) + ' (hors dividendes)'),
       B.line(P, [{ values: vals, color: C.gold, width: 5, fill: true }], { labels: [frDate(d[0]), frDate(d[d.length - 1])] }),
       yrs >= 1 ? B.kpis(P, [{ l: 'Par an', v: sgn((Math.pow(c[c.length - 1] / c[0], 1 / yrs) - 1) * 100), c: chg >= 0 ? C.green : C.red }, { l: 'Plus haut', v: money(Math.max(...c), h.ccy) }, { l: 'Plus bas', v: money(Math.min(...c), h.ccy) }]) : null];
   } },
 /* ----- Entreprises (TradingView) ----- */
 { k: 'valo', group: 'Entreprises', ic: '⚖️', name: 'Valorisation', desc: 'Cours, prix juste, marge de sécurité',
-  fields: [{ id: 'nom', type: 'select', label: 'Entreprise suivie (onglet Analyse)', options: () => followed().map(n => [n, n]) }],
+  fields: [{ id: 'src', type: 'select', label: 'Où prendre le prix juste ?', rerender: true, options: [['prix', 'Prix par secteur (ma simulation)'], ['analyse', 'Fiche Analyse']] },
+    { id: 'nom', type: 'select', label: 'Entreprise', options: async o => (o.src || 'prix') === 'prix' ? (window.PRIX_UI ? (await PRIX_UI.pubItems()).filter(x => isNum(x.juste)).map(x => [x.nom, x.nom + ' · ' + x.secteurLabel]) : []) : followed().map(n => [n, n]) }],
   async build(P, o){
-    const nom = o.nom || followed()[0], rows = (typeof companies !== 'undefined' && companies[nom]) || []; const last = rows[rows.length - 1];
-    if (!last || !isNum(last.prixJuste)) throw new Error('Pas de prix juste pour cette entreprise.');
-    const sym = last.ticker, h = sym ? await history(sym, addD(today(), -1826)).catch(() => null) : null, cours = isNum(last.prixActuel) ? last.prixActuel : h && h.c[h.c.length - 1];
-    const marge = (last.prixJuste / cours - 1) * 100, ccy = last.devise || (h && h.ccy) || 'EUR', step = h ? Math.ceil(h.c.length / 300) : 1;
-    return [B.title(P, 'Valorisation', o.titre || (marge >= 0 ? nom + ' sous-évaluée ?' : nom + ' trop chère ?'), o.sous || null),
+    const src = o.src || 'prix';
+    let nom = o.nom, cours, juste, lines = [], ccy = 'EUR', sym = null, logo = null, extra;
+    if (src === 'prix'){
+      const all = window.PRIX_UI ? (await PRIX_UI.pubItems()).filter(x => isNum(x.juste)) : [], it = all.find(x => x.nom === nom) || all[0];
+      if (!it) throw new Error('Aucune simulation dans « Prix par secteur ».');
+      nom = it.nom; cours = it.cours; juste = it.sc.real; ccy = it.devise || 'EUR'; sym = it.sym; logo = it.logo;
+      if (isNum(it.sc.pess)) lines.push({ v: it.sc.pess, color: C.red, label: 'Pessimiste ' + fr(it.sc.pess, 0) });
+      lines.push({ v: juste, color: C.gold2, label: 'Réaliste ' + fr(juste, 0) });
+      if (isNum(it.sc.opt)) lines.push({ v: it.sc.opt, color: C.green, label: 'Optimiste ' + fr(it.sc.opt, 0) });
+      extra = { l: 'Rendement 5 ans', v: isNum(it.rdt) ? sgn(it.rdt * 100) + '/an' : '—', c: it.rdt >= 0 ? C.green : C.red };
+      P.info = 'Source : ta simulation « Prix par secteur » (scénario réaliste pour le prix juste). Cours : ' + money(cours, ccy) + '.';
+    } else {
+      nom = nom || followed()[0]; const rows = (typeof companies !== 'undefined' && companies[nom]) || [], last = rows[rows.length - 1];
+      if (!last || !isNum(last.prixJuste)) throw new Error('Pas de prix juste dans la fiche Analyse pour cette entreprise.');
+      cours = last.prixActuel; juste = last.prixJuste; ccy = last.devise || 'EUR'; sym = last.ticker; logo = last.lienImage;
+      lines.push({ v: juste, color: C.gold2, label: 'Prix juste ' + fr(juste, 0) }); if (isNum(last.prixCible)) lines.push({ v: last.prixCible, color: C.green, label: 'Prix cible ' + fr(last.prixCible, 0) });
+      extra = { l: 'Prix cible', v: isNum(last.prixCible) ? money(last.prixCible, ccy, 0) : '—', c: C.green };
+      P.info = 'Source : fiche Analyse (prix juste ' + money(juste, ccy) + ', calcul automatique). Vérifie que c\'est bien ton analyse.';
+    }
+    if (!isNum(cours) || !isNum(juste) || juste <= 0) throw new Error('Cours ou prix juste manquant pour ' + nom + '.');
+    const h = sym ? await history(sym, addD(today(), -1826)).catch(() => null) : null, step = h ? Math.ceil(h.c.length / 300) : 1, marge = (juste / cours - 1) * 100;
+    const img = await logoFor({ sym, logo, name: nom });
+    return [B.title(P, null, o.titre || (marge >= 0 ? 'Sous-evaluee ?' : 'Trop chere ?'), src === 'prix' ? 'Ma valorisation · prix juste ' + money(juste, ccy, 0) : 'Prix juste ' + money(juste, ccy, 0)),
+      B.head(P, img, nom, marge >= 0 ? 'Sous son prix juste' : 'Au-dessus du prix juste', marge >= 0 ? C.green : C.red),
       B.big(P, sgn(marge, 0), marge >= 0 ? C.green : C.red, marge >= 0 ? 'de potentiel jusqu\'au prix juste' : 'au-dessus du prix juste'),
-      h ? B.line(P, [{ values: h.c.filter((_, i) => i % step === 0), color: C.blue, width: 4, fill: true }], { hlines: [{ v: last.prixJuste, color: C.gold2, label: 'Prix juste ' + fr(last.prixJuste, 0) }].concat(isNum(last.prixCible) ? [{ v: last.prixCible, color: C.green, label: 'Prix cible ' + fr(last.prixCible, 0) }] : []), labels: [frDate(h.d[0]), frDate(h.d[h.d.length - 1])], h: cap(P, 280, 380, 560) }) : null,
-      B.kpis(P, [{ l: 'Cours', v: money(cours, ccy, 0) }, { l: 'Prix juste', v: money(last.prixJuste, ccy, 0), c: C.gold2 }, { l: 'Prix cible', v: isNum(last.prixCible) ? money(last.prixCible, ccy, 0) : '—', c: C.green }])];
+      h ? B.line(P, [{ values: h.c.filter((_, i) => i % step === 0), color: C.blue, width: 4, fill: true }], { hlines: lines, labels: [frDate(h.d[0]), frDate(h.d[h.d.length - 1])], h: cap(P, 260, 340, 520) }) : null,
+      B.kpis(P, [{ l: 'Cours', v: money(cours, ccy, 0) }, { l: 'Prix juste', v: money(juste, ccy, 0), c: C.gold }, extra])];
   } },
 { k: 'rank', group: 'Entreprises', ic: '🏆', name: 'Classement comparatif', desc: '2 à 15 entreprises classées sur un chiffre',
   fields: [{ id: 'cos', type: 'companies', label: 'Entreprises', max: 15, quick: 'held' }, { id: 'metric', type: 'select', label: 'Chiffre comparé', options: Object.keys(METRICS).map(k => [k, METRICS[k].l]) },
@@ -557,9 +607,9 @@ function atelierCards(){
 }
 
 /* ======================= INTERFACE ======================= */
-const ui = { tpl: null, fmt: 'f45', opts: {}, busy: false, err: null, canvas: null, sugg: {}, q: {} };
+const ui = { tpl: null, fmt: 'f45', theme: 'nuit', opts: {}, busy: false, err: null, canvas: null, sugg: {}, q: {}, editSig: '' };
 function prefs(){ try { return JSON.parse(localStorage.getItem('wolfPubPrefs') || '{}'); } catch(e){ return {}; } }
-function savePrefs(){ try { const p = prefs(); p[ui.tpl] = ui.opts; p._fmt = ui.fmt; localStorage.setItem('wolfPubPrefs', JSON.stringify(p)); } catch(e){} }
+function savePrefs(){ try { const p = prefs(); p[ui.tpl] = ui.opts; p._fmt = ui.fmt; p._theme = ui.theme; localStorage.setItem('wolfPubPrefs', JSON.stringify(p)); } catch(e){} }
 function page(){ return $(PAGE_ID); }
 
 function renderPage(){
@@ -575,6 +625,7 @@ function renderPage(){
   el.innerHTML = '<div class="pb-wrap"><div class="pb-bar"><button type="button" class="pb-back" data-pb-back>← Modèles</button><h2>' + t.ic + ' ' + esc(t.name) + '</h2></div>' +
     '<div class="pb-editor"><div class="pb-ctl" id="pbCtl"><p class="pb-faint">Chargement des réglages…</p></div>' +
     '<div class="pb-prev"><div class="pb-seg" id="pbFmt">' + [['f1', 'Carré'], ['f45', 'Portrait'], ['f916', 'Story']].map(f => '<button type="button" data-pb-fmt="' + f[0] + '" class="' + (ui.fmt === f[0] ? 'on' : '') + '">' + f[1] + '</button>').join('') + '</div>' +
+    '<div class="pb-seg pb-themes" id="pbTheme">' + Object.keys(THEMES).map(k => '<button type="button" data-pb-theme="' + k + '" class="' + (ui.theme === k ? 'on' : '') + '"><i style="background:' + THEMES[k].bg + ';border-color:' + THEMES[k].hlBg + '"></i>' + THEMES[k].label + '</button>').join('') + '</div>' +
     '<div class="pb-canvas" id="pbCanvas"><p class="pb-faint">Préparation…</p></div>' +
     '<div class="pb-actions"><button type="button" class="pb-go" data-pb-dl>⬇ Télécharger l\'image</button><button type="button" class="pb-sec" data-pb-copy>📋 Copier</button></div><p class="pb-msg" id="pbMsg"></p></div></div></div>';
   renderControls(t).then(draw);
@@ -584,8 +635,8 @@ async function renderControls(t){
   let html = '';
   for (const f of t.fields){
     if (f.type === 'select'){
-      let opts = []; try { opts = typeof f.options === 'function' ? await f.options() : f.options; } catch(e){ opts = []; html += '<p class="pb-err">' + esc(e.message) + '</p>'; }
-      if (ui.opts[f.id] == null && opts[0]) ui.opts[f.id] = opts[0][0];
+      let opts = []; try { opts = typeof f.options === 'function' ? await f.options(ui.opts) : f.options; } catch(e){ opts = []; html += '<p class="pb-err">' + esc(e.message) + '</p>'; }
+      if ((ui.opts[f.id] == null || !opts.some(o => String(o[0]) === String(ui.opts[f.id]))) && opts[0]) ui.opts[f.id] = opts[0][0];
       html += '<label>' + esc(f.label) + '<select data-pb-f="' + f.id + '">' + (opts.length ? opts.map(o => '<option value="' + esc(o[0]) + '"' + (String(ui.opts[f.id]) === String(o[0]) ? ' selected' : '') + '>' + esc(o[1]) + '</option>').join('') : '<option value="">(rien à choisir)</option>') + '</select></label>';
     } else if (f.type === 'check'){
       html += '<label class="pb-check"><input type="checkbox" data-pb-f="' + f.id + '"' + (ui.opts[f.id] ? ' checked' : '') + '> ' + esc(f.label) + '</label>';
@@ -597,8 +648,7 @@ async function renderControls(t){
         (f.quick === 'held' ? '<button type="button" class="pb-sec small" data-pb-held="' + f.id + '">' + (multi ? '+ Les lignes du Wolf Portfolio' : 'Choisir une ligne du Wolf') + '</button>' : '') + '</div>';
     }
   }
-  html += '<details class="pb-more"' + (ui.opts.titre || ui.opts.sous ? ' open' : '') + '><summary>Titre et sous-titre</summary><label>Titre (vide = automatique)<input type="text" data-pb-f="titre" value="' + esc(ui.opts.titre || '') + '" maxlength="70"></label>' +
-    '<label>Sous-titre<input type="text" data-pb-f="sous" value="' + esc(ui.opts.sous || '') + '" maxlength="90"></label></details>';
+  html += '<div id="pbEdit" class="pb-edit"></div>';
   box.innerHTML = html;
 }
 function suggHtml(fid){
@@ -629,13 +679,23 @@ async function draw(){
   box.classList.add('busy');
   try {
     await fontsReady();
-    const P = mk(ui.fmt), blocks = await t.build(P, ui.opts);
+    setTheme(ui.theme); const P = mk(ui.fmt); P.ov = ui.opts.ov || {}; const blocks = await t.build(P, ui.opts);
     if (seq !== drawSeq) return;
     await frame(P, t.name, t.group === 'Portefeuille' ? null : 'Données TradingView · ' + frDate(today()));
     compose(P, blocks);
-    ui.canvas = P.c; P.c.className = 'pb-out'; box.innerHTML = ''; box.appendChild(P.c); msg('');
+    ui.canvas = P.c; P.c.className = 'pb-out'; box.innerHTML = ''; box.appendChild(P.c); msg(''); renderEdit(P);
   } catch(e){ if (seq !== drawSeq) return; ui.canvas = null; box.innerHTML = '<p class="pb-err">⚠ ' + esc(e.message || 'erreur') + '</p>'; }
   box.classList.remove('busy');
+}
+// Panneau « Modifier les textes et chiffres » : un champ par texte affiché (vide = valeur d'origine, en gris)
+function renderEdit(P){
+  const el = $('pbEdit'); if (!el) return;
+  const ov = ui.opts.ov || {}, sig = P.fields.map(f => f.key).join('|') + '#' + (P.info || '');
+  if (sig === ui.editSig && el.childElementCount){ P.fields.forEach(f => { const i = el.querySelector('[data-pb-ov="' + f.key + '"]'); if (i) i.placeholder = f.val; }); return; }
+  ui.editSig = sig;
+  el.innerHTML = (P.info ? '<p class="pb-info">' + esc(P.info) + '</p>' : '') + '<details class="pb-more" open><summary>✏ Modifier les textes et chiffres</summary>' +
+    P.fields.map(f => '<label>' + esc(f.label) + '<input type="text" data-pb-ov="' + esc(f.key) + '" value="' + esc(ov[f.key] || '') + '" placeholder="' + esc(f.val) + '"></label>').join('') +
+    '<button type="button" class="pb-sec small" data-pb-ovreset>↺ Revenir aux valeurs d\'origine</button></details>';
 }
 function msg(s, ok){ const m = $('pbMsg'); if (m){ m.textContent = s; m.className = 'pb-msg' + (ok ? ' ok' : ''); } }
 function fileName(){ const t = T.find(x => x.k === ui.tpl); return 'wolf-' + t.k + '-' + today() + '-' + ({ f1: 'carre', f45: 'portrait', f916: 'story' }[ui.fmt]) + '.png'; }
@@ -657,6 +717,8 @@ function wire(){
     if (ds.pbTpl){ ui.tpl = ds.pbTpl; ui.opts = Object.assign({}, prefs()[ui.tpl] || {}); ui.sugg = {}; ui.q = {}; return renderPage(); }
     if (ds.pbBack !== undefined){ ui.tpl = null; return renderPage(); }
     if (ds.pbFmt){ ui.fmt = ds.pbFmt; el.querySelectorAll('[data-pb-fmt]').forEach(x => x.classList.toggle('on', x === b)); return draw(); }
+    if (ds.pbTheme){ ui.theme = ds.pbTheme; el.querySelectorAll('[data-pb-theme]').forEach(x => x.classList.toggle('on', x === b)); return draw(); }
+    if (ds.pbOvreset !== undefined){ ui.opts.ov = {}; ui.editSig = ''; return draw(); }
     if (ds.pbDl !== undefined) return download();
     if (ds.pbCopy !== undefined) return copy();
     if (ds.pbPick){ const [fid, i] = ds.pbPick.split('|'), r = (ui.sugg[fid] || [])[+i]; if (!r) return; const c = { sym: r.symbol, name: r.name, logoid: r.logoid || null };
@@ -669,10 +731,13 @@ function wire(){
       else { ui.sugg[fid] = h.map(x => ({ symbol: x.sym, name: x.name, logoid: x.logoid })); const bx = $('pbSugg_' + fid); if (bx) bx.innerHTML = suggHtml(fid); return; }
       await renderControls(T.find(x => x.k === ui.tpl)); schedule(); } catch(err){ msg(err.message); } return; }
   });
-  el.addEventListener('change', e => { const t = e.target, f = t.dataset && t.dataset.pbF; if (!f) return; ui.opts[f] = t.type === 'checkbox' ? t.checked : t.value; schedule(); });
-  el.addEventListener('input', e => { const t = e.target; if (t.dataset && t.dataset.pbQ) return search(t.dataset.pbQ, t.value); if (t.dataset && (t.dataset.pbF === 'titre' || t.dataset.pbF === 'sous')){ ui.opts[t.dataset.pbF] = t.value; schedule(); } });
+  // changer une donnée (opération, entreprise, période…) efface les corrections manuelles, qui ne valaient que pour l'ancienne donnée
+  el.addEventListener('change', async e => { const t = e.target, f = t.dataset && t.dataset.pbF; if (!f) return; ui.opts[f] = t.type === 'checkbox' ? t.checked : t.value; ui.opts.ov = {}; ui.editSig = '';
+    const fd = (T.find(x => x.k === ui.tpl) || { fields: [] }).fields.find(x => x.id === f); if (fd && fd.rerender) await renderControls(T.find(x => x.k === ui.tpl)); schedule(); });
+  el.addEventListener('input', e => { const t = e.target; if (t.dataset && t.dataset.pbOv){ ui.opts.ov = Object.assign({}, ui.opts.ov, { [t.dataset.pbOv]: t.value }); return schedule(); }
+    if (t.dataset && t.dataset.pbQ) return search(t.dataset.pbQ, t.value); if (t.dataset && (t.dataset.pbF === 'titre' || t.dataset.pbF === 'sous')){ ui.opts[t.dataset.pbF] = t.value; schedule(); } });
 }
-function onShow(){ wire(); if (ui.fmt === 'f45' && prefs()._fmt) ui.fmt = prefs()._fmt; renderPage(); }
+function onShow(){ wire(); const p = prefs(); if (p._fmt) ui.fmt = p._fmt; if (p._theme && THEMES[p._theme]) ui.theme = p._theme; renderPage(); }
 document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-page="' + PAGE_ID + '"]'); if (b) setTimeout(onShow, 0); });
 // Ouvre directement un modèle prérempli (boutons « 📤 Publier » ailleurs dans l'appli)
 function open(k, preset){
@@ -680,5 +745,5 @@ function open(k, preset){
   wire(); ui.tpl = k; ui.opts = Object.assign({}, prefs()[k] || {}, preset || {}); ui.sugg = {}; ui.q = {}; renderPage();
   try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch(e){}
 }
-window.WOLF_PUB = { open, templates: T.map(t => t.k), _render: async (k, opts, fmt) => { await fontsReady(); const t = T.find(x => x.k === k), P = mk(fmt || 'f45'), b = await t.build(P, opts || {}); await frame(P, t.name, 'test'); compose(P, b); return P.c; } };
+window.WOLF_PUB = { open, templates: T.map(t => t.k), _render: async (k, opts, fmt, theme) => { await fontsReady(); setTheme(theme || 'nuit'); const t = T.find(x => x.k === k), P = mk(fmt || 'f45'); P.ov = (opts && opts.ov) || {}; const b = await t.build(P, opts || {}); await frame(P, t.name, 'test'); compose(P, b); return P.c; } };
 })();

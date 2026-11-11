@@ -253,10 +253,11 @@ load().catch(() => {});
 async function pubItems(){
   if (!D) await load();
   if (!D) return [];
-  return Object.values(D.items || {}).map(it => { const c = company(it.nom), r = calc(it, 'real'), cours = coursOf(it).v;
-    const sec = sectors().find(s => s.key === it.secteur);
-    return { nom: c ? c.key : it.nom, sym: it.tvSym || null, logo: (c && c.logo) || it.logo || '', secteur: it.secteur || '', secteurLabel: sec ? sec.label : 'Sans secteur',
-      cours, juste: r ? r.juste : null, ecart: r ? r.ecart : null, devise: c ? c.devise : (it.devise || 'EUR') }; });
+  return Object.values(D.items || {}).map(it => { const c = company(it.nom), r = calc(it, 'real'), pe = calc(it, 'pess'), op = calc(it, 'opt'), cours = coursOf(it).v;
+    const sec = sectors().find(s => s.key === it.secteur), tk = c && typeof companies !== 'undefined' && companies[c.key] ? (companies[c.key][companies[c.key].length - 1] || {}).ticker : null;
+    return { nom: c ? c.key : it.nom, sym: it.tvSym || tk || null, logo: (c && c.logo) || it.logo || '', secteur: it.secteur || '', secteurLabel: sec ? sec.label : 'Sans secteur',
+      cours, juste: r ? r.juste : null, ecart: r ? r.ecart : null, devise: c ? c.devise : (it.devise || 'EUR'), metric: it.metric || null,
+      sc: { pess: pe && pe.juste, real: r && r.juste, opt: op && op.juste }, p5: r ? r.p5 : null, rdt: r ? r.rdt : null }; });
 }
 window.PRIX_UI = { onShow, show, chip, snapshot, pubItems, _state: () => ({ D, RO, ui }), _calc: calc };
 })();
