@@ -470,13 +470,16 @@ const T = [
   async build(P, o){
     const co = o.co || (await wolfHeld())[0]; if (!co) throw new Error('Choisis une entreprise.');
     const d = await snap(co.sym, true); if (!d || !isNum(d.earnings_per_share_fq) || !isNum(d.earnings_per_share_forecast_fq)) throw new Error('TradingView ne donne pas encore le dernier résultat de ' + co.name + '.');
-    const beat = d.earnings_per_share_fq >= d.earnings_per_share_forecast_fq, sur = isNum(d.eps_surprise_percent_fq) ? d.eps_surprise_percent_fq : (d.earnings_per_share_fq / d.earnings_per_share_forecast_fq - 1) * 100;
+    // BPA publié / attendu : ceux de TradingView, ou ceux corrigés à la main (cases 1 et 2) ; l'écart et le verdict en découlent
+    const pnum = t => { if (t == null || t === '') return null; const v = parseFloat(String(t).replace(/\s/g, '').replace(',', '.').replace(/[^0-9.+-]/g, '')); return isFinite(v) ? v : null; };
+    const pub = pnum(P.ov.k0v) ?? d.earnings_per_share_fq, att = pnum(P.ov.k1v) ?? d.earnings_per_share_forecast_fq;
+    const sur = isNum(pub) && isNum(att) && att !== 0 ? (pub / att - 1) * 100 * Math.sign(att) : null, beat = sur != null ? sur >= 0 : pub >= att;
     const ccy = d.fundamental_currency_code || d.currency, rev = isNum(d.revenue_fq) && isNum(d.revenue_forecast_fq) ? (d.revenue_fq / d.revenue_forecast_fq - 1) * 100 : null, date = tsIso(d.earnings_release_date);
     P.info = '⚠ À vérifier sur le communiqué de ' + co.name + ' avant de publier. TradingView : publié le ' + (date ? frDate(date) : '?') + ' · BPA ' + money(d.earnings_per_share_fq, ccy) + ' (attendu ' + money(d.earnings_per_share_forecast_fq, ccy) + ')' +
       (isNum(d.revenue_fq) ? ' · CA ' + fr(d.revenue_fq / 1e9, 2) + ' Md ' + (CUR[ccy] || ccy) + ' (attendu ' + fr(d.revenue_forecast_fq / 1e9, 2) + ')' : '') + '. Corrige un chiffre plus bas si besoin.';
     return [B.title(P, null, o.titre || 'Résultats', o.sous || (date ? 'Publiés le ' + frDate(date) : 'Dernier trimestre') + ' · face au consensus'), B.head(P, await logoFor(co), co.name, beat ? 'Battu' : 'Manqué', beat ? C.green : C.red),
-      B.big(P, beat ? 'BATTU' : 'MANQUÉ', beat ? C.green : C.red, 'Bénéfice par action ' + sgn(sur) + ' par rapport au consensus'),
-      B.kpis(P, [{ l: 'BPA publié', v: money(d.earnings_per_share_fq, ccy) }, { l: 'BPA attendu', v: money(d.earnings_per_share_forecast_fq, ccy) }, { l: 'CA vs attendu', v: sgn(rev), c: rev >= 0 ? C.green : C.red }])];
+      B.big(P, beat ? 'BATTU' : 'MANQUE', beat ? C.green : C.red, 'Bénéfice par action ' + sgn(sur) + ' par rapport au consensus'),
+      B.kpis(P, [{ l: 'BPA publié', v: money(d.earnings_per_share_fq, ccy) }, { l: 'BPA attendu', v: money(d.earnings_per_share_forecast_fq, ccy) }, { l: 'Écart', v: sgn(sur), c: sur >= 0 ? C.green : C.red }])];
   } },
 { k: 'perfA', group: 'Portefeuille', ic: '📈', name: 'Performance d\'une action', desc: 'Le cours sur la période choisie, la hausse en gros', mine: true,
   fields: [{ id: 'co', type: 'company', label: 'Entreprise', quick: 'held' }, { id: 'range', type: 'select', label: 'Période', options: RANGES.map(r => [r[0], r[1]]) }],
