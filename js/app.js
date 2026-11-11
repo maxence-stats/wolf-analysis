@@ -12265,8 +12265,19 @@ function renderMultiplesHistory(nom, content, label){
   const m = latest && latest.tvMultiples;
   const V = window.VALO_MULTIPLES;
   if (!m || !m.serverOk || !V){
-    label.textContent = 'Données TradingView';
-    content.innerHTML = `<div class="documents-empty-banner">${!m ? '⏳ Lecture des données TradingView en direct…' : '🔄 Ferme la fenêtre du serveur puis relance le raccourci « Wolf Analysis » : le serveur doit être mis à jour pour lire l\'EBITDA et l\'actif net sur TradingView.'}</div>`;
+    label.textContent = valorisationMetric === 'ev' ? 'EV/EBITDA historique' : 'Données TradingView';
+    // La saisie de l'EV/EBITDA historique ne dépend PAS de TradingView : elle reste toujours affichée (2026-11-11).
+    content.innerHTML = `<div class="documents-empty-banner">${!m ? '⏳ Lecture des données TradingView en direct… (la saisie de l\'historique reste disponible)' : '🔄 Ferme la fenêtre du serveur puis relance le raccourci « Wolf Analysis » : le serveur doit être mis à jour pour lire l\'EBITDA et l\'actif net sur TradingView.'}</div>` +
+      (V && valorisationMetric === 'ev' ? evHistoryCardHtml(nom) : '');
+    if (V && valorisationMetric === 'ev') wireEvHistoryCard(nom);
+    // chiffres TradingView pas encore lus pour cette entreprise : on les lit, puis on réaffiche
+    if (!m && typeof tvLiveRefresh === 'function' && renderMultiplesHistory._asked !== nom){
+      renderMultiplesHistory._asked = nom;
+      Promise.resolve(tvLiveRefresh(nom)).catch(() => {}).then(() => {
+        const h2 = companies[nom], l2 = h2 && h2[h2.length - 1];
+        if (l2 && l2.tvMultiples && typeof renderValoMetricHistory === 'function') renderValoMetricHistory(nom);
+      });
+    }
     return;
   }
   const big = x => x == null ? '—' : (x / 1e9).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' Md';
