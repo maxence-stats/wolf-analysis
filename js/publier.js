@@ -43,10 +43,14 @@ async function publish(btn){
     const px = window.PRIX_UI && window.PRIX_UI.snapshot ? await window.PRIX_UI.snapshot() : null;
     if (px){ await send('prix.json', px); done.push('Prix par secteur'); }
     setMsg('Envoi sur le site public…');
-    const r = await post('/api/publish/go', { media: at ? at.media : [], tv: true });
+    setMsg('Envoi sur le site public (cours et logos TradingView : 1 à 2 minutes)…');
+    // symboles TradingView des entreprises de l'onglet Analyse : leurs cours hebdomadaires et leurs logos sont publiés
+    const prices = typeof companies === 'undefined' ? [] : [...new Set(Object.values(companies).map(h => { const l = h[h.length - 1] || {}; return String(l.ticker || '').includes(':') ? l.ticker : (l.tvSymbol || ''); }).filter(x => /^[A-Za-z0-9_.!&-]{1,24}:[A-Za-z0-9_.!&-]{1,24}$/.test(x)))].slice(0, 400);
+    const r = await post('/api/publish/go', { media: at ? at.media : [], tv: true, prices });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) throw new Error((j.error || 'envoi refusé') + (j.log ? ' — ' + String(j.log).trim().split('\n').pop() : ''));
     if (j.tv) done.push('données de l\'onglet Analyse');
+    if (j.prices) done.push('cours et logos de ' + j.prices + ' entreprises');
     setMsg(j.test ? '🧪 Instance de test : copies écrites, rien n\'a été envoyé.' : '🌐 Publié : ' + done.join(', ') + '. Le site public se met à jour d\'ici 1 à 2 minutes.', 'ok');
   } catch(e){ setMsg('⚠ Publication impossible : ' + (e.message || 'erreur'), 'err'); }
   btn.disabled = false;

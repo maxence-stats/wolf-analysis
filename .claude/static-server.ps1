@@ -407,10 +407,24 @@ function Handle-PublishGo($req, $res){
     $tv = Join-Path $root "data\tv-analyse.json"
     $tvOk = $false
     if ($b.tv -and (Test-Path $tv -PathType Leaf)){ Copy-Item $tv (Join-Path $publicDir "tv-analyse.json") -Force; $tvOk = $true }
+    # Cours hebdomadaires et logos TradingView des entreprises de l'onglet Analyse (tv-data\publish_prices.py)
+    $pricesOk = 0
+    $psyms = @($b.prices | ForEach-Object { [string]$_ } | Where-Object { $_ -match '^[A-Za-z0-9_.!&-]{1,24}:[A-Za-z0-9_.!&-]{1,24}$' })
+    if ($psyms.Count -gt 0 -and $psyms.Count -le 400){
+      $python = (Get-Command python -ErrorAction SilentlyContinue).Source
+      if (-not $python){ $python = (Get-Command py -ErrorAction SilentlyContinue).Source }
+      if ($python){
+        try {
+          $pout = & $python (Join-Path $root "tv-data\publish_prices.py") --symbols ($psyms -join ',') --out $publicDir --cache (Join-Path $storeDirPath "cache-prix") 2>$null | Out-String
+          $pj = $pout.Trim() | ConvertFrom-Json
+          if ($pj.ok){ $pricesOk = [int]$pj.prices }
+        } catch { }
+      }
+    }
     $stamp = (Get-Date).ToString("o")
     [System.IO.File]::WriteAllText((Join-Path $publicDir "info.json"), ('{"at":"' + $stamp + '"}'), $utf8NoBom)
   } catch { Send-Json $res 500 @{ ok = $false; error = "preparation impossible" }; return }
-  if ($testInstance){ Send-Json $res 200 @{ ok = $true; test = $true; media = $nMedia; tv = $tvOk; dir = $publicDir }; return }
+  if ($testInstance){ Send-Json $res 200 @{ ok = $true; test = $true; media = $nMedia; tv = $tvOk; prices = $pricesOk; dir = $publicDir }; return }
   $git = (Get-Command git -ErrorAction SilentlyContinue).Source
   if (-not $git){ Send-Json $res 500 @{ ok = $false; error = "git introuvable sur ce PC" }; return }
   $env:GIT_TERMINAL_PROMPT = "0"
@@ -423,8 +437,44 @@ function Handle-PublishGo($req, $res){
     $pushed = ($LASTEXITCODE -eq 0)
     $log += $push
     if (-not $pushed){ Send-Json $res 502 @{ ok = $false; error = "envoi sur GitHub refuse ou impossible"; log = $log }; return }
-    Send-Json $res 200 @{ ok = $true; media = $nMedia; tv = $tvOk; changed = [bool]$pending; at = $stamp }
+    Send-Json $res 200 @{ ok = $true; media = $nMedia; tv = $tvOk; prices = $pricesOk; changed = [bool]$pending; at = $stamp }
   } catch { Send-Json $res 500 @{ ok = $false; error = "git a echoue"; log = $log } }
+}
+# Image d'Internet ajoutée par son adresse : téléchargée ici (http/https seulement, image de 15 Mo au plus, pas d'adresse
+# locale), enregistrée comme une image envoyée. Le lien d'origine n'est plus nécessaire ensuite.
+function Handle-AtelierFetch($req, $res){
+  if (-not (Test-WriteGuards $req $res)){ return }
+  $bytes = Read-BodyBytes $req $res
+  if ($null -eq $bytes){ return }
+  try { $b = (New-Object System.Text.UTF8Encoding($false, $true)).GetString($bytes) | ConvertFrom-Json } catch { Send-Json $res 400 @{ ok = $false; error = "JSON invalide" }; return }
+  $u = [string]$b.url
+  $uri = $null
+  if (-not [System.Uri]::TryCreate($u, [System.UriKind]::Absolute, [ref]$uri) -or ($uri.Scheme -ne "http" -and $uri.Scheme -ne "https")){ Send-Json $res 400 @{ ok = $false; error = "adresse invalide (http ou https)" }; return }
+  if ($uri.IsLoopback -or $uri.Host -match '^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|169\.254\.|0\.)'){ Send-Json $res 400 @{ ok = $false; error = "adresse locale refusee" }; return }
+  try {
+    $r = Invoke-WebRequest -UseBasicParsing -Uri $uri.AbsoluteUri -TimeoutSec 20 -MaximumRedirection 5 -Headers @{ "User-Agent" = "Mozilla/5.0" }
+  } catch { Send-Json $res 502 @{ ok = $false; error = "image injoignable" }; return }
+  $data = $r.RawContentStream.ToArray()
+  $ct = ([string]$r.Headers["Content-Type"]).Split(';')[0].Trim().ToLower()
+  $extMap2 = @{ "image/png" = "png"; "image/jpeg" = "jpg"; "image/jpg" = "jpg"; "image/webp" = "webp"; "image/gif" = "gif" }
+  $e = $extMap2[$ct]
+  if (-not $e){
+    # type annonce absent ou faux : on regarde les premiers octets
+    if ($data.Length -gt 12){
+      if ($data[0] -eq 0x89 -and $data[1] -eq 0x50){ $e = "png" } elseif ($data[0] -eq 0xFF -and $data[1] -eq 0xD8){ $e = "jpg" } elseif ($data[0] -eq 0x47 -and $data[1] -eq 0x49){ $e = "gif" } elseif ($data[8] -eq 0x57 -and $data[9] -eq 0x45){ $e = "webp" }
+    }
+  }
+  if (-not $e){ Send-Json $res 415 @{ ok = $false; error = "ce lien ne mene pas a une image (png, jpg, webp, gif)" }; return }
+  if ($data.Length -lt 16 -or $data.Length -gt $maxMedia){ Send-Json $res 413 @{ ok = $false; error = "image vide ou trop lourde" }; return }
+  $name = (Get-Date -Format "yyyyMMdd-HHmmss") + "-" + ([Guid]::NewGuid().ToString("N").Substring(0, 10)) + "." + $e
+  try {
+    New-Item -ItemType Directory -Force -Path $atelierMedia | Out-Null
+    [System.IO.File]::WriteAllBytes((Join-Path $atelierMedia $name), $data)
+    if ($storeExt -ne ""){
+      try { $em = Join-Path $storeExt "atelier-media"; New-Item -ItemType Directory -Force -Path $em | Out-Null; [System.IO.File]::WriteAllBytes((Join-Path $em $name), $data) } catch { }
+    }
+    Send-Json $res 200 @{ ok = $true; file = $name }
+  } catch { Send-Json $res 500 @{ ok = $false; error = "ecriture impossible" } }
 }
 # Images de l'Atelier d'analyses : un fichier par image, nom genere ici, JAMAIS supprime ni ecrase par le serveur.
 function Handle-AtelierMedia($req, $res){
@@ -623,7 +673,7 @@ while ($listener.IsListening) {
     $path = [System.Uri]::UnescapeDataString($req.Url.AbsolutePath)
     if ($path -eq "/api/ia/ping") {
       New-Item -ItemType Directory -Force -Path $iaDirPath | Out-Null
-      Send-Json $res 200 @{ ok = $true; writable = $true; v = 14; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
+      Send-Json $res 200 @{ ok = $true; writable = $true; v = 15; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
     } elseif ($path -eq "/api/ia/save") {
       Handle-IaSave $req $res
     } elseif ($path -eq "/api/ia/refresh") {
@@ -644,6 +694,8 @@ while ($listener.IsListening) {
       Handle-PublishFile $req $res
     } elseif ($path -eq "/api/publish/go") {
       Handle-PublishGo $req $res
+    } elseif ($path -eq "/api/atelier/fetch") {
+      Handle-AtelierFetch $req $res
     } elseif ($path -eq "/api/atelier/media") {
       Handle-AtelierMedia $req $res
     } elseif ($path -eq "/api/tv/history") {

@@ -576,12 +576,43 @@ function handleTvAnalyseData(data){
   finishCompaniesLoad();
 }
 
+let tvPublishedLogos = {};
+// Cours hebdomadaires TradingView d'une entreprise : serveur local (/api/tv/history) sur le PC, copie publiée
+// (data/public/prices/) sur le site en ligne. Renvoie { dates:['AAAA-MM-JJ'], closes:[], ccy } ou null.
+async function loadTvWeeklyPrices(nom){
+  const hist = companies[nom]; const last = hist && hist[hist.length - 1];
+  const sym = last ? (String(last.ticker || '').includes(':') ? last.ticker : last.tvSymbol) : null;
+  if (!sym) return null;
+  const iso = ts => new Date(ts * 1000).toISOString().slice(0, 10);
+  try{
+    if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)){
+      const r = await fetch('/api/tv/history?symbols=' + encodeURIComponent(sym) + '&from=2006-01-01', { cache:'no-store' });
+      const j = await r.json();
+      const d = j.ok && j.data && j.data[sym];
+      if (d && d.bars && d.bars.length > 20){ const w = resampleWeekly(d.bars.map(b => iso(b[0])), d.bars.map(b => b[1])); return Object.assign(w, { ccy: d.ccy, sym }); }
+    }
+    const r2 = await fetch('data/public/prices/' + sym.replace(/[^A-Za-z0-9_.-]/g, '_') + '.json', { cache:'no-store' });
+    if (!r2.ok) return null;
+    const j2 = await r2.json();
+    if (!j2.w || j2.w.length < 20) return null;
+    return { dates: j2.w.map(p => iso(p[0])), closes: j2.w.map(p => p[1]), ccy: j2.ccy, sym };
+  }catch(e){ return null; }
+}
 async function loadTvAnalyse(){
   let res = await fetch('data/tv-analyse.json?_=' + Date.now(), { cache:'no-store' });
   // site public : le fichier n'existe pas (git-ignoré), on lit la copie publiée par « 🌐 Publier en ligne »
-  if (!res.ok) res = await fetch('data/public/tv-analyse.json?_=' + Date.now(), { cache:'no-store' });
+  let published = false;
+  if (!res.ok){ res = await fetch('data/public/tv-analyse.json?_=' + Date.now(), { cache:'no-store' }); published = true; }
   if (!res.ok) throw new Error('data/tv-analyse.json introuvable (HTTP ' + res.status + ')');
   const data = await res.json();
+  // Site public : les logos locaux (data/logos/) ne sont pas publiés ; on prend les logos TradingView publiés.
+  if (published){
+    try{
+      const lr = await fetch('data/public/logos.json?_=' + Date.now(), { cache:'no-store' });
+      if (lr.ok){ const logos = await lr.json(); tvPublishedLogos = logos;
+        Object.values(data.companies || {}).forEach(c => { const u = logos[c.tv]; if (u) (c.rows || []).forEach(r => { r.lienImage = u; }); }); }
+    }catch(e){ /* sans logos : initiales */ }
+  }
   handleTvAnalyseData(data);
 }
 
@@ -3765,6 +3796,16 @@ function portfolioCenterImagePlugin(){
 // ratio naturel). Nécessite layout.padding sur la config Chart.js (voir
 // buildPortfolioDonutConfig/buildPersoDonutConfig) pour laisser la place aux callouts
 // tout autour du donut, sinon ils se retrouvent coupés par les bords du canvas.
+// Logo dans un rond, jamais déformé (2026-11-11, « des carrés auxquels il manque des ronds ») : un logo TradingView est
+// un carré plein prévu pour être découpé en rond -> il REMPLIT le cercle ; tout autre logo tient ENTIER dans le carré
+// inscrit du cercle (70 % du diamètre), donc aucun coin rogné.
+function drawLogoInCircle(ctx, img, cx, cy, r, src){
+  const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height; if (!w || !h) return;
+  const tv = /s3-symbol-logo\.tradingview\.com/.test(String(src || img.src || ''));
+  const box = tv ? 2 * r : 2 * r * 0.70;
+  const k = tv ? Math.max(box / w, box / h) : Math.min(box / w, box / h);
+  ctx.drawImage(img, cx - w * k / 2, cy - h * k / 2, w * k, h * k);
+}
 function portfolioSegmentLogosPlugin(){
   return {
     id: 'portfolioSegmentLogos',
@@ -3814,11 +3855,7 @@ function portfolioSegmentLogosPlugin(){
           ctx.beginPath();
           ctx.arc(bx, by, badgeSize / 2 - 1, 0, Math.PI * 2);
           ctx.clip();
-          // "contain" : l'image garde son ratio naturel, jamais étirée en carré.
-          const inner = badgeSize - 6;
-          const scale = Math.min(inner / img.naturalWidth, inner / img.naturalHeight);
-          const dw = img.naturalWidth * scale, dh = img.naturalHeight * scale;
-          ctx.drawImage(img, bx - dw / 2, by - dh / 2, dw, dh);
+          drawLogoInCircle(ctx, img, bx, by, badgeSize / 2 - 1, src);
           ctx.restore();
         } else if (label.toUpperCase().includes('CASH')){
           ctx.font = Math.round(badgeSize * 0.5) + 'px sans-serif';
@@ -4049,11 +4086,9 @@ async function buildPortfolioDonutImage(holdings, format){
         const src = dataset._logos && dataset._logos[i];
         const img = src && exportImageCache[src];
         if (!img) return;
-        const ratio = Math.min((badgeSize - 8) / img.width, (badgeSize - 8) / img.height);
-        const w = img.width * ratio, h = img.height * ratio;
         ctx.save();
         ctx.beginPath(); ctx.arc(bx, by, badgeSize / 2 - 2, 0, Math.PI * 2); ctx.clip();
-        ctx.drawImage(img, bx - w / 2, by - h / 2, w, h);
+        drawLogoInCircle(ctx, img, bx, by, badgeSize / 2 - 2, src);
         ctx.restore();
       });
     }
@@ -9491,6 +9526,18 @@ async function loadStockChart(ticker, nom){
   // Source de repli : l'onglet historique dédié du Sheet (fiable, pas de CORS) — le
   // relais Yahoo/Stooq ci-dessous ne sert que de second repli pour une entreprise
   // absente à la fois de FMP et de cet onglet.
+  // TradingView (cours de clôture hebdomadaires) : sur le PC via le serveur local, en ligne via la copie publiée.
+  if (nom){
+    const tvw = await loadTvWeeklyPrices(nom);
+    if (myId !== stockRequestId) return;
+    if (tvw && tvw.closes.length > 20){
+      stockFull = { dates: tvw.dates, closes: tvw.closes, sma: computeSMA(tvw.closes, 200), sma30: computeSMA(tvw.closes, 30) };
+      statusEl.style.display = 'none';
+      setStockSourceNote('Source : TradingView (' + tvw.sym + ', clôtures hebdomadaires)');
+      renderStockChart();
+      return;
+    }
+  }
   if (nom){
     const sheetSeries = fetchPriceHistorySeries(nom);
     if (sheetSeries){

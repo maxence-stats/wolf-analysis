@@ -2910,3 +2910,60 @@
 @media (max-width:1000px){.aw-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.aw-main{overflow:visible}.aw-facts-r{grid-template-columns:1fr 1fr}.aw-big{padding:10px}.aw-big-h h2{font-size:22px}.aw-kpi-v.xl{font-size:44px}.aw-donut-c.xl{width:240px;height:240px}.aw-chart.xl{height:300px}.aw-big-nav{display:none}}
 @media (max-width:640px){.aw-grid{grid-template-columns:minmax(0,1fr)}.aw-card.sz-h{grid-column:span 1}.aw-card.sz-v{grid-row:span 3}.aw-head-t h1{font-size:22px}.aw-ed-checks{grid-template-columns:1fr}.aw-quote.xl{font-size:24px}}
 .aw-ed-check{flex-direction:row !important;align-items:center;gap:8px !important;color:#C9CED6 !important;font-size:12.5px !important}
+
+/* ================= LOGOS RONDS SANS DÉFORMATION (2026-11-11) =================
+   Un logo TradingView est un carré plein prévu pour un rond : il remplit le cercle (cover). Tout autre logo tient entier
+   dans le cercle (marge de 15 %), au lieu d'un carré aux coins rognés. */
+.mp-logo{box-sizing:border-box;padding:15%;}
+.mp-logo[src*="s3-symbol-logo"],.at-logo[src*="s3-symbol-logo"],.aw-conc-logo img[src*="s3-symbol-logo"],.aw-tlogo[src*="s3-symbol-logo"],.lp-name .at-logo[src*="s3-symbol-logo"]{padding:0;object-fit:cover;}
+.at-logo{box-sizing:border-box;padding:2px;}
+.at-logo-txt{padding:0;}
+.aw-conc-logo{border-radius:50%;}
+.aw-tlogo{border-radius:50%;}
+.logo-box img[src*="s3-symbol-logo"]{border-radius:50%;}
+
+/* ================= ATELIER : cartes plus sobres, nouvelles cartes (2026-11-11) ================= */
+.aw-cbtns{position:absolute;top:8px;right:8px;display:flex;gap:2px;opacity:0;transition:opacity .15s;z-index:3;background:rgba(22,27,33,0.85);border-radius:9px}
+.aw-card:hover .aw-cbtns,.aw-card:focus-within .aw-cbtns{opacity:1}
+@media (hover:none){.aw-cbtns{opacity:1}}
+.aw-card .aw-chead{padding-right:60px}
+.aw-card .aw-ct{margin:0}
+.aw-tvbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:2px}
+.aw-tvinfo{font-size:11.5px;color:var(--text-dim)}
+.aw-bourse-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.aw-bourse-h b{font-family:var(--font-display);font-size:22px}
+.aw-range{margin-left:auto;display:inline-flex;gap:2px;background:var(--panel);border-radius:8px;padding:2px}
+.aw-range button{border:0;background:transparent;color:var(--text-dim);font-family:var(--font-body);font-size:11px;padding:4px 8px;border-radius:6px;cursor:pointer}
+.aw-range button.on{background:var(--gold);color:#1A1305;font-weight:700}
+.aw-geo-wrap{display:flex;gap:14px;align-items:center;flex:1;min-height:0}
+.aw-geo-wrap .aw-geo{flex:1 1 auto;min-width:0;height:100%}
+.aw-geo svg{width:100%;height:100%;display:block}
+.aw-geo svg path{transition:fill-opacity .2s}
+.aw-geo svg path:hover{fill-opacity:1;stroke:#fff;stroke-width:0.8}
+.aw-geo-leg{flex:0 0 38%;display:flex;flex-direction:column;gap:6px;font-size:12px;overflow:hidden}
+.aw-geo-leg div{display:flex;align-items:center;gap:6px}
+.aw-geo-leg .lb{flex:1;min-width:0;color:#B4BAC4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.aw-geo-leg small{color:var(--text-dim);margin-left:6px}
+.aw-geo-wrap.big{flex-direction:column;align-items:stretch}
+.aw-geo-wrap.big .aw-geo{height:440px;flex:none}
+.aw-geo-wrap.big .aw-geo-leg{flex:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));font-size:14px}
+.aw-prof{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px}
+.aw-prof-ph{width:96px;height:96px;border-radius:50%;overflow:hidden;background:var(--panel-2);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 3px rgba(217,164,65,0.35)}
+.aw-prof.big .aw-prof-ph{width:160px;height:160px}
+.aw-prof-ph img{width:100%;height:100%;object-fit:cover}
+.aw-prof-ph span{font-family:var(--font-display);font-size:30px;font-weight:700;color:var(--gold-2)}
+.aw-prof-n{font-family:var(--font-display);font-size:18px;font-weight:700}
+.aw-prof.big .aw-prof-n{font-size:28px}
+.aw-prof-p{font-size:12.5px;color:var(--text-dim)}
+.aw-text.sm2{font-size:12.5px;flex:1}
+.aw-these-h{display:flex;align-items:center;gap:10px}
+.aw-these-tag{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#1A1305;background:var(--gold-2);border-radius:6px;padding:3px 8px}
+.aw-these-tag.fin{background:var(--green)}
+.aw-these{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:5px;overflow:hidden;font-size:12.5px}
+.aw-these li b{color:var(--gold-2);font-weight:700;margin-right:6px}
+.aw-these li span{color:#C9CED6}
+.aw-these.big{gap:12px;font-size:16px}
+.aw-these.big li b{display:block;margin-bottom:2px}
+.aw-tcmp td.tx{text-align:left;white-space:normal;color:#C9CED6;min-width:160px}
+.aw-tcmp th{text-align:left}
+.aw-verdict{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:2px 8px;color:var(--vc);background:color-mix(in srgb,var(--vc) 16%,transparent)}

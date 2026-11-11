@@ -661,6 +661,14 @@ agrandir sur chaque carte (fond flouté, ← →, Échap) avec vue enrichie (his
 droite ; bibliothèque « Ajouter une carte » ; menu ⋯ (modifier, dupliquer, format, déplacer vers une section, replier, corbeille) ;
 glisser-déposer ; poignée de format. Les anciennes versions carte mentale sont converties au chargement (`migrateVersion`), leurs
 `v.nodes` restent dans le fichier. ATTENTION : margeOp et roic n'ont qu'UNE année dans data/tv-analyse.json (pas d'historique).
+**Ajouts du 2026-11-11 (2e passe)** : cartes SANS étiquette de type ni titre imposé (titre facultatif, boutons au survol) ;
+chiffres TradingView FIGÉS par version (`v.tvData = {at, sym, self:{rows,devise}, others:{nomNormalisé:{rows,devise,logo}}, prices:{dates,closes,ccy}}`,
+relevé automatique à l'ouverture d'un dossier d'entreprise sans relevé, « ↻ Actualiser » ; `getSeries(name|null, key)` lit le relevé,
+sinon le direct) ; entreprises hors des 88 = chiffres ACTUELS du snapshot TradingView ; logos TradingView (`tvLogo`). Nouvelles cartes :
+`bourse` (clôtures hebdo TradingView, périodes 1a/5a/10a/Max), `geo` (carte du monde `data/geo/monde.json`, Natural Earth 110m
+projeté, zones = pays ou régions `ZONES`, le plus précis l'emporte), `profil` (dirigeant), `these` (7 questions, phase départ/finale)
+et `thesecmp` (côte à côte + verdict). Image par adresse internet : `POST /api/atelier/fetch` (serveur v=15, adresses locales refusées).
+TradingView ne publie PAS la répartition du CA par région (vérifié dans le catalogue du scanner) : saisie manuelle.
 Le texte ci-dessous décrit l'ancienne carte mentale (historique).
 
 Nouvel onglet principal (`#pageAtelier`, `js/atelier.js`, CSS `.at-*` en fin de `style.css`), À CÔTÉ du Cerveau numérique (qui
@@ -701,6 +709,10 @@ reste intact, décision de l'utilisateur). Répertoire visuel de toutes les anal
   data/public/tv-analyse.json). Le Google Sheet (relais Apps Script) ne sert plus QU'À la Macroéconomie et n'est lu qu'à la
   première ouverture d'une page Macro (`ensureMacroData()` dans `switchPage`, avec FRED et les ETF sectoriels). Les onglets
   Sheet « WOLF Portefeuille » et « SYNTHESE PORTEFEUILLE » ne sont plus lus.
+- **Onglet Analyse en ligne** : la publication ajoute `data/public/prices/<SYMBOLE>.json` (clôtures hebdo TradingView depuis 2006,
+  `tv-data/publish_prices.py`) et `data/public/logos.json` (logos TradingView) ; `loadTvWeeklyPrices()` (app.js) sert le graphique
+  boursier (serveur local sur le PC, copie publiée en ligne). Logos ronds : `drawLogoInCircle()` (TradingView = remplit le rond,
+  autres = entiers dans le cercle) + règles CSS « LOGOS RONDS » en fin de style.css.
 - **Site public** (GitHub Pages) = lecture seule de copies dans `data/public/` (versionnées), faites par le bouton
   « 🌐 Publier en ligne » (`js/publier.js`, serveur v=13 `/api/publish/file` + `/api/publish/go`, qui fait `git commit` +
   `git push` de `data/public` seulement) : Wolf Portfolio SEUL (`MP_UI.publicSnapshot`, jamais PEA/CTO), Atelier (sans

@@ -33,16 +33,25 @@ const SERIES_COLORS = ['#D9A441', '#4A9FE0', '#F0C877', '#8FA3B8', '#4FD1A5', '#
 const DOC_LABEL = { entreprise: 'Analyse d\'entreprise', chaine: 'Chaîne de valeur', libre: 'Carte libre' };
 const TYPES = {
   texte:      { l: 'Texte',        c: '#C9D1D9', size: 's', cat: 'Rédaction',  d: 'Titre, paragraphes, listes, gras, surligné' },
-  image:      { l: 'Image',        c: '#F0C877', size: 's', cat: 'Rédaction',  d: 'Photo ou capture, titre, description' },
+  image:      { l: 'Image',        c: '#F0C877', size: 's', cat: 'Rédaction',  d: 'Photo ou capture (fichier, Ctrl+V ou adresse internet)' },
   citation:   { l: 'Citation',     c: '#D9A441', size: 's', cat: 'Rédaction',  d: 'Une idée ou une conclusion mise en avant' },
   kpi:        { l: 'Indicateur',   c: '#D9A441', size: 's', cat: 'Chiffres',   d: 'Un chiffre, son évolution, mini-historique' },
+  bourse:     { l: 'Cours de bourse', c: '#4A9FE0', size: 'h', cat: 'Chiffres', d: 'Le cours TradingView, figé au jour de l\'analyse' },
   donut:      { l: 'Camembert',    c: '#4A9FE0', size: 's', cat: 'Chiffres',   d: 'Répartition : les parts se calculent seules' },
+  geo:        { l: 'Carte du monde', c: '#4FD1A5', size: 'h', cat: 'Chiffres', d: 'Chiffre d\'affaires par pays ou par grande région' },
   barres:     { l: 'Barres',       c: '#4A9FE0', size: 'h', cat: 'Chiffres',   d: 'Plusieurs années, plusieurs séries' },
   courbes:    { l: 'Courbes',      c: '#4A9FE0', size: 'h', cat: 'Chiffres',   d: 'Évolution d\'un ou plusieurs indicateurs' },
-  comparatif: { l: 'Comparatif',   c: '#B8A1F0', size: 'h', cat: 'Comparaison', d: 'Entreprises en colonnes, meilleure valeur surlignée' },
-  concurrent: { l: 'Entreprise',   c: '#E5636B', size: 'v', cat: 'Comparaison', d: 'Concurrent, client, fournisseur : logo, chiffres, forces' },
+  comparatif: { l: 'Comparatif',   c: '#B8A1F0', size: 'h', cat: 'Entreprises et personnes', d: 'Entreprises en colonnes, meilleure valeur surlignée' },
+  concurrent: { l: 'Entreprise',   c: '#E5636B', size: 'v', cat: 'Entreprises et personnes', d: 'Concurrent, client, fournisseur : logo, chiffres, forces' },
+  profil:     { l: 'Dirigeant',    c: '#F08A4B', size: 'v', cat: 'Entreprises et personnes', d: 'Photo, poste, parcours, actions détenues' },
+  these:      { l: 'Thèse',        c: '#D9A441', size: 'h', cat: 'Thèse', d: 'Tes 7 questions, au départ ou à la fin de l\'analyse' },
+  thesecmp:   { l: 'Thèse : avant / après', c: '#D9A441', size: 'h', cat: 'Thèse', d: 'Départ et fin côte à côte, avec un verdict' },
   source:     { l: 'Source',       c: '#8FA3B8', size: 's', cat: 'Documents',  d: 'PDF, site, article, avec tes notes' }
 };
+const THESE_Q = ['Pourquoi cette entreprise est-elle intéressante ?', 'Quels sont ses principaux avantages concurrentiels ?', 'Quels sont ses moteurs de croissance futurs ?',
+  'Pourquoi peut-elle créer de la valeur à long terme ?', 'Qu\'est-ce que le marché pourrait sous-estimer ?', 'Quels risques pourraient invalider la thèse ?', 'Que dois-je surveiller pour vérifier que la thèse reste valable ?'];
+const THESE_SHORT = ['Pourquoi elle', 'Avantages', 'Croissance', 'Création de valeur', 'Sous-estimé', 'Risques', 'À surveiller'];
+const VERDICTS = { ok: ['Confirmée', '#4FD1A5'], nuance: ['Nuancée', '#D9A441'], ko: ['Invalidée', '#E5636B'] };
 // Chiffres TradingView de l'onglet Analyse (companies[nom] : une ligne par exercice). u : unité d'affichage.
 const TVF = {
   prixActuel:   { l: 'Cours',                    u: 'cur',  d: 2 },
@@ -66,26 +75,28 @@ const C = (type, titre, o) => Object.assign({ type, titre: titre || '' }, o || {
 // s'affichent en « à couvrir » sous le titre de chaque section ; quelques cartes reliées aux chiffres TradingView sont
 // déjà posées, elles se remplissent toutes seules pour une entreprise connue de l'onglet Analyse.
 const WOLF_SECTIONS = [
-  ['Présentation', ['Histoire & dates clés', 'Activités', 'Implantation', 'Dirigeants'], [C('texte', 'L\'entreprise en bref', { size: 'h' }), C('kpi', '', { bind: 'tv:prixActuel' })]],
-  ['Modèle économique', ['Comment elle gagne de l\'argent', 'Clients', 'Produits & services', 'Récurrence des revenus', 'Structure des coûts'], [C('texte', 'Comment elle gagne de l\'argent', { size: 'h' })]],
-  ['Répartition du chiffre d\'affaires', ['Par pays & régions', 'Par activités', 'Par filiales', 'Évolution historique'], [C('donut', 'CA par activité'), C('donut', 'CA par région')]],
+  ['Thèse de départ', ['À écrire AVANT l\'analyse : on la comparera à la thèse finale'], [C('these', '', { phase: 'depart', size: 'h' })]],
+  ['Présentation', ['Histoire & dates clés', 'Activités', 'Implantation', 'Dirigeants', 'Mission & vision', 'Effectifs'], [C('texte', '', { size: 'h' }), C('bourse', '', { size: 'h' })]],
+  ['Modèle économique', ['Comment elle gagne de l\'argent', 'Clients', 'Produits & services', 'Récurrence des revenus', 'Structure des coûts', 'Pouvoir de fixation des prix'], [C('texte', '', { size: 'h' })]],
+  ['Répartition du chiffre d\'affaires', ['Par pays & régions', 'Par activités', 'Par filiales', 'Évolution historique'], [C('geo', '', { size: 'h' }), C('donut', '')]],
   ['Analyse des segments', ['Chiffre d\'affaires & croissance', 'Marges', 'Contribution aux résultats', 'Marché, concurrence, moat et perspectives par activité'], []],
-  ['Marché', ['Taille (TAM / SAM / SOM)', 'Croissance', 'Tendances', 'Réglementation', 'Facteurs cycliques'], []],
-  ['Chaîne de valeur', ['Fournisseurs', 'Clients & distributeurs', 'Position de l\'entreprise', 'Dépendances stratégiques'], []],
-  ['Avantage concurrentiel (moat)', ['Marque', 'Coûts de changement', 'Économies d\'échelle', 'Brevets', 'Effet de réseau', 'Coûts de production', 'Barrières à l\'entrée'], []],
-  ['Concurrence', ['Concurrents par activité', 'Parts de marché', 'Positionnement', 'Forces & faiblesses', 'Substituts'], [C('comparatif', 'Face aux concurrents', { self: true })]],
-  ['Perspectives de croissance', ['Moteurs organiques', 'Acquisitions', 'Nouveaux marchés', 'Investissements & innovations'], []],
-  ['Risques', ['Opérationnels', 'Financiers', 'Réglementaires', 'Géopolitiques', 'Technologiques', 'Concurrentiels', 'Dépendances'], []],
-  ['Management & gouvernance', ['Dirigeants & historique', 'Stratégie', 'Rémunération', 'Qualité de l\'exécution'], []],
-  ['Actionnariat', ['Principaux actionnaires', 'Fondateurs', 'Institutionnels', 'Flottant', 'Conflits d\'intérêts'], [C('donut', 'Actionnariat')]],
+  ['Marché', ['Taille (TAM / SAM / SOM)', 'Croissance', 'Tendances', 'Réglementation', 'Facteurs cycliques', 'Parts de marché'], []],
+  ['Chaîne de valeur', ['Fournisseurs', 'Clients & distributeurs', 'Position de l\'entreprise', 'Dépendances stratégiques', 'Matières premières'], []],
+  ['Avantage concurrentiel (moat)', ['Marque', 'Coûts de changement', 'Économies d\'échelle', 'Brevets', 'Effet de réseau', 'Coûts de production', 'Barrières à l\'entrée', 'Durabilité du moat'], []],
+  ['Concurrence', ['Concurrents par activité', 'Parts de marché', 'Positionnement', 'Forces & faiblesses', 'Substituts', 'Nouveaux entrants'], [C('comparatif', '', { self: true })]],
+  ['Perspectives de croissance', ['Moteurs organiques', 'Acquisitions', 'Nouveaux marchés', 'Investissements & innovations', 'Objectifs de la direction'], []],
+  ['Risques', ['Opérationnels', 'Financiers', 'Réglementaires', 'Géopolitiques', 'Technologiques', 'Concurrentiels', 'Dépendances', 'ESG & litiges'], []],
+  ['Management & gouvernance', ['Dirigeants & historique', 'Stratégie', 'Rémunération', 'Qualité de l\'exécution', 'Actions détenues par la direction'], [C('profil', '')]],
+  ['Actionnariat', ['Principaux actionnaires', 'Fondateurs', 'Institutionnels', 'Flottant', 'Conflits d\'intérêts'], [C('donut', '')]],
   ['Allocation du capital', ['Dividendes', 'Rachats d\'actions', 'Acquisitions', 'Désendettement', 'Rendement du capital investi'], [C('kpi', '', { bind: 'tv:rendementDiv' }), C('kpi', '', { bind: 'tv:actions' })]],
-  ['Analyse financière', ['CA, marges, bénéfices, cash-flow, dette, dilution, ROIC sur 5 à 10 ans'], [C('kpi', '', { bind: 'tv:ca' }), C('kpi', '', { bind: 'tv:margeOp' }), C('barres', 'Chiffre d\'affaires', { mode: 'tv', keys: ['ca'] }), C('kpi', '', { bind: 'tv:roic' }), C('kpi', '', { bind: 'tv:fcfParAction' }), C('courbes', 'BPA et FCF par action', { mode: 'tv', keys: ['eps', 'fcfParAction'] })]],
+  ['Analyse financière', ['CA, marges, bénéfices, cash-flow, dette, dilution, ROIC sur 5 à 10 ans'], [C('kpi', '', { bind: 'tv:ca' }), C('kpi', '', { bind: 'tv:margeOp' }), C('barres', '', { mode: 'tv', keys: ['ca'] }), C('kpi', '', { bind: 'tv:roic' }), C('kpi', '', { bind: 'tv:fcfParAction' }), C('courbes', '', { mode: 'tv', keys: ['eps', 'fcfParAction'] })]],
   ['Qualité financière', ['Conversion des bénéfices en trésorerie', 'Besoin en fonds de roulement', 'Investissements', 'Solidité du bilan', 'Cyclicité'], [C('kpi', '', { bind: 'tv:detteOCF' })]],
-  ['Valorisation', ['Méthodes adaptées au secteur', 'Hypothèses', 'Scénarios pessimiste / central / optimiste', 'Valeur intrinsèque & marge de sécurité'], [C('kpi', '', { bind: 'tv:per' }), C('kpi', '', { bind: 'tv:pFcf' }), C('courbes', 'PER et P/FCF dans le temps', { mode: 'tv', keys: ['per', 'pFcf'] })]],
+  ['Valorisation', ['Méthodes adaptées au secteur', 'Hypothèses', 'Scénarios pessimiste / central / optimiste', 'Valeur intrinsèque & marge de sécurité'], [C('kpi', '', { bind: 'tv:per' }), C('kpi', '', { bind: 'tv:pFcf' }), C('courbes', '', { mode: 'tv', keys: ['per', 'pFcf'] })]],
   ['Wolf Score', ['Critères', 'Notation', 'Justification'], []],
-  ['Conclusion', ['Points forts', 'Points faibles', 'Risques majeurs', 'À surveiller', 'Thèse d\'investissement'], [C('citation', 'Thèse d\'investissement', { size: 'h' })]],
+  ['Conclusion', ['Points forts', 'Points faibles', 'Risques majeurs', 'À surveiller'], [C('citation', '', { size: 'h' })]],
+  ['Thèse finale', ['À écrire APRÈS l\'analyse'], [C('these', '', { phase: 'finale', size: 'h' }), C('thesecmp', '', { size: 'h' })]],
   ['Actualités', [], []],
-  ['Sources', [], [C('source', 'Rapport annuel')]]
+  ['Sources', [], [C('source', '')]]
 ];
 const BUILTIN = {
   'wolf-entreprise': { id: 'wolf-entreprise', nom: 'Template analyse — 10/11/2026', type: 'entreprise', builtin: true, sections: WOLF_SECTIONS.map(([titre, hint, cards]) => ({ titre, hint, cards })) },
@@ -163,7 +174,7 @@ function newVersion(tpl, label){
   const v = { id: uid('v'), label: label || 'Version du ' + frDate(today()), date: today(), kind: 'cards', sections: [], cards: {} };
   sectionsFromTemplate(tpl).forEach((s, i) => {
     const sec = { id: uid('s'), titre: s.titre, hint: (s.hint || []).slice(), color: s.color || PALETTE[i % PALETTE.length], collapsed: false, cards: [] };
-    (s.cards || []).forEach(c => { const n = newCard(c.type, c); delete n.self; if (c.self) n.cols = ['@self']; if (n.type === 'comparatif' && !n.metrics) n.metrics = ['croissanceCA', 'margeOp', 'roic', 'per', 'pFcf']; v.cards[n.id] = n; sec.cards.push(n.id); });
+    (s.cards || []).forEach(c => { const n = newCard(c.type, c); delete n.self; if (c.self) n.cols = ['@self']; if (n.type === 'comparatif' && !n.metrics) n.metrics = ['croissanceCA', 'margeOp', 'roic', 'per', 'pFcf']; if (n.type === 'geo' && !n.rows) n.rows = [{ zone: 'Europe', v: null }, { zone: 'Amérique du Nord', v: null }, { zone: 'Asie-Pacifique', v: null }, { zone: 'Reste du monde', v: null }]; v.cards[n.id] = n; sec.cards.push(n.id); });
     v.sections.push(sec);
   });
   return v;
@@ -225,10 +236,13 @@ function fmtVal(v, u, devise, d){
   if (u === 'M') return fr(v, d == null ? 1 : d) + ' M';
   return fr(v, d == null ? 2 : d) + (u ? ' ' + u : '');
 }
-// Série annuelle d'un champ TradingView pour une entreprise (lignes de companies[nom]).
+// Série annuelle d'un champ TradingView pour une entreprise (lignes de companies[nom]) — calcul EN DIRECT.
 function tvSeries(co, key, years){
   if (!co) return { labels: [], values: [] };
-  let rows = co.rows.filter(r => r.annee);
+  return seriesFromRows(co.rows, key, years);
+}
+function seriesFromRows(rows0, key, years){
+  let rows = (rows0 || []).filter(r => r.annee);
   if (key === 'croissanceCA'){
     const ca = rows.filter(r => typeof r.ca === 'number' && r.ca > 0);
     const out = { labels: [], values: [] };
@@ -240,14 +254,30 @@ function tvSeries(co, key, years){
   if (years) rows = rows.slice(-years);
   return { labels: rows.map(r => r.annee), values: rows.map(r => r[key]) };
 }
+// Série FIGÉE (relevée sur TradingView et enregistrée dans la version, v.tvData) ; à défaut, calcul en direct.
+// name = null : l'entreprise du dossier ; sinon une autre entreprise (comparatif, carte Entreprise).
+function frozenOf(name){
+  const v = ver(), t = v && v.tvData; if (!t) return null;
+  return name == null ? t.self : (t.others || {})[norm(name)] || null;
+}
+function getSeries(name, key, years){
+  const f = frozenOf(name);
+  if (f && f.rows) return seriesFromRows(f.rows, key, years);
+  const d = doc();
+  return tvSeries(findCompany(name == null ? (d.nom || d.titre) : name), key, years);
+}
+function deviseOf(name){
+  const f = frozenOf(name); if (f && f.devise) return f.devise;
+  const d = doc(), co = findCompany(name == null ? (d.nom || d.titre) : name); return co ? co.devise : 'EUR';
+}
+function knownData(name){ const f = frozenOf(name); if (f && f.rows && f.rows.length) return true; const d = doc(); return !!findCompany(name == null ? (d.nom || d.titre) : name); }
 // Valeur liée d'une carte : { v, prev, label, u, d, devise, src, period, series }
 function resolveBind(doc, bind){
   if (!bind) return null;
   if (bind.startsWith('tv:')){
-    const key = bind.slice(3), f = TVF[key], co = findCompany(doc.nom || doc.titre); if (!f) return null;
-    const s = tvSeries(co, key);
-    const n = s.values.length;
-    return { v: n ? s.values[n - 1] : null, prev: n > 1 ? s.values[n - 2] : null, label: f.l, u: f.u, d: f.d, devise: co ? co.devise : 'EUR', src: 'TradingView', period: n ? String(s.labels[n - 1]) : '', series: s, low: !!f.low, known: !!co };
+    const key = bind.slice(3), f = TVF[key]; if (!f) return null;
+    const s = getSeries(null, key), n = s.values.length, t = ver() && ver().tvData;
+    return { v: n ? s.values[n - 1] : null, prev: n > 1 ? s.values[n - 2] : null, label: f.l, u: f.u, d: f.d, devise: deviseOf(null), src: 'TradingView' + (t && t.at ? ' · ' + frDate(t.at) : ''), period: n ? String(s.labels[n - 1]) : '', series: s, low: !!f.low, known: knownData(null) };
   }
   if (bind.startsWith('f:')){
     const f = (doc.facts || {})[bind.slice(2)]; if (!f) return null;
@@ -256,6 +286,67 @@ function resolveBind(doc, bind){
   return null;
 }
 const bindLabel = (doc, bind) => { const r = resolveBind(doc, bind); return r ? r.label : ''; };
+
+/* ---------- relevé TradingView (figé dans la version, « ↻ Actualiser » pour le refaire) ---------- */
+const TV_KEEP = ['annee', 'prixActuel', 'ca', 'margeOp', 'roic', 'fcfParAction', 'eps', 'dividende', 'rendementDiv', 'payoutRatio', 'per', 'pFcf', 'detteOCF', 'actions', 'cash'];
+const slimRows = rows => (rows || []).filter(r => r.annee).map(r => { const o = {}; TV_KEEP.forEach(k => { if (r[k] != null && (k === 'annee' || isFinite(r[k]))) o[k] = r[k]; }); return o; });
+async function tvSymbolFor(name, known){
+  const co = findCompany(name); if (co && co.tv) return co.tv;
+  if (known) return known;
+  try { const r = await fetch('/api/tv/search?q=' + encodeURIComponent(String(name).slice(0, 50)), { cache: 'no-store' }); const j = await r.json(); return j.ok && j.results && j.results[0] ? j.results[0].symbol : ''; } catch(e){ return ''; }
+}
+// Lignes annuelles d'une entreprise : l'historique de l'onglet Analyse si elle y est ; sinon les chiffres ACTUELS TradingView.
+// Logo TradingView (rond, servi par TradingView : s'affiche aussi sur le site public, contrairement aux logos locaux).
+async function tvLogo(sym){
+  if (!sym || typeof tvRawSnapshot !== 'function') return '';
+  try { const sn = await tvRawSnapshot(sym, true); return sn && sn.logoid ? 'https://s3-symbol-logo.tradingview.com/' + sn.logoid + '--big.svg' : ''; } catch(e){ return ''; }
+}
+async function tvRowsFor(name, sym){
+  const co = findCompany(name);
+  if (co && co.rows.length > 1) return { rows: slimRows(co.rows), devise: co.devise, sym: co.tv || sym, logo: await tvLogo(co.tv || sym) };
+  if (!sym || typeof tvFetchSnapshot !== 'function' || typeof tvRowsFromSnapshot !== 'function') return co ? { rows: slimRows(co.rows), devise: co.devise, sym } : null;
+  const snap = await tvFetchSnapshot(sym);
+  const r = tvRowsFromSnapshot(sym, snap)[0];
+  return { rows: slimRows([r]), devise: r.devise || snap.currency || 'EUR', sym, logo: r.lienImage || '' };
+}
+let tvBusy = false;
+async function captureTv(){
+  const d = doc(), v = ver(); if (!d || !v || RO || tvBusy) return;
+  tvBusy = true; ui.tvMsg = 'Relevé des chiffres TradingView…'; tvBar();
+  try {
+    const sym = await tvSymbolFor(d.nom || d.titre, d.tv);
+    const self = d.type === 'entreprise' ? await tvRowsFor(d.nom || d.titre, sym) : null;
+    if (self && self.sym && !d.tv){ d.tv = self.sym; }
+    if (self && self.logo && (!d.logo || /^data\/logos\//.test(d.logo))) d.logo = self.logo;
+    const t = { at: new Date().toISOString(), sym: self ? self.sym : '', self: self ? { rows: self.rows, devise: self.devise } : null, others: {}, prices: null };
+    // cours hebdomadaires (cartes « Cours de bourse »)
+    if (t.sym){
+      try {
+        const r = await fetch('/api/tv/history?symbols=' + encodeURIComponent(t.sym) + '&from=2006-01-01', { cache: 'no-store' }); const j = await r.json();
+        const h = j.ok && j.data && j.data[t.sym];
+        if (h && h.bars && h.bars.length > 5){
+          const iso = ts => new Date(ts * 1000).toISOString().slice(0, 10);
+          const w = typeof resampleWeekly === 'function' ? resampleWeekly(h.bars.map(b => iso(b[0])), h.bars.map(b => b[1])) : { dates: h.bars.map(b => iso(b[0])), closes: h.bars.map(b => b[1]) };
+          t.prices = { dates: w.dates, closes: w.closes, ccy: h.ccy || (self && self.devise) || '' };
+        }
+      } catch(e){ /* sans cours : les cartes Cours de bourse le disent */ }
+    }
+    // autres entreprises citées (comparatif, cartes Entreprise)
+    const names = new Set();
+    Object.values(v.cards).forEach(c => { if (c.type === 'concurrent' && c.nom) names.add(c.nom); if (c.type === 'comparatif') compCols(c).forEach((n, i) => { if (!(i === 0 && (c.cols || [])[0] === '@self')) names.add(n); }); });
+    for (const n of names){ try { const o = await tvRowsFor(n, await tvSymbolFor(n)); if (o) t.others[norm(n)] = { rows: o.rows, devise: o.devise, logo: o.logo || '' }; } catch(e){} }
+    v.tvData = t; ui.tvMsg = null; touch(); renderShell();
+  } catch(e){ ui.tvMsg = '⚠ TradingView indisponible : ' + (e.message || 'erreur'); tvBar(); }
+  tvBusy = false;
+}
+function tvBar(){ const el = $('awTvBar'); if (el) el.innerHTML = tvBarHtml(); }
+function tvBarHtml(){
+  const v = ver(), t = v && v.tvData;
+  if (ui.tvMsg) return '<span class="aw-tvinfo">' + esc(ui.tvMsg) + '</span>';
+  if (!t) return RO ? '' : '<span class="aw-tvinfo">Chiffres TradingView pas encore relevés</span>' + (isRo() ? '' : '<button type="button" class="at-btn sm" data-tvrefresh>↻ Relever</button>');
+  return '<span class="aw-tvinfo" title="Les chiffres TradingView de cette version sont figés à cette date">TradingView · figé le ' + frDate(t.at) + (t.sym ? ' · ' + esc(t.sym) : '') + '</span>' + (isRo() ? '' : '<button type="button" class="at-btn sm" data-tvrefresh title="Relire les chiffres et le cours sur TradingView (remplace ceux de cette version)">↻ Actualiser</button>');
+}
+
 
 /* ---------- persistance ---------- */
 async function load(){
@@ -362,8 +453,9 @@ function createDoc(o){
 }
 function openDoc(id){
   if (!D.docs[id]) return;
-  ui.docId = id; ui.edit = null; ui.big = null; ui.menu = null; ui.orgOpen = {};
+  ui.docId = id; ui.edit = null; ui.big = null; ui.menu = null; ui.orgOpen = {}; ui.tvMsg = null;
   renderShell();
+  const v = ver(); if (v && !v.tvData && !RO && serverOk && D.docs[id].type === 'entreprise') captureTv();
   const m = $('atMain'); if (m) m.scrollTop = 0;
 }
 function deleteDoc(id){
@@ -381,6 +473,9 @@ function addCard(secId, type, o){
   if (type === 'kpi' && !c.bind && doc().type === 'entreprise' && findCompany(doc().nom || doc().titre)) c.bind = 'tv:ca';
   if ((type === 'barres' || type === 'courbes') && !c.mode) { if (findCompany(doc().nom || doc().titre)){ c.mode = 'tv'; c.keys = type === 'barres' ? ['ca'] : ['eps']; } else { c.mode = 'manuel'; c.labels = ['2022', '2023', '2024', '2025']; c.series = [{ name: 'Série 1', values: [], color: SERIES_COLORS[0] }]; } }
   if (type === 'donut' && !c.rows) c.rows = [{ label: 'Catégorie 1', v: null }, { label: 'Catégorie 2', v: null }];
+  if (type === 'geo' && !c.rows) c.rows = [{ zone: 'Europe', v: null }, { zone: 'Amérique du Nord', v: null }, { zone: 'Asie-Pacifique', v: null }, { zone: 'Reste du monde', v: null }];
+  if (type === 'these' && !c.phase) c.phase = Object.values(ver().cards).some(x => x.type === 'these' && x.phase !== 'finale' && x.id !== c.id) ? 'finale' : 'depart';
+  if (type === 'bourse' && !ver().tvData && !RO) setTimeout(captureTv, 50);
   v.cards[c.id] = c; sec.cards.push(c.id); sec.collapsed = false;
   touch(); return c;
 }
@@ -488,15 +583,15 @@ function homeHtml(){
 
 /* ---------- en-tête du dossier ---------- */
 function docHtml(d){
-  const v = ver(d), co = findCompany(d.nom || d.titre), last = co ? co.last : null;
+  const v = ver(d), co = findCompany(d.nom || d.titre), fz = v.tvData && v.tvData.self, last = fz && fz.rows.length ? Object.assign({}, fz.rows[fz.rows.length - 1], { tvLiveAt: 1 }) : (co ? co.last : null);
   const chips = [d.secteur ? sectorLabel(d.secteur) : '', d.sousSecteur || '', DOC_LABEL[d.type]].filter(Boolean).map(t => '<span class="aw-chip">' + esc(t) + '</span>').join('') +
     '<span class="aw-chip gold">' + esc(v.label) + '</span>';
   const prix = d.type === 'entreprise' && window.PRIX_UI ? window.PRIX_UI.chip(d.titre) : '';
   let chain = '';
   if (d.chaine && D.docs[d.chaine.doc]) chain = '<button type="button" class="at-crumb" data-open="' + d.chaine.doc + '">🔗 ' + esc(D.docs[d.chaine.doc].titre) + '</button>';
-  const cours = last && typeof last.prixActuel === 'number' ? '<div class="aw-price"><small>Cours</small><b>' + fmtVal(last.prixActuel, 'cur', co.devise) + '</b>' + (last.tvLiveAt ? '<span>TradingView</span>' : '') + '</div>' : '';
+  const cours = last && typeof last.prixActuel === 'number' ? '<div class="aw-price"><small>Cours</small><b>' + fmtVal(last.prixActuel, 'cur', fz ? fz.devise : co.devise) + '</b>' + (v.tvData ? '<span>au ' + frDate(v.tvData.at) + '</span>' : '') + '</div>' : '';
   return '<header class="aw-head">' + (ui.video ? '' : '<button type="button" class="at-btn ico" data-side title="Afficher / masquer le répertoire">☰</button>') + docLogo(d, 54) +
-    '<div class="aw-head-t"><div class="aw-chips">' + chips + chain + prix + '</div><h1>' + esc(d.titre) + '</h1></div>' + cours + '</header>' +
+    '<div class="aw-head-t"><div class="aw-chips">' + chips + chain + prix + '</div><h1>' + esc(d.titre) + '</h1>' + (ui.video ? '' : '<div class="aw-tvbar" id="awTvBar">' + tvBarHtml() + '</div>') + '</div>' + cours + '</header>' +
     '<div class="aw-bar">' +
       '<span class="at-seg"><button type="button" class="' + (ui.view === 'grid' ? 'on' : '') + '" data-view="grid">Grille</button><button type="button" class="' + (ui.view === 'org' ? 'on' : '') + '" data-view="org">Organigramme</button></span>' +
       (ui.video ? '' : '<select class="at-sel" id="atVer" title="Version affichée">' + d.versions.map(x => '<option value="' + x.id + '"' + (x.id === v.id ? ' selected' : '') + '>' + esc(x.label) + '</option>').join('') + '</select>') +
@@ -511,24 +606,27 @@ function docHtml(d){
 /* ====================== CARTES ====================== */
 function cardTitle(c){
   if (c.titre) return c.titre;
+  if (c.type === 'profil') return c.nom || '';
+  if (c.type === 'these') return c.phase === 'finale' ? 'Thèse finale' : 'Thèse de départ';
+  if (c.type === 'thesecmp') return 'Thèse : avant / après';
+  if (c.type === 'bourse') return 'Cours de bourse';
   if (c.type === 'kpi'){ const d = doc(); return c.bind ? bindLabel(d, c.bind) : (c.label || ''); }
   if (c.type === 'concurrent') return c.nom || '';
   return '';
 }
 const sourceOf = (v, c) => c.srcId && v.cards[c.srcId] ? v.cards[c.srcId] : null;
 function chromeHtml(c, body, foot, extraCls){
-  const t = TYPES[c.type], title = cardTitle(c), ro = isRo();
-  const head = '<div class="aw-chead"><span class="aw-tl"><span class="aw-dot" style="background:' + t.c + '"></span>' + esc(t.l) + '</span>' +
-    (title && c.type !== 'kpi' && c.type !== 'concurrent' && c.type !== 'citation' ? '<h3 class="aw-ct">' + esc(title) + '</h3>' : '<span style="flex:1"></span>') +
-    '<button type="button" class="aw-kb" data-c-big title="Agrandir">' + ICO.expand + '</button>' +
-    (ro ? '' : '<button type="button" class="aw-kb" data-c-menu title="Actions">' + ICO.dots + '</button>') + '</div>';
-  return '<article class="aw-card sz-' + (c.collapsed ? 'z' : c.size || 's') + ' t-' + c.type + (extraCls ? ' ' + extraCls : '') + '" data-cid="' + c.id + '"' + (ro ? '' : ' draggable="true"') + '>' + head +
+  const ro = isRo();
+  const btns = '<span class="aw-cbtns"><button type="button" class="aw-kb" data-c-big title="Agrandir">' + ICO.expand + '</button>' +
+    (ro ? '' : '<button type="button" class="aw-kb" data-c-menu title="Actions">' + ICO.dots + '</button>') + '</span>';
+  const head = c.titre ? '<div class="aw-chead"><h3 class="aw-ct">' + esc(c.titre) + '</h3></div>' : '';
+  return '<article class="aw-card sz-' + (c.collapsed ? 'z' : c.size || 's') + ' t-' + c.type + (c.titre ? '' : ' notitle') + (extraCls ? ' ' + extraCls : '') + '" data-cid="' + c.id + '"' + (ro ? '' : ' draggable="true"') + '>' + head + btns +
     '<div class="aw-cbody">' + body + '</div>' + (foot ? '<div class="aw-foot">' + foot + '</div>' : '') +
     (ro ? '' : '<span class="aw-resize" data-c-resize title="Glisser pour changer le format"></span>') + '</article>';
 }
 function collapsedHtml(c){
   const t = TYPES[c.type];
-  return '<article class="aw-card sz-z" data-cid="' + c.id + '"' + (isRo() ? '' : ' draggable="true"') + '><button type="button" class="aw-zrow" data-c-unfold title="Déplier"><span class="aw-chev">' + ICO.chevR + '</span><span class="aw-dot" style="background:' + t.c + '"></span><b>' + esc(cardTitle(c) || t.l) + '</b><span class="aw-zval">' + esc(keyFigure(c)) + '</span></button>' +
+  return '<article class="aw-card sz-z" data-cid="' + c.id + '"' + (isRo() ? '' : ' draggable="true"') + '><button type="button" class="aw-zrow" data-c-unfold title="Déplier"><span class="aw-chev">' + ICO.chevR + '</span><b>' + esc(cardTitle(c) || t.l) + '</b><span class="aw-zval">' + esc(keyFigure(c)) + '</span></button>' +
     '<button type="button" class="aw-kb" data-c-big title="Agrandir">' + ICO.expand + '</button>' + (isRo() ? '' : '<button type="button" class="aw-kb" data-c-menu title="Actions">' + ICO.dots + '</button>') + '</article>';
 }
 // Le chiffre clé d'une carte (aperçu replié, organigramme).
@@ -540,6 +638,11 @@ function keyFigure(c){
   if (c.type === 'comparatif') return (c.cols || []).length + ' entreprises';
   if (c.type === 'concurrent') return c.pays || '';
   if (c.type === 'source') return ({ pdf: 'PDF', web: 'Site web', article: 'Article', video: 'Vidéo' }[c.kind] || '') + (c.pages ? ' · ' + c.pages + ' p.' : '');
+  if (c.type === 'bourse'){ const p = ver().tvData && ver().tvData.prices; return p && p.closes.length ? fr(p.closes[p.closes.length - 1], 2) + ' ' + curSym(p.ccy) : ''; }
+  if (c.type === 'geo'){ const rows = (c.rows || []).filter(r => num(r.v) > 0), tot = rows.reduce((t, r) => t + num(r.v), 0); if (!tot) return ''; const top = rows.slice().sort((a, b) => num(b.v) - num(a.v))[0]; return top.zone + ' ' + fr(num(top.v) / tot * 100, 0) + ' %'; }
+  if (c.type === 'profil') return [c.nom, c.poste].filter(Boolean).join(' · ');
+  if (c.type === 'these') return c.phase === 'finale' ? 'Thèse finale' : 'Thèse de départ';
+  if (c.type === 'thesecmp') return Object.values(c.verdicts || {}).filter(Boolean).length + ' / 7 verdicts';
   return plain(c.html).slice(0, 60);
 }
 function kpiData(c){
@@ -582,8 +685,8 @@ function cardHtml(c){
       const r = kpiData(c);
       body = '<div class="aw-kpi-l">' + esc(r.label) + (r.period ? ' <span>' + esc(r.period) + '</span>' : '') + '</div><div class="aw-kpi-v">' + fmtVal(r.v, r.u, r.devise, r.d) + '</div>' +
         '<div class="aw-kpi-d">' + deltaHtml(r) + (r.prev != null ? '<span class="at-faint">avant : ' + fmtVal(r.prev, r.u, r.devise, r.d) + '</span>' : '') + '</div>' + (r.series ? sparkSvg(r.series.values.slice(-10), '#D9A441', 40) : '');
-      foot = (c.bind ? '<span class="aw-link">lié · ' + esc(r.label) + '</span>' : '') + '<span>' + esc(r.src || '') + '</span>';
-      if (c.bind && r.known === false) foot += '<span class="aw-warn">entreprise inconnue de l\'onglet Analyse</span>';
+      foot = c.bind ? '' : (r.src ? '<span>' + esc(r.src) + '</span>' : '');
+      if (c.bind && r.known === false) foot = '<span class="aw-warn">' + (ver().tvData ? 'pas de chiffre TradingView' : 'chiffres TradingView pas encore relevés') + '</span>';
       break;
     }
     case 'donut': {
@@ -595,10 +698,15 @@ function cardHtml(c){
     }
     case 'barres': case 'courbes': {
       const s = seriesData(c, d);
-      body = s.labels.length ? '<div class="aw-chart"><canvas data-chart="' + c.id + '"></canvas></div>' : '<p class="at-faint">' + (c.mode === 'tv' ? 'Pas d\'historique pour cette entreprise dans l\'onglet Analyse.' : 'Saisis les années et les valeurs (⋯ › Modifier).') + '</p>';
-      foot = (c.mode === 'tv' ? '<span class="aw-link">lié · ' + esc((c.keys || []).map(k => TVF[k] ? TVF[k].l : k).join(', ')) + '</span><span>TradingView</span>' : '') + srcFoot; break;
+      body = s.labels.length ? '<div class="aw-chart"><canvas data-chart="' + c.id + '"></canvas></div>' : '<p class="at-faint">' + (c.mode === 'tv' ? (ver().tvData ? 'Pas d\'historique TradingView pour ce chiffre.' : 'Chiffres TradingView en cours de relevé…') : 'Saisis les années et les valeurs (⋯ › Modifier).') + '</p>';
+      foot = srcFoot; break;
     }
-    case 'comparatif': body = compTableHtml(c, false); foot = '<span class="aw-link">TradingView</span>' + srcFoot; break;
+    case 'comparatif': body = compTableHtml(c, false); foot = srcFoot; break;
+    case 'bourse': body = bourseHtml(c, false); break;
+    case 'geo': body = geoHtml(c, false); foot = srcFoot; break;
+    case 'profil': body = profilHtml(c, false); break;
+    case 'these': body = theseHtml(c, false); break;
+    case 'thesecmp': body = theseCmpHtml(c, false); break;
     case 'concurrent': body = concHtml(c, false); break;
     case 'source': body = srcHtml(c, false, v); break;
   }
@@ -615,8 +723,8 @@ function compCols(c){
 function compValue(c, colName, key, ci){
   const ov = c.over && c.over[key] && c.over[key][ci];
   if (ov != null && ov !== '') return num(ov);
-  const co = findCompany(colName); if (!co) return null;
-  const s = tvSeries(co, key); return s.values.length ? s.values[s.values.length - 1] : null;
+  const d = doc(), self = ci === 0 && (c.cols || [])[0] === '@self';
+  const s = getSeries(self ? null : colName, key); return s.values.length ? s.values[s.values.length - 1] : null;
 }
 function compTableHtml(c, big){
   const cols = compCols(c), metrics = (c.metrics || []).filter(k => TVF[k]);
@@ -626,19 +734,20 @@ function compTableHtml(c, big){
     const f = TVF[k], vals = cols.map((n, i) => compValue(c, n, k, i)), ok = vals.filter(x => x != null);
     const best = ok.length > 1 ? (f.low ? Math.min(...ok) : Math.max(...ok)) : null, worst = ok.length > 2 ? (f.low ? Math.max(...ok) : Math.min(...ok)) : null;
     const mx = Math.max(...ok.map(Math.abs), 0) || 1;
-    return '<tr><td class="lb">' + esc(f.l) + '</td>' + vals.map((x, i) => '<td><span class="' + (x != null && x === best ? 'best' : x != null && x === worst ? 'worst' : '') + '">' + fmtVal(x, f.u, findCompany(cols[i]) ? findCompany(cols[i]).devise : 'EUR', f.d) + '</span>' +
+    return '<tr><td class="lb">' + esc(f.l) + '</td>' + vals.map((x, i) => '<td><span class="' + (x != null && x === best ? 'best' : x != null && x === worst ? 'worst' : '') + '">' + fmtVal(x, f.u, deviseOf(i === 0 && (c.cols || [])[0] === '@self' ? null : cols[i]), f.d) + '</span>' +
       (big && x != null ? '<i class="aw-cbar" style="width:' + Math.max(4, Math.abs(x) / mx * 100).toFixed(0) + '%"></i>' : '') + '</td>').join('') + '</tr>';
   }).join('');
   return '<div class="aw-tscroll"><table class="aw-table' + (big ? ' big' : '') + '"><thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
 }
 function concHtml(c, big){
-  const co = findCompany(c.nom), logo = c.logo || (co ? co.logo : ''), linked = c.docId && D.docs[c.docId] ? D.docs[c.docId] : Object.values(D.docs).find(x => x.type === 'entreprise' && norm(x.titre) === norm(c.nom) && x.id !== ui.docId);
+  const co = findCompany(c.nom), fz = frozenOf(c.nom), logo = c.logo || (fz && fz.logo) || (co ? co.logo : '') || '', linked = c.docId && D.docs[c.docId] ? D.docs[c.docId] : Object.values(D.docs).find(x => x.type === 'entreprise' && norm(x.titre) === norm(c.nom) && x.id !== ui.docId);
   const keys = big ? ['ca', 'croissanceCA', 'margeOp', 'roic', 'per', 'pFcf', 'rendementDiv', 'detteOCF'] : ['margeOp', 'croissanceCA', 'per'];
-  const metrics = co ? '<div class="aw-cmetrics' + (big ? ' big' : '') + '">' + keys.map(k => { const s = tvSeries(co, k), v = s.values.length ? s.values[s.values.length - 1] : null; return '<div><b>' + fmtVal(v, TVF[k].u, co.devise, TVF[k].d) + '</b><span>' + esc(TVF[k].l) + '</span></div>'; }).join('') + '</div>' : '';
+  const known = knownData(c.nom || '?');
+  const metrics = known ? '<div class="aw-cmetrics' + (big ? ' big' : '') + '">' + keys.map(k => { const s = getSeries(c.nom, k), v = s.values.length ? s.values[s.values.length - 1] : null; return '<div><b>' + fmtVal(v, TVF[k].u, deviseOf(c.nom), TVF[k].d) + '</b><span>' + esc(TVF[k].l) + '</span></div>'; }).join('') + '</div>' : '';
   return '<div class="aw-conc-top"><div class="aw-conc-logo">' + (logo ? '<img src="' + esc(logo) + '" alt="">' : '<span>' + esc((c.nom || '?').slice(0, 2).toUpperCase()) + '</span>') + '</div><div><div class="aw-conc-n">' + esc(c.nom || 'Entreprise') + '</div><div class="aw-conc-s">' + esc([c.pays, c.role].filter(Boolean).join(' · ')) + '</div></div></div>' +
     (c.tags ? '<div class="aw-tags">' + String(c.tags).split(',').map(t => t.trim()).filter(Boolean).map(t => '<span>' + esc(t) + '</span>').join('') + '</div>' : '') + metrics +
     (c.forces ? '<div class="aw-fw"><b class="pos">Forces</b><p>' + esc(c.forces) + '</p></div>' : '') + (c.faiblesses ? '<div class="aw-fw"><b class="neg">Faiblesses</b><p>' + esc(c.faiblesses) + '</p></div>' : '') +
-    (big && co ? '<div class="aw-chart big2"><canvas data-chart="conc-' + c.id + '"></canvas></div>' : '') +
+    (big && known ? '<div class="aw-chart big2"><canvas data-chart="conc-' + c.id + '"></canvas></div>' : '') +
     (linked ? '<button type="button" class="aw-linkbtn" data-open="' + linked.id + '">Ouvrir son dossier ›</button>' : '');
 }
 function srcHtml(c, big, v){
@@ -653,19 +762,115 @@ function srcHtml(c, big, v){
   else if (c.file && isPdf) h += '<a class="aw-linkbtn" href="' + esc(mediaUrl(c.file)) + '" target="_blank" rel="noopener">Ouvrir le PDF ›</a>';
   return h;
 }
-// Données d'un graphique barres / courbes : liées à TradingView ou saisies.
+// Données d'un graphique barres / courbes : liées à TradingView (relevé figé de la version) ou saisies.
 function seriesData(c, d){
   if (c.mode === 'tv'){
-    const co = findCompany(d.nom || d.titre), keys = (c.keys || []).filter(k => TVF[k]);
-    const per = keys.map(k => tvSeries(co, k, c.years || 10));
+    const name = d && d.__other ? d.__other : null, keys = (c.keys || []).filter(k => TVF[k]);
+    const per = keys.map(k => getSeries(name, k, c.years || 10));
     const labels = [...new Set(per.flatMap(s => s.labels))].sort((a, b) => a - b);
-    return { labels, sets: keys.map((k, i) => ({ name: TVF[k].l, u: TVF[k].u, devise: co ? co.devise : 'EUR', color: SERIES_COLORS[i % SERIES_COLORS.length], values: labels.map(y => { const j = per[i].labels.indexOf(y); return j >= 0 ? (TVF[k].u === 'Mcur' && per[i].values[j] != null ? per[i].values[j] : per[i].values[j]) : null; }) })) };
+    return { labels, sets: keys.map((k, i) => ({ name: TVF[k].l, u: TVF[k].u, devise: deviseOf(name), color: SERIES_COLORS[i % SERIES_COLORS.length], values: labels.map(y => { const j = per[i].labels.indexOf(y); return j >= 0 ? per[i].values[j] : null; }) })) };
   }
   const labels = (c.labels || []).map(String);
   return { labels, sets: (c.series || []).map((s, i) => ({ name: s.name || 'Série ' + (i + 1), u: c.unit || '', devise: '', color: s.color || SERIES_COLORS[i % SERIES_COLORS.length], values: labels.map((_, j) => num((s.values || [])[j])) })) };
 }
+// ---------- Cours de bourse (relevé TradingView figé : clôtures hebdomadaires) ----------
+const RANGES = [['1a', 1, '1 an'], ['5a', 5, '5 ans'], ['10a', 10, '10 ans'], ['max', 99, 'Max']];
+function pricesFor(c){
+  const p = ver().tvData && ver().tvData.prices; if (!p || !p.closes.length) return null;
+  const yrs = (RANGES.find(r => r[0] === (c.range || '5a')) || RANGES[1])[1];
+  const from = new Date(Date.now() - yrs * 365.25 * 864e5).toISOString().slice(0, 10);
+  const i0 = Math.max(0, p.dates.findIndex(x => x >= from));
+  return { dates: p.dates.slice(i0), closes: p.closes.slice(i0), ccy: p.ccy, all: p };
+}
+function bourseHtml(c, big){
+  const p = pricesFor(c), t = ver().tvData;
+  if (!p) return '<p class="at-faint">' + (t ? 'Pas de cours TradingView pour cette entreprise.' : 'Cours TradingView en cours de relevé…') + '</p>';
+  const first = p.closes[0], last = p.closes[p.closes.length - 1], perf = first ? (last / first - 1) * 100 : null;
+  const seg = '<span class="aw-range">' + RANGES.map(r => '<button type="button" data-range="' + r[0] + '" class="' + ((c.range || '5a') === r[0] ? 'on' : '') + '">' + r[2] + '</button>').join('') + '</span>';
+  let h = '<div class="aw-bourse-h"><b>' + fr(last, 2) + ' ' + curSym(p.ccy) + '</b>' + (perf != null ? '<span class="aw-delta ' + (perf >= 0 ? 'pos' : 'neg') + '">' + (perf >= 0 ? '+' : '') + fr(perf, 1) + ' %</span>' : '') + seg + '</div><div class="aw-chart' + (big ? ' xl' : '') + '"><canvas data-chart="' + c.id + '"></canvas></div>';
+  if (big){
+    const all = p.all, yr = n => { const from = new Date(new Date(t.at).getTime() - n * 365.25 * 864e5).toISOString().slice(0, 10); const i = all.dates.findIndex(x => x >= from); return i >= 0 && i < all.closes.length - 1 ? all.closes[i] : null; };
+    const L = all.closes[all.closes.length - 1], st = (l, v) => '<div class="aw-stat"><span>' + l + '</span><b>' + v + '</b></div>';
+    const ann = n => { const a = yr(n); return a ? fr((Math.pow(L / a, 1 / n) - 1) * 100, 1) + ' %/an' : '—'; };
+    const a1 = yr(1);
+    h += '<div class="aw-stats">' + st('Sur 1 an', a1 ? fr((L / a1 - 1) * 100, 1) + ' %' : '—') + st('Par an sur 5 ans', ann(5)) + st('Par an sur 10 ans', ann(10)) +
+      st('Plus haut de la période', fr(Math.max(...p.closes), 2) + ' ' + curSym(p.ccy)) + st('Plus bas de la période', fr(Math.min(...p.closes), 2) + ' ' + curSym(p.ccy)) + '</div><p class="aw-note">TradingView, clôtures hebdomadaires, relevé du ' + frDate(t.at) + '.</p>';
+  }
+  return h;
+}
+// ---------- Carte du monde (chiffre d'affaires par pays ou région) ----------
+const ZONES = {
+  'Europe': x => x.r === 'Europe', 'Europe de l\'Ouest': x => ['Western Europe', 'Northern Europe', 'Southern Europe', 'Central Europe'].includes(x.s),
+  'Europe de l\'Est': x => ['Eastern Europe', 'Southeast Europe'].includes(x.s), 'Zone euro': x => ['FRA', 'DEU', 'ITA', 'ESP', 'NLD', 'BEL', 'AUT', 'PRT', 'FIN', 'IRL', 'GRC', 'SVK', 'SVN', 'LTU', 'LVA', 'EST', 'LUX', 'HRV'].includes(x.id),
+  'Amérique du Nord': x => ['USA', 'CAN', 'MEX'].includes(x.id), 'Amériques': x => x.r === 'Americas', 'Amérique latine': x => x.r === 'Americas' && !['USA', 'CAN'].includes(x.id),
+  'Amérique du Sud': x => x.s === 'South America', 'Asie': x => x.r === 'Asia', 'Asie-Pacifique': x => (x.r === 'Asia' && !['Western Asia', 'Central Asia'].includes(x.s)) || x.r === 'Oceania',
+  'Moyen-Orient': x => x.s === 'Western Asia' || x.id === 'EGY', 'Afrique': x => x.r === 'Africa', 'Afrique et Moyen-Orient': x => x.r === 'Africa' || x.s === 'Western Asia',
+  'EMEA': x => x.r === 'Europe' || x.r === 'Africa' || x.s === 'Western Asia', 'Océanie': x => x.r === 'Oceania', 'Reste du monde': () => true, 'Autres': () => true
+};
+let MONDE = null, mondeLoading = null;
+function loadMonde(){ if (MONDE) return Promise.resolve(MONDE); if (!mondeLoading) mondeLoading = fetch('data/geo/monde.json').then(r => r.json()).then(j => (MONDE = j)).catch(() => null); return mondeLoading; }
+function geoAssign(rows){
+  // chaque pays prend la ligne la plus précise qui le contient : un pays nommé, sinon la plus petite région, sinon « Reste du monde »
+  const out = {}; if (!MONDE) return out;
+  const cand = rows.map((r, i) => { const z = String(r.zone || '').trim(), zn = norm(z); const country = MONDE.c.find(x => norm(x.n) === zn || x.id === z.toUpperCase());
+    const f = country ? (x => x.id === country.id) : (Object.keys(ZONES).find(k => norm(k) === zn) ? ZONES[Object.keys(ZONES).find(k => norm(k) === zn)] : null);
+    const rest = /reste|autres|other/.test(zn);
+    return { i, f, size: country ? 1 : f && !rest ? MONDE.c.filter(f).length : 9999 }; }).filter(x => x.f);
+  cand.sort((a, b) => a.size - b.size);
+  MONDE.c.forEach(x => { const m = cand.find(k => k.f(x)); if (m) out[x.id] = m.i; });
+  return out;
+}
+function geoHtml(c, big){
+  const rows = (c.rows || []).filter(r => num(r.v) > 0), tot = rows.reduce((t, r) => t + num(r.v), 0);
+  if (!tot) return '<div class="aw-geo" data-geo="' + c.id + '"></div><p class="at-faint">Saisis le chiffre d\'affaires par pays ou par région (⋯ › Modifier).</p>';
+  const legend = '<div class="aw-geo-leg">' + rows.map((r, i) => '<div><span class="aw-dot" style="background:' + SERIES_COLORS[i % SERIES_COLORS.length] + '"></span><span class="lb">' + esc(r.zone) + '</span><b>' + fr(num(r.v) / tot * 100, 0) + ' %</b>' + (big ? '<small>' + fr(num(r.v), 1) + ' ' + esc(c.unit || '') + '</small>' : '') + '</div>').join('') + '</div>';
+  return '<div class="aw-geo-wrap' + (big ? ' big' : '') + '"><div class="aw-geo" data-geo="' + c.id + '"></div>' + legend + '</div>';
+}
+function drawGeos(root){
+  const els = root.querySelectorAll('[data-geo]'); if (!els.length) return;
+  loadMonde().then(m => { if (!m) return;
+    els.forEach(el => { const c = ver().cards[el.dataset.geo]; if (!c) return;
+      const rows = (c.rows || []).map((r, i) => Object.assign({ i }, r)), assign = geoAssign((c.rows || []).filter(r => num(r.v) > 0).length ? c.rows : []);
+      const tot = (c.rows || []).reduce((t, r) => t + (num(r.v) > 0 ? num(r.v) : 0), 0);
+      const vis = (c.rows || []).filter(r => num(r.v) > 0);
+      el.innerHTML = '<svg viewBox="0 30 ' + m.w + ' ' + (m.h - 60) + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Carte du chiffre d\'affaires">' + m.c.filter(x => x.id !== 'ATA').map(x => {
+        const k = assign[x.id], r = k != null ? (c.rows || [])[k] : null, vi = r ? vis.indexOf(r) : -1;
+        const col = vi >= 0 ? SERIES_COLORS[vi % SERIES_COLORS.length] : '#262E36', op = vi >= 0 && tot ? (0.45 + 0.55 * Math.min(1, num(r.v) / tot * 2.5)).toFixed(2) : 1;
+        return '<path d="' + x.d + '" fill="' + col + '" fill-opacity="' + op + '" stroke="#0F1317" stroke-width="0.5"><title>' + esc(x.n + (r ? ' — ' + r.zone + ' : ' + fr(num(r.v) / tot * 100, 0) + ' %' : '')) + '</title></path>';
+      }).join('') + '</svg>';
+    });
+  });
+}
+// ---------- Dirigeant ----------
+function profilHtml(c, big){
+  const im = (c.imgs || [])[0];
+  return '<div class="aw-prof' + (big ? ' big' : '') + '"><div class="aw-prof-ph">' + (im ? '<img src="' + esc(mediaUrl(im.f)) + '" alt="">' : '<span>' + esc((c.nom || '?').split(' ').map(x => x[0] || '').join('').slice(0, 2).toUpperCase()) + '</span>') + '</div>' +
+    '<div class="aw-prof-n">' + esc(c.nom || 'Nom du dirigeant') + '</div><div class="aw-prof-p">' + esc([c.poste, c.depuis ? 'depuis ' + c.depuis : ''].filter(Boolean).join(' · ')) + '</div></div>' +
+    ((c.detention || c.remu) ? '<div class="aw-cmetrics">' + (c.detention ? '<div><b>' + esc(c.detention) + '</b><span>Actions détenues</span></div>' : '') + (c.remu ? '<div><b>' + esc(c.remu) + '</b><span>Rémunération</span></div>' : '') + '</div>' : '') +
+    (c.parcours ? '<div class="aw-text' + (big ? ' xl' : ' sm2') + '">' + esc(c.parcours).replace(/\n/g, '<br>') + '</div>' : '');
+}
+// ---------- Thèse ----------
+function theseHtml(c, big){
+  const a = c.answers || [];
+  const done = THESE_Q.filter((_, i) => (a[i] || '').trim()).length;
+  return '<div class="aw-these-h"><span class="aw-these-tag ' + (c.phase === 'finale' ? 'fin' : '') + '">' + (c.phase === 'finale' ? 'Thèse finale' : 'Thèse de départ') + '</span>' + (c.date ? '<span class="at-faint">' + frDate(c.date) + '</span>' : '') + '<span class="at-faint">' + done + ' / 7</span></div>' +
+    '<ol class="aw-these' + (big ? ' big' : '') + '">' + THESE_Q.map((q, i) => '<li><b>' + esc(big ? q : THESE_SHORT[i]) + '</b><span>' + (esc(a[i] || '') || '<i class="at-faint">—</i>') + '</span></li>').join('') + '</ol>';
+}
+function theseCmpHtml(c, big){
+  const v = ver(), cards = Object.values(v.cards), dep = cards.find(x => x.type === 'these' && x.phase !== 'finale'), fin = cards.find(x => x.type === 'these' && x.phase === 'finale');
+  if (!dep && !fin) return '<p class="at-faint">Ajoute une carte « Thèse » de départ et une finale : elles s\'afficheront ici côte à côte.</p>';
+  const A = (x, i) => esc(x && x.answers ? x.answers[i] || '' : '') || '<i class="at-faint">—</i>';
+  return '<div class="aw-tscroll"><table class="aw-table aw-tcmp' + (big ? ' big' : '') + '"><thead><tr><th></th><th>Départ' + (dep && dep.date ? ' · ' + frDate(dep.date) : '') + '</th><th>Finale' + (fin && fin.date ? ' · ' + frDate(fin.date) : '') + '</th><th>Verdict</th></tr></thead><tbody>' +
+    THESE_Q.map((q, i) => { const vd = VERDICTS[(c.verdicts || {})[i]]; return '<tr><td class="lb">' + esc(big ? q : THESE_SHORT[i]) + '</td><td class="tx">' + A(dep, i) + '</td><td class="tx">' + A(fin, i) + '</td><td>' + (vd ? '<span class="aw-verdict" style="--vc:' + vd[1] + '">' + vd[0] + '</span>' : '') + '</td></tr>'; }).join('') + '</tbody></table></div>';
+}
 function chartConfig(c, d, big){
   const tick = { color: '#8B93A0', font: { family: "'Plus Jakarta Sans', sans-serif", size: big ? 13 : 11 } };
+  if (c.type === 'bourse'){
+    const p = pricesFor(c) || { dates: [], closes: [], ccy: '' }, up = p.closes.length > 1 && p.closes[p.closes.length - 1] >= p.closes[0];
+    return { type: 'line', data: { labels: p.dates, datasets: [{ data: p.closes, borderColor: '#D9A441', backgroundColor: 'rgba(217,164,65,0.10)', fill: true, borderWidth: 2.2, pointRadius: 0, tension: 0.15 }] },
+      options: { responsive: true, maintainAspectRatio: false, animation: { duration: 600 }, interaction: { mode: 'index', intersect: false }, plugins: { legend: { display: false }, tooltip: { callbacks: { title: x => frDate(x[0].label), label: x => ' ' + fr(x.raw, 2) + ' ' + curSym(p.ccy) } } },
+        scales: { x: { grid: { display: false }, ticks: Object.assign({ maxTicksLimit: big ? 10 : 5, callback: function(v){ return String(this.getLabelForValue(v)).slice(0, 4); } }, tick) }, y: { grid: { color: 'rgba(255,255,255,0.06)' }, ticks: tick } } } };
+  }
   if (c.type === 'donut'){
     const rows = (c.rows || []).filter(r => num(r.v) > 0);
     return { type: 'doughnut', data: { labels: rows.map(r => r.label), datasets: [{ data: rows.map(r => num(r.v)), backgroundColor: rows.map((r, i) => r.color || SERIES_COLORS[i % SERIES_COLORS.length]), borderColor: '#161B21', borderWidth: 3 }] },
@@ -690,8 +895,8 @@ function drawCharts(root, list, big){
   root.querySelectorAll('canvas[data-chart]').forEach(cv => {
     const id = cv.dataset.chart;
     if (id.startsWith('conc-')){
-      const c = v.cards[id.slice(5)], co = c && findCompany(c.nom); if (!co) return;
-      list.push(new Chart(cv, chartConfig({ type: 'barres', mode: 'tv', keys: ['ca', 'eps'] }, { nom: co.key }, big))); return;
+      const c = v.cards[id.slice(5)]; if (!c) return;
+      list.push(new Chart(cv, chartConfig({ type: 'barres', mode: 'tv', keys: ['ca', 'eps'] }, { __other: c.nom }, big))); return;
     }
     if (id.startsWith('kpi-')){
       const c = v.cards[id.slice(4)], r = c && kpiData(c); if (!r || !r.series) return;
@@ -724,6 +929,7 @@ function renderBody(){
         '<div class="aw-grid" data-drop="' + s.id + '">' + cards.map(cardHtml).join('') + (ro || cards.length ? '' : '<button type="button" class="aw-empty" data-s-add>' + ICO.plus + ' Ajouter une première carte</button>') + '</div>') + '</section>';
   }).join('') + (v.sections.length ? '' : '<p class="at-empty big">' + (ro ? 'Dossier vide.' : 'Aucune section. « ＋ Section » pour commencer.') + '</p>');
   drawCharts(host, charts, false);
+  drawGeos(host);
   wireBody(host);
 }
 function wireBody(host){
@@ -737,6 +943,7 @@ function wireBody(host){
     if (ds.cBig !== undefined){ openBig(ds.cBig || cid, cEl); return; }
     if (ds.cMenu !== undefined){ openMenu(cid, b); return; }
     if (ds.cUnfold !== undefined && c){ c.collapsed = false; touch(); renderBody(); return; }
+    if (ds.range && c){ c.range = ds.range; if (!isRo()) touch(); refreshCard(c); return; }
     if (ds.sTog !== undefined && sec){ sec.collapsed = !sec.collapsed; if (!RO) touch(); renderBody(); return; }
     if (ds.sTitle !== undefined && sec && !isRo()){ inlineRename(b, sec.titre, t => { sec.titre = t; touch(); renderBody(); }); return; }
     if (isRo()) return;
@@ -932,7 +1139,16 @@ function bigBody(c){
         (cagrs.length ? '<div class="aw-stats">' + cagrs.map(g => statBox(g.name + ' : croissance annuelle sur ' + g.n + ' ans', fr(g.g, 1) + ' %/an')).join('') + '</div>' : '') +
         '<div class="aw-tscroll"><table class="aw-table big"><thead><tr><th></th>' + s.labels.map(y => '<th>' + esc(y) + '</th>').join('') + '</tr></thead><tbody>' + s.sets.map(x => '<tr><td class="lb"><span class="aw-dot" style="background:' + x.color + '"></span> ' + esc(x.name) + '</td>' + x.values.map(y => '<td>' + fmtVal(y, x.u, x.devise) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>';
     }
-    case 'comparatif': return compTableHtml(c, true) + '<p class="aw-note">Vert : la meilleure valeur de la ligne · rouge : la moins bonne. Chiffres TradingView de l\'onglet Analyse, sauf valeurs saisies à la main.</p>';
+    case 'comparatif': return compTableHtml(c, true) + '<p class="aw-note">Vert : la meilleure valeur de la ligne · rouge : la moins bonne. Chiffres TradingView' + (ver().tvData ? ' relevés le ' + frDate(ver().tvData.at) : '') + ', sauf valeurs saisies à la main.</p>';
+    case 'bourse': return bourseHtml(c, true);
+    case 'geo': {
+      const rows = (c.rows || []).filter(r => num(r.v) > 0), tot = rows.reduce((t, r) => t + num(r.v), 0);
+      const top = rows.slice().sort((a, b) => num(b.v) - num(a.v));
+      return geoHtml(c, true) + (top.length ? '<p class="aw-lead">« ' + esc(top[0].zone) + ' » représente <b>' + fr(num(top[0].v) / tot * 100, 0) + ' %</b> du chiffre d\'affaires' + (top[1] ? ', devant « ' + esc(top[1].zone) + ' » (' + fr(num(top[1].v) / tot * 100, 0) + ' %)' : '') + '.</p>' : '');
+    }
+    case 'profil': return profilHtml(c, true);
+    case 'these': return theseHtml(c, true);
+    case 'thesecmp': return theseCmpHtml(c, true);
     case 'concurrent': return concHtml(c, true);
     case 'source': return srcHtml(c, true, v);
     case 'image': return '<div class="aw-big-imgs">' + (c.imgs || []).map(im => '<figure><img src="' + esc(mediaUrl(im.f)) + '" alt="">' + (im.leg ? '<figcaption>' + esc(im.leg) + '</figcaption>' : '') + '</figure>').join('') + '</div>' + (plain(c.html) ? '<div class="aw-text xl">' + clean(c.html) + '</div>' : '');
@@ -960,12 +1176,13 @@ function openBig(cid, fromEl){
     p.getBoundingClientRect();
     requestAnimationFrame(() => { ov.classList.add('on'); p.style.transform = ''; p.style.opacity = ''; });
   } else ov.classList.add('on');
-  setTimeout(() => drawCharts(p, bigCharts, true), fresh ? 380 : 0);
+  setTimeout(() => { drawCharts(p, bigCharts, true); drawGeos(p); }, fresh ? 380 : 0);
   ov.onclick = e => {
     if (e.target.closest('[data-big-close]')) return closeBig();
     const g = e.target.closest('[data-big-go]'); if (g){ const o = bigOrder(ui.big), j = (o.indexOf(ui.big) + Number(g.dataset.bigGo) + o.length) % o.length; openBig(o[j]); return; }
     if (e.target.closest('[data-big-edit]')){ const id = ui.big; closeBig(); ui.edit = id; renderEditor(); return; }
-    const op = e.target.closest('[data-open]'); if (op){ closeBig(); openDoc(op.dataset.open); }
+    const op = e.target.closest('[data-open]'); if (op){ closeBig(); openDoc(op.dataset.open); return; }
+    const rg = e.target.closest('[data-range]'); if (rg){ const c = ver().cards[ui.big]; if (c){ c.range = rg.dataset.range; if (!isRo()) touch(); refreshCard(c); openBig(c.id); } }
   };
 }
 function closeBig(){
@@ -987,11 +1204,11 @@ const RT = '<div class="at-rt"><button type="button" data-cmd="bold" title="Gras
 function editorFields(c, d, v){
   const val = x => x == null ? '' : esc(String(x).replace('.', ','));
   const srcs = Object.values(v.cards).filter(x => x.type === 'source' && x.id !== c.id);
-  const common = '<label>Titre<input class="at-in" data-f="titre" value="' + esc(c.titre || '') + '" placeholder="' + esc(cardTitle(Object.assign({}, c, { titre: '' })) || 'Titre de la carte') + '"></label>';
+  const common = '<label>Titre (facultatif)<input class="at-in" data-f="titre" value="' + esc(c.titre || '') + '" placeholder="Aucun titre"></label>';
   const srcSel = srcs.length ? '<label>Source utilisée<select class="at-sel" data-f="srcId"><option value="">—</option>' + srcs.map(s => '<option value="' + s.id + '"' + (c.srcId === s.id ? ' selected' : '') + '>' + esc(s.titre || 'Source') + '</option>').join('') + '</select></label>' : '';
   const dateF = '<label>Date (facultatif)<input type="date" class="at-in" data-f="date" value="' + esc(c.date || '') + '"></label>';
   const rich = ph => RT + '<div class="aw-rich" contenteditable="true" data-rich data-ph="' + esc(ph) + '">' + clean(c.html) + '</div>';
-  const imgs = '<div class="aw-ed-imgs">' + (c.imgs || []).map((im, k) => '<div class="aw-ed-img"><img src="' + esc(mediaUrl(im.f)) + '" alt=""><input class="at-in" data-leg="' + k + '" value="' + esc(im.leg || '') + '" placeholder="Légende"><button type="button" class="at-x" data-rmimg="' + k + '" title="Retirer (le fichier est gardé)">✕</button></div>').join('') + '<button type="button" class="at-btn sm" data-addimg>＋ Image (ou Ctrl+V)</button></div>';
+  const imgs = '<div class="aw-ed-imgs">' + (c.imgs || []).map((im, k) => '<div class="aw-ed-img"><img src="' + esc(mediaUrl(im.f)) + '" alt=""><input class="at-in" data-leg="' + k + '" value="' + esc(im.leg || '') + '" placeholder="Légende"><button type="button" class="at-x" data-rmimg="' + k + '" title="Retirer (le fichier est gardé)">✕</button></div>').join('') + '<div class="aw-ed-row"><button type="button" class="at-btn sm" data-addimg>＋ Fichier (ou Ctrl+V)</button></div><div class="aw-ed-row"><input class="at-in" data-imgurl placeholder="ou colle l\'adresse d\'une image internet (https://…)"><button type="button" class="at-btn sm" data-addurl>Ajouter</button></div></div>';
   switch (c.type){
     case 'texte': return common + dateF + rich('Écris ici… (Ctrl+V pour coller une image)') + imgs + srcSel + '<label>Source (texte libre)<input class="at-in" data-f="source" value="' + esc(c.source || '') + '"></label>';
     case 'image': return common + dateF + imgs + rich('Description (facultatif)') + srcSel;
@@ -1023,6 +1240,18 @@ function editorFields(c, d, v){
       '<label>Étiquettes (séparées par des virgules)<input class="at-in" data-f="tags" value="' + esc(c.tags || '') + '"></label><label>Forces<textarea class="at-in" rows="3" data-f="forces">' + esc(c.forces || '') + '</textarea></label><label>Faiblesses<textarea class="at-in" rows="3" data-f="faiblesses">' + esc(c.faiblesses || '') + '</textarea></label>' +
       '<label>Son dossier dans l\'Atelier<select class="at-sel" data-f="docId"><option value="">— (trouvé par son nom s\'il existe)</option>' + Object.values(D.docs).filter(x => x.type === 'entreprise' && x.id !== d.id).map(x => '<option value="' + x.id + '"' + (c.docId === x.id ? ' selected' : '') + '>' + esc(x.titre) + '</option>').join('') + '</select></label>' +
       '<label>Logo (adresse d\'image, facultatif)<input class="at-in" data-f="logo" value="' + esc(c.logo || '') + '"></label><p class="at-faint">Si l\'entreprise est connue de l\'onglet Analyse, son logo et ses chiffres s\'affichent tout seuls.</p>';
+    case 'bourse': return common + '<label>Période affichée<select class="at-sel" data-f="range">' + RANGES.map(r => '<option value="' + r[0] + '"' + ((c.range || '5a') === r[0] ? ' selected' : '') + '>' + r[2] + '</option>').join('') + '</select></label><p class="at-faint">Le cours vient de TradingView et reste figé à la date du relevé du dossier (« ↻ Actualiser » en haut pour le relire).</p>';
+    case 'geo': return common + '<label>Unité<input class="at-in" data-f="unit" value="' + esc(c.unit || '') + '" placeholder="Md€, M$, %…"></label><div class="aw-ed-rows"><b class="aw-ed-h">Pays ou régions, comme dans le rapport annuel</b>' +
+      (c.rows || []).map((r, k) => '<div class="aw-ed-row"><input class="at-in" list="awZones" data-geo-zone="' + k + '" value="' + esc(r.zone || '') + '" placeholder="ex. France, Europe, Asie-Pacifique"><input class="at-in num" data-geo-v="' + k + '" value="' + val(r.v) + '" placeholder="Montant"><button type="button" class="at-x" data-geo-del="' + k + '">✕</button></div>').join('') +
+      '<button type="button" class="at-btn sm" data-geo-add>＋ Pays ou région</button><datalist id="awZones">' + Object.keys(ZONES).map(z => '<option value="' + esc(z) + '">').join('') + (MONDE ? MONDE.c.map(x => '<option value="' + esc(x.n) + '">').join('') : '') + '</datalist></div>' +
+      '<p class="at-faint">Un pays nommé garde sa couleur ; une région colore tous ses pays qui ne sont pas déjà nommés ; « Reste du monde » colore tout le reste.</p>' + srcSel;
+    case 'profil': return '<label>Nom<input class="at-in" data-f="nom" value="' + esc(c.nom || '') + '"></label><div class="at-row2"><label>Poste<input class="at-in" data-f="poste" value="' + esc(c.poste || '') + '" placeholder="PDG, directeur financier…"></label><label>En poste depuis<input class="at-in" data-f="depuis" value="' + esc(c.depuis || '') + '" placeholder="2019"></label></div>' +
+      '<b class="aw-ed-h">Photo</b>' + imgs + '<div class="at-row2"><label>Actions détenues<input class="at-in" data-f="detention" value="' + esc(c.detention || '') + '" placeholder="ex. 1,2 % du capital"></label><label>Rémunération<input class="at-in" data-f="remu" value="' + esc(c.remu || '') + '" placeholder="ex. 3,4 M€ / an"></label></div>' +
+      '<label>Parcours<textarea class="at-in" rows="5" data-f="parcours">' + esc(c.parcours || '') + '</textarea></label>';
+    case 'these': return '<div class="at-seg big"><button type="button" class="' + (c.phase !== 'finale' ? 'on' : '') + '" data-phase="depart">Thèse de départ</button><button type="button" class="' + (c.phase === 'finale' ? 'on' : '') + '" data-phase="finale">Thèse finale</button></div>' + dateF +
+      THESE_Q.map((q, i) => '<label>' + (i + 1) + '. ' + esc(q) + '<textarea class="at-in" rows="3" data-ans="' + i + '">' + esc((c.answers || [])[i] || '') + '</textarea></label>').join('');
+    case 'thesecmp': return '<p class="at-faint">Les réponses viennent des cartes « Thèse » de départ et finale du dossier. Donne ici ton verdict pour chaque question.</p>' +
+      THESE_Q.map((q, i) => '<label>' + (i + 1) + '. ' + esc(THESE_SHORT[i]) + '<select class="at-sel" data-verdict="' + i + '"><option value="">—</option>' + Object.keys(VERDICTS).map(k => '<option value="' + k + '"' + ((c.verdicts || {})[i] === k ? ' selected' : '') + '>' + VERDICTS[k][0] + '</option>').join('') + '</select></label>').join('');
     case 'source': return common + '<label>Type<select class="at-sel" data-f="kind">' + [['pdf', 'PDF'], ['web', 'Site web'], ['article', 'Article'], ['video', 'Vidéo']].map(([k, l]) => '<option value="' + k + '"' + (c.kind === k ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></label>' +
       '<label>Lien (facultatif)<input class="at-in" data-f="url" value="' + esc(c.url || '') + '" placeholder="https://…"></label><div class="aw-ed-row"><button type="button" class="at-btn sm" data-addfile>' + (c.file ? 'Remplacer le fichier' : '＋ Joindre un PDF ou une image') + '</button>' + (c.file ? '<span class="at-faint">' + esc(c.file) + '</span>' : '') + '</div>' +
       '<div class="at-row2"><label>Pages<input class="at-in" data-f="pages" value="' + esc(c.pages || '') + '"></label>' + dateF + '</div><label>Mes notes<textarea class="at-in" rows="4" data-f="note">' + esc(c.note || '') + '</textarea></label>';
@@ -1031,6 +1260,7 @@ function editorFields(c, d, v){
 }
 function renderEditor(){
   const host = $('awEditHost'); if (!host) return;
+  if (ui.edit && !MONDE && ver() && ver().cards[ui.edit] && ver().cards[ui.edit].type === 'geo') loadMonde().then(() => { if (ui.edit) renderEditor(); });
   const v = ver(), c = ui.edit && v ? v.cards[ui.edit] : null;
   if (!c || isRo()){ host.innerHTML = ''; ui.edit = null; return; }
   const d = doc(), t = TYPES[c.type];
@@ -1044,6 +1274,7 @@ function refreshCard(c){
   charts.filter(ch => el.contains(ch.canvas)).forEach(ch => { ch.destroy(); charts.splice(charts.indexOf(ch), 1); });
   const tmp = document.createElement('div'); tmp.innerHTML = cardHtml(c); const n = tmp.firstElementChild; el.replaceWith(n);
   drawCharts(n, charts, false);
+  drawGeos(n);
 }
 function wireEditor(p, c){
   const v = ver();
@@ -1059,11 +1290,15 @@ function wireEditor(p, c){
     else if (ds.serName !== undefined){ c.series[+ds.serName].name = t.value; changed(false); }
     else if (ds.serValues !== undefined){ c.series[+ds.serValues].values = t.value.split(';').map(x => num(x)); changed(false); }
     else if (ds.col !== undefined){ c.cols[+ds.col] = t.value.trim(); changed(false); }
+    else if (ds.ans !== undefined){ c.answers = c.answers || []; c.answers[+ds.ans] = t.value; changed(false); }
+    else if (ds.geoZone !== undefined){ c.rows[+ds.geoZone].zone = t.value; changed(false); }
+    else if (ds.geoV !== undefined){ c.rows[+ds.geoV].v = num(t.value); changed(false); }
     else if (ds.over !== undefined){ const [k, i] = ds.over.split('|'); c.over = c.over || {}; c.over[k] = c.over[k] || []; c.over[k][+i] = t.value.trim() === '' ? null : num(t.value); changed(false); }
   });
   p.addEventListener('change', e => {
     const t = e.target, ds = t.dataset;
-    if (ds.f === 'bind' || ds.f === 'years' || ds.f === 'srcId' || ds.f === 'kind' || ds.f === 'docId'){ c[ds.f] = ds.f === 'years' ? Number(t.value) : t.value; changed(ds.f === 'bind'); }
+    if (ds.verdict !== undefined){ c.verdicts = c.verdicts || {}; c.verdicts[ds.verdict] = t.value; changed(false); return; }
+    if (ds.f === 'bind' || ds.f === 'years' || ds.f === 'srcId' || ds.f === 'kind' || ds.f === 'docId' || ds.f === 'range'){ c[ds.f] = ds.f === 'years' ? Number(t.value) : t.value; changed(ds.f === 'bind'); }
     else if (ds.key !== undefined){ c.keys = c.keys || []; if (t.checked && !c.keys.includes(ds.key)) c.keys.push(ds.key); if (!t.checked) c.keys = c.keys.filter(k => k !== ds.key); changed(false); }
     else if (ds.metric !== undefined){ c.metrics = c.metrics || []; if (t.checked && !c.metrics.includes(ds.metric)) c.metrics.push(ds.metric); if (!t.checked) c.metrics = c.metrics.filter(k => k !== ds.metric); changed(true); }
     else if (ds.withconc !== undefined){ c.withConc = t.checked; changed(true); }
@@ -1085,10 +1320,14 @@ function wireEditor(p, c){
     if (ds.rmimg !== undefined){ c.imgs.splice(+ds.rmimg, 1); changed(true); return; }
     if (ds.addimg !== undefined) return pick('image/png,image/jpeg,image/webp,image/gif', true, files => addFiles(c, files, 'img'));
     if (ds.addfile !== undefined) return pick('application/pdf,image/png,image/jpeg,image/webp', false, files => addFiles(c, files, 'file'));
+    if (ds.phase){ c.phase = ds.phase; changed(true); return; }
+    if (ds.geoAdd !== undefined){ c.rows = c.rows || []; c.rows.push({ zone: '', v: null }); changed(true); return; }
+    if (ds.geoDel !== undefined){ c.rows.splice(+ds.geoDel, 1); changed(true); return; }
+    if (ds.addurl !== undefined){ const inp = p.querySelector('[data-imgurl]'); return addImageUrl(c, inp ? inp.value.trim() : ''); }
   });
   p.addEventListener('paste', e => {
     const files = [...((e.clipboardData && e.clipboardData.files) || [])].filter(x => x.type.startsWith('image/'));
-    if (files.length && ['texte', 'image'].includes(c.type)){ e.preventDefault(); addFiles(c, files, 'img'); return; }
+    if (files.length && ['texte', 'image', 'profil'].includes(c.type)){ e.preventDefault(); addFiles(c, files, 'img'); return; }
     if (e.target.closest && e.target.closest('[data-rich]')){ e.preventDefault(); document.execCommand('insertText', false, (e.clipboardData || window.clipboardData).getData('text/plain')); }
   });
 }
@@ -1099,6 +1338,18 @@ async function upload(file){
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !j.ok) throw new Error(j.error || 'envoi du fichier refusé (relance le raccourci « Wolf Analysis » si le serveur est ancien)');
   return j.file;
+}
+async function addImageUrl(c, url){
+  if (!/^https?:\/\//i.test(url)){ ui.toast = { text: 'Colle une adresse complète qui commence par https://' }; showToast(); return; }
+  ui.toast = { text: 'Téléchargement de l\'image…' }; showToast();
+  try {
+    const r = await fetch('/api/atelier/fetch', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Wolf-IA': '1' }, body: JSON.stringify({ url }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) throw new Error(j.error || 'image refusée (relance le raccourci « Wolf Analysis » si le serveur est ancien)');
+    c.imgs = c.imgs || []; c.imgs.push({ f: j.file, leg: '', from: url });
+    ui.toast = { text: '✓ Image enregistrée sur ton ordinateur' }; showToast();
+    touch(); refreshCard(c); renderEditor();
+  } catch(e){ ui.toast = { text: '⚠ ' + e.message }; showToast(); }
 }
 async function addFiles(c, files, kind){
   for (const f of files){
@@ -1114,7 +1365,7 @@ function renderLibrary(){
   if (!ui.lib){ if (host) host.remove(); return; }
   if (!host){ host = document.createElement('div'); host.id = 'awLib'; host.className = 'at-modal-bg'; document.body.appendChild(host); }
   const v = ver(), sec = v.sections.find(s => s.id === ui.lib.secId), q = norm(ui.lib.q);
-  const cats = ['Rédaction', 'Chiffres', 'Comparaison', 'Documents'];
+  const cats = ['Rédaction', 'Chiffres', 'Entreprises et personnes', 'Thèse', 'Documents'];
   const custom = Object.values(D.templates).filter(t => t.card);
   host.innerHTML = '<div class="at-modal aw-lib"><div class="aw-lib-h"><h3>Ajouter une carte</h3><span class="at-faint">dans « ' + esc(sec ? sec.titre : '') + ' »</span><span style="flex:1"></span><input type="search" class="at-search" id="awLibQ" placeholder="Rechercher : camembert, concurrent, PDF…" value="' + esc(ui.lib.q) + '"><button type="button" class="aw-kb" data-lib-close aria-label="Fermer">' + ICO.close + '</button></div>' +
     cats.map(cat => { const list = Object.keys(TYPES).filter(k => TYPES[k].cat === cat && (!q || norm(TYPES[k].l + ' ' + TYPES[k].d).includes(q))); if (!list.length) return '';
@@ -1140,6 +1391,11 @@ function libPreview(k){
     case 'comparatif': return '<span class="cmp"><i></i><i class="g"></i><i></i><i class="r"></i></span>';
     case 'concurrent': return '<span class="logo">AB</span>';
     case 'source': return '<span class="pg"></span>';
+    case 'bourse': return '<svg viewBox="0 0 100 50" width="80" height="40"><polyline points="0,38 10,30 20,34 30,22 40,26 50,14 60,20 70,12 80,18 90,6 100,10" fill="none" stroke="#D9A441" stroke-width="2.5"/></svg>';
+    case 'geo': return '<svg viewBox="0 0 100 50" width="84" height="42"><ellipse cx="22" cy="20" rx="14" ry="10" fill="#4A9FE0"/><ellipse cx="52" cy="16" rx="9" ry="7" fill="#D9A441"/><ellipse cx="56" cy="34" rx="8" ry="10" fill="#8FA3B8"/><ellipse cx="80" cy="22" rx="14" ry="9" fill="#F0C877"/></svg>';
+    case 'profil': return '<span class="logo" style="border-radius:50%;background:#F08A4B">JD</span>';
+    case 'these': return '<span class="cmp"><i class="g"></i><i></i><i></i></span>';
+    case 'thesecmp': return '<span class="cmp"><i></i><i class="g"></i><i class="r"></i></span>';
   }
   return '';
 }
@@ -1156,7 +1412,7 @@ function renderFacts(){
     '<h4>Mes données</h4><div class="aw-facts-t"><div class="aw-facts-r h"><span>Libellé</span><span>Valeur</span><span>Unité</span><span>Période</span><span>Source</span><span></span></div>' +
     facts.map(f => '<div class="aw-facts-r" data-fid="' + f.id + '"><input class="at-in" data-ff="label" value="' + esc(f.label || '') + '"><input class="at-in num" data-ff="value" value="' + esc(f.value == null ? '' : String(f.value).replace('.', ',')) + '"><input class="at-in" data-ff="unit" value="' + esc(f.unit || '') + '"><input class="at-in" data-ff="period" value="' + esc(f.period || '') + '"><input class="at-in" data-ff="source" value="' + esc(f.source || '') + '"><button type="button" class="at-x" data-f-del title="Corbeille' + (used(f.id) ? ' (utilisée par ' + used(f.id) + ' carte(s))' : '') + '">✕</button></div>').join('') +
     '</div><button type="button" class="at-btn sm" data-f-add>＋ Donnée</button>' +
-    '<h4>TradingView (onglet Analyse, mis à jour tout seul)</h4>' + (co ? '<div class="aw-facts-tv">' + Object.keys(TVF).map(k => { const s = tvSeries(co, k); const n = s.values.length; return '<div><span>' + esc(TVF[k].l) + '</span><b>' + fmtVal(n ? s.values[n - 1] : null, TVF[k].u, co.devise, TVF[k].d) + '</b><small>' + (n ? s.labels[n - 1] : '') + '</small></div>'; }).join('') + '</div>'
+    '<h4>TradingView (figé le ' + (ver().tvData ? frDate(ver().tvData.at) : '—') + ', « ↻ Actualiser » pour relire)</h4>' + (knownData(null) ? '<div class="aw-facts-tv">' + Object.keys(TVF).map(k => { const s = getSeries(null, k); const n = s.values.length; return '<div><span>' + esc(TVF[k].l) + '</span><b>' + fmtVal(n ? s.values[n - 1] : null, TVF[k].u, deviseOf(null), TVF[k].d) + '</b><small>' + (n ? s.labels[n - 1] : '') + '</small></div>'; }).join('') + '</div>'
       : '<p class="at-faint">Cette entreprise n\'est pas reconnue dans l\'onglet Analyse. Vérifie son nom dans ⚙ (« Nom dans l\'onglet Analyse »).</p>') + '</div>';
   host.oninput = e => { const r = e.target.closest('[data-fid]'), k = e.target.dataset.ff; if (!r || !k) return; const f = d.facts[r.dataset.fid]; f[k] = k === 'value' ? num(e.target.value) : e.target.value; touch(); clearTimeout(editTimer); editTimer = setTimeout(renderBody, 300); };
   host.onclick = e => {
@@ -1254,6 +1510,7 @@ function wireShell(){
     if (ds.addsec !== undefined){ const s = addSection(); renderBody(); setTimeout(() => { const h = document.querySelector('[data-sid="' + s.id + '"] [data-s-title]'); if (h){ h.scrollIntoView({ block: 'center' }); h.click(); } }, 30); return; }
     if (ds.newver !== undefined){ const c = JSON.parse(JSON.stringify(v)); c.id = uid('v'); c.label = 'Version du ' + frDate(today()) + (d.versions.some(x => x.label === 'Version du ' + frDate(today())) ? ' (' + (d.versions.length + 1) + ')' : ''); c.date = today(); d.versions.push(c); d.cur = c.id; touch(); openDoc(d.id); ui.toast = { text: 'Nouvelle version créée : l\'ancienne reste intacte dans la liste.' }; return showToast(); }
     if (ds.facts !== undefined){ ui.facts = true; return renderFacts(); }
+    if (ds.tvrefresh !== undefined) return captureTv();
     if (ds.savetpl !== undefined){ ui.modal = { kind: 'tpl', nom: d.type === 'entreprise' ? 'Ma trame d\'analyse' : d.titre }; return renderModal(); }
     if (ds.props !== undefined){ ui.modal = { kind: 'props' }; return renderModal(); }
     if (ds.video !== undefined){ ui.video = !ui.video; ui.edit = null; renderShell(); return; }

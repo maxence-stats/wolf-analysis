@@ -37,10 +37,34 @@ function company(name){
   const h = companies[key], last = h[h.length - 1] || {};
   let logo = last.lienImage || ''; if (!logo && typeof companyLogoUrl === 'function') logo = companyLogoUrl(key) || '';
   const sec = norm(last.secteur), s = sectors().find(x => norm(x.label) === sec || (x.match || []).some(m => sec && sec.includes(norm(m))));
-  return { key, logo, cours: typeof last.prixActuel === 'number' ? last.prixActuel : null, fcf: typeof last.fcfParAction === 'number' ? last.fcfParAction : null, devise: last.devise || 'EUR', secteur: s ? s.key : '', sousSecteur: last.sousSecteur || '' };
+  const n = k => typeof last[k] === 'number' && isFinite(last[k]) ? last[k] : null;
+  return { key, logo, cours: n('prixActuel'), fcf: n('fcfParAction'), div: n('rendementDiv'), pfcf: n('pFcf'), tvAt: last.tvLiveAt || null, devise: last.devise || 'EUR', secteur: s ? s.key : '', sousSecteur: last.sousSecteur || '' };
 }
 const devSym = d => ({ EUR: '€', USD: '$', GBP: '£', GBX: 'p', CHF: 'CHF', JPY: '¥' }[d] || d || '€');
 // Cours : celui de l'onglet Analyse s'il est connu (à jour), sinon celui saisi dans la fiche.
+function ratiosOf(it){
+  const c = company(it.nom);
+  if (c && (c.div != null || c.pfcf != null)) return { div: c.div, pfcf: c.pfcf, at: c.tvAt, src: 'onglet Analyse' };
+  if (it.tv) return { div: it.tv.div, pfcf: it.tv.pfcf, at: it.tv.at, src: 'TradingView' };
+  return { div: null, pfcf: null, at: null, src: '' };
+}
+// Entreprise hors onglet Analyse : rendement et P/FCF relus sur TradingView (serveur local) puis gardés dans la fiche.
+const tvAsked = {};
+async function fetchTvRatios(it){
+  if (RO || tvAsked[it.id] || company(it.nom) || typeof tvFetchSnapshot !== 'function') return;
+  if (it.tv && Date.now() - (it.tv.at || 0) < 12 * 3600 * 1000) return;
+  tvAsked[it.id] = true;
+  try {
+    let sym = it.tvSym;
+    if (!sym){ const r = await fetch('/api/tv/search?q=' + encodeURIComponent(it.nom.slice(0, 50)), { cache: 'no-store' }); const j = await r.json(); sym = j.ok && j.results && j.results[0] ? j.results[0].symbol : null; }
+    if (!sym) return;
+    const d = await tvFetchSnapshot(sym);
+    it.tvSym = sym;
+    it.tv = { div: typeof d.dividends_yield === 'number' ? d.dividends_yield : null, pfcf: typeof d.price_free_cash_flow_ttm === 'number' ? d.price_free_cash_flow_ttm : null, cours: typeof d.close === 'number' ? d.close : null, at: Date.now() };
+    if (it.tv.cours != null && !it.cours) it.cours = it.tv.cours;
+    markDirty(); render();
+  } catch(e){ /* TradingView indisponible : la ligne reste sans ces deux chiffres */ }
+}
 function coursOf(it){ const c = company(it.nom); return c && c.cours != null ? { v: c.cours, auto: true } : { v: num(it.cours), auto: false }; }
 function calc(it, k){
   const s = (it.sc || {})[k] || {}, base = num(it.base), mult = num(s.mult), cagr = num(s.cagr), dette = num(it.dette) || 0, cours = coursOf(it).v;
@@ -102,15 +126,18 @@ function cell(it, k, color, d){
     '<div class="lp-hyp">multiple ' + fmt(r.mult, 1) + 'x' + (r.cagr != null ? ' · croissance ' + fmt(r.cagr, 1) + ' %/an' : '') + '</div></td>';
 }
 function rowHtml(it){
-  const c = coursOf(it), d = devSym(it.devise), known = !!company(it.nom), hasDoc = window.ATELIER_UI && window.ATELIER_UI.hasDoc(it.nom);
-  return '<tr data-id="' + it.id + '"' + (ui.focus === it.id ? ' class="focus"' : '') + '><td class="lp-name">' + logo(it, 30) + '<div><b>' + esc(it.nom) + '</b><small>' + esc(it.sousSecteur || '') + '</small></div></td>' +
-    '<td class="lp-num"><b>' + fmt(c.v, 2) + ' ' + d + '</b><small>' + (c.v == null ? 'à saisir' : c.auto ? 'cours de l\'appli' : 'saisi le ' + frDate(it.updatedAt)) + '</small></td>' +
+  const c = coursOf(it), d = devSym(it.devise), known = !!company(it.nom), hasDoc = window.ATELIER_UI && window.ATELIER_UI.hasDoc(it.nom), rt = ratiosOf(it);
+  if (!known && !rt.at) setTimeout(() => fetchTvRatios(it), 0);
+  return '<tr data-id="' + it.id + '"' + (ui.focus === it.id ? ' class="focus"' : '') + '><td class="lp-name">' + logo(it, 30) + '<div><b>' + esc(it.nom) + '</b><small>Mis à jour le ' + frDate(it.updatedAt) + '</small></div></td>' +
+    '<td class="lp-num"><b>' + fmt(c.v, 2) + ' ' + d + '</b><small>' + (c.v == null ? 'à saisir' : c.auto ? 'cours de l\'appli' : 'saisi') + '</small></td>' +
+    '<td class="lp-num lp-r"><b>' + (rt.div == null ? '—' : fmt(rt.div, 2) + ' %') + '</b><small>rendement</small></td>' +
+    '<td class="lp-num lp-r"><b>' + (rt.pfcf == null ? '—' : fmt(rt.pfcf, 1) + 'x') + '</b><small>P/FCF actuel</small></td>' +
     '<td class="lp-num"><b>' + fmt(num(it.base), 2) + ' ' + d + '</b><small>' + esc(it.metric || '') + (num(it.dette) ? ' · dette ' + fmt(num(it.dette), 2) : '') + '</small></td>' +
     SC.map(s => cell(it, s[0], s[2], d)).join('') +
     '<td class="lp-acts">' + (known ? '<button type="button" data-a="analyse" title="Ouvrir dans l\'onglet Analyse">📊</button>' : '') +
     (RO && !hasDoc ? '' : '<button type="button" data-a="dossier" title="' + (hasDoc ? 'Ouvrir le dossier dans l\'Atelier d\'analyses' : 'Créer le dossier dans l\'Atelier d\'analyses') + '">🗂' + (hasDoc ? '' : '＋') + '</button>') +
     (RO ? '' : '<button type="button" data-a="edit" title="Modifier">✏</button><button type="button" data-a="del" title="Mettre à la corbeille">🗑</button>') + '</td></tr>' +
-    (it.note ? '<tr class="lp-note"' + '><td colspan="7">📝 ' + esc(it.note) + '</td></tr>' : '');
+    (it.note ? '<tr class="lp-note"' + '><td colspan="9">📝 ' + esc(it.note) + '</td></tr>' : '');
 }
 function render(){
   const pg = $(PAGE_ID); if (!pg) return;
@@ -120,15 +147,17 @@ function render(){
   }
   const q = norm(ui.q), all = Object.values(D.items).filter(it => !q || norm(it.nom + ' ' + (it.sousSecteur || '')).includes(q));
   const groups = sectors().map(s => ({ key: s.key, label: s.label })).concat([{ key: '', label: 'Sans secteur' }]);
-  const head = '<thead><tr><th>Entreprise</th><th>Cours</th><th>Base retenue</th>' + SC.map(s => '<th style="color:' + s[2] + '">' + s[1] + '</th>').join('') + '<th></th></tr></thead>';
+  const head = '<thead><tr><th>Entreprise</th><th>Cours</th><th>Dividende</th><th>P/FCF</th><th>Base retenue</th>' + SC.map(s => '<th style="color:' + s[2] + '">' + s[1] + '</th>').join('') + '<th></th></tr></thead>';
   let body = '';
   groups.forEach(g => {
-    const list = all.filter(it => (it.secteur || '') === g.key).sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
+    const list = all.filter(it => (it.secteur || '') === g.key).sort((a, b) => String(a.sousSecteur || '~').localeCompare(String(b.sousSecteur || '~'), 'fr') || a.nom.localeCompare(b.nom, 'fr'));
+    // une ligne de titre par sous-secteur
+    const rowsHtml = () => { let last = null, h = ''; list.forEach(it => { const ss = it.sousSecteur || 'Autres'; if (ss !== last){ h += '<tr class="lp-sub"><td colspan="9">' + esc(ss) + '</td></tr>'; last = ss; } h += rowHtml(it); }); return h; };
     if (!list.length && (q || g.key === '' || RO)) return;
     const open = ui.open[g.key] !== false;
     body += '<section class="lp-sec"><header><button type="button" class="lp-sec-h" data-tog="' + g.key + '">' + (open ? '▾' : '▸') + ' ' + esc(g.label) + ' <small>' + list.length + '</small></button>' +
       (RO ? '' : '<button type="button" class="at-btn sm" data-add="' + g.key + '">＋ Ajouter une entreprise</button>') + '</header>' +
-      (open ? (list.length ? '<div class="lp-scroll"><table class="lp-table">' + head + '<tbody>' + list.map(rowHtml).join('') + '</tbody></table></div>' : '<p class="at-empty">Aucune entreprise dans ce secteur pour l\'instant.</p>') : '') + '</section>';
+      (open ? (list.length ? '<div class="lp-scroll"><table class="lp-table">' + head + '<tbody>' + rowsHtml() + '</tbody></table></div>' : '<p class="at-empty">Aucune entreprise dans ce secteur pour l\'instant.</p>') : '') + '</section>';
   });
   pg.innerHTML = '<div class="lp"><div class="lp-top"><div><div class="section-label" style="margin:0;">🎯 Prix par secteur</div><p class="at-faint">Mes prix par scénario, avec la base, la croissance et le multiple que j\'ai retenus. Prix juste = base × multiple ; prix à 5 ans = base × (1 + croissance)⁵ × multiple.</p></div>' +
     '<div class="lp-top-r"><span class="at-status" id="lpStatus"></span><input type="search" class="at-search" id="lpSearch" placeholder="Rechercher une entreprise…" value="' + esc(ui.q) + '">' + (RO ? '' : '<button type="button" class="at-btn gold" data-add="">＋ Ajouter une entreprise</button>') + '</div></div>' +
