@@ -331,7 +331,13 @@ const B = {
       rr(x, P.L - 6, y, P.CW + 12, h, 26, C.card);
       for (let k = 1; k < 4; k++){ x.fillStyle = C.grid; x.fillRect(X0, Y0 + (Y1 - Y0) * k / 4, X1 - X0, 2); }
       if (opts.zero && min < 0 && max > 0){ x.setLineDash([8, 10]); x.strokeStyle = C.track; x.lineWidth = 2; x.beginPath(); x.moveTo(X0, py(0)); x.lineTo(X1, py(0)); x.stroke(); x.setLineDash([]); }
-      if (opts.band && (opts.hlines || []).length > 1){ const vs = opts.hlines.map(l => l.v), yT = py(Math.max(...vs)), yB = py(Math.min(...vs)); x.fillStyle = C.gold + '26'; x.fillRect(X0, yT, X1 - X0, yB - yT); }
+      // Bande des prix justes, SOUS la courbe : rouge (pessimiste, le plus bas) → jaune (réaliste) → vert (optimiste, le plus haut), très transparente
+      if (opts.band && (opts.hlines || []).length > 1){
+        const vs = opts.hlines.map(l => l.v).sort((a, b) => a - b), lo = vs[0], hi = vs[vs.length - 1], mid = vs.length > 2 ? vs[1] : (lo + hi) / 2;
+        const yT = py(hi), yB = py(lo), g = x.createLinearGradient(0, yB, 0, yT), t = hi > lo ? (mid - lo) / (hi - lo) : 0.5;
+        g.addColorStop(0, 'rgba(255,92,100,0.24)'); g.addColorStop(Math.min(0.98, Math.max(0.02, t)), 'rgba(242,196,61,0.24)'); g.addColorStop(1, 'rgba(61,220,151,0.26)');
+        x.fillStyle = g; x.fillRect(X0, yT, X1 - X0, yB - yT);
+      }
       let lastLab = null; const labs = [];   // étiquettes dessinées APRÈS la courbe, pour rester lisibles
       (opts.hlines || []).slice().sort((a, b) => b.v - a.v).forEach(l => { x.setLineDash([12, 10]); x.strokeStyle = l.color; x.lineWidth = 3; x.beginPath(); x.moveTo(X0, py(l.v)); x.lineTo(X1, py(l.v)); x.stroke(); x.setLineDash([]);
         let ly = py(l.v) - 44; if (lastLab != null && ly < lastLab + 42) ly = lastLab + 42; lastLab = ly;
