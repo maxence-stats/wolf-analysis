@@ -630,6 +630,14 @@ Les anciennes pages Sheet (Wolf Portfolio, Perso) sont conservées telles quelle
   Camembert : logos des titres en bulles autour de l'anneau (plugins d'app.js `portfolioSegmentLogosPlugin`,
   `portfolioCenterImagePlugin`), loup au centre pour le Wolf, grandes et petites lignes ALTERNÉES (sinon logos qui se
   chevauchent), logo « € » en SVG data URI pour les liquidités.
+- **Ajouts du 2026-11-11** : « ✏ » sur chaque opération (pas sur une copie Wolf) = même fenêtre préremplie, même `id`/`createdAt`,
+  `editedAt` ; la copie Wolf liée suit (même rapport de quantité). Périodes 1/2/3/5 ans (barre et fenêtre agrandie). Section « Analyse de
+  données » (`analysisHtml`) : PEA vs CTO, pays (préfixe de bourse), secteur (snapshot TradingView, mémo `wolfMpSectors`), durée de
+  détention, avec % gagnantes, espérance, facteur de profit, payoff, durées. Épargne LDDS / Livret A (`D.epargne.entries`, soldes saisis à
+  la main, 5e carte, floutée si verrouillé). Tête de loup `data/wolf-tete.png` au centre du camembert Wolf (`wolfHeadPlugin`).
+  **Vérification des performances (11/11)** : moteur juste ; le PEA a des liquidités NÉGATIVES (≈ −487 € en février-mars 2026) =
+  liquidités de départ manquantes, ce qui gonfle sa performance d'environ 2 points ; à corriger avec le vrai solde donné par l'utilisateur.
+  Images à partager : maquettes https://claude.ai/artifact/NqZ8fsJmhEqTzsz1VVtoY1 en attente de validation (pas encore codées).
 - **Corbeille** : une opération supprimée part dans `D.trash` (même fichier) avec sa copie Wolf ; « ↶ Annuler » juste après,
   ou « ↶ Restaurer » depuis la corbeille sous le journal (`restore(group)`).
 - **Copie MENSUELLE** (serveur v=11, `Ensure-MonthlySnapshot`) : au premier accès de chaque mois (démarrage, lecture ou
@@ -669,6 +677,14 @@ sinon le direct) ; entreprises hors des 88 = chiffres ACTUELS du snapshot Tradin
 projeté, zones = pays ou régions `ZONES`, le plus précis l'emporte), `profil` (dirigeant), `these` (7 questions, phase départ/finale)
 et `thesecmp` (côte à côte + verdict). Image par adresse internet : `POST /api/atelier/fetch` (serveur v=15, adresses locales refusées).
 TradingView ne publie PAS la répartition du CA par région (vérifié dans le catalogue du scanner) : saisie manuelle.
+**Historique 20 ans (2026-11-11, serveur v=16)** : `/api/tv/snapshot` renvoie aussi les séries annuelles `total_revenue_fy_h`,
+`earnings_per_share_diluted_fy_h`, `dps_common_stock_prim_issue_fy_h`, `free_cash_flow_fy_h`, `net_income_fy_h` (indice 0 = exercice
+`fiscal_period_fy`, déjà en devise de cotation, ajustées des attributions). `rowsFromHistory()` en tire ca, BPA, dividende, résultat net, FCF,
+FCF/action (= FCF × BPA ÷ résultat net) et `margeNette` ; `mergeRows()` complète sans jamais remplacer une valeur existante ;
+`addYearEndPrices()` ajoute le cours de fin d'année et en déduit PER, P/FCF, rendement, payout des années passées. Cours de l'Atelier et du
+graphique de l'onglet Analyse = clôtures AJUSTÉES (`/api/tv/history?...&adj=1`, `tv_history.py --adjust splits`, cache `-adj`) ; Mes
+portefeuilles garde les cours NON ajustés. Un relevé sans `hv:2` est refait une fois à l'ouverture. Nouvelle carte `overlay`
+(« Graphique superposé ») : cours hebdo (axe gauche) + chiffres annuels au dernier point de chaque année (axe droit), option base 100.
 Le texte ci-dessous décrit l'ancienne carte mentale (historique).
 
 Nouvel onglet principal (`#pageAtelier`, `js/atelier.js`, CSS `.at-*` en fin de `style.css`), À CÔTÉ du Cerveau numérique (qui

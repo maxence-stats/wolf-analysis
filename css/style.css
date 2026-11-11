@@ -2967,3 +2967,53 @@
 .aw-tcmp td.tx{text-align:left;white-space:normal;color:#C9CED6;min-width:160px}
 .aw-tcmp th{text-align:left}
 .aw-verdict{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:2px 8px;color:var(--vc);background:color-mix(in srgb,var(--vc) 16%,transparent)}
+
+/* ================= MES PORTEFEUILLES : épargne, analyse, modifier, périodes (2026-11-11) ================= */
+.mp-accounts.mp-accounts5{grid-template-columns:repeat(5,minmax(0,1fr))}
+@media (max-width:1250px){.mp-accounts.mp-accounts5{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:760px){.mp-accounts.mp-accounts5{grid-template-columns:1fr 1fr}}
+.mp-acc-ep{border-style:dashed}
+.mp-j-acts{display:inline-flex;gap:4px;align-items:center}
+.mp-edit{border:0;background:transparent;color:var(--text-dim);cursor:pointer;font-size:14px;padding:4px 6px;border-radius:6px}
+.mp-edit:hover{background:rgba(255,255,255,0.08);color:var(--gold-2)}
+.mp-zoom-periods{display:flex;gap:4px;flex-wrap:wrap;margin:0 0 8px}
+.mp-zoom-periods button{border:1px solid var(--hair);background:var(--panel);color:var(--text-dim);border-radius:999px;padding:5px 12px;font-family:var(--font-body);font-size:12.5px;cursor:pointer}
+.mp-zoom-periods button.active{background:var(--gold);border-color:var(--gold);color:#1A1305;font-weight:700}
+.mp-an-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:6px 0 12px}
+@media (max-width:1100px){.mp-an-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.mp-an-kpi{background:var(--panel-2);border-radius:12px;padding:10px 12px;min-width:0}
+.mp-an-kpi span{display:block;font-size:11.5px;color:var(--text-dim)}
+.mp-an-kpi b{display:block;font-family:var(--font-display);font-size:19px;margin:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mp-an-kpi small{font-size:11px;color:var(--text-dim)}
+.mp-an-kpi b.pos{color:var(--green)}.mp-an-kpi b.neg{color:var(--red)}
+.mp-an-insight{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+@media (max-width:760px){.mp-an-insight{grid-template-columns:1fr}}
+.mp-an-insight>div{border-radius:12px;padding:10px 14px;display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:#C9CED6}
+.mp-an-insight .ok{background:rgba(79,209,165,0.08);border:1px solid rgba(79,209,165,0.3)}
+.mp-an-insight .ko{background:rgba(229,99,107,0.08);border:1px solid rgba(229,99,107,0.3)}
+.mp-an-insight b{font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+.mp-an-insight .ok b{color:var(--green)}.mp-an-insight .ko b{color:var(--red)}
+.mp-seg-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:1100px){.mp-seg-grid{grid-template-columns:1fr}}
+.mp-seg-card{background:var(--panel);border-radius:12px;padding:10px 12px;min-width:0}
+.mp-seg-card h4{margin:0 0 6px;font-family:var(--font-display);font-size:14px}
+.mp-seg-scroll{overflow-x:auto}
+.mp-seg-t{width:100%;border-collapse:collapse;font-size:12px;min-width:640px}
+.mp-seg-t th{font-size:10.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.03em;text-align:right;padding:4px 6px;font-weight:600}
+.mp-seg-t td{text-align:right;padding:6px;border-top:1px solid rgba(255,255,255,0.06);white-space:nowrap}
+.mp-seg-t td.lb{text-align:left;color:#C9CED6;white-space:normal}
+.mp-seg-t td small{display:block;color:var(--text-dim);font-size:10.5px}
+.mp-seg-t .pos{color:var(--green)}.mp-seg-t .neg{color:var(--red)}
+.mp-ep-modal{width:min(720px,96vw)}
+.mp-ep{display:flex;flex-direction:column;gap:12px;padding:4px 2px}
+.mp-ep-sum{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.mp-ep-sum div{background:var(--panel-2);border-radius:12px;padding:10px 12px}
+.mp-ep-sum span{display:block;font-size:11.5px;color:var(--text-dim)}
+.mp-ep-sum b{font-family:var(--font-display);font-size:20px}
+.mp-ep-sum .tot{border:1px solid rgba(217,164,65,0.4)}
+.mp-ep-hist{display:flex;flex-direction:column;gap:4px;max-height:240px;overflow:auto}
+.mp-ep-row{display:grid;grid-template-columns:90px 1fr 1fr 1fr 1fr 30px;gap:8px;align-items:center;font-size:12.5px;padding:6px 4px;border-top:1px solid rgba(255,255,255,0.06)}
+.mp-ep-row em{color:var(--text-dim);font-size:11.5px}
+@media (max-width:640px){.mp-ep-row{grid-template-columns:1fr 1fr;}}
+.aw-ov-leg{display:flex;gap:10px;flex-wrap:wrap;font-size:11.5px;color:#B4BAC4}
+.aw-ov-leg i{display:inline-block;width:10px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}

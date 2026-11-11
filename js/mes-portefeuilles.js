@@ -403,6 +403,10 @@ function periodRange(){
   if (p.k === '1m') return { from: minusMonths(t, 1), to: t, label: 'sur 1 mois' };
   if (p.k === '3m') return { from: minusMonths(t, 3), to: t, label: 'sur 3 mois' };
   if (p.k === '6m') return { from: minusMonths(t, 6), to: t, label: 'sur 6 mois' };
+  if (p.k === '1y') return { from: minusMonths(t, 12), to: t, label: 'sur 1 an' };
+  if (p.k === '2y') return { from: minusMonths(t, 24), to: t, label: 'sur 2 ans' };
+  if (p.k === '3y') return { from: minusMonths(t, 36), to: t, label: 'sur 3 ans' };
+  if (p.k === '5y') return { from: minusMonths(t, 60), to: t, label: 'sur 5 ans' };
   if (p.k === 'ytd') return { from: (+t.slice(0, 4) - 1) + '-12-31', to: t, label: 'depuis le 1er janvier' };
   if (p.k === 'y') return { from: (p.year - 1) + '-12-31', to: p.year + '-12-31', label: 'en ' + p.year };
   if (p.k === 'custom' && p.from && p.to) return { from: E.addDays(p.from, -1), to: p.to, label: 'du ' + fmtD(p.from) + ' au ' + fmtD(p.to) };
@@ -464,10 +468,13 @@ function render(){
       + `<div class="mp-grid"><div class="mp-card mp-span2">${chartCardHtml(c)}</div><div class="mp-card">${kpiHtml(c)}</div></div>`
       + `<div class="mp-grid"><div class="mp-card mp-span2">${positionsHtml(c)}</div><div class="mp-card">${allocationHtml(c)}</div></div>`
       + `<div class="mp-grid mp-grid-eq"><div class="mp-card">${monthsHtml(c)}</div><div class="mp-card">${statsHtml(c)}</div></div>`
+      + `<div class="mp-card">${analysisHtml(c)}</div>`
       + `<div class="mp-card">${journalHtml()}</div>`;
   }
-  page.innerHTML = `<div class="mp${locked ? ' mp-locked' : ''}${RO ? ' mp-ro' : ''}">${titleHtml()}${accountCardsHtml()}${body}</div>` + (ui.modal ? `<div class="mp-modal-bg" id="mpModalBg"><div class="mp-modal" id="mpModal">${modalHtml()}</div></div>` : '');
+  page.innerHTML = `<div class="mp${locked ? ' mp-locked' : ''}${RO ? ' mp-ro' : ''}">${titleHtml()}${accountCardsHtml()}${body}</div>` + (ui.modal ? `<div class="mp-modal-bg" id="mpModalBg"><div class="mp-modal" id="mpModal">${modalHtml()}</div></div>` : '')
+    + (ui.epargne && !RO ? `<div class="mp-modal-bg" id="mpEpBg"><div class="mp-modal mp-ep-modal" id="mpEpModal">${epargneModalHtml()}</div></div>` : '');
   wire();
+  wireEpargne();
   if (c && histAt && typeof Chart !== 'undefined'){ drawPerfChart(c); drawDonut(c, locked); }
   if (ui.modal) wireModal();
 }
@@ -481,20 +488,20 @@ function titleHtml(){
     ${ui.msg ? `<div class="mp-banner ${ui.msg.err ? 'err' : 'ok'}"><span>${esc(ui.msg.text)}</span><span>${ui.msg.undo ? `<button class="mp-ghost" data-mp-restore="${esc(ui.msg.undo)}">↶ Annuler</button>` : ''}<button class="mp-x" data-mp-msgx>✕</button></span></div>` : ''}`;
 }
 function accountCardsHtml(){
-  return `<div class="mp-accounts">${ACCOUNTS.map(a => {
+  return `<div class="mp-accounts mp-accounts5">${ACCOUNTS.map(a => {
     const c = cache[a.k], lockedA = a.k !== 'wolf' && !persoOk();
     const v = c ? c.now.value : null, p = c && c.perf ? c.perf.twr * 100 : null;
     return `<button class="mp-acc ${ui.acc === a.k ? 'active' : ''} ${a.k === 'perso' ? 'mp-acc-sum' : ''}" data-mp-acc="${a.k}">
       <span class="mp-acc-top"><span class="mp-acc-ico">${a.icon}</span><span><b>${a.label}</b><small>${a.sub}</small></span></span>
       <span class="mp-acc-val${lockedA ? ' mp-blur' : ''}">${histLoading && !histAt ? '…' : eur(v, 0)}${c && c.missing.length && !lockedA ? ' <span class="mp-acc-warn" title="Cours manquants : valeur incomplète">⚠</span>' : ''}</span>
       <span class="mp-acc-perf ${cls(p)}">${lockedA ? '🔒 chiffres fictifs' : pct(p) + ' ' + (periodRange().label || 'depuis le début')}</span></button>`;
-  }).join('')}</div>`;
+  }).join('')}${RO ? '' : epargneCardHtml()}</div>`;
 }
 function toolbarHtml(){
   const years = [...new Set(Object.values(D.accounts).flatMap(a => a.ops.map(o => o.date.slice(0, 4))))].sort().reverse();
   const P = ui.period;
   const b = (k, l) => `<button class="${P.k === k ? 'active' : ''}" data-mp-period="${k}">${l}</button>`;
-  const ys = b('1m', '1 mois') + b('3m', '3 mois') + b('6m', '6 mois') + b('ytd', 'Cette année') + b('all', 'Depuis le début')
+  const ys = b('1m', '1 mois') + b('3m', '3 mois') + b('6m', '6 mois') + b('ytd', 'Cette année') + b('1y', '1 an') + b('2y', '2 ans') + b('3y', '3 ans') + b('5y', '5 ans') + b('all', 'Depuis le début')
     + `<select class="mp-year-sel ${P.k === 'y' ? 'active' : ''}" data-mp-yearsel><option value="">Année…</option>${years.map(y => `<option value="${y}" ${P.k === 'y' && P.year === +y ? 'selected' : ''}>${y}</option>`).join('')}</select>`
     + b('custom', 'Période…')
     + (P.k === 'custom' ? `<span class="mp-custom">du <input type="date" data-mp-from value="${esc(P.from || '')}"> au <input type="date" data-mp-to value="${esc(P.to || E.isoToday())}"> <button class="mp-ghost" data-mp-applyrange>OK</button></span>` : '');
@@ -588,11 +595,21 @@ function donutData(c){
   const logos = rows.map(r => logoUrl(r.sym)).concat(c.now.cash > 0.5 ? [CASH_LOGO] : []);
   return { rows, labels, vals, colors, logos };
 }
+const WOLF_HEAD = 'data/wolf-tete.png';
+// Tête de loup (PNG transparent) posée ENTIÈRE au centre de l'anneau, sans découpe ni déformation.
+function wolfHeadPlugin(){
+  return { id: 'wolfHead', afterDatasetsDraw(chart){
+    const img = typeof portfolioImageCache !== 'undefined' ? portfolioImageCache[WOLF_HEAD] : null;
+    const arc = chart.getDatasetMeta(0).data[0]; if (!img || !arc) return;
+    const box = arc.innerRadius * 1.5, w = img.naturalWidth || img.width, h = img.naturalHeight || img.height, k = Math.min(box / w, box / h);
+    chart.ctx.drawImage(img, arc.x - w * k / 2, arc.y - h * k / 2 - arc.innerRadius * 0.04, w * k, h * k);
+  } };
+}
 function buildDonutConfig(c, locked, big){
   const d = donutData(c), wolf = c.acc === 'wolf';
   const plugins = [];
   if (typeof portfolioSegmentLogosPlugin === 'function') plugins.push(portfolioSegmentLogosPlugin());
-  if (wolf && typeof portfolioCenterImagePlugin === 'function') plugins.push(portfolioCenterImagePlugin());
+  if (wolf) plugins.push(wolfHeadPlugin());
   const ds = { data: d.vals, backgroundColor: d.colors, borderColor: '#151A1F', borderWidth: big ? 3 : 2, hoverOffset: 8 };
   ds._logos = d.logos;
   return { type: 'doughnut', data: { labels: d.labels, datasets: [ds] }, plugins,
@@ -601,7 +618,7 @@ function buildDonutConfig(c, locked, big){
 }
 function preloadDonutImages(c, chart){
   const urls = donutData(c).logos.filter(Boolean);
-  if (c.acc === 'wolf' && typeof WOLF_LOGO_URL !== 'undefined') urls.push(WOLF_LOGO_URL);
+  if (c.acc === 'wolf') urls.push(WOLF_HEAD);
   if (typeof loadImageCached !== 'function') return;
   urls.forEach(u => loadImageCached(u).then(img => { if (img && chart && chart.ctx) chart.draw(); }));
 }
@@ -628,12 +645,13 @@ function openZoom(kind){
   el.innerHTML = `<div class="mp-zoom-panel ${locked ? 'mp-locked' : ''}">
     <div class="mp-modal-head"><div class="mp-zoom-title">${kind === 'donut' && c.acc === 'wolf' ? '<span class="mp-zoom-wolf">🐺</span>' : ''}<h3>${kind === 'donut' ? 'Répartition' : 'Performance face aux indices'} · ${esc(acc.label)}</h3>
       <small>${esc(c.range.label || 'depuis le début')}${locked ? ' · chiffres fictifs' : ''}</small></div><button class="mp-x" data-mp-zoomclose>✕</button></div>
-    ${kind === 'perf' ? perfLegendHtml(c) : ''}
+    ${kind === 'perf' ? `<div class="mp-zoom-periods">${[['1m', '1 mois'], ['3m', '3 mois'], ['6m', '6 mois'], ['ytd', 'Cette année'], ['1y', '1 an'], ['2y', '2 ans'], ['3y', '3 ans'], ['5y', '5 ans'], ['all', 'Depuis le début']].map(([k, l]) => `<button class="${ui.period.k === k ? 'active' : ''}" data-mp-zperiod="${k}">${l}</button>`).join('')}</div>` + perfLegendHtml(c) : ''}
     <div class="mp-zoom-body ${kind === 'donut' ? 'mp-zoom-body-donut' : ''}"><div class="mp-zoom-canvas"><canvas id="mpZoomCanvas"></canvas></div>${side}</div>
     <div class="mp-zoom-foot">Données TradingView · Wolf Analysis${typeof WOLF_LOGO_URL !== 'undefined' ? ` <img src="${esc(WOLF_LOGO_URL)}" alt="">` : ''}</div></div>`;
   document.body.appendChild(el);
   el.addEventListener('mousedown', e => { if (e.target === el) closeZoom(); });
   el.querySelector('[data-mp-zoomclose]').addEventListener('click', closeZoom);
+  el.querySelectorAll('[data-mp-zperiod]').forEach(b => b.addEventListener('click', () => { ui.period = { k: b.dataset.mpZperiod }; render(); openZoom(kind); }));
   document.addEventListener('keydown', zoomEsc);
   // Graphique créé APRÈS la mise en page de la fenêtre (sinon Chart.js le dimensionne sur une taille provisoire et le
   // dessine petit dans un coin), puis redimensionné une fois de plus par sécurité.
@@ -688,6 +706,154 @@ function statsHtml(c){
     <label class="mp-check"><input type="checkbox" id="mpIncludeOpen" ${ui.includeOpen ? 'checked' : ''}> Inclure les positions ouvertes (comme si je vendais aujourd'hui)</label>
     <div class="mp-trades">${list || '<div class="mp-empty">Aucune position vendue sur la période.</div>'}</div>`;
 }
+/* ======================= ANALYSE DE MES TRANSACTIONS (2026-11-11) =======================
+   Une transaction = une position, de la première entrée à la sortie complète (dividendes compris), par compte : le PEA et
+   le CTO sont rejoués séparément (un même titre détenu dans les deux comptes reste deux transactions). Comparaisons par
+   compte, par pays de cotation, par secteur (TradingView) et par durée de détention, avec les indicateurs qui aident à
+   décider : taux de réussite, gain et perte moyens (et leur durée), espérance par transaction, facteur de profit. */
+const EXCH_COUNTRY = { EURONEXT: 'Euronext (France, Pays-Bas, Belgique…)', XETR: 'Allemagne', FWB: 'Allemagne', MIL: 'Italie', BME: 'Espagne', SIX: 'Suisse', LSE: 'Royaume-Uni',
+  OMXSTO: 'Suède', OMXCOP: 'Danemark', OMXHEX: 'Finlande', OSL: 'Norvège', NYSE: 'États-Unis', NASDAQ: 'États-Unis', AMEX: 'États-Unis', CBOE: 'États-Unis', TSX: 'Canada', TSE: 'Japon', HKEX: 'Hong Kong', ASX: 'Australie' };
+const SECTOR_FR = { 'Electronic Technology': 'Technologie électronique', 'Technology Services': 'Logiciels & services tech', 'Finance': 'Finance', 'Health Technology': 'Santé (pharma, medtech)',
+  'Health Services': 'Services de santé', 'Consumer Non-Durables': 'Consommation de base', 'Consumer Durables': 'Biens durables', 'Retail Trade': 'Distribution', 'Consumer Services': 'Services aux consommateurs',
+  'Energy Minerals': 'Énergie', 'Process Industries': 'Chimie & matériaux', 'Producer Manufacturing': 'Industrie', 'Industrial Services': 'Services industriels', 'Commercial Services': 'Services aux entreprises',
+  'Transportation': 'Transport', 'Utilities': 'Services publics', 'Communications': 'Télécoms', 'Non-Energy Minerals': 'Mines & métaux', 'Distribution Services': 'Négoce', 'Miscellaneous': 'Fonds & ETF' };
+let sectorCache = (() => { try { return JSON.parse(localStorage.getItem('wolfMpSectors') || '{}') || {}; } catch(e){ return {}; } })();
+let sectorAsked = {};
+function sectorOf(sym){
+  if (sectorCache[sym]) return sectorCache[sym];
+  if (!sectorAsked[sym] && !RO){
+    sectorAsked[sym] = true;
+    fetch('/api/tv/snapshot?cached=1&symbol=' + encodeURIComponent(sym), { cache: 'no-store' }).then(r => r.json()).then(j => {
+      const sec = j && j.ok && j.data ? (j.data.sector || (j.data.type === 'fund' ? 'Miscellaneous' : '')) : '';
+      sectorCache[sym] = SECTOR_FR[sec] || sec || 'Fonds & ETF';
+      try { localStorage.setItem('wolfMpSectors', JSON.stringify(sectorCache)); } catch(e){}
+      clearTimeout(sectorOf.tm); sectorOf.tm = setTimeout(render, 300);
+    }).catch(() => {});
+  }
+  return '…';
+}
+function accTrades(c){
+  const accs = c.acc === 'perso' ? ['pea', 'cto'] : [c.acc];
+  let out = [];
+  accs.forEach(k => {
+    const ops = c.acc === 'perso' && isLockedAcc('pea') ? [] : accOps(k);
+    const st = E.replay(ops);
+    let t = st.trades.filter(x => inRange(x.close, c.range));
+    if (ui.includeOpen) t = t.concat(E.openAsTrades(st, S, c.today));
+    out = out.concat(t.map(x => Object.assign({ acc: k.toUpperCase() }, x)));
+  });
+  return out.filter(t => t.pct != null);
+}
+function segStats(trades){
+  const s = E.tradeStats(trades);
+  const gains = trades.filter(t => t.pnl > 0).reduce((a, t) => a + t.pnl, 0), losses = -trades.filter(t => t.pnl <= 0).reduce((a, t) => a + t.pnl, 0);
+  s.profitFactor = losses > 0 ? gains / losses : gains > 0 ? Infinity : null;
+  s.expEur = trades.length ? s.totalPnl / trades.length : null;
+  const days = trades.map(t => t.days).sort((a, b) => a - b); s.medDays = days.length ? days[Math.floor(days.length / 2)] : null;
+  s.invested = trades.reduce((a, t) => a + (t.invested || 0), 0);
+  return s;
+}
+const durBucket = d => d < 30 ? '1. Moins d\'1 mois' : d < 182 ? '2. 1 à 6 mois' : d < 365 ? '3. 6 mois à 1 an' : '4. Plus d\'1 an';
+function segTable(title, trades, keyFn){
+  const groups = {};
+  trades.forEach(t => { const k = keyFn(t); (groups[k] = groups[k] || []).push(t); });
+  const rows = Object.keys(groups).map(k => ({ k, s: segStats(groups[k]) })).sort((a, b) => title === 'Durée de détention' ? a.k.localeCompare(b.k) : b.s.totalPnl - a.s.totalPnl);
+  if (!rows.length) return '';
+  const d = v => v == null ? '—' : Math.round(v) + ' j';
+  const pf = v => v == null ? '—' : v === Infinity ? '∞' : num(v, 2);
+  return `<div class="mp-seg-card"><h4>${esc(title)}</h4><div class="mp-seg-scroll"><table class="mp-seg-t"><thead><tr><th></th><th>Trans.</th><th>Réussite</th><th>Résultat moyen</th><th>Gain moyen</th><th>Perte moyenne</th><th>Durée moy.</th><th>Facteur de profit</th><th>Total</th></tr></thead><tbody>
+    ${rows.map(r => `<tr><td class="lb">${esc(r.k.replace(/^\d\. /, ''))}</td><td>${r.s.n}</td><td>${r.s.winRate == null ? '—' : num(r.s.winRate, 0) + ' %'}</td><td class="${cls(r.s.avgPct)}">${pct(r.s.avgPct)}</td>
+      <td class="pos">${pct(r.s.avgWinPct)}<small>${d(r.s.avgDaysWin)}</small></td><td class="neg">${pct(r.s.avgLossPct)}<small>${d(r.s.avgDaysLoss)}</small></td><td>${d(r.s.avgDays)}</td><td>${pf(r.s.profitFactor)}</td>
+      <td class="${cls(r.s.totalPnl)}"><span class="mp-blur-if">${sEur(r.s.totalPnl, 0)}</span></td></tr>`).join('')}</tbody></table></div></div>`;
+}
+function analysisHtml(c){
+  const trades = accTrades(c);
+  const head = `<div class="mp-h-row"><h3 class="mp-h">📊 Analyse de mes transactions <small>${esc(c.range.label || 'depuis le début')}${ui.includeOpen ? ' · positions ouvertes comprises' : ''}</small></h3></div>`;
+  if (trades.length < 1) return head + '<div class="mp-empty">Pas encore de position vendue sur cette période : l\'analyse apparaîtra après tes premières ventes (ou coche « Inclure les positions ouvertes »).</div>';
+  const g = segStats(trades), d = v => v == null ? '—' : Math.round(v) + ' j';
+  const best = g.best, worst = g.worst, gainsTot = trades.filter(t => t.pnl > 0).reduce((a, t) => a + t.pnl, 0);
+  const months = Math.max(1, E.daysBetween(E.sortOps(c.ops)[0].date, c.today) / 30.44);   // depuis le début du suivi
+  let streak = 0, maxStreak = 0; trades.slice().filter(t => t.close).sort((a, b) => a.close < b.close ? -1 : 1).forEach(t => { streak = t.pnl > 0 ? streak + 1 : 0; maxStreak = Math.max(maxStreak, streak); });
+  const k = (l, v, sub, kl) => `<div class="mp-an-kpi"><span>${l}</span><b class="${kl || ''}">${v}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
+  const kpis = `<div class="mp-an-kpis">
+    ${k('Taux de réussite', g.winRate == null ? '—' : num(g.winRate, 0) + ' %', g.wins + ' gagnantes sur ' + g.n)}
+    ${k('Espérance par transaction', pct(g.expectancy), `<span class="mp-blur-if">${sEur(g.expEur, 0)}</span> en moyenne`, cls(g.expectancy))}
+    ${k('Facteur de profit', g.profitFactor == null ? '—' : g.profitFactor === Infinity ? '∞' : num(g.profitFactor, 2), 'gains ÷ pertes (> 1,5 = solide)')}
+    ${k('Gain moyen ÷ perte moyenne', g.payoff == null ? '—' : num(g.payoff, 2) + 'x', 'en %')}
+    ${k('Quand je gagne', pct(g.avgWinPct), 'en ' + d(g.avgDaysWin) + ' en moyenne', 'pos')}
+    ${k('Quand je perds', pct(g.avgLossPct), 'en ' + d(g.avgDaysLoss) + ' en moyenne', 'neg')}
+    ${k('Durée de détention', d(g.avgDays), 'médiane ' + d(g.medDays))}
+    ${k('Rythme', num(trades.length / months, 1) + ' / mois', 'série gagnante max : ' + maxStreak)}
+    ${k('Meilleure', best ? esc(symName(best.symbol)) : '—', best ? pct(best.pct) + (gainsTot > 0 && best.pnl > 0 ? ' · ' + num(best.pnl / gainsTot * 100, 0) + ' % de mes gains' : '') : '', 'pos')}
+    ${k('Pire', worst ? esc(symName(worst.symbol)) : '—', worst ? pct(worst.pct) : '', 'neg')}
+  </div>`;
+  // ce qui marche / ce qui ne marche pas : segments d'au moins 2 transactions, classés par espérance
+  const segs = [];
+  [['compte', t => t.acc], ['pays', t => EXCH_COUNTRY[t.symbol.split(':')[0]] || t.symbol.split(':')[0]], ['secteur', t => sectorOf(t.symbol)], ['durée', t => durBucket(t.days).replace(/^\d\. /, '')]].forEach(([dim, fn]) => {
+    const gr = {}; trades.forEach(t => { const key = fn(t); if (key && key !== '…') (gr[key] = gr[key] || []).push(t); });
+    Object.keys(gr).forEach(key => { if (gr[key].length >= 2){ const st = segStats(gr[key]); segs.push({ dim, key, st }); } });
+  });
+  segs.sort((a, b) => b.st.expectancy - a.st.expectancy);
+  const insight = segs.length >= 2 ? `<div class="mp-an-insight"><div class="ok"><b>Ce qui marche le mieux</b>${segs.slice(0, 2).map(x => `<span>${esc(x.dim)} « ${esc(x.key)} » : ${pct(x.st.expectancy)} par transaction, ${num(x.st.winRate, 0)} % de réussite (${x.st.n})</span>`).join('')}</div>
+    <div class="ko"><b>Ce qui marche le moins</b>${segs.slice(-2).reverse().map(x => `<span>${esc(x.dim)} « ${esc(x.key)} » : ${pct(x.st.expectancy)} par transaction, ${num(x.st.winRate, 0)} % de réussite (${x.st.n})</span>`).join('')}</div></div>` : '';
+  return head + kpis + insight + `<div class="mp-seg-grid">
+    ${c.acc === 'perso' ? segTable('PEA contre CTO', trades, t => t.acc) : ''}
+    ${segTable('Pays de cotation', trades, t => EXCH_COUNTRY[t.symbol.split(':')[0]] || t.symbol.split(':')[0])}
+    ${segTable('Secteur', trades, t => sectorOf(t.symbol))}
+    ${segTable('Durée de détention', trades, t => durBucket(t.days))}</div>
+    <p class="mp-hint">Une transaction = une position de l'achat à la vente totale, dividendes compris. Espérance = ce que rapporte en moyenne une transaction (réussite × gain moyen + échecs × perte moyenne). Facteur de profit = total des gains ÷ total des pertes.</p>`;
+}
+
+/* ======================= ÉPARGNE : LDDS + LIVRET A (soldes mis à jour à la main) ======================= */
+function epargneLast(){ const e = (D.epargne && D.epargne.entries) || []; return e.slice().sort((a, b) => a.date < b.date ? 1 : -1)[0] || null; }
+function epargneCardHtml(){
+  const last = epargneLast(), locked = !persoOk();
+  const tot = last ? (last.ldds || 0) + (last.livretA || 0) : null;
+  const bourse = cache && cache.perso ? cache.perso.now.value : null;
+  return `<button class="mp-acc mp-acc-ep ${ui.epargne ? 'active' : ''}" data-mp-epargne>
+    <span class="mp-acc-top"><span class="mp-acc-ico">💶</span><span><b>Épargne</b><small>LDDS + Livret A</small></span></span>
+    <span class="mp-acc-val${locked ? ' mp-blur' : ''}">${tot == null ? '—' : eur(tot, 0)}</span>
+    <span class="mp-acc-perf">${locked ? '🔒' : last ? 'au ' + fmtD(last.date) + (bourse != null ? ' · patrimoine ' + eur(bourse + tot, 0) : '') : 'à renseigner'}</span></button>`;
+}
+function epargneModalHtml(){
+  const last = epargneLast(), e = ((D.epargne && D.epargne.entries) || []).slice().sort((a, b) => a.date < b.date ? 1 : -1), locked = !persoOk();
+  const s2 = v => v == null ? '' : String(v).replace('.', ',');
+  const bourse = cache && cache.perso ? cache.perso.now.value : null, tot = last ? (last.ldds || 0) + (last.livretA || 0) : 0;
+  return `<div class="mp-modal-head"><h3>💶 Épargne · LDDS + Livret A</h3><button class="mp-x" data-mp-epclose>✕</button></div>
+    <div class="mp-ep ${locked ? 'mp-locked' : ''}">
+      ${locked ? '<div class="mp-banner err">🔒 Déverrouille le PEA / CTO (ton code) pour voir et modifier ton épargne.</div>' : `
+      <div class="mp-ep-sum"><div><span>Épargne</span><b>${eur(tot, 0)}</b></div><div><span>Bourse (PEA + CTO)</span><b>${eur(bourse, 0)}</b></div><div class="tot"><span>Patrimoine</span><b>${bourse != null ? eur(bourse + tot, 0) : '—'}</b></div></div>
+      <div class="mp-f-grid"><div><label>Date</label><input type="date" data-ep="date" value="${E.isoToday()}"></div>
+        <div><label>LDDS (€)</label><input inputmode="decimal" data-ep="ldds" value="${s2(last && last.ldds)}"></div>
+        <div><label>Livret A (€)</label><input inputmode="decimal" data-ep="livretA" value="${s2(last && last.livretA)}"></div>
+        <div class="mp-f-full"><label>Note (facultatif)</label><input data-ep="note" placeholder="ex. intérêts de l'année, virement…"></div></div>
+      <div class="mp-modal-foot"><span class="mp-err" id="mpEpErr"></span><button class="refresh-btn" data-mp-epsave>Enregistrer les soldes</button></div>
+      <h4 class="mp-h">Historique</h4><div class="mp-ep-hist">${e.length ? e.map(x => `<div class="mp-ep-row"><span>${fmtD(x.date)}</span><span>LDDS <b>${eur(x.ldds, 0)}</b></span><span>Livret A <b>${eur(x.livretA, 0)}</b></span><span>Total <b>${eur((x.ldds || 0) + (x.livretA || 0), 0)}</b></span>${x.note ? `<em>${esc(x.note)}</em>` : '<em></em>'}<button class="mp-del" data-mp-epdel="${esc(x.id)}" title="Retirer ce relevé">🗑</button></div>`).join('') : '<div class="mp-empty">Aucun relevé : saisis tes soldes actuels ci-dessus.</div>'}</div>`}
+    </div>`;
+}
+async function epargneSave(entry, removeId){
+  D.epargne = D.epargne || { entries: [], removed: [] };
+  const before = JSON.stringify(D.epargne);
+  if (entry) D.epargne.entries = D.epargne.entries.filter(x => x.date !== entry.date).concat([entry]);
+  if (removeId){ const x = D.epargne.entries.find(y => y.id === removeId); D.epargne.entries = D.epargne.entries.filter(y => y.id !== removeId); if (x) (D.epargne.removed = D.epargne.removed || []).push(Object.assign({ removedAt: new Date().toISOString() }, x)); }
+  try { await save(); ui.msg = { text: entry ? '✔ Soldes d\'épargne enregistrés.' : 'Relevé retiré (gardé dans le fichier, rubrique « removed »).' }; }
+  catch(e){ D.epargne = JSON.parse(before); ui.msg = { err: true, text: e.message }; }
+  render();
+}
+function wireEpargne(){
+  const m = document.getElementById('mpEpModal'); if (!m) return;
+  document.getElementById('mpEpBg').addEventListener('mousedown', e => { if (e.target.id === 'mpEpBg'){ ui.epargne = false; render(); } });
+  m.querySelectorAll('[data-mp-epclose]').forEach(b => b.addEventListener('click', () => { ui.epargne = false; render(); }));
+  const sv = m.querySelector('[data-mp-epsave]');
+  if (sv) sv.addEventListener('click', () => {
+    const g = k => m.querySelector('[data-ep="' + k + '"]').value;
+    const ldds = parseNum(g('ldds')), livretA = parseNum(g('livretA')), date = g('date');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || (ldds == null && livretA == null)){ document.getElementById('mpEpErr').textContent = 'Indique une date et au moins un solde.'; return; }
+    epargneSave({ id: 'ep-' + Date.now().toString(36), date, ldds: ldds || 0, livretA: livretA || 0, note: g('note').trim() || undefined, at: new Date().toISOString() });
+  });
+  m.querySelectorAll('[data-mp-epdel]').forEach(b => b.addEventListener('click', () => epargneSave(null, b.dataset.mpEpdel)));
+}
+
 function journalHtml(){
   const range = periodRange();
   const ops = E.sortOps(accOps(ui.acc)).reverse().filter(o => o.type === 'INIT' ? !range.from : inRange(o.date, range));
@@ -703,7 +869,7 @@ function journalHtml(){
       <div class="mp-j-what">${what}${o.note ? `<em>${esc(o.note)}</em>` : ''}</div>
       <span class="mp-typepill mp-c-${o.type}">${TYPE_LABEL[o.type]}${ui.acc === 'perso' ? ' · ' + accOfOp(o.id).toUpperCase() : ''}${o.linkedTo ? ' · copie' : ''}</span>
       <b class="mp-j-amt ${o.type === 'INIT' ? '' : cls(o.eur)}">${o.type === 'INIT' ? eur(o.eur) : o.eur ? sEur(o.eur) : '—'}</b>
-      ${ui.acc !== 'perso' && !isLockedAcc(ui.acc) ? `<button class="mp-del ${ui.delConfirm === o.id ? 'confirm' : ''}" data-mp-del="${esc(o.id)}" title="Supprimer">${ui.delConfirm === o.id ? 'Confirmer' : '🗑'}</button>` : '<span></span>'}</div>`;
+      ${ui.acc !== 'perso' && !isLockedAcc(ui.acc) && !RO ? `<span class="mp-j-acts">${o.linkedTo ? '' : `<button class="mp-edit" data-mp-edit="${esc(o.id)}" title="Modifier">✏</button>`}<button class="mp-del ${ui.delConfirm === o.id ? 'confirm' : ''}" data-mp-del="${esc(o.id)}" title="Supprimer">${ui.delConfirm === o.id ? 'Confirmer' : '🗑'}</button></span>` : '<span></span>'}</div>`;
   });
   const trash = isLockedAcc(ui.acc) ? [] : (D.trash || []).filter(t => ui.acc === 'perso' ? t.acc !== 'wolf' : t.acc === ui.acc).slice().reverse();
   const groups = [...new Set(trash.map(t => t.group))];
@@ -723,7 +889,22 @@ function openModal(type){
   ui.msg = null; render();
   setTimeout(() => { const el = document.querySelector('#mpModal [data-f="symbol-search"]') || document.querySelector('#mpModal [data-f="amount"]'); if (el) el.focus(); }, 30);
 }
-function heldPositions(){ return E.replay(D.accounts[ui.acc].ops).pos; }
+// Modifier une opération existante : même fenêtre que la saisie, préremplie. Le montant n'est prérempli que s'il avait
+// été saisi à la main (sinon il est recalculé à partir de la quantité, du cours, du change et des frais).
+function openEdit(id){
+  const acc = accOfOp(id); if (!acc) return;
+  const o = D.accounts[acc].ops.find(x => x.id === id); if (!o) return;
+  const s2 = v => v == null ? '' : String(v).replace('.', ',');
+  const gbx = o.ccy === 'GBX';
+  const f = { type: o.type, date: o.date, ccy: o.ccy || 'EUR', mirror: true, sugg: [], editId: id, symbol: o.symbol || null, symName: o.symbol ? symName(o.symbol) : null,
+    qty: s2(o.qty), px: s2(o.px), fx: o.fx ? s2(+(gbx ? o.fx * 100 : o.fx).toFixed(8)) : '', fee: s2(o.fee), note: o.note || '', dps: s2(o.dps), pru: s2(o.pruEur) };
+  if (o.type === 'BUY' || o.type === 'SELL'){
+    const auto = E.netAmount(o.type, o.qty, o.px, o.fx || 1, o.fee || 0);
+    if (Math.abs(Math.abs(auto) - Math.abs(o.eur)) > 0.02) f.amount = s2(Math.abs(o.eur));
+  } else if (o.type !== 'ATTRIB') f.amount = s2(Math.abs(o.eur));
+  ui.acc = acc; ui.modal = f; ui.msg = null; render();
+}
+function heldPositions(){ return E.replay(D.accounts[ui.acc].ops.filter(o => !ui.modal || o.id !== ui.modal.editId)).pos; }
 function modalHtml(){
   const f = ui.modal, t = f.type, trade = t === 'BUY' || t === 'SELL', withSym = ['BUY', 'SELL', 'DIV', 'ATTRIB', 'INIT'].includes(t);
   const types = ['BUY', 'SELL', 'DIV', 'DEPOT', 'RETRAIT', 'FRAIS', 'ATTRIB', 'INIT'].map(k => `<button class="mp-type-btn mp-c-${k} ${k === t ? 'active' : ''}" data-mp-type="${k}"><span>${TYPE_ICON[k]}</span>${TYPE_LABEL[k]}</button>`).join('');
@@ -736,7 +917,7 @@ function modalHtml(){
           : `<input data-f="symbol-search" placeholder="Nom de l'entreprise ou de l'ETF (ex. Air Liquide, MSCI World)…" autocomplete="off" value="${esc(f.q || '')}"><div class="mp-sugg" id="mpSugg">${suggHtml()}</div>`}</div>`;
   const ratio = D.config.wolfRatio || 0.7;
   const fld = (k, label, val, extra) => `<div><label>${label}</label><input inputmode="decimal" data-f="${k}" value="${esc(val == null ? '' : val)}" ${extra || ''}></div>`;
-  return `<div class="mp-modal-head"><h3>Nouvelle opération · ${esc(ACCOUNTS.find(a => a.k === ui.acc).label)}</h3><button class="mp-x" data-mp-close>✕</button></div>
+  return `<div class="mp-modal-head"><h3>${f.editId ? 'Modifier l\'opération' : 'Nouvelle opération'} · ${esc(ACCOUNTS.find(a => a.k === ui.acc).label)}</h3><button class="mp-x" data-mp-close>✕</button></div>
   <div class="mp-types">${types}</div>
   <div class="mp-modal-body"><div class="mp-modal-form">
     <div class="mp-f-grid">
@@ -796,7 +977,7 @@ function recapHtml(){
   if (t === 'BUY' && v.qty && net) { const q2 = (held ? held.qty : 0) + v.qty; lines.push(`<div><span>Après l'achat</span><b>${num(q2, 4)} titre${q2 > 1 ? 's' : ''}</b></div>`); }
   if (t === 'SELL' && held && v.qty && net){ const pv = net - held.cost * Math.min(1, v.qty / held.qty); lines.push(`<div><span>Plus-value réalisée</span><b class="${cls(pv)}">${sEur(pv)}</b></div>`); }
   const ratio = D.config.wolfRatio || 0.7;
-  const mirror = (ui.acc === 'pea' || ui.acc === 'cto') && (t === 'BUY' || t === 'SELL');
+  const mirror = (ui.acc === 'pea' || ui.acc === 'cto') && (t === 'BUY' || t === 'SELL') && !f.editId;
   let mirrorTxt = '';
   if (mirror && v.qty){
     const wolfHeld = (E.replay(D.accounts.wolf.ops).pos[f.symbol] || {}).qty || 0;
@@ -852,6 +1033,7 @@ async function submit(){
   const f = ui.modal;
   let op;
   try { op = buildOp(); } catch(e){ f.error = e.message; render(); return; }
+  if (f.editId) return submitEdit(f, op);
   const acc = ui.acc, ops = D.accounts[acc].ops;
   const chk = E.validate(ops.concat([op]));
   if (!chk.ok){ f.error = chk.errors[0]; render(); return; }
@@ -875,6 +1057,32 @@ async function submit(){
     if (newSym) delete D.symbols[op.symbol];
     f.error = e.message;
   }
+  ui.saving = false; render();
+}
+// Enregistre une opération modifiée (même identifiant). Sa copie sur le Wolf Portfolio, s'il y en a une, suit : même date,
+// même cours, même change, quantité × le même rapport qu'avant.
+async function submitEdit(f, op){
+  const acc = ui.acc, ops = D.accounts[acc].ops, i = ops.findIndex(o => o.id === f.editId); if (i < 0) return;
+  const old = ops[i];
+  op.id = old.id; op.createdAt = old.createdAt || op.createdAt; op.editedAt = new Date().toISOString();
+  if (old.linkedTo) op.linkedTo = old.linkedTo;
+  const next = ops.slice(); next[i] = op;
+  const chk = E.validate(next); if (!chk.ok){ f.error = chk.errors[0]; render(); return; }
+  const backup = { [acc]: ops.slice(), wolf: D.accounts.wolf.ops.slice() };
+  D.accounts[acc].ops = next;
+  let copies = 0;
+  if (acc !== 'wolf' && (op.type === 'BUY' || op.type === 'SELL')){
+    D.accounts.wolf.ops = D.accounts.wolf.ops.map(w => {
+      if (w.linkedTo !== op.id) return w;
+      const k = old.qty ? w.qty / old.qty : (D.config.wolfRatio || 0.7), qty = +(op.qty * k).toFixed(4), fee = +((op.fee || 0) * k).toFixed(2);
+      copies++;
+      return Object.assign({}, w, { date: op.date, px: op.px, ccy: op.ccy, fx: op.fx, qty, fee, eur: +E.netAmount(op.type, qty, op.px, op.fx, fee).toFixed(2), editedAt: op.editedAt });
+    });
+    if (!E.validate(D.accounts.wolf.ops).ok){ D.accounts.wolf.ops = backup.wolf; copies = 0; }
+  }
+  ui.saving = true; render();
+  try { await save(); ui.msg = { text: '✔ Opération modifiée' + (copies ? ' (et sa copie sur le Wolf Portfolio)' : '') + '.' }; ui.modal = null; if (op.symbol && !S[op.symbol]) loadHistory(); }
+  catch(e){ D.accounts[acc].ops = backup[acc]; D.accounts.wolf.ops = backup.wolf; f.error = e.message; }
   ui.saving = false; render();
 }
 async function del(id){
@@ -996,6 +1204,8 @@ function wire(){
   const io = page.querySelector('#mpIncludeOpen'); if (io) io.addEventListener('change', () => { ui.includeOpen = io.checked; render(); });
   const all = page.querySelector('[data-mp-allops]'); if (all) all.addEventListener('click', () => { ui.showAllOps = !ui.showAllOps; render(); });
   page.querySelectorAll('[data-mp-del]').forEach(b => b.addEventListener('click', () => del(b.dataset.mpDel)));
+  page.querySelectorAll('[data-mp-edit]').forEach(b => b.addEventListener('click', () => openEdit(b.dataset.mpEdit)));
+  page.querySelectorAll('[data-mp-epargne]').forEach(b => b.addEventListener('click', () => { ui.epargne = true; render(); }));
   page.querySelectorAll('[data-mp-zoom]').forEach(b => b.addEventListener('click', () => openZoom(b.dataset.mpZoom)));
   page.querySelectorAll('[data-mp-restore]').forEach(b => b.addEventListener('click', () => restore(b.dataset.mpRestore)));
 }

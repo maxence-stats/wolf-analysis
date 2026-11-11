@@ -28,8 +28,9 @@ def _msg(func, params):
 
 
 class TvChart:
-    def __init__(self, timeout=20):
+    def __init__(self, timeout=20, adjustment="none"):
         self.timeout = timeout
+        self.adjustment = adjustment
         self.ws = websocket.create_connection("wss://data.tradingview.com/socket.io/websocket?type=chart",
                                               header=["Origin: https://www.tradingview.com"], timeout=timeout)
         self.cs = "cs_" + ''.join(random.choices(string.ascii_lowercase, k=12))
@@ -46,7 +47,7 @@ class TvChart:
     def bars(self, symbol, n):
         self.i += 1
         sid, ser = "sym_%d" % self.i, "s%d" % self.i
-        self.ws.send(_msg("resolve_symbol", [self.cs, sid, "=" + json.dumps({"adjustment": "none", "symbol": symbol})]))
+        self.ws.send(_msg("resolve_symbol", [self.cs, sid, "=" + json.dumps({"adjustment": self.adjustment, "symbol": symbol})]))
         self.ws.send(_msg("create_series", [self.cs, ser, ser, sid, "1D", n, ""]))
         meta, bars, t0 = {}, [], time.time()
         try:
@@ -88,6 +89,8 @@ def main():
     ap.add_argument('--symbols', required=True)
     ap.add_argument('--from', dest='frm', default='2026-01-01')
     ap.add_argument('--cache', default='')
+    ap.add_argument('--adjust', choices=['none', 'splits'], default='none',
+                    help="splits = cours ajustés des divisions et attributions d'actions (graphiques), none = cours réels (portefeuilles)")
     ap.add_argument('--ttl', type=int, default=1800, help='durée de validité du cache en secondes (0 = toujours relire)')
     a = ap.parse_args()
     syms = list(dict.fromkeys(s for s in a.symbols.split(',') if SYM_RE.match(s)))[:80]
@@ -95,7 +98,7 @@ def main():
     n = max(30, int((dt.date.today() - start).days * 0.75) + 30)
     if a.cache:
         os.makedirs(a.cache, exist_ok=True)
-    path_of = lambda s: os.path.join(a.cache, re.sub(r'[^A-Za-z0-9_.-]', '_', s) + '.json') if a.cache else None
+    path_of = lambda s: os.path.join(a.cache, re.sub(r'[^A-Za-z0-9_.-]', '_', s) + ('-adj' if a.adjust == 'splits' else '') + '.json') if a.cache else None
 
     def read_cache(sym):
         p = path_of(sym)
@@ -120,7 +123,7 @@ def main():
         for attempt in range(2):
             try:
                 if chart is None:
-                    chart = TvChart()
+                    chart = TvChart(adjustment=a.adjust)
                 d = chart.bars(sym, n)
                 out[sym] = d
                 if a.cache:

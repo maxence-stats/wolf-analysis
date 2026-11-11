@@ -314,7 +314,7 @@ function Handle-TvSnapshot($req, $res){
   if ($req.HttpMethod -ne "GET"){ Send-Json $res 405 @{ ok = $false; error = "GET requis" }; return }
   $sym = $req.QueryString["symbol"]
   if (-not $sym -or $sym -notmatch '^[A-Za-z0-9_.!&-]{1,24}:[A-Za-z0-9_.!&-]{1,24}$'){ Send-Json $res 400 @{ ok = $false; error = "symbole invalide" }; return }
-  $cols = "description,currency,exchange,sector,industry,close,market_cap_basic,price_earnings_ttm,earnings_per_share_diluted_ttm,price_free_cash_flow_ttm,free_cash_flow_per_share_ttm,free_cash_flow_ttm,neg_capital_expenditures_ttm,total_revenue_ttm,dps_common_stock_prim_issue_fy,dividends_yield,return_on_invested_capital_fy,operating_margin,total_shares_outstanding_fundamental,cash_n_short_term_invest_fq,net_debt_fq,logoid,fundamental_currency_code,ebitda_ttm,ebitda_fy,ebitda_fy_h,total_debt_fq,book_value_per_share_fq,enterprise_value_ebitda_ttm,enterprise_value_ebitda_current,price_book_fq"
+  $cols = "description,currency,exchange,sector,industry,close,market_cap_basic,price_earnings_ttm,earnings_per_share_diluted_ttm,price_free_cash_flow_ttm,free_cash_flow_per_share_ttm,free_cash_flow_ttm,neg_capital_expenditures_ttm,total_revenue_ttm,dps_common_stock_prim_issue_fy,dividends_yield,return_on_invested_capital_fy,operating_margin,total_shares_outstanding_fundamental,cash_n_short_term_invest_fq,net_debt_fq,logoid,fundamental_currency_code,ebitda_ttm,ebitda_fy,ebitda_fy_h,total_debt_fq,book_value_per_share_fq,enterprise_value_ebitda_ttm,enterprise_value_ebitda_current,price_book_fq,total_revenue_fy_h,earnings_per_share_diluted_fy_h,dps_common_stock_prim_issue_fy_h,free_cash_flow_fy_h,net_income_fy_h,fiscal_period_fy,type"
   $url = "https://scanner.tradingview.com/symbol?symbol=" + [System.Uri]::EscapeDataString($sym) + "&fields=" + $cols + "&no_404=true"
   # Cache disque (2026-11-10) : chaque reponse reussie est gardee ; cached=1 = reponse immediate depuis le cache s'il existe ;
   # si TradingView ne repond pas (2 essais), la derniere reponse connue est renvoyee avec "stale":true (jamais un ecran vide).
@@ -644,8 +644,9 @@ function Handle-TvHistory($req, $res){
   if (-not $python){ Send-Json $res 500 @{ ok = $false; error = "Python introuvable" }; return }
   $cache = Join-Path $storeDirPath "cache-prix"
   $ttl = "1800"; if ($req.QueryString["fresh"] -eq "1"){ $ttl = "0" }
+  $adj = "none"; if ($req.QueryString["adj"] -eq "1"){ $adj = "splits" }
   try {
-    $out = & $python $script --symbols ($list -join ',') --from $from --cache $cache --ttl $ttl 2>$null | Out-String
+    $out = & $python $script --symbols ($list -join ',') --from $from --cache $cache --ttl $ttl --adjust $adj 2>$null | Out-String
     $out = $out.Trim()
     if (-not $out.StartsWith("{")){ Send-Json $res 502 @{ ok = $false; error = "historique TradingView indisponible" }; return }
     Send-RawJsonString $res $out
@@ -673,7 +674,7 @@ while ($listener.IsListening) {
     $path = [System.Uri]::UnescapeDataString($req.Url.AbsolutePath)
     if ($path -eq "/api/ia/ping") {
       New-Item -ItemType Directory -Force -Path $iaDirPath | Out-Null
-      Send-Json $res 200 @{ ok = $true; writable = $true; v = 15; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
+      Send-Json $res 200 @{ ok = $true; writable = $true; v = 16; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
     } elseif ($path -eq "/api/ia/save") {
       Handle-IaSave $req $res
     } elseif ($path -eq "/api/ia/refresh") {

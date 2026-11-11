@@ -30,7 +30,7 @@ REM Un serveur deja lance mais PERIME (demarre avant une mise a jour de static-s
 REM ne connait pas /api/ia/ping : le Portefeuille IA afficherait "Sauvegarde impossible".
 REM On le detecte et on le remplace, sans intervention manuelle.
 if "%SERVER_UP%"=="1" (
-  powershell -NoProfile -Command "try { $r = Invoke-WebRequest -UseBasicParsing http://localhost:%PORT%/api/ia/ping -TimeoutSec 4; if ($r.Content -match 'v.:15') { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
+  powershell -NoProfile -Command "try { $r = Invoke-WebRequest -UseBasicParsing http://localhost:%PORT%/api/ia/ping -TimeoutSec 4; if ($r.Content -match 'v.:16') { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
   if errorlevel 1 (
     powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='powershell.exe'\" | Where-Object { $_.CommandLine -match 'static-server' -and $_.CommandLine -notmatch '-Port' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }" >nul 2>&1
     timeout /t 2 /nobreak >nul

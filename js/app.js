@@ -586,7 +586,7 @@ async function loadTvWeeklyPrices(nom){
   const iso = ts => new Date(ts * 1000).toISOString().slice(0, 10);
   try{
     if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)){
-      const r = await fetch('/api/tv/history?symbols=' + encodeURIComponent(sym) + '&from=2006-01-01', { cache:'no-store' });
+      const r = await fetch('/api/tv/history?symbols=' + encodeURIComponent(sym) + '&from=2006-01-01&adj=1', { cache:'no-store' });
       const j = await r.json();
       const d = j.ok && j.data && j.data[sym];
       if (d && d.bars && d.bars.length > 20){ const w = resampleWeekly(d.bars.map(b => iso(b[0])), d.bars.map(b => b[1])); return Object.assign(w, { ccy: d.ccy, sym }); }

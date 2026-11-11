@@ -31,7 +31,7 @@ def main():
     syms = [s for s in a.symbols.split(',') if re.match(r'^[A-Za-z0-9_.!&-]{1,24}:[A-Za-z0-9_.!&-]{1,24}$', s)]
     pdir = os.path.join(a.out, 'prices')
     os.makedirs(pdir, exist_ok=True)
-    cmd = [sys.executable, os.path.join(HERE, 'tv_history.py'), '--symbols', ','.join(syms), '--from', '2006-01-01', '--ttl', '43200']
+    cmd = [sys.executable, os.path.join(HERE, 'tv_history.py'), '--symbols', ','.join(syms), '--from', '2006-01-01', '--ttl', '43200', '--adjust', 'splits']
     if a.cache:
         cmd += ['--cache', a.cache]
     out = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', timeout=900).stdout.strip()

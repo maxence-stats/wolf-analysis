@@ -37,6 +37,7 @@ const TYPES = {
   citation:   { l: 'Citation',     c: '#D9A441', size: 's', cat: 'Rédaction',  d: 'Une idée ou une conclusion mise en avant' },
   kpi:        { l: 'Indicateur',   c: '#D9A441', size: 's', cat: 'Chiffres',   d: 'Un chiffre, son évolution, mini-historique' },
   bourse:     { l: 'Cours de bourse', c: '#4A9FE0', size: 'h', cat: 'Chiffres', d: 'Le cours TradingView, figé au jour de l\'analyse' },
+  overlay:    { l: 'Graphique superposé', c: '#4A9FE0', size: 'h', cat: 'Chiffres', d: 'Cours + FCF par action, dividende, BPA… sur un même graphique' },
   donut:      { l: 'Camembert',    c: '#4A9FE0', size: 's', cat: 'Chiffres',   d: 'Répartition : les parts se calculent seules' },
   geo:        { l: 'Carte du monde', c: '#4FD1A5', size: 'h', cat: 'Chiffres', d: 'Chiffre d\'affaires par pays ou par grande région' },
   barres:     { l: 'Barres',       c: '#4A9FE0', size: 'h', cat: 'Chiffres',   d: 'Plusieurs années, plusieurs séries' },
@@ -68,7 +69,10 @@ const TVF = {
   pFcf:         { l: 'P/FCF',                    u: 'x',    d: 1, low: true },
   detteOCF:     { l: 'Dette nette / OCF',        u: 'x',    d: 1, low: true },
   actions:      { l: 'Actions en circulation',   u: 'M',    d: 1, low: true },
-  cash:         { l: 'Trésorerie',               u: 'Mcur', d: 0 }
+  cash:         { l: 'Trésorerie',               u: 'Mcur', d: 0 },
+  margeNette:   { l: 'Marge nette',              u: '%',    d: 1 },
+  resultatNet:  { l: 'Résultat net',             u: 'Mcur', d: 0 },
+  fcf:          { l: 'Free cash-flow',           u: 'Mcur', d: 0 }
 };
 const C = (type, titre, o) => Object.assign({ type, titre: titre || '' }, o || {});
 // Modèle intégré : les 18 points de la checklist de l'utilisateur (2026-11-10) + Actualités + Sources. Les sous-points
@@ -288,7 +292,48 @@ function resolveBind(doc, bind){
 const bindLabel = (doc, bind) => { const r = resolveBind(doc, bind); return r ? r.label : ''; };
 
 /* ---------- relevé TradingView (figé dans la version, « ↻ Actualiser » pour le refaire) ---------- */
-const TV_KEEP = ['annee', 'prixActuel', 'ca', 'margeOp', 'roic', 'fcfParAction', 'eps', 'dividende', 'rendementDiv', 'payoutRatio', 'per', 'pFcf', 'detteOCF', 'actions', 'cash'];
+const TV_KEEP = ['annee', 'prixActuel', 'ca', 'margeOp', 'roic', 'fcfParAction', 'eps', 'dividende', 'rendementDiv', 'payoutRatio', 'per', 'pFcf', 'detteOCF', 'actions', 'cash', 'margeNette', 'resultatNet', 'fcf'];
+// Historique annuel TradingView (20 exercices, le plus récent en premier, en devise de cotation) -> lignes par année.
+// FCF par action = FCF × BPA ÷ résultat net (le scanner ne donne pas l'historique du nombre d'actions).
+function rowsFromHistory(snap){
+  const fy = parseInt(snap && snap.fiscal_period_fy, 10); if (!fy) return [];
+  const H = k => Array.isArray(snap[k]) ? snap[k] : [];
+  const rev = H('total_revenue_fy_h'), eps = H('earnings_per_share_diluted_fy_h'), dps = H('dps_common_stock_prim_issue_fy_h'), fcf = H('free_cash_flow_fy_h'), ni = H('net_income_fy_h');
+  const n = Math.max(rev.length, eps.length, dps.length, fcf.length, ni.length), out = [];
+  const ok = v => typeof v === 'number' && isFinite(v);
+  for (let i = 0; i < n; i++){
+    const r = { annee: fy - i };
+    if (ok(rev[i])) r.ca = rev[i] / 1e6;
+    if (ok(eps[i])) r.eps = eps[i];
+    if (ok(dps[i])) r.dividende = dps[i];
+    if (ok(ni[i])) r.resultatNet = ni[i] / 1e6;
+    if (ok(fcf[i])) r.fcf = fcf[i] / 1e6;
+    if (ok(fcf[i]) && ok(ni[i]) && ok(eps[i]) && ni[i] !== 0 && eps[i] !== 0 && ni[i] / eps[i] > 0) r.fcfParAction = fcf[i] / (ni[i] / eps[i]);
+    if (ok(ni[i]) && ok(rev[i]) && rev[i] > 0) r.margeNette = ni[i] / rev[i] * 100;
+    if (Object.keys(r).length > 1) out.push(r);
+  }
+  return out.reverse();
+}
+// Complète des lignes annuelles par l'historique TradingView (une valeur déjà présente n'est jamais remplacée).
+function mergeRows(base, extra){
+  const by = {}; (base || []).forEach(r => { by[r.annee] = Object.assign({}, r); });
+  (extra || []).forEach(r => { const t = by[r.annee] = by[r.annee] || { annee: r.annee }; Object.keys(r).forEach(k => { if (t[k] == null) t[k] = r[k]; }); });
+  return Object.values(by).sort((a, b) => a.annee - b.annee);
+}
+// Cours de fin d'année (dernière clôture hebdomadaire de chaque année) et ratios qui en découlent.
+function addYearEndPrices(rows, prices){
+  if (!prices || !prices.dates || !prices.dates.length) return rows;
+  const last = {}; prices.dates.forEach((d, i) => { last[d.slice(0, 4)] = prices.closes[i]; });
+  return rows.map(r => {
+    const px = last[String(r.annee)]; if (px == null) return r;
+    const o = Object.assign({}, r); if (o.prixActuel == null) o.prixActuel = px;
+    if (o.per == null && o.eps > 0) o.per = o.prixActuel / o.eps;
+    if (o.pFcf == null && o.fcfParAction > 0) o.pFcf = o.prixActuel / o.fcfParAction;
+    if (o.rendementDiv == null && o.dividende != null && o.prixActuel) o.rendementDiv = o.dividende / o.prixActuel * 100;
+    if (o.payoutRatio == null && o.dividende != null && o.eps > 0) o.payoutRatio = o.dividende / o.eps * 100;
+    return o;
+  });
+}
 const slimRows = rows => (rows || []).filter(r => r.annee).map(r => { const o = {}; TV_KEEP.forEach(k => { if (r[k] != null && (k === 'annee' || isFinite(r[k]))) o[k] = r[k]; }); return o; });
 async function tvSymbolFor(name, known){
   const co = findCompany(name); if (co && co.tv) return co.tv;
@@ -302,12 +347,15 @@ async function tvLogo(sym){
   try { const sn = await tvRawSnapshot(sym, true); return sn && sn.logoid ? 'https://s3-symbol-logo.tradingview.com/' + sn.logoid + '--big.svg' : ''; } catch(e){ return ''; }
 }
 async function tvRowsFor(name, sym){
-  const co = findCompany(name);
-  if (co && co.rows.length > 1) return { rows: slimRows(co.rows), devise: co.devise, sym: co.tv || sym, logo: await tvLogo(co.tv || sym) };
-  if (!sym || typeof tvFetchSnapshot !== 'function' || typeof tvRowsFromSnapshot !== 'function') return co ? { rows: slimRows(co.rows), devise: co.devise, sym } : null;
-  const snap = await tvFetchSnapshot(sym);
-  const r = tvRowsFromSnapshot(sym, snap)[0];
-  return { rows: slimRows([r]), devise: r.devise || snap.currency || 'EUR', sym, logo: r.lienImage || '' };
+  const co = findCompany(name), s2 = (co && co.tv) || sym;
+  let snap = null;
+  if (s2 && typeof tvFetchSnapshot === 'function'){ try { snap = await tvFetchSnapshot(s2); } catch(e){ snap = null; } }
+  const hist = snap ? rowsFromHistory(snap) : [];
+  const logo = snap && snap.logoid ? 'https://s3-symbol-logo.tradingview.com/' + snap.logoid + '--big.svg' : '';
+  if (co && co.rows.length > 1) return { rows: mergeRows(slimRows(co.rows), hist), devise: co.devise, sym: s2, logo };
+  if (!snap || typeof tvRowsFromSnapshot !== 'function') return co ? { rows: mergeRows(slimRows(co.rows), hist), devise: co.devise, sym: s2, logo } : null;
+  const r = tvRowsFromSnapshot(s2, snap)[0];
+  return { rows: mergeRows(slimRows([r]), hist), devise: r.devise || snap.currency || 'EUR', sym: s2, logo: logo || r.lienImage || '' };
 }
 let tvBusy = false;
 async function captureTv(){
@@ -318,11 +366,11 @@ async function captureTv(){
     const self = d.type === 'entreprise' ? await tvRowsFor(d.nom || d.titre, sym) : null;
     if (self && self.sym && !d.tv){ d.tv = self.sym; }
     if (self && self.logo && (!d.logo || /^data\/logos\//.test(d.logo))) d.logo = self.logo;
-    const t = { at: new Date().toISOString(), sym: self ? self.sym : '', self: self ? { rows: self.rows, devise: self.devise } : null, others: {}, prices: null };
+    const t = { hv: 2, at: new Date().toISOString(), sym: self ? self.sym : '', self: self ? { rows: self.rows, devise: self.devise } : null, others: {}, prices: null };
     // cours hebdomadaires (cartes « Cours de bourse »)
     if (t.sym){
       try {
-        const r = await fetch('/api/tv/history?symbols=' + encodeURIComponent(t.sym) + '&from=2006-01-01', { cache: 'no-store' }); const j = await r.json();
+        const r = await fetch('/api/tv/history?symbols=' + encodeURIComponent(t.sym) + '&from=2006-01-01&adj=1', { cache: 'no-store' }); const j = await r.json();
         const h = j.ok && j.data && j.data[t.sym];
         if (h && h.bars && h.bars.length > 5){
           const iso = ts => new Date(ts * 1000).toISOString().slice(0, 10);
@@ -331,6 +379,7 @@ async function captureTv(){
         }
       } catch(e){ /* sans cours : les cartes Cours de bourse le disent */ }
     }
+    if (t.self && t.prices) t.self.rows = addYearEndPrices(t.self.rows, t.prices);
     // autres entreprises citées (comparatif, cartes Entreprise)
     const names = new Set();
     Object.values(v.cards).forEach(c => { if (c.type === 'concurrent' && c.nom) names.add(c.nom); if (c.type === 'comparatif') compCols(c).forEach((n, i) => { if (!(i === 0 && (c.cols || [])[0] === '@self')) names.add(n); }); });
@@ -455,7 +504,8 @@ function openDoc(id){
   if (!D.docs[id]) return;
   ui.docId = id; ui.edit = null; ui.big = null; ui.menu = null; ui.orgOpen = {}; ui.tvMsg = null;
   renderShell();
-  const v = ver(); if (v && !v.tvData && !RO && serverOk && D.docs[id].type === 'entreprise') captureTv();
+  const v = ver(); // hv 2 = relevé avec l'historique 20 ans et les cours ajustés : un relevé plus ancien (sans historique) est refait une fois
+  if (v && (!v.tvData || v.tvData.hv !== 2) && !RO && serverOk && D.docs[id].type === 'entreprise') captureTv();
   const m = $('atMain'); if (m) m.scrollTop = 0;
 }
 function deleteDoc(id){
@@ -476,6 +526,7 @@ function addCard(secId, type, o){
   if (type === 'geo' && !c.rows) c.rows = [{ zone: 'Europe', v: null }, { zone: 'Amérique du Nord', v: null }, { zone: 'Asie-Pacifique', v: null }, { zone: 'Reste du monde', v: null }];
   if (type === 'these' && !c.phase) c.phase = Object.values(ver().cards).some(x => x.type === 'these' && x.phase !== 'finale' && x.id !== c.id) ? 'finale' : 'depart';
   if (type === 'bourse' && !ver().tvData && !RO) setTimeout(captureTv, 50);
+  if (type === 'overlay'){ if (!c.keys) c.keys = ['fcfParAction', 'dividende']; if (!c.range) c.range = '10a'; if (!ver().tvData && !RO) setTimeout(captureTv, 50); }
   v.cards[c.id] = c; sec.cards.push(c.id); sec.collapsed = false;
   touch(); return c;
 }
@@ -610,6 +661,7 @@ function cardTitle(c){
   if (c.type === 'these') return c.phase === 'finale' ? 'Thèse finale' : 'Thèse de départ';
   if (c.type === 'thesecmp') return 'Thèse : avant / après';
   if (c.type === 'bourse') return 'Cours de bourse';
+  if (c.type === 'overlay') return 'Cours et fondamentaux';
   if (c.type === 'kpi'){ const d = doc(); return c.bind ? bindLabel(d, c.bind) : (c.label || ''); }
   if (c.type === 'concurrent') return c.nom || '';
   return '';
@@ -703,6 +755,7 @@ function cardHtml(c){
     }
     case 'comparatif': body = compTableHtml(c, false); foot = srcFoot; break;
     case 'bourse': body = bourseHtml(c, false); break;
+    case 'overlay': body = overlayHtml(c, false); break;
     case 'geo': body = geoHtml(c, false); foot = srcFoot; break;
     case 'profil': body = profilHtml(c, false); break;
     case 'these': body = theseHtml(c, false); break;
@@ -798,6 +851,36 @@ function bourseHtml(c, big){
   }
   return h;
 }
+// ---------- Graphique superposé : cours (gauche) + chiffres par action (droite), ou tout en base 100 ----------
+const OV_COLORS = ['#4A9FE0', '#4FD1A5', '#B8A1F0', '#F08A4B', '#5CC8D7', '#E5636B', '#8FA3B8'];   // jamais d'or : réservé au cours
+const OV_KEYS = ['fcfParAction', 'dividende', 'eps', 'ca', 'margeNette', 'fcf', 'resultatNet', 'per', 'pFcf'];
+function overlayData(c){
+  const t = ver().tvData, p = t && t.prices, yrs = (RANGES.find(r => r[0] === (c.range || '10a')) || RANGES[2])[1];
+  const keys = (c.keys || ['fcfParAction', 'dividende']).filter(k => TVF[k]);
+  const fromY = new Date().getFullYear() - yrs;
+  let labels, priceSet = null;
+  if (p && p.closes.length && c.price !== false){
+    const i0 = Math.max(0, p.dates.findIndex(x => x.slice(0, 4) >= String(fromY)));
+    labels = p.dates.slice(i0); priceSet = p.closes.slice(i0);
+  } else labels = [...new Set(keys.flatMap(k => getSeries(null, k).labels))].filter(y => y >= fromY).sort((a, b) => a - b).map(y => y + '-12-31');
+  const yearIdx = {}; labels.forEach((d, i) => { yearIdx[d.slice(0, 4)] = i; });   // dernier point de chaque année
+  const sets = keys.map((k, n) => { const s = getSeries(null, k), arr = labels.map(() => null);
+    s.labels.forEach((y, j) => { const i = yearIdx[String(y)]; if (i != null) arr[i] = s.values[j]; });
+    return { k, name: TVF[k].l, u: TVF[k].u, color: OV_COLORS[n % OV_COLORS.length], values: arr }; });
+  if (c.norm){
+    const base = a => { const f = a.find(v => v != null && v > 0); return f ? a.map(v => v == null ? null : v / f * 100) : a.map(() => null); };
+    if (priceSet) priceSet = base(priceSet);
+    sets.forEach(x => { x.values = base(x.values); x.u = 'base100'; });
+  }
+  return { labels, priceSet, sets, ccy: p ? p.ccy : '' };
+}
+function overlayHtml(c, big){
+  const t = ver().tvData; if (!t) return '<p class="at-faint">Chiffres TradingView en cours de relevé…</p>';
+  const seg = '<span class="aw-range">' + RANGES.map(r => '<button type="button" data-range="' + r[0] + '" class="' + ((c.range || '10a') === r[0] ? 'on' : '') + '">' + r[2] + '</button>').join('') + '</span>';
+  const keys = (c.keys || ['fcfParAction', 'dividende']);
+  const leg = '<div class="aw-ov-leg">' + (c.price !== false ? '<span><i style="background:#D9A441"></i>Cours</span>' : '') + keys.filter(k => TVF[k]).map((k, n) => '<span><i style="background:' + OV_COLORS[n % OV_COLORS.length] + '"></i>' + esc(TVF[k].l) + '</span>').join('') + (c.norm ? '<span class="at-faint">base 100</span>' : '') + '</div>';
+  return '<div class="aw-bourse-h">' + leg + seg + '</div><div class="aw-chart' + (big ? ' xl' : '') + '"><canvas data-chart="' + c.id + '"></canvas></div>' + (big ? '<p class="aw-note">Cours hebdomadaire TradingView et chiffres annuels (fin d\'exercice) relevés le ' + frDate(t.at) + (c.norm ? ' · tout est ramené à 100 au début de la période pour comparer les croissances.' : ' · cours à gauche, chiffres par action à droite.') + '</p>' : '');
+}
 // ---------- Carte du monde (chiffre d'affaires par pays ou région) ----------
 const ZONES = {
   'Europe': x => x.r === 'Europe', 'Europe de l\'Ouest': x => ['Western Europe', 'Northern Europe', 'Southern Europe', 'Central Europe'].includes(x.s),
@@ -865,6 +948,15 @@ function theseCmpHtml(c, big){
 }
 function chartConfig(c, d, big){
   const tick = { color: '#8B93A0', font: { family: "'Plus Jakarta Sans', sans-serif", size: big ? 13 : 11 } };
+  if (c.type === 'overlay'){
+    const o = overlayData(c), perShare = o.sets.some(x => ['cur'].includes(x.u)), datasets = [];
+    if (o.priceSet) datasets.push({ label: 'Cours', data: o.priceSet, borderColor: '#D9A441', backgroundColor: 'rgba(217,164,65,0.08)', fill: !c.norm, borderWidth: 2, pointRadius: 0, tension: 0.15, yAxisID: 'y', _u: c.norm ? 'base100' : 'cur', _dev: o.ccy });
+    o.sets.forEach(x => datasets.push({ label: x.name, data: x.values, borderColor: x.color, backgroundColor: x.color, borderWidth: 2.6, pointRadius: o.priceSet ? 4 : 3, pointHoverRadius: 6, spanGaps: true, tension: 0.25, yAxisID: c.norm || !o.priceSet ? 'y' : 'y1', _u: x.u, _dev: o.ccy }));
+    const sc = { x: { grid: { display: false }, ticks: Object.assign({ maxTicksLimit: big ? 12 : 6, callback: function(v){ return String(this.getLabelForValue(v)).slice(0, 4); } }, tick) }, y: { grid: { color: 'rgba(255,255,255,0.06)' }, ticks: tick } };
+    if (!c.norm && o.priceSet && o.sets.length) sc.y1 = { position: 'right', grid: { display: false }, ticks: tick };
+    return { type: 'line', data: { labels: o.labels, datasets }, options: { responsive: true, maintainAspectRatio: false, animation: { duration: 600 }, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: { filter: x => x.raw != null, callbacks: { title: x => frDate(x[0].label), label: x => ' ' + x.dataset.label + ' : ' + (x.dataset._u === 'base100' ? fr(x.raw, 0) : fmtVal(x.dataset._u === 'Mcur' ? x.raw : x.raw, x.dataset._u, x.dataset._dev)) } } }, scales: sc } };
+  }
   if (c.type === 'bourse'){
     const p = pricesFor(c) || { dates: [], closes: [], ccy: '' }, up = p.closes.length > 1 && p.closes[p.closes.length - 1] >= p.closes[0];
     return { type: 'line', data: { labels: p.dates, datasets: [{ data: p.closes, borderColor: '#D9A441', backgroundColor: 'rgba(217,164,65,0.10)', fill: true, borderWidth: 2.2, pointRadius: 0, tension: 0.15 }] },
@@ -900,7 +992,7 @@ function drawCharts(root, list, big){
     }
     if (id.startsWith('kpi-')){
       const c = v.cards[id.slice(4)], r = c && kpiData(c); if (!r || !r.series) return;
-      list.push(new Chart(cv, { type: 'bar', data: { labels: r.series.labels, datasets: [{ data: r.series.values.map(x => r.u === 'Mcur' ? x / 1000 : x), backgroundColor: r.series.values.map((x, i, a) => i === a.length - 1 ? '#F0C877' : '#D9A441'), borderRadius: 5 }] },
+      list.push(new Chart(cv, { type: 'line', data: { labels: r.series.labels, datasets: [{ data: r.series.values.map(x => r.u === 'Mcur' ? x / 1000 : x), borderColor: '#D9A441', backgroundColor: 'rgba(217,164,65,0.12)', fill: true, borderWidth: 2.6, tension: 0.25, pointRadius: 3.5, pointBackgroundColor: '#D9A441' }] },
         options: { responsive: true, maintainAspectRatio: false, animation: { duration: 700 }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: x => ' ' + fmtVal(r.u === 'Mcur' ? x.raw * 1000 : x.raw, r.u, r.devise, r.d) } } },
           scales: { x: { grid: { display: false }, ticks: { color: '#8B93A0' } }, y: { grid: { color: 'rgba(255,255,255,0.06)' }, ticks: { color: '#8B93A0' }, beginAtZero: true } } } }));
       return;
@@ -1141,6 +1233,7 @@ function bigBody(c){
     }
     case 'comparatif': return compTableHtml(c, true) + '<p class="aw-note">Vert : la meilleure valeur de la ligne · rouge : la moins bonne. Chiffres TradingView' + (ver().tvData ? ' relevés le ' + frDate(ver().tvData.at) : '') + ', sauf valeurs saisies à la main.</p>';
     case 'bourse': return bourseHtml(c, true);
+    case 'overlay': return overlayHtml(c, true);
     case 'geo': {
       const rows = (c.rows || []).filter(r => num(r.v) > 0), tot = rows.reduce((t, r) => t + num(r.v), 0);
       const top = rows.slice().sort((a, b) => num(b.v) - num(a.v));
@@ -1241,6 +1334,9 @@ function editorFields(c, d, v){
       '<label>Son dossier dans l\'Atelier<select class="at-sel" data-f="docId"><option value="">— (trouvé par son nom s\'il existe)</option>' + Object.values(D.docs).filter(x => x.type === 'entreprise' && x.id !== d.id).map(x => '<option value="' + x.id + '"' + (c.docId === x.id ? ' selected' : '') + '>' + esc(x.titre) + '</option>').join('') + '</select></label>' +
       '<label>Logo (adresse d\'image, facultatif)<input class="at-in" data-f="logo" value="' + esc(c.logo || '') + '"></label><p class="at-faint">Si l\'entreprise est connue de l\'onglet Analyse, son logo et ses chiffres s\'affichent tout seuls.</p>';
     case 'bourse': return common + '<label>Période affichée<select class="at-sel" data-f="range">' + RANGES.map(r => '<option value="' + r[0] + '"' + ((c.range || '5a') === r[0] ? ' selected' : '') + '>' + r[2] + '</option>').join('') + '</select></label><p class="at-faint">Le cours vient de TradingView et reste figé à la date du relevé du dossier (« ↻ Actualiser » en haut pour le relire).</p>';
+    case 'overlay': return common + '<label class="aw-ed-check"><input type="checkbox" data-ovprice' + (c.price !== false ? ' checked' : '') + '> Afficher le cours</label><label class="aw-ed-check"><input type="checkbox" data-ovnorm' + (c.norm ? ' checked' : '') + '> Tout en base 100 (comparer les croissances)</label>' +
+      '<b class="aw-ed-h">Chiffres superposés (historique TradingView, fin d\'exercice)</b><div class="aw-ed-checks">' + OV_KEYS.map(k => '<label><input type="checkbox" data-key="' + k + '"' + ((c.keys || ['fcfParAction', 'dividende']).includes(k) ? ' checked' : '') + '> ' + esc(TVF[k].l) + '</label>').join('') + '</div>' +
+      '<label>Période<select class="at-sel" data-f="range">' + RANGES.map(r => '<option value="' + r[0] + '"' + ((c.range || '10a') === r[0] ? ' selected' : '') + '>' + r[2] + '</option>').join('') + '</select></label>';
     case 'geo': return common + '<label>Unité<input class="at-in" data-f="unit" value="' + esc(c.unit || '') + '" placeholder="Md€, M$, %…"></label><div class="aw-ed-rows"><b class="aw-ed-h">Pays ou régions, comme dans le rapport annuel</b>' +
       (c.rows || []).map((r, k) => '<div class="aw-ed-row"><input class="at-in" list="awZones" data-geo-zone="' + k + '" value="' + esc(r.zone || '') + '" placeholder="ex. France, Europe, Asie-Pacifique"><input class="at-in num" data-geo-v="' + k + '" value="' + val(r.v) + '" placeholder="Montant"><button type="button" class="at-x" data-geo-del="' + k + '">✕</button></div>').join('') +
       '<button type="button" class="at-btn sm" data-geo-add>＋ Pays ou région</button><datalist id="awZones">' + Object.keys(ZONES).map(z => '<option value="' + esc(z) + '">').join('') + (MONDE ? MONDE.c.map(x => '<option value="' + esc(x.n) + '">').join('') : '') + '</datalist></div>' +
@@ -1299,9 +1395,11 @@ function wireEditor(p, c){
     const t = e.target, ds = t.dataset;
     if (ds.verdict !== undefined){ c.verdicts = c.verdicts || {}; c.verdicts[ds.verdict] = t.value; changed(false); return; }
     if (ds.f === 'bind' || ds.f === 'years' || ds.f === 'srcId' || ds.f === 'kind' || ds.f === 'docId' || ds.f === 'range'){ c[ds.f] = ds.f === 'years' ? Number(t.value) : t.value; changed(ds.f === 'bind'); }
-    else if (ds.key !== undefined){ c.keys = c.keys || []; if (t.checked && !c.keys.includes(ds.key)) c.keys.push(ds.key); if (!t.checked) c.keys = c.keys.filter(k => k !== ds.key); changed(false); }
+    else if (ds.key !== undefined){ c.keys = c.keys || (c.type === 'overlay' ? ['fcfParAction', 'dividende'] : []); if (t.checked && !c.keys.includes(ds.key)) c.keys.push(ds.key); if (!t.checked) c.keys = c.keys.filter(k => k !== ds.key); changed(false); }
     else if (ds.metric !== undefined){ c.metrics = c.metrics || []; if (t.checked && !c.metrics.includes(ds.metric)) c.metrics.push(ds.metric); if (!t.checked) c.metrics = c.metrics.filter(k => k !== ds.metric); changed(true); }
     else if (ds.withconc !== undefined){ c.withConc = t.checked; changed(true); }
+    else if (ds.ovprice !== undefined){ c.price = t.checked; changed(false); }
+    else if (ds.ovnorm !== undefined){ c.norm = t.checked; changed(false); }
     else if (ds.rowColor !== undefined){ c.rows[+ds.rowColor].color = t.value; t.style.background = t.value; changed(false); }
     else if (ds.serColor !== undefined){ c.series[+ds.serColor].color = t.value; t.style.background = t.value; changed(false); }
   });
@@ -1392,6 +1490,7 @@ function libPreview(k){
     case 'concurrent': return '<span class="logo">AB</span>';
     case 'source': return '<span class="pg"></span>';
     case 'bourse': return '<svg viewBox="0 0 100 50" width="80" height="40"><polyline points="0,38 10,30 20,34 30,22 40,26 50,14 60,20 70,12 80,18 90,6 100,10" fill="none" stroke="#D9A441" stroke-width="2.5"/></svg>';
+    case 'overlay': return '<svg viewBox="0 0 100 50" width="80" height="40"><polyline points="0,38 10,30 20,34 30,22 40,26 50,14 60,20 70,12 80,18 90,6 100,10" fill="none" stroke="#D9A441" stroke-width="2"/><polyline points="0,44 25,40 50,33 75,26 100,20" fill="none" stroke="#4A9FE0" stroke-width="2.5"/><polyline points="0,47 25,45 50,42 75,40 100,37" fill="none" stroke="#F0C877" stroke-width="2.5"/></svg>';
     case 'geo': return '<svg viewBox="0 0 100 50" width="84" height="42"><ellipse cx="22" cy="20" rx="14" ry="10" fill="#4A9FE0"/><ellipse cx="52" cy="16" rx="9" ry="7" fill="#D9A441"/><ellipse cx="56" cy="34" rx="8" ry="10" fill="#8FA3B8"/><ellipse cx="80" cy="22" rx="14" ry="9" fill="#F0C877"/></svg>';
     case 'profil': return '<span class="logo" style="border-radius:50%;background:#F08A4B">JD</span>';
     case 'these': return '<span class="cmp"><i class="g"></i><i></i><i></i></span>';
@@ -1561,5 +1660,5 @@ async function snapshot(){
   }));
   return { data: { version: 1, publishedAt: new Date().toISOString(), docs: D.docs }, media: [...media] };
 }
-window.ATELIER_UI = { onShow, openFor, snapshot, hasDoc: name => !!(D && Object.values(D.docs).some(x => x.type === 'entreprise' && norm(x.titre) === norm(name))), _state: () => ({ D, ui, RO }), _test: { migrateVersion, resolveBind, seriesData, keyFigure } };
+window.ATELIER_UI = { onShow, openFor, snapshot, hasDoc: name => !!(D && Object.values(D.docs).some(x => x.type === 'entreprise' && norm(x.titre) === norm(name))), _state: () => ({ D, ui, RO }), _test: { migrateVersion, resolveBind, seriesData, keyFigure, addCard, openBig } };
 })();
