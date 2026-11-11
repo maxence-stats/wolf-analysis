@@ -1089,7 +1089,7 @@ function openMenu(cid, anchor){
   const v = ver(), c = v.cards[cid]; if (!c) return;
   const r = anchor.getBoundingClientRect();
   const m = document.createElement('div'); m.id = 'awMenu'; m.className = 'aw-menu';
-  m.innerHTML = '<button type="button" data-m="edit">Modifier</button><button type="button" data-m="big">Agrandir</button><button type="button" data-m="dup">Dupliquer</button>' +
+  m.innerHTML = '<button type="button" data-m="edit">Modifier</button><button type="button" data-m="big">Agrandir</button><button type="button" data-m="dup">Dupliquer</button>' + (window.WOLF_PUB ? '<button type="button" data-m="pub">📤 Créer une publication</button>' : '') +
     '<div class="aw-menu-row"><span>Format</span>' + [['s', 'Carré'], ['v', 'Vertical'], ['h', 'Horizontal']].map(([k, l]) => '<button type="button" class="' + (c.size === k ? 'on' : '') + '" data-size="' + k + '">' + l + '</button>').join('') + '</div>' +
     '<label class="aw-menu-sel">Déplacer vers<select data-m="move">' + v.sections.map(s => '<option value="' + s.id + '"' + (secOf(v, cid) === s ? ' selected' : '') + '>' + esc(s.titre) + '</option>').join('') + '</select></label>' +
     '<button type="button" data-m="fold">' + (c.collapsed ? 'Déplier' : 'Replier') + '</button><div class="aw-menu-sep"></div><button type="button" class="danger" data-m="del">Mettre à la corbeille</button>';
@@ -1102,6 +1102,7 @@ function openMenu(cid, anchor){
     if (k === 'edit'){ ui.edit = cid; renderEditor(); }
     else if (k === 'big') openBig(cid, document.querySelector('[data-cid="' + cid + '"]'));
     else if (k === 'dup') duplicateCard(cid);
+    else if (k === 'pub' && window.WOLF_PUB) WOLF_PUB.open('atelier', { cid });
     else if (k === 'fold'){ c.collapsed = !c.collapsed; touch(); renderBody(); }
     else if (k === 'del') deleteCard(cid);
   };
@@ -1667,5 +1668,5 @@ async function snapshot(){
   }));
   return { data: { version: 1, publishedAt: new Date().toISOString(), docs: D.docs }, media: [...media] };
 }
-window.ATELIER_UI = { onShow, openFor, snapshot, hasDoc: name => !!(D && Object.values(D.docs).some(x => x.type === 'entreprise' && norm(x.titre) === norm(name))), _state: () => ({ D, ui, RO }), _test: { migrateVersion, resolveBind, seriesData, keyFigure, addCard, openBig } };
+window.ATELIER_UI = { onShow, openFor, snapshot, tvRowsFor, addYearEndPrices, hasDoc: name => !!(D && Object.values(D.docs).some(x => x.type === 'entreprise' && norm(x.titre) === norm(name))), _state: () => ({ D, ui, RO }), _test: { migrateVersion, resolveBind, seriesData, keyFigure, addCard, openBig } };
 })();

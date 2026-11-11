@@ -158,7 +158,7 @@ function render(){
     if (!list.length && (q || g.key === '' || RO)) return;
     const open = ui.open[g.key] !== false;
     body += '<section class="lp-sec"><header><button type="button" class="lp-sec-h" data-tog="' + g.key + '">' + (open ? '▾' : '▸') + ' ' + esc(g.label) + ' <small>' + list.length + '</small></button>' +
-      (RO ? '' : '<button type="button" class="at-btn sm" data-add="' + g.key + '">＋ Ajouter une entreprise</button>') + '</header>' +
+      (RO ? '' : '<button type="button" class="at-btn sm" data-add="' + g.key + '">＋ Ajouter une entreprise</button>' + (window.WOLF_PUB && list.length ? '<button type="button" class="at-btn sm" data-pub="' + g.key + '" title="Créer une publication avec les bonnes affaires de ce secteur">📤 Publier</button>' : '')) + '</header>' +
       (open ? (list.length ? '<div class="lp-scroll"><table class="lp-table">' + head + '<tbody>' + rowsHtml() + '</tbody></table></div>' : '<p class="at-empty">Aucune entreprise dans ce secteur pour l\'instant.</p>') : '') + '</section>';
   });
   pg.innerHTML = '<div class="lp"><div class="lp-top"><div><div class="section-label" style="margin:0;">🎯 Prix par secteur</div><p class="at-faint">Mes prix par scénario, avec la base, la croissance et le multiple que j\'ai retenus. Prix juste = base × multiple ; prix à 5 ans = base × (1 + croissance)⁵ × multiple.</p></div>' +
@@ -177,6 +177,7 @@ function wire(){
   pg.onclick = e => {
     const b = e.target.closest('button'); if (!b || b.closest('#lpModalHost')) return;
     const ds = b.dataset;
+    if (ds.pub !== undefined && window.WOLF_PUB){ WOLF_PUB.open('deals', { sec: ds.pub }); return; }
     if (ds.tog !== undefined){ ui.open[ds.tog] = ds.tog === '_trash' ? !ui.open._trash : ui.open[ds.tog] === false; return render(); }
     if (ds.add !== undefined){ ui.modal = { it: { id: null, nom: '', secteur: ds.add, sousSecteur: '', devise: 'EUR', metric: METRICS[0], sc: { pess: {}, real: {}, opt: {} } } }; return renderModal(); }
     if (ds.restore !== undefined){ const t = D.trash.splice(+ds.restore, 1)[0]; if (t){ delete t.deletedAt; D.items[t.id] = t; markDirty(); } return render(); }
@@ -248,5 +249,14 @@ async function onShow(force){ if (!D || force === true) await load(); render(); 
 document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-page="' + PAGE_ID + '"]'); if (b) setTimeout(onShow, 0); });
 // chargé dès l'ouverture de l'appli : la pastille de prix doit être disponible dans l'Atelier sans passer par cette page
 load().catch(() => {});
-window.PRIX_UI = { onShow, show, chip, snapshot, _state: () => ({ D, RO, ui }), _calc: calc };
+// Pour l'onglet Publications : chaque fiche avec son cours, son prix juste (scénario réaliste) et l'écart, en lecture seule.
+async function pubItems(){
+  if (!D) await load();
+  if (!D) return [];
+  return Object.values(D.items || {}).map(it => { const c = company(it.nom), r = calc(it, 'real'), cours = coursOf(it).v;
+    const sec = sectors().find(s => s.key === it.secteur);
+    return { nom: c ? c.key : it.nom, sym: it.tvSym || null, logo: (c && c.logo) || it.logo || '', secteur: it.secteur || '', secteurLabel: sec ? sec.label : 'Sans secteur',
+      cours, juste: r ? r.juste : null, ecart: r ? r.ecart : null, devise: c ? c.devise : (it.devise || 'EUR') }; });
+}
+window.PRIX_UI = { onShow, show, chip, snapshot, pubItems, _state: () => ({ D, RO, ui }), _calc: calc };
 })();

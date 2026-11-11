@@ -6468,6 +6468,7 @@ const MOBILE_NAV_MANIFEST = [
   ] },
   { page:'pageAtelier', label:"🗂 Atelier d'analyses" },
   { page:'pagePrix', label:'🎯 Prix par secteur' },
+  { page:'pagePublications', label:'📣 Publications' },
   { page:'pageCerveau', label:'Cerveau numérique' },
   { page:'pageAlertes', label:'Alertes' },
   { page:'pageIdees', label:'Idées' },
@@ -21045,6 +21046,8 @@ initFicheModal();
 initAnalyseModal();
 initCerveauImagePicker();
 document.getElementById('openAnalyseTag').addEventListener('click', () => { if (activeCompany) openAnalyse(activeCompany); });
+// 📤 Publier : valorisation de l'entreprise affichée (onglet Publications, js/publications.js)
+document.getElementById('publishCompanyTag').addEventListener('click', () => { if (activeCompany && window.WOLF_PUB) WOLF_PUB.open('valo', { nom: activeCompany }); });
 cerveauDataReadyPromise = loadCerveauData();
 loadIdeesBaseline();
 loadRevueBaseline();

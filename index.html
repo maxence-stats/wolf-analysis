@@ -15,9 +15,9 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Roboto+Slab:wght@700&family=Lora:ital,wght@0,400;1,400&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<link rel="stylesheet" href="css/style.css?v=20261111g">
+<link rel="stylesheet" href="css/style.css?v=20261111h">
 </head>
 <body>
 <div class="wrap">
@@ -77,6 +77,7 @@
       <button class="page-nav-btn" data-page="pageSecteur" data-group="screener">🔍 Screener</button>
       <button class="page-nav-btn" data-page="pageAtelier">🗂 Atelier d'analyses</button>
       <button class="page-nav-btn" data-page="pagePrix">🎯 Prix par secteur</button>
+      <button class="page-nav-btn" data-page="pagePublications">📣 Publications</button>
       <button class="page-nav-btn" data-page="pageCerveau">Cerveau numérique</button>
       <button class="page-nav-btn" data-page="pageAlertes">Alertes</button>
       <button class="page-nav-btn" data-page="pageIdees">Idées</button>
@@ -128,6 +129,7 @@
           <span class="tag" id="secteurTag">Secteur —</span>
           <span class="tag" id="sousSecteurTag">Sous-secteur —</span>
           <span class="tag tag-link" id="openAnalyseTag">📊 Analyse développée</span>
+          <span class="tag tag-link" id="publishCompanyTag" title="Créer une publication sur cette entreprise">📤 Publier</span>
           <span class="tag tag-link" onclick="switchPage('pageValorisation')">💰 Valorisation</span>
           <span class="tag tag-link" onclick="exportAnalyseFullAsPdf()">🖨 Exporter PDF</span>
         </div>
@@ -709,6 +711,8 @@
 
     <!-- Atelier d'analyses (2026-11-10) : cartes mentales interactives, voir js/atelier.js -->
     <div id="pageAtelier" class="page"></div>
+    <!-- Publications (2026-11-11) : posts à la charte Wolf Academy, voir js/publications.js -->
+    <div id="pagePublications" class="page"></div>
 
     <!-- Prix par secteur (2026-11-10) : voir js/liste-prix.js -->
     <div id="pagePrix" class="page"></div>
@@ -1827,14 +1831,15 @@
   </div>
 </div>
 
-<script src="js/app.js?v=20261111f"></script>
+<script src="js/app.js?v=20261111g"></script>
 <script src="js/portefeuille-ia.js?v=20260920g"></script>
-<script src="js/mes-portefeuilles.js?v=20261111f"></script>
+<script src="js/mes-portefeuilles.js?v=20261111g"></script>
 <script src="js/valo-multiples.js?v=20261111a"></script>
-<script src="js/liste-prix.js?v=20261111d"></script>
-<script src="js/atelier.js?v=20261111f"></script>
+<script src="js/liste-prix.js?v=20261111e"></script>
+<script src="js/atelier.js?v=20261111g"></script>
 <script src="js/publier.js?v=20261111c"></script>
 <script src="js/sauvegardes.js?v=20261111a"></script>
+<script src="js/publications.js?v=20261111b"></script>
 <script src="js/stylo.js?v=20261110a"></script>
 </body>
 </html>

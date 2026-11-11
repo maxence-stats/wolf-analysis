@@ -753,8 +753,18 @@ reste intact, décision de l'utilisateur). Répertoire visuel de toutes les anal
 - **Logo unique = tête de loup `data/wolf-tete.png`** (fournie par l'utilisateur, « garde celui-ci pour tout le site ») : barre de
   marque, pieds de zoom, exports, `WOLF_LOGO_URL`, icônes de l'appli (`icons/`, fond #0D1013). Plus de logo postimg.
 - **Paniers d'export 🧺 masqués** (CSS en fin de style.css, code conservé) : les publications passeront par un onglet dédié.
-- **Publications (à construire)** : fond UNI, peu d'infos, gros chiffres, VRAIS logos d'entreprises (jamais d'abréviations),
-  références visuelles du compte baggr.fr. TradingView donne `earnings_release_next_date`, `earnings_per_share_forecast_next_fq`,
+- **Onglet « 📣 Publications » (fait, 2026-11-11, `js/publications.js`, CSS `.pb-*`, page `#pagePublications`)** : 15 modèles
+  (Portefeuille : transaction, récap semaine/mois, composition, bilan des positions, dividende versé, publication des résultats,
+  performance d'une action ; Entreprises : valorisation, classement comparatif, duel 1 000 €, historique d'un chiffre ; Agenda :
+  résultats à venir, verdict, bonnes affaires du secteur, carte de l'Atelier). Posts DESSINÉS sur canvas (PNG 1080 px, carré
+  1080 / portrait 1350 / story 1920), blocs à hauteur connue répartis par `compose()` (une liste perd des lignes si ça déborde).
+  **Charte Wolf Academy, PAS celle des références** (l'utilisateur : « ça se voit que j'ai pompé l'inspiration ») : titres Roboto
+  Slab 700, sous-titres Lora italique or clair, étiquettes JetBrains Mono espacées, filet or, fond uni #0E1114, en-tête tête de loup +
+  « WOLF ACADEMY INVEST ». Logos TradingView chargés en CORS (jamais d'image sans CORS : sinon export impossible).
+  WOLF PORTFOLIO SEULEMENT (jamais PEA/CTO). Boutons « 📤 » : journal et mois par mois du Wolf (mes-portefeuilles), tag
+  « 📤 Publier » de l'onglet Analyse, menu ⋯ d'une carte de l'Atelier, en-tête de secteur de Prix par secteur ->
+  `WOLF_PUB.open(modèle, réglages)`. Réglages gardés par modèle (localStorage `wolfPubPrefs`, simple confort).
+  Données exposées pour ça : `PRIX_UI.pubItems()`, `ATELIER_UI.tvRowsFor`. Serveur v=18 : snapshot + champs résultats. TradingView donne `earnings_release_next_date`, `earnings_per_share_forecast_next_fq`,
   `revenue_forecast_next_fq`, et après publication `eps_surprise_percent_fq` (verdict « Battu / Manqué » possible).
 
 ### Onglet Portefeuille IA (fait, 2026-09-19)

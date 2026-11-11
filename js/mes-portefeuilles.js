@@ -680,7 +680,7 @@ function monthsHtml(c){
     const money = ops.filter(o => o.type === 'DEPOT' || o.type === 'RETRAIT').reduce((s, o) => s + o.eur, 0);
     const diff = r.r - c.mcac[i].r;
     return `<div class="mp-month">
-      <div class="mp-month-head"><b>${monthLabel(r.to)}${r.to === c.today ? ' <small>en cours</small>' : ''}</b><span class="mp-pillv ${cls(r.r)}">${pct(r.r * 100)}</span></div>
+      <div class="mp-month-head"><b>${monthLabel(r.to)}${r.to === c.today ? ' <small>en cours</small>' : ''}</b>${c.acc === 'wolf' && !RO ? `<button class="mp-pub" data-mp-pubm="${r.to === c.today ? 'm0' : 'm:' + r.to.slice(0, 7)}" title="Publier le récap du mois">📤</button>` : ''}<span class="mp-pillv ${cls(r.r)}">${pct(r.r * 100)}</span></div>
       <div class="mp-month-sub"><span>CAC 40 <b class="${cls(c.mcac[i].r)}">${pct(c.mcac[i].r * 100)}</b></span><span>S&P 500 <b class="${cls(c.mspx[i].r)}">${pct(c.mspx[i].r * 100)}</b></span>
         <span>écart CAC <b class="${cls(diff)}">${pct(diff * 100)}</b></span><span>valeur fin de mois <b>${eur(r.v1, 0)}</b></span>${money ? `<span>argent versé <b>${sEur(money, 0)}</b></span>` : ''}</div>
       ${chips ? `<div class="mp-chips">${chips}${ops.filter(o => o.symbol).length > 8 ? `<span class="mp-chip">+${ops.filter(o => o.symbol).length - 8}</span>` : ''}</div>` : ''}</div>`;
@@ -870,7 +870,7 @@ function journalHtml(){
       <div class="mp-j-what">${what}${o.note ? `<em>${esc(o.note)}</em>` : ''}</div>
       <span class="mp-typepill mp-c-${o.type}">${TYPE_LABEL[o.type]}${ui.acc === 'perso' ? ' · ' + accOfOp(o.id).toUpperCase() : ''}${o.linkedTo ? ' · copie' : ''}</span>
       <b class="mp-j-amt ${o.type === 'INIT' ? '' : cls(o.eur)}">${o.type === 'INIT' ? eur(o.eur) : o.eur ? sEur(o.eur) : '—'}</b>
-      ${ui.acc !== 'perso' && !isLockedAcc(ui.acc) && !RO ? `<span class="mp-j-acts">${o.linkedTo ? '' : `<button class="mp-edit" data-mp-edit="${esc(o.id)}" title="Modifier">✏</button>`}<button class="mp-del ${ui.delConfirm === o.id ? 'confirm' : ''}" data-mp-del="${esc(o.id)}" title="Supprimer">${ui.delConfirm === o.id ? 'Confirmer' : '🗑'}</button></span>` : '<span></span>'}</div>`;
+      ${ui.acc !== 'perso' && !isLockedAcc(ui.acc) && !RO ? `<span class="mp-j-acts">${ui.acc === 'wolf' && ['BUY', 'SELL', 'DIV'].includes(o.type) ? `<button class="mp-pub" data-mp-pub="${esc(o.id)}" data-pub-type="${o.type}" title="Créer une publication">📤</button>` : ''}${o.linkedTo ? '' : `<button class="mp-edit" data-mp-edit="${esc(o.id)}" title="Modifier">✏</button>`}<button class="mp-del ${ui.delConfirm === o.id ? 'confirm' : ''}" data-mp-del="${esc(o.id)}" title="Supprimer">${ui.delConfirm === o.id ? 'Confirmer' : '🗑'}</button></span>` : '<span></span>'}</div>`;
   });
   const trash = isLockedAcc(ui.acc) ? [] : (D.trash || []).filter(t => ui.acc === 'perso' ? t.acc !== 'wolf' : t.acc === ui.acc).slice().reverse();
   const groups = [...new Set(trash.map(t => t.group))];
@@ -1206,6 +1206,9 @@ function wire(){
   const all = page.querySelector('[data-mp-allops]'); if (all) all.addEventListener('click', () => { ui.showAllOps = !ui.showAllOps; render(); });
   page.querySelectorAll('[data-mp-del]').forEach(b => b.addEventListener('click', () => del(b.dataset.mpDel)));
   page.querySelectorAll('[data-mp-edit]').forEach(b => b.addEventListener('click', () => openEdit(b.dataset.mpEdit)));
+  // 📤 : ouvre l'onglet Publications prérempli (Wolf Portfolio seulement)
+  page.querySelectorAll('[data-mp-pub]').forEach(b => b.addEventListener('click', () => { if (window.WOLF_PUB) WOLF_PUB.open(b.dataset.pubType === 'DIV' ? 'div' : 'tx', { op: b.dataset.mpPub }); }));
+  page.querySelectorAll('[data-mp-pubm]').forEach(b => b.addEventListener('click', () => { if (window.WOLF_PUB) WOLF_PUB.open('recap', { per: b.dataset.mpPubm }); }));
   page.querySelectorAll('[data-mp-epargne]').forEach(b => b.addEventListener('click', () => { ui.epargne = true; render(); }));
   page.querySelectorAll('[data-mp-zoom]').forEach(b => b.addEventListener('click', () => openZoom(b.dataset.mpZoom)));
   page.querySelectorAll('[data-mp-restore]').forEach(b => b.addEventListener('click', () => restore(b.dataset.mpRestore)));
