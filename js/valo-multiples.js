@@ -183,6 +183,27 @@
     return evStoreLoading;
   }
   function getEvHistory(nom){ return (evStore && evStore.ev[nom]) || null; }
+  /* FCF NORMALISÉ (2026-11-11) : FCF par action saisi année par année (entreprises cycliques), même fichier, clé « fcf ».
+     Statistiques : médiane de toutes les années, moyennes 5 / 10 / 15 / 20 ans (les années négatives COMPTENT : c'est tout
+     l'intérêt d'une normalisation sur un cycle). years = { '2006': 3.1, ... }. */
+  function getFcfNorm(nom){ return (evStore && evStore.fcf && evStore.fcf[nom]) || null; }
+  function fcfNormStats(years){
+    const pts = Object.keys(years || {}).map(y => [+y, +years[y]]).filter(p => isNum(p[0]) && isNum(p[1])).sort((a, b) => b[0] - a[0]);
+    const vals = pts.map(p => p[1]); if (!vals.length) return { count: 0 };
+    const med = a => { const s = a.slice().sort((x, y) => x - y); return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2; };
+    const mean = a => a.reduce((s, x) => s + x, 0) / a.length;
+    const avgs = {}; [5, 10, 15, 20].forEach(n => { if (vals.length >= n || (n === 5 && vals.length >= 3)) avgs[n] = mean(vals.slice(0, n)); });
+    return { count: vals.length, first: pts[pts.length - 1][0], last: pts[0][0], median: med(vals), median10: vals.length >= 3 ? med(vals.slice(0, 10)) : null, avgs, min: Math.min(...vals), max: Math.max(...vals) };
+  }
+  async function saveFcfNorm(nom, entry){
+    await loadEvStore();
+    if (!evStore) throw new Error('Serveur local injoignable : relance le raccourci « Wolf Analysis ».');
+    const body = Object.assign({}, evStore, { fcf: Object.assign({}, evStore.fcf || {}, { [nom]: entry }), revision: (evStore.revision || 0) + 1, baseRevision: evStore.revision || 0 });
+    const r = await fetch('/api/store/save?name=multiples', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Wolf-IA': '1' }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok){ if (window.wolfRescue) window.wolfRescue('multiples', body); evStoreLoading = null; await loadEvStore(); throw new Error(j.error || 'enregistrement refusé'); }
+    evStore = body; evStore.revision = j.revision;
+  }
   async function saveEvHistory(nom, entry){
     await loadEvStore();
     if (!evStore) throw new Error('Serveur local injoignable : relance le raccourci « Wolf Analysis ».');
@@ -193,6 +214,6 @@
     evStore = body; evStore.revision = j.revision;
   }
 
-  window.VALO_MULTIPLES = { evHistoryStats, loadEvStore, getEvHistory, saveEvHistory, calculateEvEbitdaFairValue, calculatePbFairValue, evEbitdaScenario, averageLastYears, parseMultipleInput, fromSnapshot,
+  window.VALO_MULTIPLES = { evHistoryStats, loadEvStore, getEvHistory, saveEvHistory, getFcfNorm, saveFcfNorm, fcfNormStats, calculateEvEbitdaFairValue, calculatePbFairValue, evEbitdaScenario, averageLastYears, parseMultipleInput, fromSnapshot,
     cagrRecentFirst, getSaved, setSaved };
 })();

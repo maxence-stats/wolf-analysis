@@ -3116,3 +3116,7 @@
 .aw-ed-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .aw-cmetrics .mine b{color:var(--gold-2)} .aw-cmetrics .mine b::after{content:" ✎";font-size:.7em}
 .pb-checks{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow:auto;padding-right:4px}
+/* FCF normalisé (Valorisation, méthode FCF) */
+.fcf-norm-card{margin-top:14px}
+.fcf-norm-card input.fcf-auto{color:var(--text-dim)}
+.fcf-norm-card input.fcf-mine{color:var(--gold-2);font-weight:700;border-color:rgba(217,164,65,.5)}

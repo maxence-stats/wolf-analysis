@@ -66,7 +66,11 @@ entreprises). Détails, sources, formules et procédure de mise à jour hebdomad
   Affiché dans la tuile du résumé, dans le tableau historique (écart vs réaliste) et en bouton « Actuel » des scénarios. Ping v=10. P/B : projette l'actif
   net par action (`multiplesValoInputs()`, `renderMultiplesSummaryTiles()`, `renderMultiplesHistory()` dans app.js ;
   moteur pur `js/valo-multiples.js`, tests `tests/valo-multiples.test.html` à ouvrir via le serveur). Données TradingView
-  EN DIRECT uniquement (jamais FMP) via `/api/tv/snapshot` (`row.tvMultiples`). Le multiple MOYEN historique n'existe pas
+  EN DIRECT uniquement (jamais FMP) via `/api/tv/snapshot` (`row.tvMultiples`).
+  **FCF normalisé (2026-11-11, méthode FCF)** : bloc `#voFcfNorm` sous l'historique (`renderFcfNorm`) : FCF par action de chaque
+  exercice relevé sur TradingView (`loadFcfTv` : free_cash_flow_fy_h × BPA ÷ résultat net, 20 ans), corrections de l'utilisateur
+  (en or) gardées SEULES dans multiples.json clé `fcf[nom].years` (enregistrement automatique), médiane / médiane 10 ans / moyennes
+  5-20 ans (années négatives comprises, `VALO_MULTIPLES.fcfNormStats`), « Utiliser » = `applyFcfOverride` sur les 3 scénarios. Le multiple MOYEN historique n'existe pas
   en série dans le scanner public : l'utilisateur le relève dans l'appli TradingView et le colle dans la 4e tuile (un
   nombre ou la liste des valeurs annuelles, moyenne automatique), localStorage `wolfMultiplesHisto` ; à défaut, multiple
   actuel. Seul un objectif enregistré avec la MÊME méthode est rechargé en EV/EBITDA ou P/B. **Devise vérifiée** : les séries `_fy_h` sont DÉJÀ

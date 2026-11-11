@@ -12159,7 +12159,102 @@ const VALO_METRIC_FIELDS = {
   ocf: { perShare:'ocfParAction', multiple:'pOcf', metricName:'OCF', chartLabel:'OCF / action (€)' },
   per: { perShare:'eps', multiple:'per', metricName:'EPS', chartLabel:'EPS (€)' }
 };
+/* FCF NORMALISÉ (2026-11-11) — méthode FCF uniquement. L'utilisateur saisit le FCF par action de chaque année (2006 →
+   dernier exercice, plage libre, cases préremplies en gris avec l'historique TradingView), l'appli calcule médiane et
+   moyennes, et « Utiliser » remplace le FCF des 3 scénarios (même mécanisme que la saisie manuelle du FCF actuel).
+   Enregistrement AUTOMATIQUE dans data/mes-portefeuilles/multiples.json (clé fcf). */
+let fcfNormRange = {}, fcfCtx = null, fcfNormTimer = null;
+const fcfTvCache = {};
+function fcfTvByYear(nom){
+  if (fcfTvCache[nom] && fcfTvCache[nom].years) return fcfTvCache[nom].years;
+  const out = {}; (companies[nom] || []).forEach(r => { if (r && r.annee && typeof r.fcfParAction === 'number' && isFinite(r.fcfParAction) && r.annee <= new Date().getFullYear() - 1) out[r.annee] = r.fcfParAction; });
+  return out;
+}
+// Historique TradingView : free_cash_flow_fy_h × BPA ÷ résultat net = FCF par action de chaque exercice (devise de cotation)
+async function loadFcfTv(nom){
+  if (fcfTvCache[nom]) return fcfTvCache[nom].p;
+  const h = companies[nom] || [], last = h[h.length - 1] || {}, sym = last.tvSymbol || last.ticker;
+  const p = (async () => {
+    if (!sym || typeof tvFetchSnapshot !== 'function') return null;
+    const d = await tvFetchSnapshot(sym);
+    const fy = parseInt(d && d.fiscal_period_fy, 10); if (!fy) return null;
+    const A = k => Array.isArray(d[k]) ? d[k] : [], fcf = A('free_cash_flow_fy_h'), eps = A('earnings_per_share_diluted_fy_h'), ni = A('net_income_fy_h');
+    const ok = v => typeof v === 'number' && isFinite(v), years = {};
+    for (let i = 0; i < fcf.length; i++) if (ok(fcf[i]) && ok(eps[i]) && ok(ni[i]) && ni[i] !== 0 && eps[i] !== 0 && ni[i] / eps[i] > 0) years[fy - i] = +(fcf[i] / (ni[i] / eps[i])).toFixed(4);
+    return Object.keys(years).length ? years : null;
+  })().then(y => { if (y) fcfTvCache[nom].years = y; return y; }).catch(() => null);
+  fcfTvCache[nom] = { p };
+  return p;
+}
+function renderFcfNorm(nom){
+  const box = document.getElementById('voFcfNorm'); if (!box) return;
+  const V = window.VALO_MULTIPLES;
+  if (valorisationMetric !== 'fcf' || !V || !V.getFcfNorm){ box.innerHTML = ''; return; }
+  if (!fcfTvCache[nom]) loadFcfTv(nom).then(y => { if (y && activeCompany === nom && valorisationMetric === 'fcf') renderFcfNorm(nom); });
+  const h0 = V.getFcfNorm(nom) || { years: {} }, tv = fcfTvByYear(nom), lastYear = new Date().getFullYear() - 1;
+  // valeurs utilisées = TradingView, remplacées par tes corrections (h0.years)
+  const h = Object.assign({}, h0, { years: Object.assign({}, tv, h0.years || {}) }), mine = h0.years || {};
+  const saved = Object.keys(h.years || {}).map(Number);
+  const r = fcfNormRange[nom] || { from: Math.min(2006, ...(saved.length ? saved : [2006])), to: Math.max(lastYear, ...(saved.length ? saved : [lastYear])) };
+  fcfNormRange[nom] = r;
+  const st = V.fcfNormStats(h.years), fx = x => x == null ? '—' : fmtEUR(x);
+  const yearOpts = sel => { let o = ''; for (let y = 1995; y <= lastYear + 1; y++) o += `<option ${y === sel ? 'selected' : ''}>${y}</option>`; return o; };
+  let cells = '';
+  for (let y = r.to; y >= r.from; y--){
+    const v = h.years && h.years[y] != null ? String(+(+h.years[y]).toFixed(2)).replace('.', ',') : '', auto = mine[y] == null && tv[y] != null;
+    const ph = tv[y] != null ? tv[y].toLocaleString('fr-FR', { maximumFractionDigits: 2 }) : '—';
+    cells += `<label>${y}<input type="text" inputmode="decimal" data-fcf-year="${y}" class="${auto ? 'fcf-auto' : mine[y] != null ? 'fcf-mine' : ''}" value="${v}" placeholder="—" title="${tv[y] != null ? 'TradingView : ' + ph : 'Pas de valeur TradingView'}${mine[y] != null ? ' · corrigé à la main' : ''}"></label>`;
+  }
+  const choices = [['median', 'Médiane (toutes les années)', st.median], ['median10', 'Médiane 10 ans', st.median10]].concat([5, 10, 15, 20].map(n => ['avg' + n, 'Moyenne ' + n + ' ans', st.avgs && st.avgs[n]]));
+  const pick = h.pick || 'median', chosen = (choices.find(c => c[0] === pick) || choices[0])[2];
+  box.innerHTML = `<div class="ev-hist-card fcf-norm-card">
+    <div class="ev-hist-head"><b>FCF normalisé (entreprises cycliques)</b>
+      <span class="ev-hist-range">de <select id="fcfNormFrom">${yearOpts(r.from)}</select> à <select id="fcfNormTo">${yearOpts(r.to)}</select></span></div>
+    <p class="valo-intro">Free cash-flow par action de chaque exercice, relevé sur TradingView (${Object.keys(tv).length ? Object.keys(tv).length + ' années' : 'lecture en cours…'}). Corrige une case si un chiffre te paraît faux : ta valeur (en or) remplace celle de TradingView. Les années négatives comptent. Enregistré automatiquement.</p>
+    <div class="ev-hist-grid">${cells}</div>
+    <div class="ratio-grid ev-hist-stats">
+      ${choices.map(c => `<div class="ratio-card${c[0] === pick ? ' ev-hist-now' : ''}"><div class="k">${c[1]}</div><div class="v">${fx(c[2])}</div><div class="sub">${c[0] === pick ? 'retenu' : '&nbsp;'}</div></div>`).join('')}
+    </div>
+    <div class="ev-hist-actions">
+      <label>FCF normalisé retenu <select id="fcfNormPick">${choices.map(c => `<option value="${c[0]}" ${c[0] === pick ? 'selected' : ''} ${c[2] == null ? 'disabled' : ''}>${c[1]}</option>`).join('')}</select></label>
+      ${Object.keys(mine).length ? '<button class="zoom-btn" id="fcfNormFill" title="Efface tes corrections et revient aux valeurs TradingView">↺ Revenir aux valeurs TradingView</button>' : ''}
+      <button class="refresh-btn" id="fcfNormApply" ${chosen == null ? 'disabled' : ''}>Utiliser ${fx(chosen)} comme FCF des 3 scénarios</button>
+      <span class="ev-hist-msg" id="fcfNormMsg">${st.count ? st.count + ' années (' + st.first + ' → ' + st.last + ')' + (Object.keys(mine).length ? ', dont ' + Object.keys(mine).length + ' corrigée' + (Object.keys(mine).length > 1 ? 's' : '') + ' à la main' : '') : ''}</span>
+    </div></div>`;
+  wireFcfNorm(nom);
+}
+function readFcfNormInputs(){
+  const out = {}; document.querySelectorAll('#voFcfNorm [data-fcf-year]').forEach(i => { const t = i.value.trim().replace(/\s/g, '').replace(',', '.'); if (t !== '' && isFinite(+t)) out[i.dataset.fcfYear] = +t; });
+  return out;
+}
+function wireFcfNorm(nom){
+  const V = window.VALO_MULTIPLES, msg = () => document.getElementById('fcfNormMsg');
+  const save = async (rerender) => {
+    const h = V.getFcfNorm(nom) || {}, years = Object.assign({}, h.years || {}), tv = fcfTvByYear(nom), typed = readFcfNormInputs();
+    // les années hors de la plage affichée sont conservées ; dans la plage, on ne garde que ce qui DIFFÈRE de TradingView
+    const r = fcfNormRange[nom]; for (let y = r.from; y <= r.to; y++) delete years[y];
+    Object.keys(typed).forEach(y => { if (tv[y] == null || Math.abs(typed[y] - tv[y]) > 0.005) years[y] = typed[y]; });
+    try { await V.saveFcfNorm(nom, { years, pick: (document.getElementById('fcfNormPick') || {}).value || h.pick || 'median', updatedAt: new Date().toISOString() }); if (rerender) renderFcfNorm(nom); else { const m = msg(); if (m) m.textContent = '💾 Enregistré à ' + new Date().toLocaleTimeString('fr-FR'); } }
+    catch(e){ const m = msg(); if (m) m.textContent = '⚠ ' + e.message; }
+  };
+  const fromSel = document.getElementById('fcfNormFrom'), toSel = document.getElementById('fcfNormTo');
+  const reRange = () => { const a = +fromSel.value, b = +toSel.value; fcfNormRange[nom] = { from: Math.min(a, b), to: Math.max(a, b) }; renderFcfNorm(nom); };
+  fromSel.addEventListener('change', reRange); toSel.addEventListener('change', reRange);
+  document.querySelectorAll('#voFcfNorm [data-fcf-year]').forEach(i => i.addEventListener('input', () => { clearTimeout(fcfNormTimer); const m = msg(); if (m) m.textContent = '… enregistrement'; fcfNormTimer = setTimeout(() => save(false), 900); }));
+  document.querySelectorAll('#voFcfNorm [data-fcf-year]').forEach(i => i.addEventListener('change', () => { clearTimeout(fcfNormTimer); save(true); }));
+  document.getElementById('fcfNormPick').addEventListener('change', () => save(true));
+  const fill = document.getElementById('fcfNormFill');
+  if (fill) fill.addEventListener('click', async () => { const h = V.getFcfNorm(nom) || {}; try { await V.saveFcfNorm(nom, Object.assign({}, h, { years: {}, updatedAt: new Date().toISOString() })); } catch(e){} renderFcfNorm(nom); });
+  document.getElementById('fcfNormApply').addEventListener('click', () => {
+    const h = V.getFcfNorm(nom) || {}, st = V.fcfNormStats(Object.assign({}, fcfTvByYear(nom), h.years || {})), pick = (document.getElementById('fcfNormPick') || {}).value || h.pick || 'median';
+    const val = pick === 'median' ? st.median : pick === 'median10' ? st.median10 : st.avgs && st.avgs[+pick.slice(3)];
+    if (val == null || !fcfCtx || fcfCtx.nom !== nom) return;
+    applyFcfOverride(nom, fcfCtx.hist, fcfCtx.prixActuel, fcfCtx.fcfActuelAuto, +val.toFixed(4));
+    const m = msg(); if (m) m.textContent = '✔ FCF des 3 scénarios = ' + fmtEUR(val) + ' (↺ dans une carte pour revenir au FCF actuel)';
+  });
+}
 function renderValoMetricHistory(nom){
+  renderFcfNorm(nom);
   const content = document.getElementById('voMetricHistoryContent');
   const label = document.getElementById('voMetricHistoryLabel');
   if (!content || !label) return;
@@ -12416,9 +12511,9 @@ function renderValorisation(nom){
   const hist = companies[nom];
   if (!hist) return;
   // EV/EBITDA : l'historique annuel saisi est lu dans un fichier via le serveur local -> on le charge une fois.
-  if (valorisationMetric === 'ev' && window.VALO_MULTIPLES && window.VALO_MULTIPLES.loadEvStore && !renderValorisation._evLoaded){
+  if ((valorisationMetric === 'ev' || valorisationMetric === 'fcf') && window.VALO_MULTIPLES && window.VALO_MULTIPLES.loadEvStore && !renderValorisation._evLoaded){
     renderValorisation._evLoaded = true;
-    window.VALO_MULTIPLES.loadEvStore().then(() => { if (activeCompany === nom && valorisationMetric === 'ev') renderValorisation(nom); });
+    window.VALO_MULTIPLES.loadEvStore().then(() => { if (activeCompany === nom && (valorisationMetric === 'ev' || valorisationMetric === 'fcf')) renderValorisation(nom); });
   }
   const latest = hist[hist.length - 1];
   const vInputs = valorisationInputs(latest, hist, nom);
@@ -12672,6 +12767,7 @@ function applyFcfOverride(nom, hist, prixActuel, fcfActuelAuto, newVal){
   SCENARIOS.forEach(s => updateScenarioCard(s, hist, prixActuel));
 }
 function wireFcfActuelControls(nom, hist, prixActuel, fcfActuelAuto){
+  fcfCtx = { nom, hist, prixActuel, fcfActuelAuto };   // pour le FCF normalisé (bouton « Utiliser »)
   fcfActuelEditableIds().forEach(({ input: inputId, reset: resetId }) => {
     let input = document.getElementById(inputId);
     let reset = document.getElementById(resetId);
