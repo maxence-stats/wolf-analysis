@@ -138,8 +138,18 @@ function rowHtml(it){
     SC.map(s => cell(it, s[0], s[2], d)).join('') +
     '<td class="lp-acts">' + (known ? '<button type="button" data-a="analyse" title="Ouvrir dans l\'onglet Analyse">📊</button>' : '') +
     (RO && !hasDoc ? '' : '<button type="button" data-a="dossier" title="' + (hasDoc ? 'Ouvrir le dossier dans l\'Atelier d\'analyses' : 'Créer le dossier dans l\'Atelier d\'analyses') + '">🗂' + (hasDoc ? '' : '＋') + '</button>') +
+    ((it.history || []).length ? '<button type="button" data-a="hist" title="Anciennes valorisations (' + it.history.length + ')"' + (ui.hist && ui.hist[it.id] ? ' class="on"' : '') + '>🕘</button>' : '') +
     (RO ? '' : '<button type="button" data-a="edit" title="Modifier">✏</button><button type="button" data-a="del" title="Mettre à la corbeille">🗑</button>') + '</td></tr>' +
-    (it.note ? '<tr class="lp-note"' + '><td colspan="9">📝 ' + esc(it.note) + '</td></tr>' : '');
+    (it.note ? '<tr class="lp-note"' + '><td colspan="9">📝 ' + esc(it.note) + '</td></tr>' : '') +
+    (ui.hist && ui.hist[it.id] ? histHtml(it, d) : '');
+}
+// Anciennes valorisations d'une fiche (les plus récentes d'abord), recalculées avec le cours d'aujourd'hui
+function histHtml(it, d){
+  return '<tr class="lp-hist"><td colspan="9"><div class="lp-hist-box"><b>Anciennes valorisations</b><table><thead><tr><th>Date</th><th>Source</th><th>Base</th>' + SC.map(s => '<th style="color:' + s[2] + '">' + s[1] + '</th>').join('') + '</tr></thead><tbody>' +
+    it.history.map(h => { const tmp = Object.assign({}, it, { base: h.base, dette: h.dette, sc: h.sc || {}, cours: h.cours != null ? h.cours : it.cours });
+      return '<tr><td>' + (h.at ? frDate(h.at) : '—') + '</td><td>' + esc(h.source || 'saisie') + '</td><td>' + fmt(num(h.base), 2) + ' ' + d + '<small> ' + esc(h.metric || '') + '</small></td>' +
+        SC.map(s => { const r = calc(tmp, s[0]); return '<td>' + (r ? '<b>' + fmt(r.juste, 2) + ' ' + d + '</b><small> · ' + fmt(r.mult, 1) + 'x' + (r.cagr != null ? ' · ' + fmt(r.cagr, 1) + ' %' : '') + '</small>' : '—') + '</td>'; }).join('') + '</tr>'; }).join('') +
+    '</tbody></table></div></td></tr>';
 }
 function render(){
   const pg = $(PAGE_ID); if (!pg) return;
@@ -184,6 +194,7 @@ function wire(){
     const tr = b.closest('tr[data-id]'), it = tr && D.items[tr.dataset.id]; if (!it) return;
     if (ds.a === 'edit'){ ui.modal = { it: JSON.parse(JSON.stringify(it)) }; return renderModal(); }
     if (ds.a === 'del'){ delete D.items[it.id]; it.deletedAt = new Date().toISOString(); D.trash.unshift(it); markDirty(); return render(); }
+    if (ds.a === 'hist'){ ui.hist = ui.hist || {}; ui.hist[it.id] = !ui.hist[it.id]; return render(); }
     if (ds.a === 'analyse'){ const c = company(it.nom); if (c && typeof goToAnalyse === 'function') goToAnalyse(c.key); return; }
     if (ds.a === 'dossier' && window.ATELIER_UI) return window.ATELIER_UI.openFor(it.nom, { secteur: it.secteur, sousSecteur: it.sousSecteur, logo: it.logo || '' });
   };
@@ -249,6 +260,30 @@ async function onShow(force){ if (!D || force === true) await load(); render(); 
 document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-page="' + PAGE_ID + '"]'); if (b) setTimeout(onShow, 0); });
 // chargé dès l'ouverture de l'appli : la pastille de prix doit être disponible dans l'Atelier sans passer par cette page
 load().catch(() => {});
+// Valorisation envoyée depuis l'onglet Valorisation (2026-11-11) : met à jour la fiche de l'entreprise (ou la crée) ;
+// l'ancienne valorisation est gardée dans it.history (30 dernières), consultable avec 🕘 sur la ligne. Rien n'est perdu.
+async function upsertFromValo(p){
+  if (!D) await load();
+  if (!D || RO) throw new Error('« Prix par secteur » indisponible (serveur local ?)');
+  let it = Object.values(D.items).find(x => norm(x.nom) === norm(p.nom));
+  const created = !it, now = new Date().toISOString();
+  if (it){
+    it.history = it.history || [];
+    if (it.base != null || Object.keys(it.sc || {}).length) it.history.unshift({ at: it.updatedAt || null, metric: it.metric || null, base: it.base ?? null, dette: it.dette ?? null, sc: JSON.parse(JSON.stringify(it.sc || {})), cours: it.cours ?? null, source: it.source || 'saisie' });
+    it.history = it.history.slice(0, 30);
+  } else {
+    const c = company(p.nom);
+    it = { id: uid(), nom: c ? c.key : p.nom, secteur: c ? c.secteur : '', sousSecteur: c ? c.sousSecteur : '', devise: p.devise || (c ? c.devise : 'EUR'), note: '', logo: c ? c.logo : '', history: [] };
+    D.items[it.id] = it;
+  }
+  Object.assign(it, { metric: p.metric, base: p.base, dette: p.dette != null ? p.dette : null, sc: p.sc, updatedAt: now, source: 'Valorisation · ' + p.methode });
+  if (p.cours != null && !company(it.nom)) it.cours = p.cours;
+  ui.focus = it.id; ui.open[it.secteur || ''] = true;
+  dirty = true; saveErr = null; await save();
+  if (saveErr) throw new Error(saveErr);
+  if (document.getElementById(PAGE_ID) && document.getElementById(PAGE_ID).offsetParent) render();
+  return { created, id: it.id, secteur: it.secteur };
+}
 // Pour l'onglet Publications : chaque fiche avec son cours, son prix juste (scénario réaliste) et l'écart, en lecture seule.
 async function pubItems(){
   if (!D) await load();
@@ -260,5 +295,5 @@ async function pubItems(){
       sc: { pess: pe && pe.juste, real: r && r.juste, opt: op && op.juste }, p5: r ? r.p5 : null, rdt: r ? r.rdt : null,
       base: num(it.base), saisie: it.sc || {}, coursAuto: coursOf(it).auto, maj: it.updatedAt || null }; });
 }
-window.PRIX_UI = { onShow, show, chip, snapshot, pubItems, _state: () => ({ D, RO, ui }), _calc: calc };
+window.PRIX_UI = { onShow, show, chip, snapshot, pubItems, upsertFromValo, _state: () => ({ D, RO, ui }), _calc: calc };
 })();

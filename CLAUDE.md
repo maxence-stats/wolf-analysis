@@ -70,7 +70,12 @@ entreprises). Détails, sources, formules et procédure de mise à jour hebdomad
   **FCF normalisé (2026-11-11, méthode FCF)** : bloc `#voFcfNorm` sous l'historique (`renderFcfNorm`) : FCF par action de chaque
   exercice relevé sur TradingView (`loadFcfTv` : free_cash_flow_fy_h × BPA ÷ résultat net, 20 ans), corrections de l'utilisateur
   (en or) gardées SEULES dans multiples.json clé `fcf[nom].years` (enregistrement automatique), médiane / médiane 10 ans / moyennes
-  5-20 ans (années négatives comprises, `VALO_MULTIPLES.fcfNormStats`), « Utiliser » = `applyFcfOverride` sur les 3 scénarios. Le multiple MOYEN historique n'existe pas
+  5-20 ans (années négatives comprises, `VALO_MULTIPLES.fcfNormStats`), « Utiliser » = `applyFcfOverride` sur les 3 scénarios.
+  **« 🎯 Envoyer dans Prix par secteur » (2026-11-11)** : bouton à côté de « Enregistrer cet objectif » ; `PRIX_UI.upsertFromValo`
+  met à jour la fiche de l'entreprise (ou la crée, secteur repris de l'onglet Analyse) avec la base actuelle (FCF/OCF/BPA/EBITDA/
+  actif net par action, y compris FCF normalisé ou corrigé), multiples et croissances des 3 scénarios, dette nette/action pour
+  l'EV/EBITDA. L'ancienne valorisation va dans `it.history` (30), bouton 🕘 sur la ligne. Il n'existe PAS d'« EBITDA normalisé »
+  (l'EV/EBITDA prend l'EBITDA 12 mois par action, corrigeable à la main ; seul l'EV/EBITDA historique se saisit par année). Le multiple MOYEN historique n'existe pas
   en série dans le scanner public : l'utilisateur le relève dans l'appli TradingView et le colle dans la 4e tuile (un
   nombre ou la liste des valeurs annuelles, moyenne automatique), localStorage `wolfMultiplesHisto` ; à défaut, multiple
   actuel. Seul un objectif enregistré avec la MÊME méthode est rechargé en EV/EBITDA ou P/B. **Devise vérifiée** : les séries `_fy_h` sont DÉJÀ

@@ -3120,3 +3120,9 @@
 .fcf-norm-card{margin-top:14px}
 .fcf-norm-card input.fcf-auto{color:var(--text-dim)}
 .fcf-norm-card input.fcf-mine{color:var(--gold-2);font-weight:700;border-color:rgba(217,164,65,.5)}
+/* Prix par secteur : anciennes valorisations (🕘) */
+.lp-hist td{padding:0 !important;background:transparent}
+.lp-hist-box{margin:4px 0 10px;padding:10px 12px;border-radius:10px;background:rgba(217,164,65,.06);border-left:3px solid var(--gold);font-size:12.5px;overflow-x:auto}
+.lp-hist-box table{width:100%;border-collapse:collapse;margin-top:6px} .lp-hist-box th,.lp-hist-box td{padding:5px 8px !important;text-align:left;white-space:nowrap;border-bottom:1px solid var(--hair)}
+.lp-hist-box small{color:var(--text-faint)}
+.lp-acts button.on{border-color:var(--gold)}

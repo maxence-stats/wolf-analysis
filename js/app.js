@@ -21114,6 +21114,25 @@ renderExportCartWidget();
 initPdfEditor();
 
 document.getElementById('saveObjectifBtn').addEventListener('click', () => { if (activeCompany) saveObjectif(activeCompany); });
+// 🎯 Envoyer dans Prix par secteur (2026-11-11) : base actuelle (FCF / OCF / BPA / EBITDA / actif net par action, y compris un
+// FCF normalisé ou une valeur corrigée), multiples et croissances des 3 scénarios, dette nette par action pour l'EV/EBITDA.
+document.getElementById('sendToPrixBtn').addEventListener('click', async () => {
+  const nom = activeCompany, msg = document.getElementById('sendToPrixMsg');
+  if (!nom || !window.PRIX_UI || !PRIX_UI.upsertFromValo){ if (msg) msg.textContent = '⚠ Prix par secteur indisponible.'; return; }
+  const hist = companies[nom] || [], latest = hist[hist.length - 1] || {};
+  const METHODE = { fcf: ['FCF par action', 'FCF'], ocf: ['OCF par action', 'OCF'], per: ['BPA (bénéfice par action)', 'PER'], ev: ['EBITDA par action', 'EV/EBITDA'], pb: ['Actif net par action', 'P/B'] }[valorisationMetric] || ['FCF par action', 'FCF'];
+  const k = { pess: 'pessimiste', real: 'realiste', opt: 'optimiste' }, sc = {};
+  Object.keys(k).forEach(x => { const v = scenarioValues[k[x]]; if (v) sc[x] = { cagr: +(+v.cagr).toFixed(2), mult: +(+v.multiple).toFixed(2) }; });
+  let dette = null;
+  if (valorisationMetric === 'ev'){ try { dette = multiplesValoInputs(latest, nom).detteNetteParAction || 0; } catch(e){ dette = null; } }
+  if (activeFcfActuel == null || !Object.keys(sc).length){ if (msg) msg.textContent = '⚠ Rien à envoyer : base ou scénarios manquants.'; return; }
+  if (msg) msg.textContent = '… envoi';
+  try {
+    const r = await PRIX_UI.upsertFromValo({ nom, metric: METHODE[0], methode: METHODE[1], base: +activeFcfActuel.toFixed(4), dette: dette != null ? +dette.toFixed(4) : null, sc, cours: latest.prixActuel ?? null, devise: latest.devise || 'EUR' });
+    if (msg) msg.innerHTML = '✔ ' + (r.created ? 'Ajoutée' : 'Mise à jour') + ' dans « Prix par secteur »' + (r.created ? '' : ' (l\'ancienne valorisation est gardée : 🕘)') + ' · <a href="#" id="sendToPrixOpen">ouvrir</a>';
+    const o = document.getElementById('sendToPrixOpen'); if (o) o.addEventListener('click', e => { e.preventDefault(); PRIX_UI.show(r.id); });
+  } catch(e){ if (msg) msg.textContent = '⚠ ' + (e.message || 'envoi impossible'); }
+});
 document.getElementById('exportObjectifsBtn').addEventListener('click', exportObjectifs);
 document.getElementById('objectifsList').addEventListener('click', e => {
   if (!activeCompany) return;
