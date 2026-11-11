@@ -70,3 +70,5 @@ data/mes-portefeuilles/
 
 # Port reellement utilise par le serveur local (ecrit a chaque lancement)
 .claude/server-port.txt
+
+_apercus-partage/

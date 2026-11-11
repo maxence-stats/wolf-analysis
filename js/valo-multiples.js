@@ -189,7 +189,7 @@
     const body = Object.assign({}, evStore, { ev: Object.assign({}, evStore.ev, { [nom]: entry }), revision: (evStore.revision || 0) + 1, baseRevision: evStore.revision || 0 });
     const r = await fetch('/api/store/save?name=multiples', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Wolf-IA': '1' }, body: JSON.stringify(body) });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok || !j.ok){ evStoreLoading = null; await loadEvStore(); throw new Error(j.error || 'enregistrement refusé'); }
+    if (!r.ok || !j.ok){ if (window.wolfRescue) window.wolfRescue('multiples', body); evStoreLoading = null; await loadEvStore(); throw new Error(j.error || 'enregistrement refusé'); }
     evStore = body; evStore.revision = j.revision;
   }
 

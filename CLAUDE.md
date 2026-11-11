@@ -638,6 +638,18 @@ Les anciennes pages Sheet (Wolf Portfolio, Perso) sont conservées telles quelle
   **Vérification des performances (11/11)** : moteur juste ; le PEA a des liquidités NÉGATIVES (≈ −487 € en février-mars 2026) =
   liquidités de départ manquantes, ce qui gonfle sa performance d'environ 2 points ; à corriger avec le vrai solde donné par l'utilisateur.
   Images à partager : maquettes https://claude.ai/artifact/NqZ8fsJmhEqTzsz1VVtoY1 en attente de validation (pas encore codées).
+- **Sauvegardes renforcées (2026-11-11, serveur v=17, `js/sauvegardes.js`)** — demande de l'utilisateur : « aucune de mes infos ne
+  doit se supprimer, peu importe le problème ». En plus de l'existant : copies datées élaguées en gardant TOUJOURS la dernière de chaque
+  jour (`Prune-StoreBackups`) ; copie à part jamais élaguée avant une restauration (en-tête `X-Wolf-Restore: 1`) ou si un fichier perd
+  plus de 40 % de sa taille (`Save-SpecialCopy`, « avant-reduction ») ; fichier principal illisible = mis de côté (« corrompu ») et
+  remplacé automatiquement par la dernière copie valide à la lecture ; copie Documents gardée 3 ans ; `POST /api/store/rescue` = fichier
+  de SECOURS (dossier `secours/`, sans contrôle de révision) écrit par `window.wolfRescue()` quand un enregistrement est refusé
+  (atelier, portefeuilles, prix, objectifs, multiples) ; `GET /api/store/backups` + `GET /api/store/backup` + panneau « 🛟 Sauvegardes »
+  (liste, résumé de chaque copie, « Revenir à cette copie » en 2 clics). Limite restante : tout est sur le disque C: (OneDrive présent
+  mais vide, D: vide) — une copie hors du PC reste à décider avec l'utilisateur.
+- Cash PEA vérifié (11/11) : 8 352,22 € = solde réel donné par l'utilisateur, au centime. Le cash négatif de février à mai vient du
+  départ au 01/01/2026 (2,16 € déduits) : il manque des liquidités de départ ET autant de sortie plus tard (ou un versement est daté
+  trop tard) ; relevé du 31/12/2025 demandé à l'utilisateur. Rien n'a été modifié.
 - **Corbeille** : une opération supprimée part dans `D.trash` (même fichier) avec sa copie Wolf ; « ↶ Annuler » juste après,
   ou « ↶ Restaurer » depuis la corbeille sous le journal (`restore(group)`).
 - **Copie MENSUELLE** (serveur v=11, `Ensure-MonthlySnapshot`) : au premier accès de chaque mois (démarrage, lecture ou
@@ -685,6 +697,7 @@ FCF/action (= FCF × BPA ÷ résultat net) et `margeNette` ; `mergeRows()` compl
 graphique de l'onglet Analyse = clôtures AJUSTÉES (`/api/tv/history?...&adj=1`, `tv_history.py --adjust splits`, cache `-adj`) ; Mes
 portefeuilles garde les cours NON ajustés. Un relevé sans `hv:2` est refait une fois à l'ouverture. Nouvelle carte `overlay`
 (« Graphique superposé ») : cours hebdo (axe gauche) + chiffres annuels au dernier point de chaque année (axe droit), option base 100.
+Cartes barres/courbes TradingView : sélecteur 5 / 10 / 20 ans / Max sur la carte et en grand (`yrsSeg`, `c.years`, 99 = tout).
 Le texte ci-dessous décrit l'ancienne carte mentale (historique).
 
 Nouvel onglet principal (`#pageAtelier`, `js/atelier.js`, CSS `.at-*` en fin de `style.css`), À CÔTÉ du Cerveau numérique (qui

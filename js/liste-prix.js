@@ -95,9 +95,11 @@ async function save(){
   if (saving){ clearTimeout(timer); timer = setTimeout(save, 300); return; }
   saving = true; dirty = false; status();
   try {
-    const r = await fetch('/api/store/save?name=prix', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Wolf-IA': '1' },
-      body: JSON.stringify(Object.assign({}, D, { revision: (D.revision || 0) + 1, baseRevision: D.revision || 0, savedAt: new Date().toISOString() })) });
+    const body = JSON.stringify(Object.assign({}, D, { revision: (D.revision || 0) + 1, baseRevision: D.revision || 0, savedAt: new Date().toISOString() }));
+    const r = await fetch('/api/store/save?name=prix', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Wolf-IA': '1' }, body });
     const j = await r.json().catch(() => ({}));
+    if ((!r.ok || !j.ok) && window.wolfRescue && Date.now() - (window.__wolfRescued_prix || 0) > 60000){ window.__wolfRescued_prix = Date.now(); window.wolfRescue('prix', body); }
+
     if (r.status === 409){ conflict = true; dirty = true; throw new Error('modifié dans un autre onglet : recharge la page'); }
     if (!r.ok || !j.ok) throw new Error(j.error || 'enregistrement refusé');
     D.revision = j.revision; lastSaved = new Date();

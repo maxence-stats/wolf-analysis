@@ -434,7 +434,9 @@ async function save(keepalive){
   try {
     const r = await fetch('/api/store/save?name=atelier', { method: 'POST', keepalive: !!keepalive && body.length < 60000, headers: { 'Content-Type': 'application/json', 'X-Wolf-IA': '1' }, body });
     const j = await r.json().catch(() => ({}));
-    if (r.status === 409){ conflict = true; dirty = true; throw new Error('Le fichier a été modifié depuis un autre onglet.'); }
+    // enregistrement refusé : ce qui est à l'écran part dans un fichier de secours (jamais perdu)
+    if ((!r.ok || !j.ok) && window.wolfRescue && Date.now() - (window.__wolfRescued_atelier || 0) > 60000){ window.__wolfRescued_atelier = Date.now(); window.wolfRescue('atelier', body); }
+    if (r.status === 409){ conflict = true; dirty = true; throw new Error('Le fichier a été modifié depuis un autre onglet (ton travail est gardé dans le dossier secours).'); }
     if (!r.ok || !j.ok) throw new Error(j.error || 'enregistrement refusé');
     D.revision = j.revision; lastSaved = new Date(); pendingDeleted = pendingDeleted.filter(x => !deleted.includes(x)); saveErr = null;
   } catch(e){ saveErr = e.message || 'erreur'; dirty = true; if (!conflict){ clearTimeout(saveTimer); saveTimer = setTimeout(save, 4000); } }
@@ -750,7 +752,7 @@ function cardHtml(c){
     }
     case 'barres': case 'courbes': {
       const s = seriesData(c, d);
-      body = s.labels.length ? '<div class="aw-chart"><canvas data-chart="' + c.id + '"></canvas></div>' : '<p class="at-faint">' + (c.mode === 'tv' ? (ver().tvData ? 'Pas d\'historique TradingView pour ce chiffre.' : 'Chiffres TradingView en cours de relevé…') : 'Saisis les années et les valeurs (⋯ › Modifier).') + '</p>';
+      body = s.labels.length ? yrsSeg(c) + '<div class="aw-chart"><canvas data-chart="' + c.id + '"></canvas></div>' : '<p class="at-faint">' + (c.mode === 'tv' ? (ver().tvData ? 'Pas d\'historique TradingView pour ce chiffre.' : 'Chiffres TradingView en cours de relevé…') : 'Saisis les années et les valeurs (⋯ › Modifier).') + '</p>';
       foot = srcFoot; break;
     }
     case 'comparatif': body = compTableHtml(c, false); foot = srcFoot; break;
@@ -827,6 +829,9 @@ function seriesData(c, d){
   return { labels, sets: (c.series || []).map((s, i) => ({ name: s.name || 'Série ' + (i + 1), u: c.unit || '', devise: '', color: s.color || SERIES_COLORS[i % SERIES_COLORS.length], values: labels.map((_, j) => num((s.values || [])[j])) })) };
 }
 // ---------- Cours de bourse (relevé TradingView figé : clôtures hebdomadaires) ----------
+const YRS = [[5, '5 ans'], [10, '10 ans'], [20, '20 ans'], [99, 'Max']];
+// Sélecteur d'années des graphiques TradingView (barres / courbes), sur la carte et en grand
+function yrsSeg(c){ return c.mode === 'tv' ? '<div class="aw-bourse-h"><span></span><span class="aw-range">' + YRS.map(r => '<button type="button" data-years="' + r[0] + '" class="' + ((c.years || 10) === r[0] ? 'on' : '') + '">' + r[1] + '</button>').join('') + '</span></div>' : ''; }
 const RANGES = [['1a', 1, '1 an'], ['5a', 5, '5 ans'], ['10a', 10, '10 ans'], ['max', 99, 'Max']];
 function pricesFor(c){
   const p = ver().tvData && ver().tvData.prices; if (!p || !p.closes.length) return null;
@@ -1036,6 +1041,7 @@ function wireBody(host){
     if (ds.cMenu !== undefined){ openMenu(cid, b); return; }
     if (ds.cUnfold !== undefined && c){ c.collapsed = false; touch(); renderBody(); return; }
     if (ds.range && c){ c.range = ds.range; if (!isRo()) touch(); refreshCard(c); return; }
+    if (ds.years && c){ c.years = Number(ds.years); if (!isRo()) touch(); refreshCard(c); return; }
     if (ds.sTog !== undefined && sec){ sec.collapsed = !sec.collapsed; if (!RO) touch(); renderBody(); return; }
     if (ds.sTitle !== undefined && sec && !isRo()){ inlineRename(b, sec.titre, t => { sec.titre = t; touch(); renderBody(); }); return; }
     if (isRo()) return;
@@ -1227,7 +1233,7 @@ function bigBody(c){
       const s = seriesData(c, d);
       if (!s.labels.length) return '<p class="at-faint">Aucune donnée.</p>';
       const cagrs = s.sets.map(x => { const vals = x.values.filter(y => y != null); const n = vals.length; if (n < 2 || x.u === '%' || x.u === 'x' || vals[0] <= 0 || vals[n - 1] <= 0) return null; return { name: x.name, g: (Math.pow(vals[n - 1] / vals[0], 1 / (n - 1)) - 1) * 100, n: n - 1 }; }).filter(Boolean);
-      return '<div class="aw-chart xl"><canvas data-chart="' + c.id + '"></canvas></div>' +
+      return yrsSeg(c) + '<div class="aw-chart xl"><canvas data-chart="' + c.id + '"></canvas></div>' +
         (cagrs.length ? '<div class="aw-stats">' + cagrs.map(g => statBox(g.name + ' : croissance annuelle sur ' + g.n + ' ans', fr(g.g, 1) + ' %/an')).join('') + '</div>' : '') +
         '<div class="aw-tscroll"><table class="aw-table big"><thead><tr><th></th>' + s.labels.map(y => '<th>' + esc(y) + '</th>').join('') + '</tr></thead><tbody>' + s.sets.map(x => '<tr><td class="lb"><span class="aw-dot" style="background:' + x.color + '"></span> ' + esc(x.name) + '</td>' + x.values.map(y => '<td>' + fmtVal(y, x.u, x.devise) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>';
     }
@@ -1275,6 +1281,7 @@ function openBig(cid, fromEl){
     const g = e.target.closest('[data-big-go]'); if (g){ const o = bigOrder(ui.big), j = (o.indexOf(ui.big) + Number(g.dataset.bigGo) + o.length) % o.length; openBig(o[j]); return; }
     if (e.target.closest('[data-big-edit]')){ const id = ui.big; closeBig(); ui.edit = id; renderEditor(); return; }
     const op = e.target.closest('[data-open]'); if (op){ closeBig(); openDoc(op.dataset.open); return; }
+    const yb = e.target.closest('[data-years]'); if (yb){ const c = ver().cards[ui.big]; if (c){ c.years = Number(yb.dataset.years); if (!isRo()) touch(); refreshCard(c); openBig(c.id); } return; }
     const rg = e.target.closest('[data-range]'); if (rg){ const c = ver().cards[ui.big]; if (c){ c.range = rg.dataset.range; if (!isRo()) touch(); refreshCard(c); openBig(c.id); } }
   };
 }
@@ -1316,7 +1323,7 @@ function editorFields(c, d, v){
     case 'barres': case 'courbes': {
       const tv = c.mode === 'tv';
       return common + '<div class="at-seg big"><button type="button" class="' + (tv ? 'on' : '') + '" data-mode="tv">TradingView</button><button type="button" class="' + (tv ? '' : 'on') + '" data-mode="manuel">Saisie à la main</button></div>' +
-        (tv ? '<div class="aw-ed-checks">' + Object.keys(TVF).filter(k => k !== 'croissanceCA' || true).map(k => '<label><input type="checkbox" data-key="' + k + '"' + ((c.keys || []).includes(k) ? ' checked' : '') + '> ' + esc(TVF[k].l) + '</label>').join('') + '</div><label>Années affichées<select class="at-sel" data-f="years">' + [5, 10, 15, 20].map(n => '<option value="' + n + '"' + ((c.years || 10) === n ? ' selected' : '') + '>' + n + ' ans</option>').join('') + '</select></label>'
+        (tv ? '<div class="aw-ed-checks">' + Object.keys(TVF).filter(k => k !== 'croissanceCA' || true).map(k => '<label><input type="checkbox" data-key="' + k + '"' + ((c.keys || []).includes(k) ? ' checked' : '') + '> ' + esc(TVF[k].l) + '</label>').join('') + '</div><label>Années affichées<select class="at-sel" data-f="years">' + [5, 10, 15, 20, 99].map(n => '<option value="' + n + '"' + ((c.years || 10) === n ? ' selected' : '') + '>' + (n === 99 ? "Tout l'historique" : n + ' ans') + '</option>').join('') + '</select></label>'
           : '<label>Années ou périodes (séparées par des virgules)<input class="at-in" data-labels value="' + esc((c.labels || []).join(', ')) + '"></label><label>Unité<input class="at-in" data-f="unit" value="' + esc(c.unit || '') + '"></label><div class="aw-ed-rows">' +
             (c.series || []).map((s, k) => '<div class="aw-ed-series"><div class="aw-ed-row"><select class="aw-colsel" data-ser-color="' + k + '" style="background:' + (s.color || SERIES_COLORS[k]) + '">' + SERIES_COLORS.map(col => '<option value="' + col + '" style="background:' + col + '"' + ((s.color || SERIES_COLORS[k]) === col ? ' selected' : '') + '></option>').join('') + '</select><input class="at-in" data-ser-name="' + k + '" value="' + esc(s.name || '') + '" placeholder="Nom de la série"><button type="button" class="at-x" data-ser-del="' + k + '">✕</button></div><input class="at-in" data-ser-values="' + k + '" value="' + esc((s.values || []).map(x => x == null ? '' : String(x).replace('.', ',')).join('; ')) + '" placeholder="Valeurs séparées par ; (ex. 6,1; 6,4; 6,9)"></div>').join('') +
             '<button type="button" class="at-btn sm" data-ser-add>＋ Série</button></div>') + srcSel;

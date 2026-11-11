@@ -367,7 +367,8 @@ async function save(deleted){
   const body = Object.assign({}, D, { revision: (D.revision || 0) + 1, baseRevision: D.revision || 0, deleted: deleted || [], savedAt: new Date().toISOString() });
   const r = await fetch('/api/store/save?name=portefeuilles', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Wolf-IA': '1' }, body: JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
-  if (r.status === 409){ await load(); throw new Error('Le fichier a été modifié ailleurs (autre onglet) : données rechargées, refais la saisie.'); }
+  if (!r.ok || !j.ok){ if (window.wolfRescue) window.wolfRescue('portefeuilles', body); }   // jamais perdu : copie dans secours/
+  if (r.status === 409){ await load(); throw new Error('Le fichier a été modifié ailleurs (autre onglet) : données rechargées, refais la saisie (ta saisie est gardée dans le dossier secours).'); }
   if (!r.ok || !j.ok) throw new Error(j.error || 'enregistrement refusé');
   D.revision = j.revision;
 }

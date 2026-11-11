@@ -539,6 +539,34 @@ function Ensure-AllMonthlySnapshots(){
   Ensure-MonthlySnapshot $iaFile "portefeuilles-ia" @($iaDirPath, $extBackup)
 }
 
+# Elagage des copies datees (2026-11-11) : on garde les 300 plus recentes ET, pour toujours, la derniere copie de chaque
+# jour ; les copies « avant-reduction », « avant-restauration » et « corrompu » ne sont jamais supprimees.
+function Prune-StoreBackups($bk, $n){
+  $all = @(Get-ChildItem $bk -Filter ($n + "-2*.json") -ErrorAction SilentlyContinue | Where-Object { $_.Name -match ('^' + [regex]::Escape($n) + '-\d{8}-\d{6}\.json$') } | Sort-Object Name -Descending)
+  if ($all.Count -le 300){ return }
+  $keepDay = @{}
+  foreach ($f in $all){ $day = $f.Name.Substring($n.Length + 1, 8); if (-not $keepDay.ContainsKey($day)){ $keepDay[$day] = $f.Name } }
+  $i = 0
+  foreach ($f in $all){
+    $i++
+    if ($i -le 300){ continue }
+    if ($keepDay.Values -contains $f.Name){ continue }
+    Remove-Item $f.FullName -ErrorAction SilentlyContinue
+  }
+}
+# Copie datee « speciale » (jamais elaguee), dans le projet ET hors projet.
+function Save-SpecialCopy($f, $n, $tag){
+  if (-not (Test-Path $f -PathType Leaf)){ return }
+  $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+  foreach ($d in @((Join-Path $storeDirPath "backups"), $(if ($storeExt -ne ""){ Join-Path $storeExt "backups" } else { "" }))){
+    if (-not $d){ continue }
+    try { New-Item -ItemType Directory -Force -Path $d | Out-Null; Copy-Item $f (Join-Path $d ($n + "-" + $stamp + "-" + $tag + ".json")) -Force } catch { }
+  }
+}
+function Test-JsonFile($path){
+  try { $o = [System.IO.File]::ReadAllText($path, $utf8NoBom) | ConvertFrom-Json; return ($null -ne $o -and $o.version -eq 1) } catch { return $false }
+}
+
 # ---------------- « Mes portefeuilles » : stockage fichier + historique TradingView ----------------
 function Get-StoreName($req, $res){
   $n = $req.QueryString["name"]
@@ -558,8 +586,19 @@ function Handle-StoreLoad($req, $res){
   $f = Join-Path $storeDirPath ($n + ".json")
   Ensure-MonthlySnapshot $f $n @($storeDirPath, $storeExt)
   if (-not (Test-Path $f -PathType Leaf)){ Send-RawJsonString $res '{"ok":true,"data":null}'; return }
+  $recovered = ""
+  if (-not (Test-JsonFile $f)){
+    # fichier abime (coupure de courant, disque...) : on le garde de cote et on repart de la copie valide la plus recente
+    Save-SpecialCopy $f $n "corrompu"
+    $bk = Join-Path $storeDirPath "backups"
+    $cands = @(Get-ChildItem $bk -Filter ($n + "-2*.json") -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch 'corrompu' } | Sort-Object LastWriteTime -Descending)
+    $cands += @(Get-ChildItem (Join-Path $storeDirPath "mensuel") -Filter ($n + "-*.json") -ErrorAction SilentlyContinue | Sort-Object Name -Descending)
+    foreach ($c in $cands){ if (Test-JsonFile $c.FullName){ Copy-Item $c.FullName $f -Force; $recovered = $c.Name; break } }
+    if (-not $recovered){ Send-Json $res 500 @{ ok = $false; error = "fichier illisible et aucune copie valide trouvee - rien n'a ete modifie" }; return }
+  }
   $txt = [System.IO.File]::ReadAllText($f, $utf8NoBom)
-  Send-RawJsonString $res ('{"ok":true,"file":' + (ConvertTo-Json $f -Compress) + ',"data":' + $txt + '}')
+  $extra = ""; if ($recovered){ $extra = ',"recovered":' + (ConvertTo-Json $recovered -Compress) }
+  Send-RawJsonString $res ('{"ok":true,"file":' + (ConvertTo-Json $f -Compress) + $extra + ',"data":' + $txt + '}')
 }
 function Handle-StoreSave($req, $res){
   if (-not (Test-WriteGuards $req $res)){ return }
@@ -602,12 +641,16 @@ function Handle-StoreSave($req, $res){
   New-Item -ItemType Directory -Force -Path $storeDirPath | Out-Null
   Ensure-MonthlySnapshot $f $n @($storeDirPath, $storeExt)
   if ($cur){
+    # restauration demandee depuis le panneau « Sauvegardes » : l'etat actuel est garde a part, pour toujours
+    if ($req.Headers["X-Wolf-Restore"] -eq "1"){ Save-SpecialCopy $f $n "avant-restauration" }
+    # un fichier qui fond d'un coup (plus de 40 % de taille perdue) est garde a part avant d'etre remplace
+    $curLen = (Get-Item $f).Length
+    if ($curLen -gt 20KB -and $bytes.Length -lt ($curLen * 0.6)){ Save-SpecialCopy $f $n "avant-reduction" }
     New-Item -ItemType Directory -Force -Path $bk | Out-Null
     $last = Get-ChildItem $bk -Filter ($n + "-*.json") -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($removedAny -or -not $last -or ((Get-Date) - $last.LastWriteTime).TotalMinutes -ge 10){
       Copy-Item $f (Join-Path $bk ($n + "-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".json"))
-      $old = @(Get-ChildItem $bk -Filter ($n + "-*.json") | Sort-Object LastWriteTime -Descending | Select-Object -Skip 300)
-      foreach ($o in $old){ Remove-Item $o.FullName -ErrorAction SilentlyContinue }
+      Prune-StoreBackups $bk $n
     }
   }
   $tmp = $f + ".tmp"
@@ -623,11 +666,54 @@ function Handle-StoreSave($req, $res){
       New-Item -ItemType Directory -Force -Path $storeExt | Out-Null
       Copy-Item $f (Join-Path $storeExt ($n + "-derniere.json")) -Force
       Copy-Item $f (Join-Path $storeExt ($n + "-" + (Get-Date -Format "yyyyMMdd") + ".json")) -Force
-      $oldExt = @(Get-ChildItem $storeExt -Filter ($n + "-2*.json") | Sort-Object Name -Descending | Select-Object -Skip 300)
+      $oldExt = @(Get-ChildItem $storeExt -Filter ($n + "-2*.json") | Sort-Object Name -Descending | Select-Object -Skip 1100)
       foreach ($o in $oldExt){ Remove-Item $o.FullName -ErrorAction SilentlyContinue }
     } catch { }
   }
   Send-Json $res 200 @{ ok = $true; revision = [int]$b.revision; savedAt = (Get-Date).ToString("o") }
+}
+# Panneau « Sauvegardes » (2026-11-11) : liste des copies d'un fichier (projet + secours + mensuel), lecture d'une copie.
+$backupDirs = @{ "backups" = "backups"; "mensuel" = "mensuel"; "secours" = "secours" }
+function Handle-StoreBackups($req, $res){
+  $n = Get-StoreName $req $res; if (-not $n){ return }
+  $list = @()
+  foreach ($k in $backupDirs.Keys){
+    $d = Join-Path $storeDirPath $backupDirs[$k]
+    foreach ($f in @(Get-ChildItem $d -Filter ($n + "-*.json") -ErrorAction SilentlyContinue)){
+      if ($f.Name -notmatch ('^' + [regex]::Escape($n) + '-[0-9]')){ continue }
+      $list += [ordered]@{ dir = $k; file = $f.Name; at = $f.LastWriteTime.ToString("o"); size = $f.Length }
+    }
+  }
+  $main = Join-Path $storeDirPath ($n + ".json")
+  $info = $null; if (Test-Path $main -PathType Leaf){ $fi = Get-Item $main; $info = [ordered]@{ at = $fi.LastWriteTime.ToString("o"); size = $fi.Length } }
+  $list = @($list | Sort-Object { $_.at } -Descending)
+  Send-Json $res 200 @{ ok = $true; main = $info; ext = $storeExt; dir = $storeDirPath; copies = $list }
+}
+function Handle-StoreBackupRead($req, $res){
+  $n = Get-StoreName $req $res; if (-not $n){ return }
+  $k = [string]$req.QueryString["dir"]; $file = [string]$req.QueryString["file"]
+  if (-not $backupDirs.ContainsKey($k) -or $file -notmatch '^[A-Za-z0-9_.-]{1,120}\.json$' -or -not $file.StartsWith($n + "-")){ Send-Json $res 400 @{ ok = $false; error = "copie inconnue" }; return }
+  $p = Join-Path (Join-Path $storeDirPath $backupDirs[$k]) $file
+  if (-not (Test-Path $p -PathType Leaf)){ Send-Json $res 404 @{ ok = $false; error = "copie introuvable" }; return }
+  $txt = [System.IO.File]::ReadAllText($p, $utf8NoBom)
+  try { $null = $txt | ConvertFrom-Json } catch { Send-Json $res 422 @{ ok = $false; error = "copie illisible" }; return }
+  Send-RawJsonString $res ('{"ok":true,"data":' + $txt + '}')
+}
+# Fichier de SECOURS : quand un enregistrement est refuse (conflit entre onglets, serveur qui refuse...), l'appli envoie
+# ici ce qu'elle avait en memoire. Aucun controle de revision : on garde tout, rien n'est jamais supprime.
+function Handle-StoreRescue($req, $res){
+  if (-not (Test-WriteGuards $req $res)){ return }
+  $n = Get-StoreName $req $res; if (-not $n){ return }
+  $bytes = Read-BodyBytes $req $res $maxBodyAtelier
+  if ($null -eq $bytes){ return }
+  $name = $n + "-" + (Get-Date -Format "yyyyMMdd-HHmmss-fff") + ".json"
+  $okAny = $false
+  foreach ($d in @((Join-Path $storeDirPath "secours"), $(if ($storeExt -ne ""){ Join-Path $storeExt "secours" } else { "" }))){
+    if (-not $d){ continue }
+    try { New-Item -ItemType Directory -Force -Path $d | Out-Null; [System.IO.File]::WriteAllBytes((Join-Path $d $name), $bytes); $okAny = $true } catch { }
+  }
+  if (-not $okAny){ Send-Json $res 500 @{ ok = $false; error = "ecriture du secours impossible" }; return }
+  Send-Json $res 200 @{ ok = $true; file = $name }
 }
 # Clotures quotidiennes TradingView (websocket public, via tv-data\tv_history.py ; cache disque d'une journee).
 function Handle-TvHistory($req, $res){
@@ -674,7 +760,7 @@ while ($listener.IsListening) {
     $path = [System.Uri]::UnescapeDataString($req.Url.AbsolutePath)
     if ($path -eq "/api/ia/ping") {
       New-Item -ItemType Directory -Force -Path $iaDirPath | Out-Null
-      Send-Json $res 200 @{ ok = $true; writable = $true; v = 16; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
+      Send-Json $res 200 @{ ok = $true; writable = $true; v = 17; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
     } elseif ($path -eq "/api/ia/save") {
       Handle-IaSave $req $res
     } elseif ($path -eq "/api/ia/refresh") {
@@ -687,6 +773,12 @@ while ($listener.IsListening) {
       Handle-TvSnapshot $req $res
     } elseif ($path -eq "/api/store/load") {
       Handle-StoreLoad $req $res
+    } elseif ($path -eq "/api/store/backups") {
+      Handle-StoreBackups $req $res
+    } elseif ($path -eq "/api/store/backup") {
+      Handle-StoreBackupRead $req $res
+    } elseif ($path -eq "/api/store/rescue") {
+      Handle-StoreRescue $req $res
     } elseif ($path -eq "/api/store/save") {
       Handle-StoreSave $req $res
     } elseif ($path -eq "/api/tv/memo") {

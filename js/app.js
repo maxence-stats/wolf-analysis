@@ -12963,6 +12963,8 @@ async function saveObjectifsFile(retry){
   try{
     const r = await fetch('/api/store/save?name=objectifs', { method:'POST', headers:{ 'Content-Type':'application/json', 'X-Wolf-IA':'1' }, body: JSON.stringify(body) });
     const j = await r.json().catch(() => ({}));
+    if ((!r.ok || !j.ok) && window.wolfRescue && Date.now() - (window.__wolfRescued_objectifs || 0) > 60000){ window.__wolfRescued_objectifs = Date.now(); window.wolfRescue('objectifs', body); }
+
     if (r.status === 409 && !retry){
       // un autre onglet a écrit : on relit, on fusionne (sans perte) et on réessaie une fois
       const keep = { courant: objectifsFile.courant, supprimes: objectifsFile.supprimes };
