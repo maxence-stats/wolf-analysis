@@ -268,6 +268,20 @@ const B = {
     return blk;
   },
   // Barres verticales de comparaison (portefeuille contre indices), valeurs au-dessus, étiquette et pastille dessous
+  scale(P, lines, cours, ccy){
+    const x = P.x, h = P.small ? 260 : 320;
+    return { h, draw(y){
+      const vs = lines.map(l => l.v).concat([cours]), lo = Math.min(...vs) * 0.85, hi = Math.max(...vs) * 1.08, X0 = P.L + 10, X1 = P.R - 10, px = v => X0 + (X1 - X0) * (v - lo) / (hi - lo);
+      const by = y + 120, bh = 26, g = x.createLinearGradient(X0, 0, X1, 0); g.addColorStop(0, C.green); g.addColorStop(0.5, C.gold); g.addColorStop(1, C.red);
+      rr(x, X0, by, X1 - X0, bh, bh / 2, g);
+      lines.slice().sort((a, b) => a.v - b.v).forEach((l, i) => { const X = px(l.v); x.fillStyle = C.bg; x.fillRect(X - 3, by - 6, 6, bh + 12);
+        const name = l.label.split(' ')[0], f1 = BD(800, P.small ? 24 : 27), f2 = TT(P.small ? 36 : 42);
+        txt(x, name, X, by + bh + 46, f1, l.color, 'center'); txt(x, money(l.v, ccy, 0), X, by + bh + 46 + (P.small ? 40 : 46), f2, C.ink, 'center'); });
+      const cx = px(cours); x.beginPath(); x.moveTo(cx, by - 4); x.lineTo(cx - 16, by - 30); x.lineTo(cx + 16, by - 30); x.closePath(); x.fillStyle = C.ink; x.fill();
+      const lab = 'Cours ' + money(cours, ccy, 0), lf = BD(800, 28); x.font = lf; const tw = x.measureText(lab).width + 30, tx = Math.max(X0, Math.min(X1 - tw, cx - tw / 2));
+      rr(x, tx, by - 88, tw, 48, 14, C.ink); txt(x, lab, tx + 15, by - 54, lf, C.bg);
+    } };
+  },
   cmpBars(P, items){
     items = items.map((it, i) => Object.assign({}, it, { text: P.t('c' + i + 'v', it.label + ' : chiffre', it.text), label: P.t('c' + i + 'l', 'Barre ' + (i + 1) + ' : nom', it.label) }));
     const x = P.x;
@@ -310,23 +324,26 @@ const B = {
   },
   line(P, series, opts){
     opts = opts || {}; const x = P.x;
-    const blk = { h: opts.h || (P.small ? 400 : P.big ? 620 : 500), shrink(){ if (blk.h <= (P.small ? 170 : 240)) return false; blk.h -= 40; return true; }, draw(y){ const h = blk.h;
+    const blk = { h: opts.h || (P.small ? 400 : P.big ? 620 : 500), shrink(){ if (blk.h <= (opts.noShrinkBelow || (P.small ? 170 : 240))) return false; blk.h -= 40; return true; }, draw(y){ const h = blk.h;
       const all = series.flatMap(s => s.values.filter(isNum)).concat((opts.hlines || []).map(l => l.v)), lo = Math.min(...all), hi = Math.max(...all), pad = (hi - lo) * 0.08 || 1;
       const min = lo - pad, max = hi + pad, X0 = P.L + 10, X1 = P.R - 10, Y0 = y + 24, Y1 = y + h - 50;
       const n = Math.max(...series.map(s => s.values.length)), px = i => X0 + (X1 - X0) * i / Math.max(1, n - 1), py = v => Y1 - (v - min) / (max - min) * (Y1 - Y0);
       rr(x, P.L - 6, y, P.CW + 12, h, 26, C.card);
       for (let k = 1; k < 4; k++){ x.fillStyle = C.grid; x.fillRect(X0, Y0 + (Y1 - Y0) * k / 4, X1 - X0, 2); }
       if (opts.zero && min < 0 && max > 0){ x.setLineDash([8, 10]); x.strokeStyle = C.track; x.lineWidth = 2; x.beginPath(); x.moveTo(X0, py(0)); x.lineTo(X1, py(0)); x.stroke(); x.setLineDash([]); }
-      let lastLab = null;
+      if (opts.band && (opts.hlines || []).length > 1){ const vs = opts.hlines.map(l => l.v), yT = py(Math.max(...vs)), yB = py(Math.min(...vs)); x.fillStyle = C.gold + '26'; x.fillRect(X0, yT, X1 - X0, yB - yT); }
+      let lastLab = null; const labs = [];   // étiquettes dessinées APRÈS la courbe, pour rester lisibles
       (opts.hlines || []).slice().sort((a, b) => b.v - a.v).forEach(l => { x.setLineDash([12, 10]); x.strokeStyle = l.color; x.lineWidth = 3; x.beginPath(); x.moveTo(X0, py(l.v)); x.lineTo(X1, py(l.v)); x.stroke(); x.setLineDash([]);
         let ly = py(l.v) - 44; if (lastLab != null && ly < lastLab + 42) ly = lastLab + 42; lastLab = ly;
-        const lf = BD(800, 23); x.font = lf; const tw = x.measureText(l.label).width + 26; rr(x, X1 - tw - 4, ly, tw, 36, 9, C.bg); txt(x, l.label, X1 - 17, ly + 25, lf, l.color, 'right'); });
+        const lf = BD(800, 23); x.font = lf; const tw = x.measureText(l.label).width + 26, lx = opts.band ? X0 + 4 : X1 - tw - 4; labs.push(() => { rr(x, lx, ly, tw, 36, 9, C.bg); txt(x, l.label, lx + 13, ly + 25, lf, l.color); }); });
       series.forEach((s, si) => {
         const pts = s.values.map((v, i) => isNum(v) ? [px(i), py(v)] : null).filter(Boolean); if (pts.length < 2) return;
         if (s.fill){ const g = x.createLinearGradient(0, Y0, 0, Y1); g.addColorStop(0, s.color + '55'); g.addColorStop(1, s.color + '00'); x.beginPath(); x.moveTo(pts[0][0], Y1); pts.forEach(p => x.lineTo(p[0], p[1])); x.lineTo(pts[pts.length - 1][0], Y1); x.closePath(); x.fillStyle = g; x.fill(); }
         x.beginPath(); pts.forEach((p, i) => i ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1])); x.strokeStyle = s.color; x.lineWidth = s.width || 5; x.lineJoin = 'round'; x.stroke();
         const e = pts[pts.length - 1]; x.beginPath(); x.arc(e[0], e[1], si === series.length - 1 ? 11 : 8, 0, Math.PI * 2); x.fillStyle = s.color; x.fill();
+        if (opts.last && si === series.length - 1){ const lf = BD(800, 28); x.font = lf; const tw = x.measureText(opts.last).width + 28, ty = Math.max(Y0 + 4, Math.min(Y1 - 44, e[1] - 58)); rr(x, e[0] - tw + 10, ty, tw, 44, 12, C.ink); txt(x, opts.last, e[0] - tw + 24, ty + 31, lf, C.bg); }
       });
+      labs.forEach(f => f());
       if (opts.labels){ txt(x, opts.labels[0], X0, Y1 + 38, BD(600, 22), C.dim); txt(x, opts.labels[1], X1, Y1 + 38, BD(600, 22), C.dim, 'right'); }
       if (opts.legend){ let LX = X0 + 6; opts.legend.forEach(l => { x.fillStyle = l.color; rr(x, LX, Y0 + 2, 30, 8, 4, l.color); txt(x, l.label, LX + 42, Y0 + 14, BD(700, 24), C.dim); x.font = BD(700, 24); LX += 76 + x.measureText(l.label).width; }); }
     } };
@@ -496,6 +513,8 @@ const T = [
 { k: 'valo', group: 'Entreprises', ic: '⚖️', name: 'Valorisation', desc: 'Cours, prix juste, marge de sécurité',
   fields: [{ id: 'src', type: 'select', label: 'Où prendre le prix juste ?', rerender: true, options: [['prix', 'Prix par secteur (ma simulation)'], ['analyse', 'Fiche Analyse']] },
     { id: 'sc', type: 'select', label: 'Ton scénario (Prix par secteur)', options: SCEN },
+    { id: 'aff', type: 'select', label: 'Affichage', options: [['graph', 'Graphique du cours'], ['echelle', 'Échelle des prix']] },
+    { id: 'per', type: 'select', label: 'Période du graphique', options: [['2', '2 ans'], ['1', '1 an'], ['3', '3 ans']] },
     { id: 'nom', type: 'select', label: 'Entreprise', options: async o => (o.src || 'prix') === 'prix' ? (window.PRIX_UI ? (await PRIX_UI.pubItems()).filter(x => isNum(x.juste)).map(x => [x.nom, x.nom + ' · ' + x.secteurLabel]) : []) : followed().map(n => [n, n]) }],
   async build(P, o){
     const src = o.src || 'prix';
@@ -519,13 +538,19 @@ const T = [
       P.info = 'Source : fiche Analyse (prix juste ' + money(juste, ccy) + ', calcul automatique). Vérifie que c\'est bien ton analyse.';
     }
     if (!isNum(cours) || !isNum(juste) || juste <= 0) throw new Error('Cours ou prix juste manquant pour ' + nom + '.');
-    const h = sym ? await history(sym, addD(today(), -1826)).catch(() => null) : null, step = h ? Math.ceil(h.c.length / 300) : 1, marge = (juste / cours - 1) * 100;
+    const yrs = +(o.per || 2), from = addD(today(), -Math.round(365.25 * yrs)), h0 = sym ? await history(sym, from).catch(() => null) : null;
+    const i0 = h0 ? Math.max(0, h0.d.findIndex(x => x >= from)) : 0, h = h0 ? { ccy: h0.ccy, d: h0.d.slice(i0), c: h0.c.slice(i0) } : null;   // TradingView renvoie un peu plus que demandé
+    const step = h ? Math.ceil(h.c.length / 260) : 1, marge = (juste / cours - 1) * 100;
+    const ecart = (cours / juste - 1) * 100, msgTxt = ecart > 0 ? sgn(ecart, 0) + ' au-dessus de mon prix juste' : sgn(ecart, 0) + ' sous mon prix juste';
     const img = await logoFor({ sym, logo, name: nom });
-    return [B.title(P, null, o.titre || (marge >= 0 ? 'Sous-evaluee ?' : 'Trop chere ?'), src === 'prix' ? 'Mon prix juste : ' + money(juste, ccy, 0) : 'Prix juste ' + money(juste, ccy, 0)),
-      B.head(P, img, nom, marge >= 0 ? 'Sous son prix juste' : 'Au-dessus du prix juste', marge >= 0 ? C.green : C.red),
-      B.big(P, sgn(marge, 0), marge >= 0 ? C.green : C.red, marge >= 0 ? 'de potentiel jusqu\'au prix juste' : 'au-dessus du prix juste'),
-      h ? B.line(P, [{ values: h.c.filter((_, i) => i % step === 0), color: C.blue, width: 4, fill: true }], { hlines: lines, labels: [frDate(h.d[0]), frDate(h.d[h.d.length - 1])], h: cap(P, 260, 340, 520) }) : null,
-      B.kpis(P, [{ l: 'Cours', v: money(cours, ccy, 0) }, { l: 'Prix juste', v: money(juste, ccy, 0), c: C.gold }, extra])];
+    const title = o.titre || (ecart > 0 ? 'Trop chere ?' : 'Sous-evaluee ?');
+    if ((o.aff || 'graph') === 'echelle')
+      return [B.title(P, null, title, msgTxt), B.head(P, img, nom, null),
+        B.big(P, money(cours, ccy, 0), ecart > 0 ? C.red : C.green, 'Cours du ' + frDate(today()) + ' · mon prix juste ' + money(juste, ccy, 0)),
+        B.scale(P, lines, cours, ccy)];
+    const vals = h ? h.c.filter((_, i) => i % step === 0 || i === h.c.length - 1) : [];
+    return [B.title(P, null, title, msgTxt), B.head(P, img, nom, null),
+      h ? B.line(P, [{ values: vals, color: C.ink, width: 5 }], { hlines: lines, band: true, last: money(cours, ccy, 0), labels: [frDate(h.d[0]), frDate(h.d[h.d.length - 1])], h: cap(P, 440, 640, 900), noShrinkBelow: 300 }) : B.big(P, money(cours, ccy, 0), C.ink, 'Cours actuel')];
   } },
 { k: 'rank', group: 'Entreprises', ic: '🏆', name: 'Classement comparatif', desc: '2 à 15 entreprises classées sur un chiffre',
   fields: [{ id: 'cos', type: 'companies', label: 'Entreprises', max: 15, quick: 'held' }, { id: 'metric', type: 'select', label: 'Chiffre comparé', options: Object.keys(METRICS).map(k => [k, METRICS[k].l]) },
