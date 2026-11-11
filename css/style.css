@@ -3041,3 +3041,7 @@
 .sv-confirm.err{border-color:var(--red);color:var(--red)} .sv-confirm p{margin:4px 0;color:var(--text-dim)}
 .sv-actions{display:flex;gap:8px;flex-wrap:wrap}
 @media (max-width:600px){.sv-item{grid-template-columns:minmax(0,1fr) auto}.sv-item .sv-kind,.sv-item .sv-faint{display:none}}
+/* Paniers d'export 🧺 retirés (2026-11-11, demande de l'utilisateur : les publications passeront par l'onglet dédié).
+   Masqués plutôt que supprimés : code conservé, inactif. */
+.chart-card-cart-btn, .gauge-cart-btn, #zoomAddToCartBtn, #exportCartWidget,
+.export-cart-add-btn[onclick*="ToCart"]{display:none !important}

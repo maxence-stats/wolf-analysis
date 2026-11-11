@@ -3601,7 +3601,7 @@ function renderMacroFundamentalsTable(){
 // très sombre, moyen, très clair, moyen-sombre) pour maximiser l'écart perçu entre
 // segments voisins, quel que soit le nombre de positions du portefeuille.
 const PORTFOLIO_COLORS = ['#E8B54D','#2D6FA8','#7A4F0E','#6FB8EA','#F5D896','#0F2A42','#C68A1F','#AEDBFA','#9C6A16','#164A73'];
-const WOLF_LOGO_URL = 'https://i.postimg.cc/43WmYDB1/20260714-LOGO-WINTER-PNG.png';
+const WOLF_LOGO_URL = 'data/wolf-tete.png';
 
 /* ============================================================
    EXPORT PDF — window.print() + zone dédiée (#printArea), pas de librairie externe

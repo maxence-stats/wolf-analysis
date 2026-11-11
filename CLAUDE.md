@@ -749,6 +749,14 @@ reste intact, décision de l'utilisateur). Répertoire visuel de toutes les anal
   `atelier.js`, `liste-prix.js` passent en `RO` (lecture seule). Appli installable : `manifest.webmanifest`, `icons/`, pas de
   service worker ; la page se recharge seule si `index.html` annonce une nouvelle version (`js/publier.js`).
 
+### Logo, paniers, publications (2026-11-11)
+- **Logo unique = tête de loup `data/wolf-tete.png`** (fournie par l'utilisateur, « garde celui-ci pour tout le site ») : barre de
+  marque, pieds de zoom, exports, `WOLF_LOGO_URL`, icônes de l'appli (`icons/`, fond #0D1013). Plus de logo postimg.
+- **Paniers d'export 🧺 masqués** (CSS en fin de style.css, code conservé) : les publications passeront par un onglet dédié.
+- **Publications (à construire)** : fond UNI, peu d'infos, gros chiffres, VRAIS logos d'entreprises (jamais d'abréviations),
+  références visuelles du compte baggr.fr. TradingView donne `earnings_release_next_date`, `earnings_per_share_forecast_next_fq`,
+  `revenue_forecast_next_fq`, et après publication `eps_surprise_percent_fq` (verdict « Battu / Manqué » possible).
+
 ### Onglet Portefeuille IA (fait, 2026-09-19)
 Sous-onglet de « 💼 Portefeuille » : 4 portefeuilles simulés (ChatGPT, Claude, Gemini, Grok, logos
 dans `data/ai-logos/`), 10 000 € chacun, l'utilisateur y enregistre à la main les achats/ventes que
