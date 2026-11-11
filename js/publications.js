@@ -607,7 +607,7 @@ function atelierCards(){
 }
 
 /* ======================= INTERFACE ======================= */
-const ui = { tpl: null, fmt: 'f45', theme: 'nuit', opts: {}, busy: false, err: null, canvas: null, sugg: {}, q: {}, editSig: '' };
+const ui = { tpl: null, fmt: 'f45', theme: 'beige', opts: {}, busy: false, err: null, canvas: null, sugg: {}, q: {}, editSig: '' };
 function prefs(){ try { return JSON.parse(localStorage.getItem('wolfPubPrefs') || '{}'); } catch(e){ return {}; } }
 function savePrefs(){ try { const p = prefs(); p[ui.tpl] = ui.opts; p._fmt = ui.fmt; p._theme = ui.theme; localStorage.setItem('wolfPubPrefs', JSON.stringify(p)); } catch(e){} }
 function page(){ return $(PAGE_ID); }

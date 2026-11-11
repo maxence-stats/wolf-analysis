@@ -693,7 +693,7 @@ function tvOnDemandDisplayName(d, fallback){
 // lui-même appliqué, déduit de PER = cours / BPA ; à défaut, le taux de change du moment.
 const TV_MONEY_FIELDS = ['earnings_per_share_diluted_ttm', 'free_cash_flow_per_share_ttm', 'dps_common_stock_prim_issue_fy',
   'free_cash_flow_ttm', 'neg_capital_expenditures_ttm', 'total_revenue_ttm', 'cash_n_short_term_invest_fq', 'net_debt_fq',
-  'ebitda_ttm', 'ebitda_fy', 'total_debt_fq', 'book_value_per_share_fq'];   // ebitda_fy_h : recalé sur ebitda_fy (js/valo-multiples.js)
+  'ebitda_ttm', 'ebitda_fy', 'total_debt_fq', 'book_value_per_share_fq', 'cash_f_operating_activities_ttm'];   // ebitda_fy_h : recalé sur ebitda_fy (js/valo-multiples.js)
 // 2026-11-10 — fiabilité : le serveur garde sur le disque la dernière réponse de chaque symbole. `cachedFirst` = réponse
 // immédiate depuis ce cache (affichage instantané), puis une lecture en direct la remplace. Si TradingView ne répond pas,
 // le serveur renvoie la dernière réponse connue (`stale`) : `tvSnapMeta[tv]` dit d'où viennent les chiffres affichés.

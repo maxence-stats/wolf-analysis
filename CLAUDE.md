@@ -698,6 +698,15 @@ graphique de l'onglet Analyse = clôtures AJUSTÉES (`/api/tv/history?...&adj=1`
 portefeuilles garde les cours NON ajustés. Un relevé sans `hv:2` est refait une fois à l'ouverture. Nouvelle carte `overlay`
 (« Graphique superposé ») : cours hebdo (axe gauche) + chiffres annuels au dernier point de chaque année (axe droit), option base 100.
 Cartes barres/courbes TradingView : sélecteur 5 / 10 / 20 ans / Max sur la carte et en grand (`yrsSeg`, `c.years`, 99 = tout).
+**Concurrents en 12 mois glissants (2026-11-11, serveur v=19)** : `ttmFromSnap()` (marge op./nette, ROIC du dernier trimestre,
+croissance du CA sur 12 mois, PER, P/FCF, rendement, dette nette/OCF) gardé dans le relevé (`tvData.self.ttm`, `others[n].ttm`, `hv:3`) ;
+carte Entreprise et comparatif lisent le TTM d'abord (comparatif : « Période des chiffres » 12 mois / dernier exercice) ; PER et P/FCF
+jamais remplacés par une vieille valeur annuelle (`TTM_ONLY`) ; carte Entreprise : chiffres corrigeables à la main (`c.over[clé]`,
+marqués ✎) ; une entreprise ajoutée après le relevé est relevée seule (`captureOne`). Fondamentaux parfois publiés en USD par
+TradingView (ex. Prysmian) : convertis en devise de cotation par `tvFetchSnapshot` (normal).
+**Parcours (remplace l'Organigramme, 2026-11-11)** : vue « Parcours » = ligne d'étapes de gauche à droite (sections avec cartes,
+sans « Actualités » ni « Sources »), une étape à la fois avec ses cartes, « ← / → » (boutons et flèches du clavier). `renderTour`,
+`tourGo`. L'ancien code d'organigramme reste mais n'est plus affiché.
 Le texte ci-dessous décrit l'ancienne carte mentale (historique).
 
 Nouvel onglet principal (`#pageAtelier`, `js/atelier.js`, CSS `.at-*` en fin de `style.css`), À CÔTÉ du Cerveau numérique (qui
@@ -768,7 +777,7 @@ reste intact, décision de l'utilisateur). Répertoire visuel de toutes les anal
   chaque bloc, panneau « ✏ Modifier les textes et chiffres », corrections dans `ui.opts.ov`, effacées si on change de donnée) ;
   `P.info` = encadré de vérification (source des chiffres ; pour les résultats : « à vérifier sur le communiqué » + chiffres bruts) ;
   Valorisation : source AU CHOIX, « Prix par secteur » (ta simulation : pessimiste / réaliste / optimiste, `PRIX_UI.pubItems().sc`)
-  ou « Fiche Analyse » ; Performance d'une action affiche le logo.
+  ou « Fiche Analyse » ; Performance d'une action affiche le logo. Thème par défaut : BEIGE (choix de l'utilisateur).
   WOLF PORTFOLIO SEULEMENT (jamais PEA/CTO). Boutons « 📤 » : journal et mois par mois du Wolf (mes-portefeuilles), tag
   « 📤 Publier » de l'onglet Analyse, menu ⋯ d'une carte de l'Atelier, en-tête de secteur de Prix par secteur ->
   `WOLF_PUB.open(modèle, réglages)`. Réglages gardés par modèle (localStorage `wolfPubPrefs`, simple confort).

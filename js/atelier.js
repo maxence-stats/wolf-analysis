@@ -346,16 +346,30 @@ async function tvLogo(sym){
   if (!sym || typeof tvRawSnapshot !== 'function') return '';
   try { const sn = await tvRawSnapshot(sym, true); return sn && sn.logoid ? 'https://s3-symbol-logo.tradingview.com/' + sn.logoid + '--big.svg' : ''; } catch(e){ return ''; }
 }
+// Chiffres des 12 DERNIERS MOIS (4 trimestres glissants) du relevé TradingView, pour les comparaisons entre entreprises.
+function ttmFromSnap(d){
+  if (!d) return null;
+  const n = v => typeof v === 'number' && isFinite(v) ? v : null, pick = (...a) => a.map(n).find(v => v != null) ?? null;
+  return { ca: n(d.total_revenue_ttm) != null ? d.total_revenue_ttm / 1e6 : null, croissanceCA: n(d.total_revenue_yoy_growth_ttm),
+    margeOp: pick(d.operating_margin_ttm, d.operating_margin), margeNette: n(d.net_margin_ttm), roic: pick(d.return_on_invested_capital_fq, d.return_on_invested_capital_fy),
+    per: n(d.price_earnings_ttm), pFcf: n(d.price_free_cash_flow_ttm), rendementDiv: pick(d.dividends_yield_current, d.dividends_yield),
+    eps: n(d.earnings_per_share_diluted_ttm), fcfParAction: n(d.free_cash_flow_per_share_ttm), prixActuel: n(d.close),
+    detteOCF: n(d.net_debt_fq) != null && n(d.cash_f_operating_activities_ttm) ? d.net_debt_fq / d.cash_f_operating_activities_ttm : null };
+}
+// Ratios sans sens hors 12 derniers mois (PER, P/FCF négatifs = non publiés) : jamais remplacés par une vieille valeur annuelle.
+const TTM_ONLY = ['per', 'pFcf'];
+function ttmOf(name){ const f = frozenOf(name); return f && f.ttm ? f.ttm : null; }
 async function tvRowsFor(name, sym){
   const co = findCompany(name), s2 = (co && co.tv) || sym;
   let snap = null;
   if (s2 && typeof tvFetchSnapshot === 'function'){ try { snap = await tvFetchSnapshot(s2); } catch(e){ snap = null; } }
   const hist = snap ? rowsFromHistory(snap) : [];
   const logo = snap && snap.logoid ? 'https://s3-symbol-logo.tradingview.com/' + snap.logoid + '--big.svg' : '';
-  if (co && co.rows.length > 1) return { rows: mergeRows(slimRows(co.rows), hist), devise: co.devise, sym: s2, logo };
-  if (!snap || typeof tvRowsFromSnapshot !== 'function') return co ? { rows: mergeRows(slimRows(co.rows), hist), devise: co.devise, sym: s2, logo } : null;
+  const ttm = ttmFromSnap(snap);
+  if (co && co.rows.length > 1) return { rows: mergeRows(slimRows(co.rows), hist), devise: co.devise, sym: s2, logo, ttm };
+  if (!snap || typeof tvRowsFromSnapshot !== 'function') return co ? { rows: mergeRows(slimRows(co.rows), hist), devise: co.devise, sym: s2, logo, ttm } : null;
   const r = tvRowsFromSnapshot(s2, snap)[0];
-  return { rows: mergeRows(slimRows([r]), hist), devise: r.devise || snap.currency || 'EUR', sym: s2, logo: logo || r.lienImage || '' };
+  return { rows: mergeRows(slimRows([r]), hist), devise: r.devise || snap.currency || 'EUR', sym: s2, logo: logo || r.lienImage || '', ttm };
 }
 let tvBusy = false;
 async function captureTv(){
@@ -366,7 +380,7 @@ async function captureTv(){
     const self = d.type === 'entreprise' ? await tvRowsFor(d.nom || d.titre, sym) : null;
     if (self && self.sym && !d.tv){ d.tv = self.sym; }
     if (self && self.logo && (!d.logo || /^data\/logos\//.test(d.logo))) d.logo = self.logo;
-    const t = { hv: 2, at: new Date().toISOString(), sym: self ? self.sym : '', self: self ? { rows: self.rows, devise: self.devise } : null, others: {}, prices: null };
+    const t = { hv: 3, at: new Date().toISOString(), sym: self ? self.sym : '', self: self ? { rows: self.rows, devise: self.devise, ttm: self.ttm || null } : null, others: {}, prices: null };
     // cours hebdomadaires (cartes « Cours de bourse »)
     if (t.sym){
       try {
@@ -383,10 +397,19 @@ async function captureTv(){
     // autres entreprises citées (comparatif, cartes Entreprise)
     const names = new Set();
     Object.values(v.cards).forEach(c => { if (c.type === 'concurrent' && c.nom) names.add(c.nom); if (c.type === 'comparatif') compCols(c).forEach((n, i) => { if (!(i === 0 && (c.cols || [])[0] === '@self')) names.add(n); }); });
-    for (const n of names){ try { const o = await tvRowsFor(n, await tvSymbolFor(n)); if (o) t.others[norm(n)] = { rows: o.rows, devise: o.devise, logo: o.logo || '' }; } catch(e){} }
+    for (const n of names){ try { const o = await tvRowsFor(n, await tvSymbolFor(n)); if (o) t.others[norm(n)] = { rows: o.rows, devise: o.devise, logo: o.logo || '', ttm: o.ttm || null }; } catch(e){} }
     v.tvData = t; ui.tvMsg = null; touch(); renderShell();
   } catch(e){ ui.tvMsg = '⚠ TradingView indisponible : ' + (e.message || 'erreur'); tvBar(); }
   tvBusy = false;
+}
+let oneTimer = null;
+function captureOne(name){
+  clearTimeout(oneTimer);
+  oneTimer = setTimeout(async () => {
+    const v = ver(); if (!v || !v.tvData || RO || !name || name.trim().length < 2) return;
+    const k = norm(name); if (v.tvData.others && v.tvData.others[k] && v.tvData.others[k].ttm) return;
+    try { const o = await tvRowsFor(name, await tvSymbolFor(name)); if (!o) return; v.tvData.others = v.tvData.others || {}; v.tvData.others[k] = { rows: o.rows, devise: o.devise, logo: o.logo || '', ttm: o.ttm || null }; touch(); renderBody(); } catch(e){}
+  }, 900);
 }
 function tvBar(){ const el = $('awTvBar'); if (el) el.innerHTML = tvBarHtml(); }
 function tvBarHtml(){
@@ -506,8 +529,8 @@ function openDoc(id){
   if (!D.docs[id]) return;
   ui.docId = id; ui.edit = null; ui.big = null; ui.menu = null; ui.orgOpen = {}; ui.tvMsg = null;
   renderShell();
-  const v = ver(); // hv 2 = relevé avec l'historique 20 ans et les cours ajustés : un relevé plus ancien (sans historique) est refait une fois
-  if (v && (!v.tvData || v.tvData.hv !== 2) && !RO && serverOk && D.docs[id].type === 'entreprise') captureTv();
+  const v = ver(); // hv 3 = relevé avec l'historique 20 ans, les cours ajustés et les 12 derniers mois : un relevé plus ancien est refait une fois
+  if (v && (!v.tvData || (v.tvData.hv || 0) < 3) && !RO && serverOk && D.docs[id].type === 'entreprise') captureTv();
   const m = $('atMain'); if (m) m.scrollTop = 0;
 }
 function deleteDoc(id){
@@ -646,11 +669,11 @@ function docHtml(d){
   return '<header class="aw-head">' + (ui.video ? '' : '<button type="button" class="at-btn ico" data-side title="Afficher / masquer le répertoire">☰</button>') + docLogo(d, 54) +
     '<div class="aw-head-t"><div class="aw-chips">' + chips + chain + prix + '</div><h1>' + esc(d.titre) + '</h1>' + (ui.video ? '' : '<div class="aw-tvbar" id="awTvBar">' + tvBarHtml() + '</div>') + '</div>' + cours + '</header>' +
     '<div class="aw-bar">' +
-      '<span class="at-seg"><button type="button" class="' + (ui.view === 'grid' ? 'on' : '') + '" data-view="grid">Grille</button><button type="button" class="' + (ui.view === 'org' ? 'on' : '') + '" data-view="org">Organigramme</button></span>' +
+      '<span class="at-seg"><button type="button" class="' + (ui.view === 'grid' ? 'on' : '') + '" data-view="grid">Grille</button><button type="button" class="' + (ui.view === 'tour' ? 'on' : '') + '" data-view="tour">Parcours</button></span>' +
       (ui.video ? '' : '<select class="at-sel" id="atVer" title="Version affichée">' + d.versions.map(x => '<option value="' + x.id + '"' + (x.id === v.id ? ' selected' : '') + '>' + esc(x.label) + '</option>').join('') + '</select>') +
       (isRo() ? '' : '<button type="button" class="at-btn sm" data-newver title="Copie complète de cette version, l\'ancienne reste intacte">＋ Version</button><button type="button" class="at-btn sm" data-facts title="Les chiffres du dossier, utilisés par les cartes">📊 Données</button><button type="button" class="at-btn sm" data-savetpl title="Garder cette structure pour la réutiliser">💾 Modèle</button><button type="button" class="at-btn sm" data-props title="Nom, secteur, logo, version">⚙</button>') +
       '<span style="flex:1"></span>' +
-      (ui.view === 'grid' ? '<button type="button" class="at-btn sm" data-allsec="0">Tout replier</button><button type="button" class="at-btn sm" data-allsec="1">Tout déplier</button>' : '<button type="button" class="at-btn sm" data-orgall="1">Tout ouvrir</button><button type="button" class="at-btn sm" data-orgall="0">Tout rabattre</button>') +
+      (ui.view === 'grid' ? '<button type="button" class="at-btn sm" data-allsec="0">Tout replier</button><button type="button" class="at-btn sm" data-allsec="1">Tout déplier</button>' : '') +
       (isRo() ? '' : '<button type="button" class="at-btn sm" data-addsec>＋ Section</button>') +
       (RO ? '' : '<button type="button" class="at-btn sm ' + (ui.video ? 'gold' : '') + '" data-video title="Masque tout l\'habillage pour la vidéo">' + (ui.video ? '✕ Quitter le mode vidéo' : '🎬 Mode vidéo') + '</button>') +
     '</div><div id="awBody"></div>';
@@ -779,6 +802,7 @@ function compValue(c, colName, key, ci){
   const ov = c.over && c.over[key] && c.over[key][ci];
   if (ov != null && ov !== '') return num(ov);
   const d = doc(), self = ci === 0 && (c.cols || [])[0] === '@self';
+  if (c.period !== 'fy'){ const t = ttmOf(self ? null : colName); if (t && (t[key] != null || TTM_ONLY.includes(key))) return t[key]; }
   const s = getSeries(self ? null : colName, key); return s.values.length ? s.values[s.values.length - 1] : null;
 }
 function compTableHtml(c, big){
@@ -789,16 +813,25 @@ function compTableHtml(c, big){
     const f = TVF[k], vals = cols.map((n, i) => compValue(c, n, k, i)), ok = vals.filter(x => x != null);
     const best = ok.length > 1 ? (f.low ? Math.min(...ok) : Math.max(...ok)) : null, worst = ok.length > 2 ? (f.low ? Math.max(...ok) : Math.min(...ok)) : null;
     const mx = Math.max(...ok.map(Math.abs), 0) || 1;
-    return '<tr><td class="lb">' + esc(f.l) + '</td>' + vals.map((x, i) => '<td><span class="' + (x != null && x === best ? 'best' : x != null && x === worst ? 'worst' : '') + '">' + fmtVal(x, f.u, deviseOf(i === 0 && (c.cols || [])[0] === '@self' ? null : cols[i]), f.d) + '</span>' +
+    return '<tr><td class="lb">' + esc(k === 'croissanceCA' && c.period !== 'fy' ? 'Croissance du CA (12 mois)' : f.l) + '</td>' + vals.map((x, i) => '<td><span class="' + (x != null && x === best ? 'best' : x != null && x === worst ? 'worst' : '') + '">' + fmtVal(x, f.u, deviseOf(i === 0 && (c.cols || [])[0] === '@self' ? null : cols[i]), f.d) + '</span>' +
       (big && x != null ? '<i class="aw-cbar" style="width:' + Math.max(4, Math.abs(x) / mx * 100).toFixed(0) + '%"></i>' : '') + '</td>').join('') + '</tr>';
   }).join('');
   return '<div class="aw-tscroll"><table class="aw-table' + (big ? ' big' : '') + '"><thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
+}
+// Chiffre d'une carte Entreprise : valeur saisie à la main, sinon 12 derniers mois TradingView, sinon dernier exercice.
+const CONC_KEYS = ['ca', 'croissanceCA', 'margeOp', 'margeNette', 'roic', 'per', 'pFcf', 'rendementDiv', 'detteOCF'];
+function concVal(c, k){
+  const o = c.over && c.over[k]; if (o != null && o !== '') return num(o);
+  const t = ttmOf(c.nom); if (t && (t[k] != null || TTM_ONLY.includes(k))) return t[k];
+  const s = getSeries(c.nom, k); return s.values.length ? s.values[s.values.length - 1] : null;
 }
 function concHtml(c, big){
   const co = findCompany(c.nom), fz = frozenOf(c.nom), logo = c.logo || (fz && fz.logo) || (co ? co.logo : '') || '', linked = c.docId && D.docs[c.docId] ? D.docs[c.docId] : Object.values(D.docs).find(x => x.type === 'entreprise' && norm(x.titre) === norm(c.nom) && x.id !== ui.docId);
   const keys = big ? ['ca', 'croissanceCA', 'margeOp', 'roic', 'per', 'pFcf', 'rendementDiv', 'detteOCF'] : ['margeOp', 'croissanceCA', 'per'];
   const known = knownData(c.nom || '?');
-  const metrics = known ? '<div class="aw-cmetrics' + (big ? ' big' : '') + '">' + keys.map(k => { const s = getSeries(c.nom, k), v = s.values.length ? s.values[s.values.length - 1] : null; return '<div><b>' + fmtVal(v, TVF[k].u, deviseOf(c.nom), TVF[k].d) + '</b><span>' + esc(TVF[k].l) + '</span></div>'; }).join('') + '</div>' : '';
+  const hasOver = c.over && Object.values(c.over).some(x => x != null && x !== '');
+  const metrics = known || hasOver ? '<div class="aw-cmetrics' + (big ? ' big' : '') + '">' + keys.map(k => { const v = concVal(c, k), mine = c.over && c.over[k] != null && c.over[k] !== ''; return '<div' + (mine ? ' class="mine" title="Valeur saisie à la main"' : '') + '><b>' + fmtVal(v, TVF[k].u, deviseOf(c.nom), TVF[k].d) + '</b><span>' + esc(k === 'croissanceCA' && ttmOf(c.nom) ? 'Croissance du CA (12 mois)' : TVF[k].l) + '</span></div>'; }).join('') + '</div>' +
+    (big ? '<p class="aw-note">' + (ttmOf(c.nom) ? '12 derniers mois (4 trimestres glissants), TradingView' : 'Dernier exercice, TradingView') + (hasOver ? ' · ✎ = saisi à la main' : '') + '</p>' : '') : '';
   return '<div class="aw-conc-top"><div class="aw-conc-logo">' + (logo ? '<img src="' + esc(logo) + '" alt="">' : '<span>' + esc((c.nom || '?').slice(0, 2).toUpperCase()) + '</span>') + '</div><div><div class="aw-conc-n">' + esc(c.nom || 'Entreprise') + '</div><div class="aw-conc-s">' + esc([c.pays, c.role].filter(Boolean).join(' · ')) + '</div></div></div>' +
     (c.tags ? '<div class="aw-tags">' + String(c.tags).split(',').map(t => t.trim()).filter(Boolean).map(t => '<span>' + esc(t) + '</span>').join('') + '</div>' : '') + metrics +
     (c.forces ? '<div class="aw-fw"><b class="pos">Forces</b><p>' + esc(c.forces) + '</p></div>' : '') + (c.faiblesses ? '<div class="aw-fw"><b class="neg">Faiblesses</b><p>' + esc(c.faiblesses) + '</p></div>' : '') +
@@ -1007,12 +1040,46 @@ function drawCharts(root, list, big){
   });
 }
 
-/* ---------- corps : grille ou organigramme ---------- */
+/* ---------- Parcours (2026-11-11) : une étape (section) à la fois, ligne d'étapes de gauche à droite, « Suivant » ----------
+   Mêmes cartes que la grille. Les sections vides, « Actualités » et « Sources » ne sont pas des étapes. */
+function tourSections(v){ return v.sections.filter(s => s.cards.some(id => v.cards[id]) && !/actualite|source/.test(norm(s.titre))); }
+function renderTour(host){
+  const v = ver(), secs = tourSections(v), d = doc();
+  if (!secs.length){ host.innerHTML = '<p class="at-empty big">Aucune carte à présenter pour l\'instant.</p>'; return; }
+  ui.tour = ui.tour && ui.tour.doc === d.id ? ui.tour : { doc: d.id, i: 0 };
+  const i = Math.max(0, Math.min(secs.length - 1, ui.tour.i)); ui.tour.i = i;
+  const s = secs[i], si = v.sections.indexOf(s), color = s.color || PALETTE[si % PALETTE.length], cards = s.cards.map(id => v.cards[id]).filter(Boolean);
+  const prev = secs[i - 1], next = secs[i + 1];
+  host.innerHTML = '<div class="aw-tour" style="--sc:' + color + '">' +
+    '<div class="aw-tour-line" role="tablist">' + secs.map((x, k) => '<button type="button" role="tab" aria-selected="' + (k === i) + '" class="aw-step' + (k < i ? ' done' : k === i ? ' on' : '') + '" data-tour-go="' + k + '" title="' + esc(x.titre) + '"><i>' + (k + 1) + '</i><span>' + esc(x.titre) + '</span></button>').join('') + '</div>' +
+    '<div class="aw-tour-stage"><div class="aw-tour-h"><span class="aw-tour-k">Étape ' + (i + 1) + ' sur ' + secs.length + '</span><h2>' + esc(s.titre) + '</h2></div>' +
+    '<section class="aw-sec aw-tour-sec" data-sid="' + s.id + '" style="--sc:' + color + '"><div class="aw-grid" data-drop="' + s.id + '">' + cards.map(cardHtml).join('') + '</div></section></div>' +
+    '<div class="aw-tour-nav"><button type="button" class="at-btn" data-tour="-1"' + (prev ? '' : ' disabled') + '>← ' + esc(prev ? prev.titre : 'Début') + '</button>' +
+    '<button type="button" class="at-btn gold" data-tour="1"' + (next ? '' : ' disabled') + '>' + esc(next ? next.titre : 'Fin') + ' →</button></div></div>';
+  drawCharts(host, charts, false); drawGeos(host); wireBody(host);
+  const base = host.onclick;
+  host.onclick = e => { const g = e.target.closest('[data-tour-go],[data-tour]'); if (g){ tourGo(g.dataset.tourGo != null ? +g.dataset.tourGo : ui.tour.i + +g.dataset.tour); return; } if (base) base(e); };
+}
+function tourGo(k){
+  const secs = tourSections(ver()); if (k < 0 || k >= secs.length || !ui.tour) return;
+  ui.tour.i = k; const host = $('awBody'); destroyCharts(charts); renderTour(host);
+  const st = host.querySelector('.aw-tour-stage'); if (st){ st.classList.add('enter'); }
+  const on = host.querySelector('.aw-step.on'); if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+}
+document.addEventListener('keydown', e => {
+  if (ui.view !== 'tour' || ui.big || !$('awBody') || !document.querySelector('.aw-tour')) return;
+  if (e.target.closest && e.target.closest('input,textarea,select,[contenteditable]')) return;
+  if (e.key === 'ArrowRight' || e.key === 'PageDown'){ e.preventDefault(); tourGo(ui.tour.i + 1); }
+  if (e.key === 'ArrowLeft' || e.key === 'PageUp'){ e.preventDefault(); tourGo(ui.tour.i - 1); }
+});
+
+/* ---------- corps : grille ou parcours ---------- */
 function renderBody(){
   const host = $('awBody'); if (!host) return;
   destroyCharts(charts);
   ui.menu = null; closeMenu();
-  if (ui.view === 'org'){ host.innerHTML = '<div class="aw-org" id="awOrg"><div class="aw-org-w" id="awOrgW"><svg class="aw-org-svg" id="awOrgSvg"></svg></div></div>'; orgEls = {}; renderOrg(true); return; }
+  if (ui.view === 'org') ui.view = 'tour';   // l'ancien organigramme est remplacé par le parcours
+  if (ui.view === 'tour') return renderTour(host);
   const v = ver(), ro = isRo();
   host.innerHTML = v.sections.map((s, si) => {
     const cards = s.cards.map(id => v.cards[id]).filter(Boolean);
@@ -1238,7 +1305,7 @@ function bigBody(c){
         (cagrs.length ? '<div class="aw-stats">' + cagrs.map(g => statBox(g.name + ' : croissance annuelle sur ' + g.n + ' ans', fr(g.g, 1) + ' %/an')).join('') + '</div>' : '') +
         '<div class="aw-tscroll"><table class="aw-table big"><thead><tr><th></th>' + s.labels.map(y => '<th>' + esc(y) + '</th>').join('') + '</tr></thead><tbody>' + s.sets.map(x => '<tr><td class="lb"><span class="aw-dot" style="background:' + x.color + '"></span> ' + esc(x.name) + '</td>' + x.values.map(y => '<td>' + fmtVal(y, x.u, x.devise) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>';
     }
-    case 'comparatif': return compTableHtml(c, true) + '<p class="aw-note">Vert : la meilleure valeur de la ligne · rouge : la moins bonne. Chiffres TradingView' + (ver().tvData ? ' relevés le ' + frDate(ver().tvData.at) : '') + ', sauf valeurs saisies à la main.</p>';
+    case 'comparatif': return compTableHtml(c, true) + '<p class="aw-note">Vert : la meilleure valeur de la ligne · rouge : la moins bonne. Chiffres TradingView ' + (c.period === 'fy' ? 'du dernier exercice annuel' : 'des 12 derniers mois') + (ver().tvData ? ' relevés le ' + frDate(ver().tvData.at) : '') + ', sauf valeurs saisies à la main.</p>';
     case 'bourse': return bourseHtml(c, true);
     case 'overlay': return overlayHtml(c, true);
     case 'geo': {
@@ -1334,13 +1401,16 @@ function editorFields(c, d, v){
       return common + '<div class="aw-ed-rows"><b class="aw-ed-h">Entreprises</b>' + (c.cols || []).map((n, k) => '<div class="aw-ed-row"><input class="at-in" list="awCos" data-col="' + k + '" value="' + esc(n === '@self' ? cols[k] + ' (ce dossier)' : n) + '"' + (n === '@self' ? ' disabled' : '') + '><button type="button" class="at-x" data-col-del="' + k + '">✕</button></div>').join('') + '<button type="button" class="at-btn sm" data-col-add>＋ Entreprise</button><datalist id="awCos">' + companyOptions() + '</datalist></div>' +
         '<label class="aw-ed-check"><input type="checkbox" data-withconc' + (c.withConc !== false ? ' checked' : '') + '> Ajouter tout seul les cartes « Entreprise » du dossier</label>' +
         '<b class="aw-ed-h">Indicateurs</b><div class="aw-ed-checks">' + Object.keys(TVF).map(k => '<label><input type="checkbox" data-metric="' + k + '"' + ((c.metrics || []).includes(k) ? ' checked' : '') + '> ' + esc(TVF[k].l) + '</label>').join('') + '</div>' +
+        '<label>Période des chiffres<select class="at-sel" data-f="period"><option value="ttm"' + (c.period !== 'fy' ? ' selected' : '') + '>12 derniers mois (4 trimestres glissants)</option><option value="fy"' + (c.period === 'fy' ? ' selected' : '') + '>Dernier exercice annuel</option></select></label>' +
         '<b class="aw-ed-h">Corriger une valeur (vide = TradingView)</b><div class="aw-tscroll"><table class="aw-table ed"><thead><tr><th></th>' + cols.map(n => '<th>' + esc(n.slice(0, 12)) + '</th>').join('') + '</tr></thead><tbody>' + (c.metrics || []).filter(k => TVF[k]).map(k => '<tr><td class="lb">' + esc(TVF[k].l) + '</td>' + cols.map((n, i) => { const ov = c.over && c.over[k] && c.over[k][i]; const auto = compValue(Object.assign({}, c, { over: {} }), n, k, i); return '<td><input class="at-in num" data-over="' + k + '|' + i + '" value="' + (ov != null && ov !== '' ? esc(String(ov).replace('.', ',')) : '') + '" placeholder="' + (auto == null ? '—' : esc(fr(auto, TVF[k].d))) + '"></td>'; }).join('') + '</tr>').join('') + '</tbody></table></div>';
     }
     case 'concurrent': return '<label>Entreprise<input class="at-in" list="awCos" data-f="nom" value="' + esc(c.nom || '') + '"><datalist id="awCos">' + companyOptions() + '</datalist></label>' +
       '<div class="at-row2"><label>Pays<input class="at-in" data-f="pays" value="' + esc(c.pays || '') + '"></label><label>Rôle<input class="at-in" data-f="role" value="' + esc(c.role || '') + '" placeholder="Concurrent direct, client…"></label></div>' +
       '<label>Étiquettes (séparées par des virgules)<input class="at-in" data-f="tags" value="' + esc(c.tags || '') + '"></label><label>Forces<textarea class="at-in" rows="3" data-f="forces">' + esc(c.forces || '') + '</textarea></label><label>Faiblesses<textarea class="at-in" rows="3" data-f="faiblesses">' + esc(c.faiblesses || '') + '</textarea></label>' +
       '<label>Son dossier dans l\'Atelier<select class="at-sel" data-f="docId"><option value="">— (trouvé par son nom s\'il existe)</option>' + Object.values(D.docs).filter(x => x.type === 'entreprise' && x.id !== d.id).map(x => '<option value="' + x.id + '"' + (c.docId === x.id ? ' selected' : '') + '>' + esc(x.titre) + '</option>').join('') + '</select></label>' +
-      '<label>Logo (adresse d\'image, facultatif)<input class="at-in" data-f="logo" value="' + esc(c.logo || '') + '"></label><p class="at-faint">Si l\'entreprise est connue de l\'onglet Analyse, son logo et ses chiffres s\'affichent tout seuls.</p>';
+      '<label>Logo (adresse d\'image, facultatif)<input class="at-in" data-f="logo" value="' + esc(c.logo || '') + '"></label><p class="at-faint">Le logo et les chiffres (12 derniers mois) viennent tout seuls de TradingView.</p>' +
+      '<b class="aw-ed-h">Corriger un chiffre (vide = TradingView)</b><div class="aw-ed-grid">' + CONC_KEYS.map(k => { const auto = concVal(Object.assign({}, c, { over: {} }), k), ov = c.over && c.over[k];
+        return '<label>' + esc(TVF[k].l) + (TVF[k].u === '%' ? ' (%)' : TVF[k].u === 'x' ? ' (x)' : '') + '<input class="at-in num" data-cover="' + k + '" value="' + (ov != null && ov !== '' ? esc(String(ov).replace('.', ',')) : '') + '" placeholder="' + (auto == null ? '—' : esc(fr(auto, TVF[k].d))) + '"></label>'; }).join('') + '</div>';
     case 'bourse': return common + '<label>Période affichée<select class="at-sel" data-f="range">' + RANGES.map(r => '<option value="' + r[0] + '"' + ((c.range || '5a') === r[0] ? ' selected' : '') + '>' + r[2] + '</option>').join('') + '</select></label><p class="at-faint">Le cours vient de TradingView et reste figé à la date du relevé du dossier (« ↻ Actualiser » en haut pour le relire).</p>';
     case 'overlay': return common + '<label class="aw-ed-check"><input type="checkbox" data-ovprice' + (c.price !== false ? ' checked' : '') + '> Afficher le cours</label><label class="aw-ed-check"><input type="checkbox" data-ovnorm' + (c.norm ? ' checked' : '') + '> Tout en base 100 (comparer les croissances)</label>' +
       '<b class="aw-ed-h">Chiffres superposés (historique TradingView, fin d\'exercice)</b><div class="aw-ed-checks">' + OV_KEYS.map(k => '<label><input type="checkbox" data-key="' + k + '"' + ((c.keys || ['fcfParAction', 'dividende']).includes(k) ? ' checked' : '') + '> ' + esc(TVF[k].l) + '</label>').join('') + '</div>' +
@@ -1374,7 +1444,7 @@ function renderEditor(){
 }
 function refreshCard(c){
   const el = document.querySelector('#awBody [data-cid="' + c.id + '"]');
-  if (!el || ui.view !== 'grid'){ if (ui.view === 'org') renderOrg(true); return; }
+  if (!el){ if (ui.view === 'tour') renderBody(); return; }
   charts.filter(ch => el.contains(ch.canvas)).forEach(ch => { ch.destroy(); charts.splice(charts.indexOf(ch), 1); });
   const tmp = document.createElement('div'); tmp.innerHTML = cardHtml(c); const n = tmp.firstElementChild; el.replaceWith(n);
   drawCharts(n, charts, false);
@@ -1385,7 +1455,7 @@ function wireEditor(p, c){
   const changed = (rerenderEditor) => { touch(); clearTimeout(editTimer); editTimer = setTimeout(() => refreshCard(c), 150); if (rerenderEditor) renderEditor(); };
   p.addEventListener('input', e => {
     const t = e.target, ds = t.dataset;
-    if (ds.f){ c[ds.f] = ds.num !== undefined ? num(t.value) : t.value; if (ds.f === 'nom' && c.type === 'concurrent'){ const co = findCompany(t.value); if (co && !c.pays) {} } changed(false); }
+    if (ds.f){ c[ds.f] = ds.num !== undefined ? num(t.value) : t.value; if (ds.f === 'nom' && c.type === 'concurrent') captureOne(t.value); changed(false); }
     else if (ds.rich !== undefined){ c.html = clean(t.innerHTML); changed(false); }
     else if (ds.leg !== undefined){ c.imgs[+ds.leg].leg = t.value; changed(false); }
     else if (ds.rowLabel !== undefined){ c.rows[+ds.rowLabel].label = t.value; changed(false); }
@@ -1397,12 +1467,13 @@ function wireEditor(p, c){
     else if (ds.ans !== undefined){ c.answers = c.answers || []; c.answers[+ds.ans] = t.value; changed(false); }
     else if (ds.geoZone !== undefined){ c.rows[+ds.geoZone].zone = t.value; changed(false); }
     else if (ds.geoV !== undefined){ c.rows[+ds.geoV].v = num(t.value); changed(false); }
+    else if (ds.cover !== undefined){ c.over = c.over || {}; c.over[ds.cover] = t.value.trim() === '' ? null : num(t.value); changed(false); }
     else if (ds.over !== undefined){ const [k, i] = ds.over.split('|'); c.over = c.over || {}; c.over[k] = c.over[k] || []; c.over[k][+i] = t.value.trim() === '' ? null : num(t.value); changed(false); }
   });
   p.addEventListener('change', e => {
     const t = e.target, ds = t.dataset;
     if (ds.verdict !== undefined){ c.verdicts = c.verdicts || {}; c.verdicts[ds.verdict] = t.value; changed(false); return; }
-    if (ds.f === 'bind' || ds.f === 'years' || ds.f === 'srcId' || ds.f === 'kind' || ds.f === 'docId' || ds.f === 'range'){ c[ds.f] = ds.f === 'years' ? Number(t.value) : t.value; changed(ds.f === 'bind'); }
+    if (ds.f === 'bind' || ds.f === 'years' || ds.f === 'srcId' || ds.f === 'kind' || ds.f === 'docId' || ds.f === 'range' || ds.f === 'period'){ c[ds.f] = ds.f === 'years' ? Number(t.value) : t.value; changed(ds.f === 'bind'); }
     else if (ds.key !== undefined){ c.keys = c.keys || (c.type === 'overlay' ? ['fcfParAction', 'dividende'] : []); if (t.checked && !c.keys.includes(ds.key)) c.keys.push(ds.key); if (!t.checked) c.keys = c.keys.filter(k => k !== ds.key); changed(false); }
     else if (ds.metric !== undefined){ c.metrics = c.metrics || []; if (t.checked && !c.metrics.includes(ds.metric)) c.metrics.push(ds.metric); if (!t.checked) c.metrics = c.metrics.filter(k => k !== ds.metric); changed(true); }
     else if (ds.withconc !== undefined){ c.withConc = t.checked; changed(true); }
