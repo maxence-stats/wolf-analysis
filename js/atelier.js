@@ -1,68 +1,105 @@
 /* ================================================================================================
-   ATELIER D'ANALYSES (2026-11-10) — répertoire visuel de toutes les analyses, en cartes mentales interactives
+   ATELIER D'ANALYSES — espace de recherche en CARTES (refonte du 2026-11-11, remplace la carte mentale)
    ------------------------------------------------------------------------------------------------
-   Un DOSSIER = une carte mentale (logo au centre, branches qui se déplient), rangée par secteur / sous-secteur.
-   Trois types : analyse d'entreprise, chaîne de valeur d'un secteur (ses nœuds peuvent pointer vers un dossier
-   d'entreprise), carte libre. Chaque dossier a plusieurs VERSIONS (copie complète datée). Chaque nœud ouvre une
-   FICHE plein écran : textes, images (fichier, collage Ctrl+V, glisser-déposer), actualités datées, chiffres
-   TradingView en direct, graphiques de l'historique. Deux mises en page par carte : « pieuvre » (rangement
-   automatique) ou « libre » (chaque nœud placé à la main). Mode vidéo : tout l'habillage disparaît, on clique.
+   Un DOSSIER (entreprise, chaîne de valeur, carte libre) = des SECTIONS (Présentation, Business model, Analyse
+   financière…) qui contiennent chacune une grille de CARTES. Trois formats : carré (s), vertical (v), horizontal (h),
+   plus « replié » (une ligne). Deux vues du même dossier : GRILLE (sections les unes sous les autres) et ORGANIGRAMME
+   (le logo au centre, les sections en pieuvre ; un clic sur une section fait sortir ses cartes en éventail, un autre
+   les rabat). Bouton AGRANDIR sur chaque carte : elle grandit depuis sa place, le reste se floute, et la vue en grand
+   montre plus de données (historique, tableau, statistiques). Édition dans un panneau à droite.
 
-   DONNÉES — source de vérité = UN FICHIER, data/mes-portefeuilles/atelier.json, écrit par le serveur local
-   (/api/store/save?name=atelier : révision / 409, écriture atomique, copies datées toutes les 10 min, copie dans
-   Documents, copie mensuelle, refus de toute disparition de dossier non déclarée). Les images sont des fichiers à
-   part (/api/atelier/media) que le serveur ne supprime JAMAIS. Rien n'est effacé pour de bon : nœuds, blocs,
-   versions et dossiers supprimés vont dans la corbeille du fichier (D.trash), restaurables.
+   Cartes (10) : texte, image (+ texte), kpi (indicateur), donut (camembert), barres, courbes, comparatif, concurrent
+   (« Entreprise » : fiche d'une autre société, liée à son dossier), source (PDF, site, article), citation.
+
+   DONNÉES SÉPARÉES DE LA PRÉSENTATION : une carte ne recopie pas les chiffres, elle se LIE à une donnée :
+     - « tv:<champ> » : chiffres TradingView de l'onglet Analyse (companies[nom], historique annuel), toujours à jour ;
+     - « f:<id> »      : donnée saisie dans « 📊 Données » du dossier (doc.facts : valeur, unité, période, source).
+   Changer la donnée à sa source met à jour toutes les cartes qui l'utilisent.
+
+   STOCKAGE (inchangé, voir CLAUDE.md) : data/mes-portefeuilles/atelier.json via le serveur local (révision / 409,
+   copies datées, copie Documents, copie mensuelle, refus de toute disparition de dossier non déclarée), images et PDF
+   en fichiers séparés jamais supprimés (/api/atelier/media). Rien n'est effacé pour de bon : corbeille (D.trash).
+   Les anciennes versions « carte mentale » (v.nodes) sont CONVERTIES en sections + cartes au premier affichage ;
+   leurs nœuds d'origine restent dans le fichier (v.nodes, v.root) : rien n'est perdu.
+   Site public (aucun serveur) : copie data/public/atelier.json en lecture seule (RO).
    RÈGLE POUR CLAUDE : ne jamais écrire ce fichier à la main ; tests sur instance jetable (-StoreDir <tmp>).
    ================================================================================================ */
 (function(){
 'use strict';
 
 const PAGE_ID = 'pageAtelier';
-const PALETTE = ['#D9A441', '#4A9FE0', '#4FD1A5', '#E5636B', '#F08A4B', '#5CC8D7', '#B8A1F0', '#C9D1D9'];
-const ICONS = ['🏢', '⚙️', '🌍', '🏰', '📊', '💰', '👔', '⚠️', '🚀', '📰', '✅', '🔗', '🏭', '🚚', '🛒', '🔬', '💡', '📈', '📉', '🧩', '🎯', '🧠', '🛡️', '⛏️', '🔋', '💻', '🏦', '🧪', '📌', '❓'];
-const TYPE_LABEL = { entreprise: 'Analyse d\'entreprise', chaine: 'Chaîne de valeur', libre: 'Carte libre' };
-const GRAPHS = { ca: ['Chiffre d\'affaires (M)', 'line'], fcfParAction: ['FCF par action', 'bar'], dividende: ['Dividende par action', 'bar'], margeOp: ['Marge opérationnelle (%)', 'line'],
-  roic: ['ROIC (%)', 'line'], actions: ['Actions en circulation (M)', 'line'], pFcf: ['P/FCF', 'bar'], prixActuel: ['Cours (fin d\'exercice)', 'line'] };
-const T = (titre, icon, kids) => ({ titre, icon, kids: kids || [] });
+const PALETTE = ['#D9A441', '#4A9FE0', '#4FD1A5', '#E5636B', '#F08A4B', '#5CC8D7', '#B8A1F0', '#8FA3B8'];
+const SERIES_COLORS = ['#D9A441', '#4A9FE0', '#F0C877', '#8FA3B8', '#4FD1A5', '#B8A1F0', '#F08A4B', '#5CC8D7'];
+const DOC_LABEL = { entreprise: 'Analyse d\'entreprise', chaine: 'Chaîne de valeur', libre: 'Carte libre' };
+const TYPES = {
+  texte:      { l: 'Texte',        c: '#C9D1D9', size: 's', cat: 'Rédaction',  d: 'Titre, paragraphes, listes, gras, surligné' },
+  image:      { l: 'Image',        c: '#F0C877', size: 's', cat: 'Rédaction',  d: 'Photo ou capture, titre, description' },
+  citation:   { l: 'Citation',     c: '#D9A441', size: 's', cat: 'Rédaction',  d: 'Une idée ou une conclusion mise en avant' },
+  kpi:        { l: 'Indicateur',   c: '#D9A441', size: 's', cat: 'Chiffres',   d: 'Un chiffre, son évolution, mini-historique' },
+  donut:      { l: 'Camembert',    c: '#4A9FE0', size: 's', cat: 'Chiffres',   d: 'Répartition : les parts se calculent seules' },
+  barres:     { l: 'Barres',       c: '#4A9FE0', size: 'h', cat: 'Chiffres',   d: 'Plusieurs années, plusieurs séries' },
+  courbes:    { l: 'Courbes',      c: '#4A9FE0', size: 'h', cat: 'Chiffres',   d: 'Évolution d\'un ou plusieurs indicateurs' },
+  comparatif: { l: 'Comparatif',   c: '#B8A1F0', size: 'h', cat: 'Comparaison', d: 'Entreprises en colonnes, meilleure valeur surlignée' },
+  concurrent: { l: 'Entreprise',   c: '#E5636B', size: 'v', cat: 'Comparaison', d: 'Concurrent, client, fournisseur : logo, chiffres, forces' },
+  source:     { l: 'Source',       c: '#8FA3B8', size: 's', cat: 'Documents',  d: 'PDF, site, article, avec tes notes' }
+};
+// Chiffres TradingView de l'onglet Analyse (companies[nom] : une ligne par exercice). u : unité d'affichage.
+const TVF = {
+  prixActuel:   { l: 'Cours',                    u: 'cur',  d: 2 },
+  ca:           { l: 'Chiffre d\'affaires',      u: 'Mcur', d: 0 },
+  croissanceCA: { l: 'Croissance du CA (5 ans)', u: '%',    d: 1, calc: true },
+  margeOp:      { l: 'Marge opérationnelle',     u: '%',    d: 1 },
+  roic:         { l: 'ROIC',                     u: '%',    d: 1 },
+  fcfParAction: { l: 'FCF par action',           u: 'cur',  d: 2 },
+  eps:          { l: 'BPA',                      u: 'cur',  d: 2 },
+  dividende:    { l: 'Dividende par action',     u: 'cur',  d: 2 },
+  rendementDiv: { l: 'Rendement du dividende',   u: '%',    d: 2 },
+  payoutRatio:  { l: 'Taux de distribution',     u: '%',    d: 0 },
+  per:          { l: 'PER',                      u: 'x',    d: 1, low: true },
+  pFcf:         { l: 'P/FCF',                    u: 'x',    d: 1, low: true },
+  detteOCF:     { l: 'Dette nette / OCF',        u: 'x',    d: 1, low: true },
+  actions:      { l: 'Actions en circulation',   u: 'M',    d: 1, low: true },
+  cash:         { l: 'Trésorerie',               u: 'Mcur', d: 0 }
+};
+const C = (type, titre, o) => Object.assign({ type, titre: titre || '' }, o || {});
+// Modèle intégré : les 18 points de la checklist de l'utilisateur (2026-11-10) + Actualités + Sources. Les sous-points
+// s'affichent en « à couvrir » sous le titre de chaque section ; quelques cartes reliées aux chiffres TradingView sont
+// déjà posées, elles se remplissent toutes seules pour une entreprise connue de l'onglet Analyse.
+const WOLF_SECTIONS = [
+  ['Présentation', ['Histoire & dates clés', 'Activités', 'Implantation', 'Dirigeants'], [C('texte', 'L\'entreprise en bref', { size: 'h' }), C('kpi', '', { bind: 'tv:prixActuel' })]],
+  ['Modèle économique', ['Comment elle gagne de l\'argent', 'Clients', 'Produits & services', 'Récurrence des revenus', 'Structure des coûts'], [C('texte', 'Comment elle gagne de l\'argent', { size: 'h' })]],
+  ['Répartition du chiffre d\'affaires', ['Par pays & régions', 'Par activités', 'Par filiales', 'Évolution historique'], [C('donut', 'CA par activité'), C('donut', 'CA par région')]],
+  ['Analyse des segments', ['Chiffre d\'affaires & croissance', 'Marges', 'Contribution aux résultats', 'Marché, concurrence, moat et perspectives par activité'], []],
+  ['Marché', ['Taille (TAM / SAM / SOM)', 'Croissance', 'Tendances', 'Réglementation', 'Facteurs cycliques'], []],
+  ['Chaîne de valeur', ['Fournisseurs', 'Clients & distributeurs', 'Position de l\'entreprise', 'Dépendances stratégiques'], []],
+  ['Avantage concurrentiel (moat)', ['Marque', 'Coûts de changement', 'Économies d\'échelle', 'Brevets', 'Effet de réseau', 'Coûts de production', 'Barrières à l\'entrée'], []],
+  ['Concurrence', ['Concurrents par activité', 'Parts de marché', 'Positionnement', 'Forces & faiblesses', 'Substituts'], [C('comparatif', 'Face aux concurrents', { self: true })]],
+  ['Perspectives de croissance', ['Moteurs organiques', 'Acquisitions', 'Nouveaux marchés', 'Investissements & innovations'], []],
+  ['Risques', ['Opérationnels', 'Financiers', 'Réglementaires', 'Géopolitiques', 'Technologiques', 'Concurrentiels', 'Dépendances'], []],
+  ['Management & gouvernance', ['Dirigeants & historique', 'Stratégie', 'Rémunération', 'Qualité de l\'exécution'], []],
+  ['Actionnariat', ['Principaux actionnaires', 'Fondateurs', 'Institutionnels', 'Flottant', 'Conflits d\'intérêts'], [C('donut', 'Actionnariat')]],
+  ['Allocation du capital', ['Dividendes', 'Rachats d\'actions', 'Acquisitions', 'Désendettement', 'Rendement du capital investi'], [C('kpi', '', { bind: 'tv:rendementDiv' }), C('kpi', '', { bind: 'tv:actions' })]],
+  ['Analyse financière', ['CA, marges, bénéfices, cash-flow, dette, dilution, ROIC sur 5 à 10 ans'], [C('kpi', '', { bind: 'tv:ca' }), C('kpi', '', { bind: 'tv:margeOp' }), C('barres', 'Chiffre d\'affaires', { mode: 'tv', keys: ['ca'] }), C('kpi', '', { bind: 'tv:roic' }), C('kpi', '', { bind: 'tv:fcfParAction' }), C('courbes', 'BPA et FCF par action', { mode: 'tv', keys: ['eps', 'fcfParAction'] })]],
+  ['Qualité financière', ['Conversion des bénéfices en trésorerie', 'Besoin en fonds de roulement', 'Investissements', 'Solidité du bilan', 'Cyclicité'], [C('kpi', '', { bind: 'tv:detteOCF' })]],
+  ['Valorisation', ['Méthodes adaptées au secteur', 'Hypothèses', 'Scénarios pessimiste / central / optimiste', 'Valeur intrinsèque & marge de sécurité'], [C('kpi', '', { bind: 'tv:per' }), C('kpi', '', { bind: 'tv:pFcf' }), C('courbes', 'PER et P/FCF dans le temps', { mode: 'tv', keys: ['per', 'pFcf'] })]],
+  ['Wolf Score', ['Critères', 'Notation', 'Justification'], []],
+  ['Conclusion', ['Points forts', 'Points faibles', 'Risques majeurs', 'À surveiller', 'Thèse d\'investissement'], [C('citation', 'Thèse d\'investissement', { size: 'h' })]],
+  ['Actualités', [], []],
+  ['Sources', [], [C('source', 'Rapport annuel')]]
+];
 const BUILTIN = {
-  // Trame complète en 18 points (checklist de l'utilisateur du 2026-11-10, qui reprend l'ancienne « Analyse développée » :
-  // présentation, revenus par pays / secteur, concurrents, marché, moat, activités, perspectives, risques, actionnariat,
-  // ratios, conclusion). « Activité 1 » est à DUPLIQUER (⧉) pour chaque grande activité d'un groupe diversifié.
-  'wolf-entreprise': { id: 'wolf-entreprise', nom: 'Template analyse — 10/11/2026', type: 'entreprise', builtin: true, tree: T('', '', [
-    T('1. Présentation', '🏢', [T('Histoire & dates clés'), T('Activités'), T('Implantation'), T('Dirigeants')]),
-    T('2. Modèle économique', '⚙️', [T('Comment elle gagne de l\'argent'), T('Clients'), T('Produits & services'), T('Récurrence des revenus'), T('Structure des coûts')]),
-    T('3. Répartition du chiffre d\'affaires', '🧩', [T('Par pays & régions'), T('Par secteurs & activités'), T('Par filiales'), T('Évolution historique')]),
-    T('4. Analyse des segments', '📊', [T('Activité 1 (à dupliquer ⧉)', '', [T('Chiffre d\'affaires & croissance'), T('Marge opérationnelle & rentabilité'), T('Contribution aux résultats'), T('Marché'), T('Concurrence'), T('Moat'), T('Perspectives')])]),
-    T('5. Marché', '🌍', [T('Taille (TAM / SAM / SOM)'), T('Croissance'), T('Tendances'), T('Réglementation'), T('Facteurs cycliques')]),
-    T('6. Chaîne de valeur', '🔗', [T('Fournisseurs'), T('Clients & distributeurs'), T('Position de l\'entreprise'), T('Dépendances stratégiques')]),
-    T('7. Avantage concurrentiel (moat)', '🏰', [T('Marque'), T('Coûts de changement'), T('Économies d\'échelle'), T('Brevets & technologie'), T('Effet de réseau'), T('Coûts de production'), T('Barrières à l\'entrée')]),
-    T('8. Concurrence', '🎯', [T('Concurrents par activité'), T('Parts de marché'), T('Positionnement'), T('Forces & faiblesses'), T('Substituts & risque de remplacement'), T('Conclusion sur la concurrence')]),
-    T('9. Perspectives de croissance', '🚀', [T('Moteurs organiques'), T('Acquisitions'), T('Nouveaux marchés'), T('Investissements & innovations'), T('Perspectives par segment')]),
-    T('10. Risques', '⚠️', [T('Opérationnels'), T('Financiers'), T('Réglementaires'), T('Géopolitiques'), T('Technologiques'), T('Concurrentiels'), T('Dépendance clients / fournisseurs')]),
-    T('11. Management & gouvernance', '👔', [T('Dirigeants & historique'), T('Stratégie'), T('Rémunération'), T('Qualité de l\'exécution'), T('Décisions passées')]),
-    T('12. Actionnariat', '🧑‍🤝‍🧑', [T('Principaux actionnaires'), T('Fondateurs'), T('Investisseurs institutionnels'), T('Flottant'), T('Conflits d\'intérêts éventuels')]),
-    T('13. Allocation du capital', '💸', [T('Dividendes'), T('Rachats d\'actions'), T('Acquisitions'), T('Désendettement'), T('Investissements'), T('Rendement du capital investi')]),
-    T('14. Analyse financière historique', '📈', [T('Chiffre d\'affaires'), T('Marges'), T('Bénéfices'), T('Cash-flow'), T('Dette'), T('Dilution'), T('ROIC / ROE'), T('Ratios financiers')]),
-    T('15. Qualité financière', '🔬', [T('Conversion des bénéfices en trésorerie'), T('Besoin en fonds de roulement'), T('Dépenses d\'investissement'), T('Solidité du bilan'), T('Cyclicité')]),
-    T('16. Valorisation', '💰', [T('Méthodes adaptées au secteur'), T('Hypothèses'), T('Scénario pessimiste'), T('Scénario central'), T('Scénario optimiste'), T('Valeur intrinsèque & marge de sécurité')]),
-    T('17. Wolf Score', '🐺', [T('Critères'), T('Notation'), T('Justification')]),
-    T('18. Conclusion', '✅', [T('Points forts'), T('Points faibles'), T('Risques majeurs'), T('Qualité globale'), T('À surveiller'), T('Thèse d\'investissement')]),
-    T('Actualités', '📰')]) },
-  'wolf-chaine': { id: 'wolf-chaine', nom: 'Chaîne de valeur — 4 maillons', type: 'chaine', builtin: true, tree: T('', '', [
-    T('Amont', '⛏️'), T('Transformation', '🏭'), T('Distribution', '🚚'), T('Services & aval', '🛒')]) },
-  'vide': { id: 'vide', nom: 'Carte vide', type: 'libre', builtin: true, tree: T('', '', []) }
+  'wolf-entreprise': { id: 'wolf-entreprise', nom: 'Template analyse — 10/11/2026', type: 'entreprise', builtin: true, sections: WOLF_SECTIONS.map(([titre, hint, cards]) => ({ titre, hint, cards })) },
+  'wolf-chaine': { id: 'wolf-chaine', nom: 'Chaîne de valeur — 4 maillons', type: 'chaine', builtin: true, sections: ['Amont', 'Transformation', 'Distribution', 'Services & aval'].map(titre => ({ titre, hint: [], cards: [] })) },
+  'vide': { id: 'vide', nom: 'Dossier vide (une section)', type: 'libre', builtin: true, sections: [{ titre: 'Notes', hint: [], cards: [] }] }
 };
 
 /* ---------- état ---------- */
 let D = null, serverOk = false, loadErr = null, storeFile = '';
-// RO = site public (aucun serveur local) : copie publiée, lecture seule. Rien ne s'enregistre, aucun outil de modification.
 let RO = false, publishedAt = null;
-const isRo = () => ui.video || RO;
 let dirty = false, saving = false, saveTimer = null, lastSaved = null, saveErr = null, conflict = false, pendingDeleted = [];
-const ui = { docId: null, sel: null, video: false, fiche: null, draw: null, modal: null, toast: null, side: true, q: '', open: {}, editing: null, pop: null };
-const cam = { x: 0, y: 0, k: 1 };
-let pos = {}, els = {}, sizes = {}, tween = null, camTween = null, charts = [];
+const ui = { docId: null, view: 'grid', video: false, edit: null, big: null, modal: null, toast: null, side: true, q: '', open: {}, orgOpen: {}, menu: null, lib: null, drag: null };
+let charts = [], bigCharts = [], editTimer = null;
+const isRo = () => ui.video || RO;
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -73,12 +110,25 @@ const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLow
 const mediaUrl = f => RO ? 'data/public/media/' + encodeURIComponent(f) : '/api/atelier/media?f=' + encodeURIComponent(f);
 const sectors = () => (typeof GICS_SECTORS !== 'undefined' ? GICS_SECTORS : []);
 const sectorLabel = k => { const s = sectors().find(x => x.key === k); return s ? s.label : ''; };
+const num = v => { if (typeof v === 'number') return isFinite(v) ? v : null; const t = String(v == null ? '' : v).replace(/\s/g, '').replace(',', '.').replace('%', ''); if (t === '' || t === '-') return null; const n = Number(t); return isFinite(n) ? n : null; };
+const fr = (v, d) => v == null || !isFinite(v) ? '—' : v.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d });
+const ICO = {
+  expand: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M10 2h4v4M6 14H2v-4M14 2l-5 5M2 14l5-5"/></svg>',
+  dots: '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="13" cy="8" r="1.5"/></svg>',
+  chevD: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>',
+  chevR: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>',
+  plus: '<svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M7 2v10M2 7h10"/></svg>',
+  close: '<svg width="13" height="13" viewBox="0 0 12 12" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8"/></svg>',
+  left: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg>',
+  right: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg>',
+  shrink: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M14 6h-4V2M2 10h4v4M10 6l5-5M6 10l-5 5"/></svg>'
+};
 function sectorKeyFromText(txt){
   const t = norm(txt); if (!t) return '';
   const s = sectors().find(x => norm(x.label) === t || x.key === t || (x.match || []).some(m => t.includes(norm(m))));
   return s ? s.key : '';
 }
-// Seules les balises de mise en forme simples sont gardées (le contenu vient d'un champ éditable, mais on ne fait confiance à rien).
+// Seules les balises de mise en forme simples sont gardées.
 function clean(html){
   const t = document.createElement('template'); t.innerHTML = String(html || '');
   const OK = { B: 1, STRONG: 1, I: 1, EM: 1, U: 1, MARK: 1, SPAN: 1, BR: 1, DIV: 1, P: 1, UL: 1, OL: 1, LI: 1, H2: 1, H3: 1, A: 1, FONT: 1 };
@@ -97,31 +147,64 @@ function clean(html){
   walk(t.content);
   return t.innerHTML;
 }
+const plain = html => { const t = document.createElement('div'); t.innerHTML = clean(html); return t.textContent.replace(/\s+/g, ' ').trim(); };
 
 /* ---------- modèle ---------- */
 const doc = () => D && ui.docId ? D.docs[ui.docId] : null;
 const ver = d => { d = d || doc(); if (!d) return null; return d.versions.find(v => v.id === d.cur) || d.versions[d.versions.length - 1]; };
-function buildTree(v, t, parent){
-  const id = uid('n');
-  v.nodes[id] = { id, parent: parent || null, kids: [], titre: t.titre || '', icon: t.icon || '', color: t.color || '', collapsed: !!parent && (t.kids || []).length > 0, blocks: [] };
-  (t.kids || []).forEach(k => v.nodes[id].kids.push(buildTree(v, k, id)));
-  return id;
+function touch(){ const d = doc(); if (d) d.updatedAt = new Date().toISOString(); markDirty(); }
+function newCard(type, o){ return Object.assign({ id: uid('c'), type, size: TYPES[type] ? TYPES[type].size : 's', titre: '', createdAt: new Date().toISOString() }, JSON.parse(JSON.stringify(o || {})), { type }); }
+function sectionsFromTemplate(tpl){
+  if (tpl.sections) return tpl.sections;
+  // ancien modèle « carte mentale » (arbre) : une section par branche principale, les sous-branches en « à couvrir »
+  return ((tpl.tree && tpl.tree.kids) || []).map(k => ({ titre: k.titre, hint: (k.kids || []).map(x => x.titre), cards: [] }));
 }
-function treeOf(v, id){ const n = v.nodes[id]; return { titre: n.titre, icon: n.icon, color: n.color, kids: n.kids.filter(k => v.nodes[k] && !v.nodes[k].link).map(k => treeOf(v, k)) }; }
 function newVersion(tpl, label){
-  const v = { id: uid('v'), label: label || 'Version du ' + frDate(today()), date: today(), mode: 'pieuvre', root: null, nodes: {}, strokes: [] };
-  v.root = buildTree(v, tpl.tree, null);
+  const v = { id: uid('v'), label: label || 'Version du ' + frDate(today()), date: today(), kind: 'cards', sections: [], cards: {} };
+  sectionsFromTemplate(tpl).forEach((s, i) => {
+    const sec = { id: uid('s'), titre: s.titre, hint: (s.hint || []).slice(), color: s.color || PALETTE[i % PALETTE.length], collapsed: false, cards: [] };
+    (s.cards || []).forEach(c => { const n = newCard(c.type, c); delete n.self; if (c.self) n.cols = ['@self']; if (n.type === 'comparatif' && !n.metrics) n.metrics = ['croissanceCA', 'margeOp', 'roic', 'per', 'pFcf']; v.cards[n.id] = n; sec.cards.push(n.id); });
+    v.sections.push(sec);
+  });
   return v;
 }
-function touch(){ const d = doc(); if (d) d.updatedAt = new Date().toISOString(); markDirty(); }
-function colorOf(v, n){
-  let c = n, lvl1 = null;
-  while (c){ if (c.color) return c.color; if (c.parent === v.root) lvl1 = c; c = v.nodes[c.parent]; }
-  if (lvl1){ const i = v.nodes[v.root].kids.indexOf(lvl1.id); return PALETTE[(i < 0 ? 0 : i) % PALETTE.length]; }
-  return PALETTE[0];
+// Conversion d'une ancienne version « carte mentale » : une section par branche principale, chaque contenu de fiche
+// devient une carte. Les nœuds d'origine restent dans la version (v.nodes / v.root) : rien n'est effacé.
+function migrateVersion(v){
+  if (v.kind === 'cards' || !v.nodes || !v.root || !v.nodes[v.root]) { if (!v.sections){ v.kind = 'cards'; v.sections = v.sections || []; v.cards = v.cards || {}; } return false; }
+  v.kind = 'cards'; v.sections = []; v.cards = {}; v.migratedAt = new Date().toISOString();
+  const root = v.nodes[v.root];
+  const addBlocks = (sec, n, prefix) => {
+    if (n.link){ const c = newCard('concurrent', { titre: '', nom: D.docs[n.link] ? D.docs[n.link].titre : '', docId: n.link }); v.cards[c.id] = c; sec.cards.push(c.id); return; }
+    (n.blocks || []).forEach(b => {
+      let c;
+      const t = [prefix, b.titre].filter(Boolean).join(' — ');
+      if (b.type === 'texte' || b.type === 'actu') c = newCard('texte', { titre: t, html: b.html || '', date: b.date || '', source: b.source || '', imgs: b.imgs || [] });
+      else if (b.type === 'image') c = newCard('image', { titre: t, html: b.html || '', date: b.date || '', imgs: b.imgs || [] });
+      else if (b.type === 'tv') c = newCard('kpi', { bind: 'tv:prixActuel' });
+      else if (b.type === 'graph') c = newCard('barres', { titre: t, mode: 'tv', keys: [TVF[b.metric] ? b.metric : 'ca'] });
+      if (c){ if ((c.imgs || []).length && c.type === 'texte'){ c.type = 'image'; } v.cards[c.id] = c; sec.cards.push(c.id); }
+    });
+    (n.kids || []).forEach(k => { if (v.nodes[k]) addBlocks(sec, v.nodes[k], v.nodes[k].titre); });
+  };
+  if ((root.blocks || []).length){ const s0 = { id: uid('s'), titre: 'Général', hint: [], color: PALETTE[0], cards: [] }; addBlocks(s0, { blocks: root.blocks, kids: [] }, ''); v.sections.push(s0); }
+  root.kids.forEach((k, i) => {
+    const n = v.nodes[k]; if (!n) return;
+    const sec = { id: uid('s'), titre: (n.link && D.docs[n.link] ? D.docs[n.link].titre : n.titre) || 'Section', hint: (n.kids || []).map(x => v.nodes[x] && !(v.nodes[x].blocks || []).length ? v.nodes[x].titre : null).filter(Boolean), color: n.color || PALETTE[i % PALETTE.length], collapsed: false, cards: [] };
+    addBlocks(sec, n.link ? { link: n.link } : { blocks: n.blocks, kids: n.kids }, '');
+    v.sections.push(sec);
+  });
+  return true;
 }
-const depthOf = (v, n) => { let d = 0, c = n; while (c && c.parent){ d++; c = v.nodes[c.parent]; } return d; };
-function descendants(v, id, out){ out = out || []; (v.nodes[id] ? v.nodes[id].kids : []).forEach(k => { out.push(k); descendants(v, k, out); }); return out; }
+function migrateAll(){
+  let ch = false;
+  Object.values(D.docs).forEach(d => d.versions.forEach(v => {
+    if (migrateVersion(v)) ch = true;
+    Object.values(v.cards || {}).forEach(c => { if (c.type === 'comparatif' && !c.metrics){ c.metrics = ['croissanceCA', 'margeOp', 'roic', 'per', 'pFcf']; ch = true; } });
+  }));
+  Object.values(D.templates).forEach(t => { if (!t.sections && t.tree){ t.sections = sectionsFromTemplate(t); ch = true; } });
+  return ch;
+}
 function findCompany(name){
   if (typeof companies === 'undefined' || !name) return null;
   const t = norm(name);
@@ -129,19 +212,61 @@ function findCompany(name){
   if (!key) return null;
   const h = companies[key], last = h[h.length - 1] || {};
   let logo = last.lienImage || ''; if (!logo && typeof companyLogoUrl === 'function') logo = companyLogoUrl(key) || '';
-  return { key, logo, tv: String(last.ticker || '').includes(':') ? last.ticker : (last.tvSymbol || ''), secteur: sectorKeyFromText(last.secteur), sousSecteur: last.sousSecteur || '' };
+  return { key, rows: h, last, logo, tv: String(last.ticker || '').includes(':') ? last.ticker : (last.tvSymbol || ''), secteur: sectorKeyFromText(last.secteur), sousSecteur: last.sousSecteur || '', devise: last.devise || 'EUR' };
 }
+const curSym = d => ({ EUR: '€', USD: '$', GBP: '£', GBX: 'p', GBp: 'p', CHF: 'CHF', JPY: '¥' }[d] || d || '€');
+function fmtVal(v, u, devise, d){
+  if (v == null || !isFinite(v)) return '—';
+  const s = curSym(devise);
+  if (u === '%') return fr(v, d == null ? 1 : d) + ' %';
+  if (u === 'x') return fr(v, d == null ? 1 : d) + 'x';
+  if (u === 'cur') return fr(v, d == null ? 2 : d) + ' ' + s;
+  if (u === 'Mcur') return Math.abs(v) >= 1000 ? fr(v / 1000, 1) + ' Md' + s : fr(v, 0) + ' M' + s;
+  if (u === 'M') return fr(v, d == null ? 1 : d) + ' M';
+  return fr(v, d == null ? 2 : d) + (u ? ' ' + u : '');
+}
+// Série annuelle d'un champ TradingView pour une entreprise (lignes de companies[nom]).
+function tvSeries(co, key, years){
+  if (!co) return { labels: [], values: [] };
+  let rows = co.rows.filter(r => r.annee);
+  if (key === 'croissanceCA'){
+    const ca = rows.filter(r => typeof r.ca === 'number' && r.ca > 0);
+    const out = { labels: [], values: [] };
+    ca.forEach((r, i) => { if (i >= 5){ out.labels.push(r.annee); out.values.push((Math.pow(r.ca / ca[i - 5].ca, 1 / 5) - 1) * 100); } });
+    if (years) { out.labels = out.labels.slice(-years); out.values = out.values.slice(-years); }
+    return out;
+  }
+  rows = rows.filter(r => typeof r[key] === 'number' && isFinite(r[key]));
+  if (years) rows = rows.slice(-years);
+  return { labels: rows.map(r => r.annee), values: rows.map(r => r[key]) };
+}
+// Valeur liée d'une carte : { v, prev, label, u, d, devise, src, period, series }
+function resolveBind(doc, bind){
+  if (!bind) return null;
+  if (bind.startsWith('tv:')){
+    const key = bind.slice(3), f = TVF[key], co = findCompany(doc.nom || doc.titre); if (!f) return null;
+    const s = tvSeries(co, key);
+    const n = s.values.length;
+    return { v: n ? s.values[n - 1] : null, prev: n > 1 ? s.values[n - 2] : null, label: f.l, u: f.u, d: f.d, devise: co ? co.devise : 'EUR', src: 'TradingView', period: n ? String(s.labels[n - 1]) : '', series: s, low: !!f.low, known: !!co };
+  }
+  if (bind.startsWith('f:')){
+    const f = (doc.facts || {})[bind.slice(2)]; if (!f) return null;
+    return { v: num(f.value), prev: num(f.prev), label: f.label, u: f.unit, d: null, devise: '', src: f.source || 'Saisie', period: f.period || '', series: null, fact: true };
+  }
+  return null;
+}
+const bindLabel = (doc, bind) => { const r = resolveBind(doc, bind); return r ? r.label : ''; };
 
 /* ---------- persistance ---------- */
 async function load(){
   try { const p = await fetch('/api/ia/ping', { cache: 'no-store' }); const j = await p.json(); serverOk = !!(j && j.ok && j.v >= 12); } catch(e){ serverOk = false; }
   if (!serverOk){
-    // pas de serveur local (téléphone, autre ordinateur) : on lit la copie publiée sur le site
     try {
       const r = await fetch('data/public/atelier.json?_=' + Date.now(), { cache: 'no-store' });
       if (!r.ok) throw new Error('aucune copie publiée');
       D = await r.json(); D.docs = D.docs || {}; D.templates = {}; D.trash = [];
       RO = true; serverOk = true; loadErr = null; publishedAt = D.publishedAt || null;
+      migrateAll();
     } catch(e){ D = null; }
     return;
   }
@@ -152,6 +277,7 @@ async function load(){
     D = j.data || { version: 1, revision: 0, docs: {}, templates: {}, trash: [] };
     D.docs = D.docs || {}; D.templates = D.templates || {}; D.trash = D.trash || [];
     loadErr = null; dirty = false; conflict = false; pendingDeleted = [];
+    if (migrateAll()) markDirty();
   } catch(e){ loadErr = e.message; D = null; }
 }
 function markDirty(){
@@ -160,7 +286,7 @@ function markDirty(){
   clearTimeout(saveTimer); saveTimer = setTimeout(save, 700);
 }
 async function save(keepalive){
-  if (!serverOk || !D || conflict || !dirty) return;
+  if (!serverOk || !D || conflict || !dirty || RO) return;
   if (saving){ clearTimeout(saveTimer); saveTimer = setTimeout(save, 300); return; }
   saving = true; dirty = false; statusLabel();
   const deleted = pendingDeleted.slice();
@@ -185,7 +311,7 @@ function statusLabel(){
   else t = lastSaved ? '💾 Enregistré à ' + lastSaved.toLocaleTimeString('fr-FR') : '💾 Tout est enregistré';
   el.textContent = t; el.className = 'at-status ' + c;
 }
-window.addEventListener('beforeunload', e => { if (dirty && D && !conflict){ save(true); e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('beforeunload', e => { if (dirty && D && !conflict && !RO){ save(true); e.preventDefault(); e.returnValue = ''; } });
 document.addEventListener('visibilitychange', () => { if (document.hidden && dirty) save(true); });
 
 /* ---------- corbeille ---------- */
@@ -197,16 +323,18 @@ function trash(entry, label){
 function restore(tid){
   const i = D.trash.findIndex(t => t.id === tid); if (i < 0) return;
   const t = D.trash[i]; let ok = false;
-  if (t.kind === 'doc'){ if (!D.docs[t.data.id]){ D.docs[t.data.id] = t.data; ok = true; } }
+  if (t.kind === 'doc'){ if (!D.docs[t.data.id]){ D.docs[t.data.id] = t.data; migrateAll(); ok = true; } }
+  else if (t.kind === 'template'){ D.templates[t.data.id] = t.data; ok = true; }
   else {
     const d = D.docs[t.docId], v = d && d.versions.find(x => x.id === t.verId);
-    if (t.kind === 'version' && d){ d.versions.push(t.data); ok = true; }
-    else if (t.kind === 'node' && v){
-      const par = v.nodes[t.parent] ? t.parent : v.root;
-      t.data.forEach(n => { v.nodes[n.id] = n; });
-      t.data[0].parent = par; v.nodes[par].kids.splice(Math.min(t.index, v.nodes[par].kids.length), 0, t.data[0].id); ok = true;
-    } else if (t.kind === 'block' && v && v.nodes[t.node]){ v.nodes[t.node].blocks.splice(Math.min(t.index, v.nodes[t.node].blocks.length), 0, t.data); ok = true; }
-    else if (t.kind === 'strokes' && v){ v.strokes = t.data.concat(v.strokes || []); ok = true; }
+    if (t.kind === 'version' && d){ d.versions.push(t.data); migrateAll(); ok = true; }
+    else if (t.kind === 'card' && v){
+      const sec = v.sections.find(s => s.id === t.secId) || v.sections[0];
+      if (sec){ v.cards[t.data.id] = t.data; sec.cards.splice(Math.min(t.index, sec.cards.length), 0, t.data.id); ok = true; }
+    } else if (t.kind === 'section' && v){
+      t.cards.forEach(c => { v.cards[c.id] = c; });
+      v.sections.splice(Math.min(t.index, v.sections.length), 0, t.data); ok = true;
+    } else if (t.kind === 'fact' && d){ d.facts = d.facts || {}; d.facts[t.data.id] = t.data; ok = true; }
   }
   if (!ok){ ui.toast = { text: 'Impossible de restaurer : l\'emplacement d\'origine n\'existe plus (l\'élément reste dans la corbeille).' }; showToast(); return; }
   D.trash.splice(i, 1); markDirty();
@@ -221,24 +349,22 @@ function showToast(){
   clearTimeout(showToast.tm); showToast.tm = setTimeout(() => { el.classList.remove('on'); }, t.undo ? 9000 : 3500);
 }
 
-/* ---------- actions sur les dossiers ---------- */
+/* ---------- actions ---------- */
 function createDoc(o){
   const tpl = D.templates[o.tpl] || BUILTIN[o.tpl] || BUILTIN.vide;
   const c = o.type === 'entreprise' ? findCompany(o.titre) : null;
   const d = { id: uid('d'), type: o.type, titre: o.titre, nom: c ? c.key : '', logo: o.logo || (c ? c.logo : ''), tv: c ? c.tv : '', secteur: o.secteur || (c ? c.secteur : ''), sousSecteur: o.sousSecteur || (c ? c.sousSecteur : ''),
-    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), versions: [], cur: null };
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), versions: [], cur: null, facts: {} };
   const v = newVersion(tpl, 'Version 1 — ' + frDate(today()));
-  v.nodes[v.root].titre = o.titre;
   d.versions.push(v); d.cur = v.id;
   D.docs[d.id] = d; markDirty();
   return d;
 }
-function openDoc(id, focusNode){
+function openDoc(id){
   if (!D.docs[id]) return;
-  ui.docId = id; ui.sel = focusNode || null; ui.fiche = null; ui.draw = null; ui.editing = null; ui.pop = null;
-  pos = {}; els = {}; sizes = {};
+  ui.docId = id; ui.edit = null; ui.big = null; ui.menu = null; ui.orgOpen = {};
   renderShell();
-  requestAnimationFrame(() => fitAll(false));
+  const m = $('atMain'); if (m) m.scrollTop = 0;
 }
 function deleteDoc(id){
   const d = D.docs[id]; if (!d) return;
@@ -246,64 +372,70 @@ function deleteDoc(id){
   if (ui.docId === id) ui.docId = null;
   trash({ kind: 'doc', data: d }, 'Dossier « ' + d.titre + ' »'); markDirty(); renderShell();
 }
-function deleteNode(nid){
-  const d = doc(), v = ver(); const n = v.nodes[nid]; if (!n || nid === v.root) return;
-  const ids = [nid].concat(descendants(v, nid));
-  const data = ids.map(i => v.nodes[i]);
-  const par = v.nodes[n.parent], index = par.kids.indexOf(nid);
-  par.kids.splice(index, 1); ids.forEach(i => { delete v.nodes[i]; });
-  ui.sel = n.parent;
-  trash({ kind: 'node', docId: d.id, verId: v.id, parent: n.parent, index, data }, 'Branche « ' + (n.titre || 'sans titre') + ' »' + (ids.length > 1 ? ' (' + ids.length + ' nœuds)' : ''));
-  touch(); renderMap();
+const secOf = (v, cid) => v.sections.find(s => s.cards.includes(cid));
+function addCard(secId, type, o){
+  const v = ver(), sec = v.sections.find(s => s.id === secId) || v.sections[0]; if (!sec) return null;
+  const c = newCard(type, o || {});
+  if (type === 'comparatif' && !c.cols) c.cols = ['@self'];
+  if (type === 'comparatif' && !c.metrics) c.metrics = ['croissanceCA', 'margeOp', 'roic', 'per', 'pFcf'];
+  if (type === 'kpi' && !c.bind && doc().type === 'entreprise' && findCompany(doc().nom || doc().titre)) c.bind = 'tv:ca';
+  if ((type === 'barres' || type === 'courbes') && !c.mode) { if (findCompany(doc().nom || doc().titre)){ c.mode = 'tv'; c.keys = type === 'barres' ? ['ca'] : ['eps']; } else { c.mode = 'manuel'; c.labels = ['2022', '2023', '2024', '2025']; c.series = [{ name: 'Série 1', values: [], color: SERIES_COLORS[0] }]; } }
+  if (type === 'donut' && !c.rows) c.rows = [{ label: 'Catégorie 1', v: null }, { label: 'Catégorie 2', v: null }];
+  v.cards[c.id] = c; sec.cards.push(c.id); sec.collapsed = false;
+  touch(); return c;
 }
-// Copie complète d'une branche (sous-branches et contenu des fiches), insérée juste après l'originale. Les liens vers un dossier
-// d'entreprise ne sont pas recopiés (un dossier n'apparaît qu'une fois dans une chaîne).
-function duplicateNode(nid){
-  const v = ver(), src = v.nodes[nid]; if (!src || nid === v.root) return;
-  const copy = (id, parent, top) => {
-    const o = v.nodes[id], c = JSON.parse(JSON.stringify(o)); c.id = uid('n'); c.parent = parent; c.kids = []; delete c.link;
-    (c.blocks || []).forEach(b => { b.id = uid('b'); });
-    if (top){ c.titre = (o.titre || '').replace(/\s*\(à dupliquer ⧉\)/, '').replace(/\s+\d+$/, '') + ' ' + (v.nodes[o.parent].kids.length + 1); if (typeof c.y === 'number') c.y += 70; }
-    else if (typeof c.y === 'number') c.y += 70;
-    v.nodes[c.id] = c;
-    o.kids.forEach(k => { if (v.nodes[k] && !v.nodes[k].link) c.kids.push(copy(k, c.id, false)); });
-    return c.id;
-  };
-  const par = v.nodes[src.parent], id = copy(nid, src.parent, true);
-  par.kids.splice(par.kids.indexOf(nid) + 1, 0, id);
-  ui.sel = id; ui.pop = null; touch(); renderMap();
+function deleteCard(cid){
+  const v = ver(), sec = secOf(v, cid), c = v.cards[cid]; if (!sec || !c) return;
+  const index = sec.cards.indexOf(cid); sec.cards.splice(index, 1); delete v.cards[cid];
+  if (ui.edit === cid) ui.edit = null;
+  trash({ kind: 'card', docId: doc().id, verId: v.id, secId: sec.id, index, data: c }, 'Carte « ' + (cardTitle(c) || TYPES[c.type].l) + ' »');
+  touch(); renderBody();
 }
-function addNode(parentId, o){
-  const v = ver(), p = v.nodes[parentId]; if (!p) return null;
-  const id = uid('n');
-  const n = v.nodes[id] = Object.assign({ id, parent: parentId, kids: [], titre: '', icon: '', color: '', collapsed: false, blocks: [] }, o || {});
-  if (v.mode === 'libre' && pos[parentId]){
-    const dir = parentId === v.root ? (p.kids.length % 2 ? -1 : 1) : (pos[parentId].dir || 1);
-    n.x = Math.round(pos[parentId].x + dir * 240); n.y = Math.round(pos[parentId].y + (p.kids.length - 0.5) * 60 - 30);
-  }
-  p.kids.push(id); p.collapsed = false;
-  touch(); return n;
+function duplicateCard(cid){
+  const v = ver(), sec = secOf(v, cid), c = v.cards[cid]; if (!sec || !c) return;
+  const n = JSON.parse(JSON.stringify(c)); n.id = uid('c'); n.createdAt = new Date().toISOString();
+  v.cards[n.id] = n; sec.cards.splice(sec.cards.indexOf(cid) + 1, 0, n.id); touch(); renderBody();
+}
+function moveCard(cid, toSec, beforeCid){
+  const v = ver(), from = secOf(v, cid), to = v.sections.find(s => s.id === toSec); if (!from || !to || cid === beforeCid) return;
+  from.cards.splice(from.cards.indexOf(cid), 1);
+  const i = beforeCid ? to.cards.indexOf(beforeCid) : -1;
+  if (i >= 0) to.cards.splice(i, 0, cid); else to.cards.push(cid);
+  to.collapsed = false; touch(); renderBody();
+}
+function addSection(titre){
+  const v = ver(); const s = { id: uid('s'), titre: titre || 'Nouvelle section', hint: [], color: PALETTE[v.sections.length % PALETTE.length], collapsed: false, cards: [] };
+  v.sections.push(s); touch(); return s;
+}
+function deleteSection(sid){
+  const v = ver(), i = v.sections.findIndex(s => s.id === sid); if (i < 0) return;
+  const s = v.sections[i], cards = s.cards.map(id => v.cards[id]).filter(Boolean);
+  v.sections.splice(i, 1); s.cards.forEach(id => { delete v.cards[id]; });
+  trash({ kind: 'section', docId: doc().id, verId: v.id, index: i, data: s, cards }, 'Section « ' + s.titre + ' »' + (cards.length ? ' (' + cards.length + ' cartes)' : ''));
+  touch(); renderBody();
 }
 
 /* ====================== RENDU GÉNÉRAL ====================== */
 function page(){ return $(PAGE_ID); }
+function destroyCharts(list){ list.forEach(c => { try { c.destroy(); } catch(e){} }); list.length = 0; }
 function renderShell(){
   const pg = page(); if (!pg) return;
-  charts.forEach(c => { try { c.destroy(); } catch(e){} }); charts = [];
+  destroyCharts(charts);
   if (!serverOk || !D){
-    pg.innerHTML = '<div class="at-off"><h2>🗂 Atelier d\'analyses</h2><p>' + (loadErr ? 'Lecture impossible : ' + esc(loadErr) : 'Le serveur local ne répond pas, ou c\'est une ancienne version.') +
-      '</p><p>Ferme l\'appli puis relance le raccourci Bureau <b>« Wolf Analysis »</b>. Rien n\'est modifiable tant que la sauvegarde sur le disque n\'est pas disponible : aucune donnée ne reste seulement en mémoire.</p><p class="at-faint">Sur un téléphone ou un autre ordinateur : aucune analyse n\'a encore été publiée en ligne (bouton « 🌐 Publier en ligne » sur le PC).</p><button type="button" class="at-btn gold" id="atRetry">Réessayer</button></div>';
-    $('atRetry').onclick = onShow.bind(null, true); return;
+    pg.innerHTML = '<div class="at-off"><h2>🗂 Atelier d\'analyses</h2><p>' + (loadErr ? 'Lecture impossible : ' + esc(loadErr) : location.protocol === 'https:' ? 'Aucune analyse n\'a encore été publiée en ligne (bouton « 🌐 Publier en ligne » sur le PC).' : 'Le serveur local ne répond pas, ou c\'est une ancienne version.') +
+      '</p>' + (location.protocol === 'https:' ? '' : '<p>Ferme l\'appli puis relance le raccourci Bureau <b>« Wolf Analysis »</b>. Rien n\'est modifiable tant que la sauvegarde sur le disque n\'est pas disponible : aucune donnée ne reste seulement en mémoire.</p>') + '<button type="button" class="at-btn gold" id="atRetry">Réessayer</button></div>';
+    $('atRetry').onclick = () => onShow(true); return;
   }
   const d = doc();
   pg.className = 'page active at-page' + (ui.video ? ' at-video' : '') + (ui.side ? '' : ' at-noside') + (RO ? ' at-ro' : '');
   pg.innerHTML = (conflict ? '<div class="at-conflict">⚠ Ce fichier a été modifié depuis un autre onglet : tes dernières modifications ici ne sont pas enregistrées. <button type="button" class="at-btn" id="atReload">Recharger la dernière version</button></div>' : '') +
-    '<div class="at-layout"><aside class="at-side" id="atSide">' + sideHtml() + '</aside><section class="at-main" id="atMain">' + (d ? mainHtml(d) : homeHtml()) + '</section></div>' +
-    '<div id="atFicheHost"></div><div id="atModalHost"></div>';
+    '<div class="at-layout aw-layout"><aside class="at-side" id="atSide">' + sideHtml() + '</aside><section class="at-main aw-main" id="atMain">' + (d ? docHtml(d) : homeHtml()) + '</section></div>' +
+    '<div id="atModalHost"></div><div id="awEditHost"></div>';
   wireShell();
   statusLabel();
-  if (d){ els = {}; renderMap(true); if (ui.fiche) renderFiche(false); }
+  if (d) renderBody();
   if (ui.modal) renderModal();
+  if (ui.edit) renderEditor();
 }
 
 /* ---------- répertoire (colonne de gauche) ---------- */
@@ -330,503 +462,711 @@ function sideHtml(){
     html += '</div>';
   });
   const libres = all.filter(d => d.type === 'libre');
-  if (libres.length) html += '<div class="at-grp"><div class="at-grp-h">Cartes libres <small>' + libres.length + '</small></div>' + libres.map(row).join('') + '</div>';
+  if (libres.length) html += '<div class="at-grp"><div class="at-grp-h">Dossiers libres <small>' + libres.length + '</small></div>' + libres.map(row).join('') + '</div>';
   if (!all.length) html = '<p class="at-empty">' + (q ? 'Aucun dossier ne correspond.' : 'Aucun dossier pour l\'instant.') + '</p>';
   return '<div class="at-side-top"><button type="button" class="at-home" data-home>🗂 Atelier d\'analyses</button><div class="at-status" id="atStatus"></div>' +
-    '<button type="button" class="at-btn gold wide" data-new>＋ Nouveau dossier</button><input type="search" class="at-search" id="atSearch" placeholder="Rechercher un dossier…" value="' + esc(ui.q) + '"></div><div class="at-tree">' + html + '</div>';
+    (RO ? '' : '<button type="button" class="at-btn gold wide" data-new>＋ Nouveau dossier</button>') + '<input type="search" class="at-search" id="atSearch" placeholder="Rechercher un dossier…" value="' + esc(ui.q) + '"></div><div class="at-tree">' + html + '</div>';
 }
 
 /* ---------- accueil ---------- */
 function homeHtml(){
   const list = Object.values(D.docs).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
-  const card = d => { const v = ver(d), n = Object.keys(v.nodes).length, nb = Object.values(v.nodes).reduce((s, x) => s + (x.blocks || []).length, 0);
-    return '<button type="button" class="at-card" data-open="' + d.id + '">' + docLogo(d, 54) + '<b>' + esc(d.titre) + '</b><span>' + esc(TYPE_LABEL[d.type]) + (d.secteur ? ' · ' + esc(sectorLabel(d.secteur)) : '') + '</span>' +
-      '<small>' + n + ' nœuds · ' + nb + ' contenus · ' + d.versions.length + ' version' + (d.versions.length > 1 ? 's' : '') + '</small><small>Modifié le ' + frDate(d.updatedAt) + '</small></button>'; };
+  const card = d => { const v = ver(d), nc = Object.keys(v.cards || {}).length;
+    return '<button type="button" class="at-card" data-open="' + d.id + '">' + docLogo(d, 54) + '<b>' + esc(d.titre) + '</b><span>' + esc(DOC_LABEL[d.type]) + (d.secteur ? ' · ' + esc(sectorLabel(d.secteur)) : '') + '</span>' +
+      '<small>' + (v.sections || []).length + ' sections · ' + nc + ' cartes · ' + d.versions.length + ' version' + (d.versions.length > 1 ? 's' : '') + '</small><small>Modifié le ' + frDate(d.updatedAt) + '</small></button>'; };
   const tpls = Object.values(D.templates);
-  return '<div class="at-home-wrap"><div class="at-hero"><h2>Atelier d\'analyses</h2><p>Toutes tes analyses au même endroit : une carte mentale par entreprise, rangée par secteur et par chaîne de valeur. Tout est enregistré automatiquement dans un fichier sur ton ordinateur, avec des copies de secours.</p>' +
-    '<div class="at-hero-btns"><button type="button" class="at-btn gold" data-new="entreprise">＋ Analyse d\'entreprise</button><button type="button" class="at-btn" data-new="chaine">＋ Chaîne de valeur</button><button type="button" class="at-btn" data-new="libre">＋ Carte libre</button></div></div>' +
+  return '<div class="at-home-wrap"><div class="at-hero"><h2>Atelier d\'analyses</h2><p>Toutes tes analyses au même endroit, en cartes rangées par sections, avec une vue organigramme pour les vidéos. Tout est enregistré automatiquement dans un fichier sur ton ordinateur, avec des copies de secours.</p>' +
+    (RO ? '' : '<div class="at-hero-btns"><button type="button" class="at-btn gold" data-new="entreprise">＋ Analyse d\'entreprise</button><button type="button" class="at-btn" data-new="chaine">＋ Chaîne de valeur</button><button type="button" class="at-btn" data-new="libre">＋ Dossier libre</button></div>') + '</div>' +
     (list.length ? '<h3 class="at-h3">Dossiers récents</h3><div class="at-cards">' + list.map(card).join('') + '</div>' : '') +
-    '<h3 class="at-h3">Mes modèles de structure</h3><div class="at-tpls">' + (tpls.length ? tpls.map(t => '<div class="at-tpl"><b>' + esc(t.nom) + '</b><small>' + esc(TYPE_LABEL[t.type] || '') + ' · ' + countTree(t.tree) + ' branches</small><button type="button" class="at-x" data-deltpl="' + t.id + '" title="Supprimer ce modèle">✕</button></div>').join('')
-      : '<p class="at-empty">Aucun modèle personnel. Ouvre un dossier, construis ta structure, puis « 💾 Modèle » : elle sera proposée à chaque nouveau dossier.</p>') + '</div>' +
-    '<h3 class="at-h3">Sauvegarde</h3><div class="at-save-box"><p>Fichier : <code>' + esc(storeFile || 'data/mes-portefeuilles/atelier.json') + '</code><br>Copies automatiques : toutes les 10 minutes (300 gardées), une par jour dans <code>Documents\\Wolf Analysis - sauvegardes</code>, et une copie figée chaque mois. Les images sont des fichiers séparés, jamais supprimés.</p>' +
+    (RO ? '' : '<h3 class="at-h3">Mes modèles de structure</h3><div class="at-tpls">' + (tpls.length ? tpls.map(t => '<div class="at-tpl"><b>' + esc(t.nom) + '</b><small>' + esc(DOC_LABEL[t.type] || '') + ' · ' + sectionsFromTemplate(t).length + ' sections</small><button type="button" class="at-x" data-deltpl="' + t.id + '" title="Supprimer ce modèle">✕</button></div>').join('')
+      : '<p class="at-empty">Aucun modèle personnel. Ouvre un dossier, organise tes sections et tes cartes, puis « 💾 Modèle » : la structure sera proposée à chaque nouveau dossier.</p>') + '</div>' +
+    '<h3 class="at-h3">Sauvegarde</h3><div class="at-save-box"><p>Fichier : <code>' + esc(storeFile || 'data/mes-portefeuilles/atelier.json') + '</code><br>Copies automatiques : toutes les 10 minutes (300 gardées), une par jour dans <code>Documents\\Wolf Analysis - sauvegardes</code>, et une copie figée chaque mois. Les images et PDF sont des fichiers séparés, jamais supprimés.</p>' +
     '<button type="button" class="at-btn" data-export>⬇ Télécharger une copie (.json)</button></div>' +
-    '<h3 class="at-h3">Corbeille <small>(' + D.trash.length + ')</small></h3><div class="at-trash">' + (D.trash.length ? D.trash.slice(0, 60).map(t => '<div class="at-trash-row"><span>' + esc(t.label) + '</span><small>' + frDate(t.at) + '</small><button type="button" class="at-btn sm" data-restore="' + t.id + '">↶ Restaurer</button></div>').join('')
-      : '<p class="at-empty">Vide. Tout ce que tu supprimes arrive ici et peut être restauré.</p>') + '</div></div>';
-}
-const countTree = t => (t.kids || []).reduce((s, k) => s + 1 + countTree(k), 0);
-
-/* ---------- barre du dossier ---------- */
-function crumbHtml(d){
-  const parts = [];
-  if (d.secteur) parts.push(esc(sectorLabel(d.secteur)));
-  if (d.sousSecteur) parts.push(esc(d.sousSecteur));
-  if (d.chaine && D.docs[d.chaine.doc]){
-    const cd = D.docs[d.chaine.doc], cv = ver(cd), link = Object.values(cv.nodes).find(n => n.link === d.id), mail = link && cv.nodes[link.parent];
-    parts.push('<button type="button" class="at-crumb" data-open="' + cd.id + '">🔗 ' + esc(cd.titre) + '</button>');
-    if (mail && mail.id !== cv.root) parts.push(esc(mail.titre));
-  }
-  const chip = d.type === 'entreprise' && window.PRIX_UI ? window.PRIX_UI.chip(d.titre) : '';
-  return (parts.length ? parts.join(' › ') : '<span class="at-faint">' + (RO ? '' : 'Non rangé — ⚙ pour choisir un secteur') + '</span>') + chip;
-}
-function mainHtml(d){
-  const v = ver(d);
-  const drawBar = ui.draw ? '<div class="at-drawbar">🖌 Dessin sur la carte : ' + ['#F0C877', '#E5636B', '#4A9FE0', '#4FD1A5', '#FFFFFF'].map(c => '<button type="button" class="at-dot' + (ui.draw.c === c ? ' on' : '') + '" style="background:' + c + '" data-dc="' + c + '"></button>').join('') +
-    [3, 6, 12].map(w => '<button type="button" class="at-btn sm' + (ui.draw.w === w ? ' on' : '') + '" data-dw="' + w + '">' + (w === 3 ? 'Fin' : w === 6 ? 'Moyen' : 'Épais') + '</button>').join('') +
-    '<button type="button" class="at-btn sm" data-dundo>↶ Dernier trait</button><button type="button" class="at-btn sm" data-dclear>Tout effacer</button><button type="button" class="at-btn sm gold" data-ddone>Terminé</button></div>' : '';
-  return '<div class="at-top"><button type="button" class="at-btn ico" data-side title="Afficher / masquer le répertoire">☰</button>' + docLogo(d, 30) +
-    '<div class="at-top-t"><b>' + esc(d.titre) + '</b><span>' + crumbHtml(d) + '</span></div>' +
-    '<select class="at-sel" id="atVer" title="Version affichée">' + d.versions.map(x => '<option value="' + x.id + '"' + (x.id === v.id ? ' selected' : '') + '>' + esc(x.label) + '</option>').join('') + '</select>' +
-    '<button type="button" class="at-btn sm" data-newver title="Copie complète de cette version, que tu peux modifier sans toucher à l\'ancienne">＋ Version</button>' +
-    '<span class="at-seg"><button type="button" class="' + (v.mode !== 'libre' ? 'on' : '') + '" data-mode="pieuvre" title="Branches rangées automatiquement">Pieuvre</button><button type="button" class="' + (v.mode === 'libre' ? 'on' : '') + '" data-mode="libre" title="Tu places chaque nœud à la main">Libre</button></span>' +
-    '<button type="button" class="at-btn sm" data-exp="1">Tout déplier</button><button type="button" class="at-btn sm" data-exp="0">Tout replier</button><button type="button" class="at-btn sm" data-fit title="Voir toute la carte (touche F)">⤢ Vue d\'ensemble</button>' +
-    '<button type="button" class="at-btn sm" data-draw title="Dessiner sur la carte (enregistré avec elle)">🖌 Dessin</button><button type="button" class="at-btn sm" data-savetpl title="Garder cette structure pour la réutiliser">💾 Modèle</button>' +
-    '<button type="button" class="at-btn sm" data-props title="Nom, secteur, logo, version">⚙</button><button type="button" class="at-btn sm gold" data-video title="Masque tout l\'habillage pour la vidéo">🎬 Mode vidéo</button></div>' + drawBar +
-    '<div class="at-view' + (ui.draw ? ' drawing' : '') + '" id="atView"><div class="at-world" id="atWorld"><svg class="at-svg" id="atSvg"><g id="atStrokes"></g><g id="atEdges"></g></svg><div id="atNodes"></div></div>' +
-    '<div class="at-vbar"><button type="button" data-zoom="-1">−</button><button type="button" data-fit>⤢</button><button type="button" data-zoom="1">＋</button>' + (ui.video ? '<button type="button" data-exp="0" title="Tout replier">⏮</button><button type="button" class="gold" data-video>✕ Quitter le mode vidéo</button>' : '') + '</div>' +
-    '<div class="at-hint">' + (isRo() ? 'Clic sur une branche : elle se déplie · 📄 : ouvre la fiche · F : vue d\'ensemble' : 'Clic : sélectionner · Double-clic : ouvrir la fiche · Tab : nouvelle branche · Entrée : même niveau · F2 : renommer · Suppr : corbeille') + '</div></div>';
+    '<h3 class="at-h3">Corbeille <small>(' + D.trash.length + ')</small></h3><div class="at-trash">' + (D.trash.length ? D.trash.slice(0, 80).map(t => '<div class="at-trash-row"><span>' + esc(t.label) + '</span><small>' + frDate(t.at) + '</small><button type="button" class="at-btn sm" data-restore="' + t.id + '">↶ Restaurer</button></div>').join('')
+      : '<p class="at-empty">Vide. Tout ce que tu supprimes arrive ici et peut être restauré.</p>') + '</div>') + '</div>';
 }
 
-/* ====================== CARTE MENTALE ====================== */
-function visKids(v, n){ return n.collapsed ? [] : n.kids.map(i => v.nodes[i]).filter(Boolean); }
-function visibleSet(v){ const out = []; const go = n => { out.push(n); visKids(v, n).forEach(go); }; if (v.nodes[v.root]) go(v.nodes[v.root]); return out; }
-function autoLayout(v, sz, rightOnly){
-  const P = {}, H = {}, HG = 64, VG = 14, VG1 = 26;
-  const s = id => sz[id] || { w: 170, h: 40 };
-  const sub = n => { let t = 0; visKids(v, n).forEach((k, i) => { t += sub(k) + (i ? VG : 0); }); return (H[n.id] = Math.max(s(n.id).h, t)); };
-  const place = (n, x, y, dir) => { P[n.id] = { x, y, dir }; const ks = visKids(v, n); if (!ks.length) return;
-    let tot = 0; ks.forEach((k, i) => { tot += H[k.id] + (i ? VG : 0); });
-    let yy = y - tot / 2;
-    ks.forEach(k => { place(k, x + dir * (s(n.id).w / 2 + HG + s(k.id).w / 2), yy + H[k.id] / 2, dir); yy += H[k.id] + VG; }); };
-  const root = v.nodes[v.root]; P[root.id] = { x: 0, y: 0, dir: 0 };
-  const ks = visKids(v, root), half = rightOnly ? ks.length : Math.ceil(ks.length / 2);
-  [[ks.slice(0, half), 1], [ks.slice(half), -1]].forEach(([arr, dir]) => {
-    let tot = 0; arr.forEach((k, i) => { tot += sub(k) + (i ? VG1 : 0); });
-    let yy = -tot / 2;
-    arr.forEach(k => { place(k, dir * (s(root.id).w / 2 + HG + 24 + s(k.id).w / 2), yy + H[k.id] / 2, dir); yy += H[k.id] + VG1; });
-  });
-  return P;
+/* ---------- en-tête du dossier ---------- */
+function docHtml(d){
+  const v = ver(d), co = findCompany(d.nom || d.titre), last = co ? co.last : null;
+  const chips = [d.secteur ? sectorLabel(d.secteur) : '', d.sousSecteur || '', DOC_LABEL[d.type]].filter(Boolean).map(t => '<span class="aw-chip">' + esc(t) + '</span>').join('') +
+    '<span class="aw-chip gold">' + esc(v.label) + '</span>';
+  const prix = d.type === 'entreprise' && window.PRIX_UI ? window.PRIX_UI.chip(d.titre) : '';
+  let chain = '';
+  if (d.chaine && D.docs[d.chaine.doc]) chain = '<button type="button" class="at-crumb" data-open="' + d.chaine.doc + '">🔗 ' + esc(D.docs[d.chaine.doc].titre) + '</button>';
+  const cours = last && typeof last.prixActuel === 'number' ? '<div class="aw-price"><small>Cours</small><b>' + fmtVal(last.prixActuel, 'cur', co.devise) + '</b>' + (last.tvLiveAt ? '<span>TradingView</span>' : '') + '</div>' : '';
+  return '<header class="aw-head">' + (ui.video ? '' : '<button type="button" class="at-btn ico" data-side title="Afficher / masquer le répertoire">☰</button>') + docLogo(d, 54) +
+    '<div class="aw-head-t"><div class="aw-chips">' + chips + chain + prix + '</div><h1>' + esc(d.titre) + '</h1></div>' + cours + '</header>' +
+    '<div class="aw-bar">' +
+      '<span class="at-seg"><button type="button" class="' + (ui.view === 'grid' ? 'on' : '') + '" data-view="grid">Grille</button><button type="button" class="' + (ui.view === 'org' ? 'on' : '') + '" data-view="org">Organigramme</button></span>' +
+      (ui.video ? '' : '<select class="at-sel" id="atVer" title="Version affichée">' + d.versions.map(x => '<option value="' + x.id + '"' + (x.id === v.id ? ' selected' : '') + '>' + esc(x.label) + '</option>').join('') + '</select>') +
+      (isRo() ? '' : '<button type="button" class="at-btn sm" data-newver title="Copie complète de cette version, l\'ancienne reste intacte">＋ Version</button><button type="button" class="at-btn sm" data-facts title="Les chiffres du dossier, utilisés par les cartes">📊 Données</button><button type="button" class="at-btn sm" data-savetpl title="Garder cette structure pour la réutiliser">💾 Modèle</button><button type="button" class="at-btn sm" data-props title="Nom, secteur, logo, version">⚙</button>') +
+      '<span style="flex:1"></span>' +
+      (ui.view === 'grid' ? '<button type="button" class="at-btn sm" data-allsec="0">Tout replier</button><button type="button" class="at-btn sm" data-allsec="1">Tout déplier</button>' : '<button type="button" class="at-btn sm" data-orgall="1">Tout ouvrir</button><button type="button" class="at-btn sm" data-orgall="0">Tout rabattre</button>') +
+      (isRo() ? '' : '<button type="button" class="at-btn sm" data-addsec>＋ Section</button>') +
+      (RO ? '' : '<button type="button" class="at-btn sm ' + (ui.video ? 'gold' : '') + '" data-video title="Masque tout l\'habillage pour la vidéo">' + (ui.video ? '✕ Quitter le mode vidéo' : '🎬 Mode vidéo') + '</button>') +
+    '</div><div id="awBody"></div>';
 }
-function layout(v, d){
-  const A = autoLayout(v, sizes, d.type === 'chaine');
-  if (v.mode !== 'libre') return A;
-  const P = {};
-  visibleSet(v).forEach(n => {
-    const par = v.nodes[n.parent];
-    if (typeof n.x !== 'number'){ n.x = Math.round(A[n.id].x); n.y = Math.round(A[n.id].y); }
-    P[n.id] = { x: n.x, y: n.y, dir: par ? (n.x >= (par.x || 0) ? 1 : -1) : 0 };
-  });
-  return P;
+
+/* ====================== CARTES ====================== */
+function cardTitle(c){
+  if (c.titre) return c.titre;
+  if (c.type === 'kpi'){ const d = doc(); return c.bind ? bindLabel(d, c.bind) : (c.label || ''); }
+  if (c.type === 'concurrent') return c.nom || '';
+  return '';
 }
-function nodeHtml(d, v, n){
-  const isRoot = n.id === v.root, link = n.link && D.docs[n.link], nb = (n.blocks || []).length, hidden = n.collapsed ? descendants(v, n.id).length : 0;
-  const titre = link ? link.titre : n.titre;
-  let h = '';
-  if (isRoot) h += d.logo ? '<img class="at-root-logo" src="' + esc(d.logo) + '" alt="" draggable="false" onerror="this.style.display=\'none\'">' : '<span class="at-root-ini">' + esc(d.type === 'chaine' ? '🔗' : (d.titre || '?').charAt(0).toUpperCase()) + '</span>';
-  else if (link) h += docLogo(link, 26);
-  else if (n.icon) h += '<span class="at-ico">' + esc(n.icon) + '</span>';
-  h += ui.editing === n.id ? '<span class="at-t" contenteditable="true" spellcheck="false" id="atEdit">' + esc(titre) + '</span>' : '<span class="at-t">' + (esc(titre) || '<i>Sans titre</i>') + '</span>';
-  if (nb) h += '<button type="button" class="at-badge" data-act="fiche" title="Ouvrir la fiche (' + nb + ' contenu' + (nb > 1 ? 's' : '') + ')">📄 ' + nb + '</button>';
-  if (link) h += '<button type="button" class="at-badge" data-act="golink" title="Ouvrir le dossier de cette entreprise">📁</button>';
-  if (n.kids.length) h += '<button type="button" class="at-chev" data-act="toggle" title="' + (n.collapsed ? 'Déplier' : 'Replier') + '">' + (n.collapsed ? '＋' + hidden : '−') + '</button>';
-  if (ui.sel === n.id && !isRo() && !ui.draw && ui.editing !== n.id){
-    const i = isRoot ? -1 : v.nodes[n.parent].kids.indexOf(n.id);
-    h += '<div class="at-actions"><button type="button" data-act="add" title="Nouvelle branche (Tab)">＋ Branche</button>' + (d.type === 'chaine' ? '<button type="button" data-act="addco" title="Rattacher un dossier d\'entreprise à ce maillon">＋ Entreprise</button>' : '') +
-      '<button type="button" data-act="fiche" title="Ouvrir la fiche (double-clic)">📄 Fiche</button>' + (link ? '' : '<button type="button" data-act="rename" title="Renommer (F2)">✏</button>') + '<button type="button" data-act="style" title="Icône et couleur">🎨</button>' +
-      (isRoot || link ? '' : '<button type="button" data-act="dup" title="Dupliquer cette branche (structure et contenu)">⧉</button>') +
-      (isRoot ? '' : (v.mode !== 'libre' ? '<button type="button" data-act="up"' + (i <= 0 ? ' disabled' : '') + '>↑</button><button type="button" data-act="down"' + (i >= v.nodes[n.parent].kids.length - 1 ? ' disabled' : '') + '>↓</button>' : '') + '<button type="button" data-act="del" title="Mettre à la corbeille (Suppr)">🗑</button>') + '</div>';
-    if (ui.pop === 'style') h += '<div class="at-pop" data-nopan><div class="at-pop-colors">' + PALETTE.map(c => '<button type="button" class="at-dot' + (n.color === c ? ' on' : '') + '" style="background:' + c + '" data-color="' + c + '"></button>').join('') + '<button type="button" class="at-btn sm" data-color="">Auto</button></div>' +
-      '<div class="at-pop-icons">' + ICONS.map(i2 => '<button type="button" data-icon="' + i2 + '">' + i2 + '</button>').join('') + '<button type="button" data-icon="">∅</button></div></div>';
-    if (ui.pop === 'addco') h += '<div class="at-pop" data-nopan><input type="search" class="at-search" id="atCoQ" placeholder="Chercher un dossier d\'entreprise…"><div id="atCoList" class="at-colist"></div></div>';
+const sourceOf = (v, c) => c.srcId && v.cards[c.srcId] ? v.cards[c.srcId] : null;
+function chromeHtml(c, body, foot, extraCls){
+  const t = TYPES[c.type], title = cardTitle(c), ro = isRo();
+  const head = '<div class="aw-chead"><span class="aw-tl"><span class="aw-dot" style="background:' + t.c + '"></span>' + esc(t.l) + '</span>' +
+    (title && c.type !== 'kpi' && c.type !== 'concurrent' && c.type !== 'citation' ? '<h3 class="aw-ct">' + esc(title) + '</h3>' : '<span style="flex:1"></span>') +
+    '<button type="button" class="aw-kb" data-c-big title="Agrandir">' + ICO.expand + '</button>' +
+    (ro ? '' : '<button type="button" class="aw-kb" data-c-menu title="Actions">' + ICO.dots + '</button>') + '</div>';
+  return '<article class="aw-card sz-' + (c.collapsed ? 'z' : c.size || 's') + ' t-' + c.type + (extraCls ? ' ' + extraCls : '') + '" data-cid="' + c.id + '"' + (ro ? '' : ' draggable="true"') + '>' + head +
+    '<div class="aw-cbody">' + body + '</div>' + (foot ? '<div class="aw-foot">' + foot + '</div>' : '') +
+    (ro ? '' : '<span class="aw-resize" data-c-resize title="Glisser pour changer le format"></span>') + '</article>';
+}
+function collapsedHtml(c){
+  const t = TYPES[c.type];
+  return '<article class="aw-card sz-z" data-cid="' + c.id + '"' + (isRo() ? '' : ' draggable="true"') + '><button type="button" class="aw-zrow" data-c-unfold title="Déplier"><span class="aw-chev">' + ICO.chevR + '</span><span class="aw-dot" style="background:' + t.c + '"></span><b>' + esc(cardTitle(c) || t.l) + '</b><span class="aw-zval">' + esc(keyFigure(c)) + '</span></button>' +
+    '<button type="button" class="aw-kb" data-c-big title="Agrandir">' + ICO.expand + '</button>' + (isRo() ? '' : '<button type="button" class="aw-kb" data-c-menu title="Actions">' + ICO.dots + '</button>') + '</article>';
+}
+// Le chiffre clé d'une carte (aperçu replié, organigramme).
+function keyFigure(c){
+  const d = doc();
+  if (c.type === 'kpi'){ const r = kpiData(c); return r ? fmtVal(r.v, r.u, r.devise, r.d) : ''; }
+  if (c.type === 'donut'){ const rows = (c.rows || []).filter(r => num(r.v) > 0), tot = rows.reduce((s, r) => s + num(r.v), 0); if (!tot) return ''; const top = rows.slice().sort((a, b) => num(b.v) - num(a.v))[0]; return top.label + ' ' + fr(num(top.v) / tot * 100, 0) + ' %'; }
+  if (c.type === 'barres' || c.type === 'courbes'){ const s = seriesData(c, d); const f = s.sets[0]; if (!f) return ''; const n = f.values.length; return n ? s.labels[n - 1] + ' : ' + fmtVal(f.values[n - 1], f.u, f.devise) : ''; }
+  if (c.type === 'comparatif') return (c.cols || []).length + ' entreprises';
+  if (c.type === 'concurrent') return c.pays || '';
+  if (c.type === 'source') return ({ pdf: 'PDF', web: 'Site web', article: 'Article', video: 'Vidéo' }[c.kind] || '') + (c.pages ? ' · ' + c.pages + ' p.' : '');
+  return plain(c.html).slice(0, 60);
+}
+function kpiData(c){
+  const d = doc();
+  if (c.bind){ const r = resolveBind(d, c.bind); if (r) return r; }
+  return { v: num(c.value), prev: num(c.prev), label: c.label || 'Indicateur', u: c.unit || '', d: null, devise: '', src: c.source || '', period: c.period || '', series: null };
+}
+function sparkSvg(vals, color, h){
+  vals = (vals || []).filter(x => x != null && isFinite(x)); if (vals.length < 2) return '';
+  const mn = Math.min(...vals), mx = Math.max(...vals), rg = mx - mn || 1, W = 200;
+  const pts = vals.map((v, i) => (i / (vals.length - 1) * W).toFixed(1) + ',' + (h - 3 - (v - mn) / rg * (h - 6)).toFixed(1)).join(' ');
+  return '<svg class="aw-spark" viewBox="0 0 ' + W + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true"><polyline points="' + pts + '" fill="none" stroke="' + color + '" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg>';
+}
+function deltaHtml(r){
+  if (r.v == null || r.prev == null || !isFinite(r.prev) || r.prev === 0) return '';
+  const pts = r.u === '%' || r.u === 'x';
+  const dv = pts ? r.v - r.prev : (r.v / r.prev - 1) * 100;
+  const good = r.low ? dv < 0 : dv >= 0;
+  return '<span class="aw-delta ' + (good ? 'pos' : 'neg') + '">' + (dv >= 0 ? '+' : '') + fr(dv, 1) + (pts ? (r.u === '%' ? ' pt' : 'x') : ' %') + '</span>';
+}
+function cardHtml(c){
+  if (c.collapsed) return collapsedHtml(c);
+  const d = doc(), v = ver(), src = sourceOf(v, c);
+  let body = '', foot = '';
+  const srcFoot = src ? '<button type="button" class="aw-srcchip" data-c-big="' + src.id + '">📄 ' + esc(src.titre || 'Source') + '</button>' : (c.source ? '<span>' + esc(c.source) + '</span>' : '');
+  switch (c.type){
+    case 'texte':
+      body = (c.date ? '<span class="aw-date">' + frDate(c.date) + '</span>' : '') + '<div class="aw-text">' + (clean(c.html) || '<span class="at-faint">' + (isRo() ? '' : 'Vide — ⋯ › Modifier pour écrire.') + '</span>') + '</div>';
+      foot = srcFoot; break;
+    case 'image': {
+      const im = (c.imgs || [])[0];
+      body = '<div class="aw-imgbox">' + (im ? '<img src="' + esc(mediaUrl(im.f)) + '" alt="" loading="lazy">' : '<span>Aucune image</span>') + (c.date ? '<span class="aw-date over">' + frDate(c.date) + '</span>' : '') + ((c.imgs || []).length > 1 ? '<span class="aw-more">+' + (c.imgs.length - 1) + '</span>' : '') + '</div>' +
+        (plain(c.html) ? '<div class="aw-text sm">' + clean(c.html) + '</div>' : '');
+      foot = srcFoot; break;
+    }
+    case 'citation':
+      body = '<div class="aw-quote-mark">«</div><div class="aw-quote">' + (clean(c.html) || '<span class="at-faint">Ta phrase clé…</span>') + '</div>';
+      foot = '<span class="aw-quote-l">' + esc(c.titre || '') + (c.date ? ' · ' + frDate(c.date) : '') + '</span>'; break;
+    case 'kpi': {
+      const r = kpiData(c);
+      body = '<div class="aw-kpi-l">' + esc(r.label) + (r.period ? ' <span>' + esc(r.period) + '</span>' : '') + '</div><div class="aw-kpi-v">' + fmtVal(r.v, r.u, r.devise, r.d) + '</div>' +
+        '<div class="aw-kpi-d">' + deltaHtml(r) + (r.prev != null ? '<span class="at-faint">avant : ' + fmtVal(r.prev, r.u, r.devise, r.d) + '</span>' : '') + '</div>' + (r.series ? sparkSvg(r.series.values.slice(-10), '#D9A441', 40) : '');
+      foot = (c.bind ? '<span class="aw-link">lié · ' + esc(r.label) + '</span>' : '') + '<span>' + esc(r.src || '') + '</span>';
+      if (c.bind && r.known === false) foot += '<span class="aw-warn">entreprise inconnue de l\'onglet Analyse</span>';
+      break;
+    }
+    case 'donut': {
+      const rows = (c.rows || []).filter(r => num(r.v) > 0), tot = rows.reduce((s, r) => s + num(r.v), 0);
+      body = tot ? '<div class="aw-donut"><div class="aw-donut-c"><canvas data-chart="' + c.id + '"></canvas><div class="aw-donut-t"><b>' + fr(tot, tot >= 100 ? 0 : 1) + '</b><span>' + esc(c.unit || '') + '</span></div></div><div class="aw-legend">' +
+        rows.map((r, i) => '<div><span class="aw-dot" style="background:' + (r.color || SERIES_COLORS[i % SERIES_COLORS.length]) + '"></span><span class="lb">' + esc(r.label) + '</span><b>' + fr(num(r.v) / tot * 100, 0) + ' %</b></div>').join('') + '</div></div>'
+        : '<p class="at-faint">Ajoute des catégories et leurs montants (⋯ › Modifier).</p>';
+      foot = srcFoot; break;
+    }
+    case 'barres': case 'courbes': {
+      const s = seriesData(c, d);
+      body = s.labels.length ? '<div class="aw-chart"><canvas data-chart="' + c.id + '"></canvas></div>' : '<p class="at-faint">' + (c.mode === 'tv' ? 'Pas d\'historique pour cette entreprise dans l\'onglet Analyse.' : 'Saisis les années et les valeurs (⋯ › Modifier).') + '</p>';
+      foot = (c.mode === 'tv' ? '<span class="aw-link">lié · ' + esc((c.keys || []).map(k => TVF[k] ? TVF[k].l : k).join(', ')) + '</span><span>TradingView</span>' : '') + srcFoot; break;
+    }
+    case 'comparatif': body = compTableHtml(c, false); foot = '<span class="aw-link">TradingView</span>' + srcFoot; break;
+    case 'concurrent': body = concHtml(c, false); break;
+    case 'source': body = srcHtml(c, false, v); break;
   }
+  return chromeHtml(c, body, foot);
+}
+// Colonnes : celles choisies, puis (sauf si décoché) les entreprises des cartes « Entreprise » du dossier : ajouter un
+// concurrent l'ajoute aussi au comparatif.
+function compCols(c){
+  const d = doc(), v = ver();
+  const cols = (c.cols || []).map(n => n === '@self' ? (d.nom ? (typeof fmpDisplayName === 'function' ? fmpDisplayName(d.nom) : d.nom) : d.titre) : n).filter(Boolean);
+  if (c.withConc !== false && v) Object.values(v.cards).forEach(x => { if (x.type === 'concurrent' && x.nom && !cols.some(n => norm(n) === norm(x.nom))) cols.push(x.nom); });
+  return cols;
+}
+function compValue(c, colName, key, ci){
+  const ov = c.over && c.over[key] && c.over[key][ci];
+  if (ov != null && ov !== '') return num(ov);
+  const co = findCompany(colName); if (!co) return null;
+  const s = tvSeries(co, key); return s.values.length ? s.values[s.values.length - 1] : null;
+}
+function compTableHtml(c, big){
+  const cols = compCols(c), metrics = (c.metrics || []).filter(k => TVF[k]);
+  if (!cols.length || !metrics.length) return '<p class="at-faint">Ajoute des entreprises et des indicateurs (⋯ › Modifier).</p>';
+  const head = '<tr><th></th>' + cols.map((n, i) => { const co = findCompany(n); return '<th class="' + (i === 0 && (c.cols || [])[0] === '@self' ? 'me' : '') + '">' + (big && co && co.logo ? '<img src="' + esc(co.logo) + '" alt="" class="aw-tlogo">' : '') + esc(n.length > 16 && !big ? n.slice(0, 15) + '…' : n) + '</th>'; }).join('') + '</tr>';
+  const body = metrics.map(k => {
+    const f = TVF[k], vals = cols.map((n, i) => compValue(c, n, k, i)), ok = vals.filter(x => x != null);
+    const best = ok.length > 1 ? (f.low ? Math.min(...ok) : Math.max(...ok)) : null, worst = ok.length > 2 ? (f.low ? Math.max(...ok) : Math.min(...ok)) : null;
+    const mx = Math.max(...ok.map(Math.abs), 0) || 1;
+    return '<tr><td class="lb">' + esc(f.l) + '</td>' + vals.map((x, i) => '<td><span class="' + (x != null && x === best ? 'best' : x != null && x === worst ? 'worst' : '') + '">' + fmtVal(x, f.u, findCompany(cols[i]) ? findCompany(cols[i]).devise : 'EUR', f.d) + '</span>' +
+      (big && x != null ? '<i class="aw-cbar" style="width:' + Math.max(4, Math.abs(x) / mx * 100).toFixed(0) + '%"></i>' : '') + '</td>').join('') + '</tr>';
+  }).join('');
+  return '<div class="aw-tscroll"><table class="aw-table' + (big ? ' big' : '') + '"><thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
+}
+function concHtml(c, big){
+  const co = findCompany(c.nom), logo = c.logo || (co ? co.logo : ''), linked = c.docId && D.docs[c.docId] ? D.docs[c.docId] : Object.values(D.docs).find(x => x.type === 'entreprise' && norm(x.titre) === norm(c.nom) && x.id !== ui.docId);
+  const keys = big ? ['ca', 'croissanceCA', 'margeOp', 'roic', 'per', 'pFcf', 'rendementDiv', 'detteOCF'] : ['margeOp', 'croissanceCA', 'per'];
+  const metrics = co ? '<div class="aw-cmetrics' + (big ? ' big' : '') + '">' + keys.map(k => { const s = tvSeries(co, k), v = s.values.length ? s.values[s.values.length - 1] : null; return '<div><b>' + fmtVal(v, TVF[k].u, co.devise, TVF[k].d) + '</b><span>' + esc(TVF[k].l) + '</span></div>'; }).join('') + '</div>' : '';
+  return '<div class="aw-conc-top"><div class="aw-conc-logo">' + (logo ? '<img src="' + esc(logo) + '" alt="">' : '<span>' + esc((c.nom || '?').slice(0, 2).toUpperCase()) + '</span>') + '</div><div><div class="aw-conc-n">' + esc(c.nom || 'Entreprise') + '</div><div class="aw-conc-s">' + esc([c.pays, c.role].filter(Boolean).join(' · ')) + '</div></div></div>' +
+    (c.tags ? '<div class="aw-tags">' + String(c.tags).split(',').map(t => t.trim()).filter(Boolean).map(t => '<span>' + esc(t) + '</span>').join('') + '</div>' : '') + metrics +
+    (c.forces ? '<div class="aw-fw"><b class="pos">Forces</b><p>' + esc(c.forces) + '</p></div>' : '') + (c.faiblesses ? '<div class="aw-fw"><b class="neg">Faiblesses</b><p>' + esc(c.faiblesses) + '</p></div>' : '') +
+    (big && co ? '<div class="aw-chart big2"><canvas data-chart="conc-' + c.id + '"></canvas></div>' : '') +
+    (linked ? '<button type="button" class="aw-linkbtn" data-open="' + linked.id + '">Ouvrir son dossier ›</button>' : '');
+}
+function srcHtml(c, big, v){
+  const used = Object.values(v.cards).filter(x => x.srcId === c.id).length;
+  const kind = { pdf: 'PDF', web: 'Site web', article: 'Article', video: 'Vidéo' }[c.kind] || 'Document';
+  const isPdf = c.file && /\.pdf$/i.test(c.file), isImg = c.file && !isPdf;
+  const prev = isImg ? '<img class="aw-src-img" src="' + esc(mediaUrl(c.file)) + '" alt="">' : '<div class="aw-src-page" aria-hidden="true"><i></i><i></i><i></i><i class="s"></i><i class="b"></i></div>';
+  let h = '<div class="aw-src">' + prev + '<div><div class="aw-src-t">' + esc(c.titre || 'Source') + '</div><div class="aw-src-s">' + esc(kind + (c.pages ? ' · ' + c.pages + ' pages' : '') + (c.date ? ' · ' + frDate(c.date) : '')) + '</div>' +
+    (c.url && /^https?:\/\//i.test(c.url) ? '<a href="' + esc(c.url) + '" target="_blank" rel="noopener" class="aw-src-u">' + esc(c.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]) + '</a>' : '') + '</div></div>' +
+    (c.note ? '<p class="aw-src-note">' + esc(c.note) + '</p>' : '') + (used ? '<span class="aw-link">utilisée par ' + used + ' carte' + (used > 1 ? 's' : '') + '</span>' : '');
+  if (big && isPdf) h += '<object class="aw-pdf" data="' + esc(mediaUrl(c.file)) + '" type="application/pdf"><a href="' + esc(mediaUrl(c.file)) + '" target="_blank" rel="noopener">Ouvrir le PDF</a></object>';
+  else if (c.file && isPdf) h += '<a class="aw-linkbtn" href="' + esc(mediaUrl(c.file)) + '" target="_blank" rel="noopener">Ouvrir le PDF ›</a>';
   return h;
 }
-function renderMap(instant){
-  const d = doc(), v = ver(); const host = $('atNodes'); if (!d || !v || !host) return;
-  const vis = visibleSet(v), ids = new Set(vis.map(n => n.id));
-  vis.forEach(n => {
-    let el = els[n.id];
-    if (!el || !el.isConnected){ el = els[n.id] = document.createElement('div'); el.dataset.id = n.id; host.appendChild(el); el._new = true; }
-    el._leaving = false;
-    const dp = depthOf(v, n);
-    el.className = 'at-node l' + Math.min(dp, 3) + (n.id === v.root ? ' root' : '') + (ui.sel === n.id ? ' sel' : '') + (n.link ? ' link' : '') + ((n.blocks || []).length ? ' has' : '') + (n.free ? ' free' : '');
-    el.style.setProperty('--c', colorOf(v, n));
-    el.innerHTML = nodeHtml(d, v, n);
-    sizes[n.id] = { w: el.offsetWidth, h: el.offsetHeight };
-  });
-  const target = layout(v, d);
-  Object.keys(els).forEach(id => {
-    if (ids.has(id)) return;
-    const el = els[id]; if (!el) return;
-    if (instant || !pos[id]){ el.remove(); delete els[id]; delete pos[id]; return; }
-    let a = v.nodes[id] && v.nodes[v.nodes[id].parent]; while (a && !ids.has(a.id)) a = v.nodes[a.parent];
-    el._leaving = true; target[id] = { x: a ? target[a.id].x : 0, y: a ? target[a.id].y : 0, dir: pos[id].dir, o: 0 };
-  });
-  const from = {};
-  Object.keys(target).forEach(id => {
-    const el = els[id];
-    if (el && el._new){ const par = v.nodes[id] && v.nodes[id].parent, pp = par && (pos[par] || target[par]); from[id] = { x: pp ? pp.x : target[id].x, y: pp ? pp.y : target[id].y, o: instant ? 1 : 0 }; el._new = false; }
-    else from[id] = pos[id] ? { x: pos[id].x, y: pos[id].y, o: pos[id].o == null ? 1 : pos[id].o } : { x: target[id].x, y: target[id].y, o: 1 };
-    if (target[id].o == null) target[id].o = 1;
-  });
-  cancelAnimationFrame(tween);
-  const t0 = performance.now(), dur = instant ? 0 : 380;
-  const step = now => {
-    const p = dur ? Math.min(1, (now - t0) / dur) : 1, e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
-    Object.keys(target).forEach(id => { pos[id] = { x: from[id].x + (target[id].x - from[id].x) * e, y: from[id].y + (target[id].y - from[id].y) * e, o: from[id].o + (target[id].o - from[id].o) * e, dir: target[id].dir }; });
-    paint(v);
-    if (p < 1) tween = requestAnimationFrame(step);
-    else Object.keys(els).forEach(id => { if (els[id]._leaving){ els[id].remove(); delete els[id]; delete pos[id]; } });
-  };
-  step(t0); if (dur) tween = requestAnimationFrame(step);
-  drawStrokes(v);
-  const ed = $('atEdit'); if (ed){ ed.focus(); const r = document.createRange(); r.selectNodeContents(ed); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
-  const q = $('atCoQ'); if (q){ q.oninput = fillCoList; fillCoList(); q.focus(); }
-}
-function paint(v){
-  let path = '';
-  Object.keys(pos).forEach(id => {
-    const el = els[id]; if (!el) return; const p = pos[id], s = sizes[id] || { w: 0, h: 0 };
-    el.style.transform = 'translate(' + (p.x - s.w / 2).toFixed(1) + 'px,' + (p.y - s.h / 2).toFixed(1) + 'px)';
-    el.style.opacity = p.o;
-    const n = v.nodes[id]; if (!n || !n.parent || n.free || !pos[n.parent]) return;
-    const pp = pos[n.parent], ps = sizes[n.parent] || { w: 0, h: 0 }, dir = v.mode === 'libre' ? (p.x >= pp.x ? 1 : -1) : (p.dir || 1);
-    const x1 = pp.x + dir * ps.w / 2, y1 = pp.y, x2 = p.x - dir * s.w / 2, y2 = p.y, mx = (x1 + x2) / 2;
-    path += '<path d="M' + x1.toFixed(1) + ' ' + y1.toFixed(1) + ' C' + mx.toFixed(1) + ' ' + y1.toFixed(1) + ' ' + mx.toFixed(1) + ' ' + y2.toFixed(1) + ' ' + x2.toFixed(1) + ' ' + y2.toFixed(1) + '" stroke="' + colorOf(v, n) + '" stroke-width="' + (n.parent === v.root ? 3.2 : 2) + '" opacity="' + (p.o * 0.75).toFixed(2) + '"/>';
-  });
-  const g = $('atEdges'); if (g) g.innerHTML = path;
-}
-function drawStrokes(v){ const g = $('atStrokes'); if (g) g.innerHTML = (v.strokes || []).map(s => '<path d="' + s.d + '" stroke="' + esc(s.c) + '" stroke-width="' + (+s.w || 4) + '"/>').join(''); }
-function applyCam(){
-  const w = $('atWorld'), vw = $('atView'); if (!w || !vw) return;
-  w.style.transform = 'translate(' + (vw.clientWidth / 2 + cam.x) + 'px,' + (vw.clientHeight / 2 + cam.y) + 'px) scale(' + cam.k + ')';
-  w.style.setProperty('--ik', 1 / cam.k);
-}
-function camTo(x, y, k, animate){
-  cancelAnimationFrame(camTween);
-  if (!animate){ cam.x = x; cam.y = y; cam.k = k; applyCam(); return; }
-  const a = { x: cam.x, y: cam.y, k: cam.k }, t0 = performance.now(), dur = 520;
-  const step = now => { const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3);
-    cam.x = a.x + (x - a.x) * e; cam.y = a.y + (y - a.y) * e; cam.k = a.k + (k - a.k) * e; applyCam(); if (p < 1) camTween = requestAnimationFrame(step); };
-  camTween = requestAnimationFrame(step);
-}
-function bbox(ids, v){
-  const T2 = layout(v, doc()); let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
-  ids.forEach(id => { const p = T2[id], s = sizes[id]; if (!p || !s) return; x0 = Math.min(x0, p.x - s.w / 2); x1 = Math.max(x1, p.x + s.w / 2); y0 = Math.min(y0, p.y - s.h / 2); y1 = Math.max(y1, p.y + s.h / 2); });
-  return x0 > x1 ? null : { x0, y0, x1, y1 };
-}
-function fitBox(b, animate, maxK){
-  const vw = $('atView'); if (!vw || !b) return;
-  const pad = 70, k = Math.max(0.15, Math.min(maxK || 1.15, (vw.clientWidth - pad * 2) / Math.max(60, b.x1 - b.x0), (vw.clientHeight - pad * 2) / Math.max(60, b.y1 - b.y0)));
-  camTo(-(b.x0 + b.x1) / 2 * k, -(b.y0 + b.y1) / 2 * k, k, animate);
-}
-function fitAll(animate){ const v = ver(); if (v) fitBox(bbox(visibleSet(v).map(n => n.id), v), animate !== false); }
-// Après avoir déplié une branche : la caméra glisse pour montrer la branche et ses enfants, sans zoomer plus qu'avant.
-function focusBranch(id){
-  const v = ver(), n = v.nodes[id]; if (!n) return;
-  const b = bbox([id].concat(visKids(v, n).map(k => k.id)).concat(n.parent ? [n.parent] : []), v), vw = $('atView'); if (!b || !vw) return;
-  const k = cam.k, sx0 = vw.clientWidth / 2 + cam.x + b.x0 * k, sx1 = vw.clientWidth / 2 + cam.x + b.x1 * k, sy0 = vw.clientHeight / 2 + cam.y + b.y0 * k, sy1 = vw.clientHeight / 2 + cam.y + b.y1 * k;
-  if (sx0 > 40 && sy0 > 40 && sx1 < vw.clientWidth - 40 && sy1 < vw.clientHeight - 40) return;
-  if ((b.x1 - b.x0) * k > vw.clientWidth - 80 || (b.y1 - b.y0) * k > vw.clientHeight - 80) fitBox(b, true, k); else camTo(-(b.x0 + b.x1) / 2 * k, -(b.y0 + b.y1) / 2 * k, k, true);
-}
-function toggle(id){
-  const v = ver(), n = v.nodes[id]; if (!n || !n.kids.length) return;
-  n.collapsed = !n.collapsed; touch(); renderMap();
-  if (!n.collapsed) setTimeout(() => focusBranch(id), 60);
-}
-function setExpanded(open){
-  const v = ver(); Object.values(v.nodes).forEach(n => { n.collapsed = !open && n.kids.length > 0; });
-  touch(); renderMap(); setTimeout(() => fitAll(true), 400);
-}
-function setMode(m){
-  const v = ver(), d = doc(); if (v.mode === m) return;
-  if (m === 'libre'){
-    // placement de départ = le rangement automatique, toutes branches dépliées (les nœuds jamais mesurés prennent une taille type)
-    const saved = {}; Object.values(v.nodes).forEach(n => { saved[n.id] = n.collapsed; n.collapsed = false; });
-    const A = autoLayout(v, sizes, d.type === 'chaine');
-    Object.values(v.nodes).forEach(n => { n.collapsed = saved[n.id]; if (typeof n.x !== 'number' && A[n.id]){ n.x = Math.round(A[n.id].x); n.y = Math.round(A[n.id].y); } });
+// Données d'un graphique barres / courbes : liées à TradingView ou saisies.
+function seriesData(c, d){
+  if (c.mode === 'tv'){
+    const co = findCompany(d.nom || d.titre), keys = (c.keys || []).filter(k => TVF[k]);
+    const per = keys.map(k => tvSeries(co, k, c.years || 10));
+    const labels = [...new Set(per.flatMap(s => s.labels))].sort((a, b) => a - b);
+    return { labels, sets: keys.map((k, i) => ({ name: TVF[k].l, u: TVF[k].u, devise: co ? co.devise : 'EUR', color: SERIES_COLORS[i % SERIES_COLORS.length], values: labels.map(y => { const j = per[i].labels.indexOf(y); return j >= 0 ? (TVF[k].u === 'Mcur' && per[i].values[j] != null ? per[i].values[j] : per[i].values[j]) : null; }) })) };
   }
-  v.mode = m; touch(); renderShell(); requestAnimationFrame(() => fitAll(false));
+  const labels = (c.labels || []).map(String);
+  return { labels, sets: (c.series || []).map((s, i) => ({ name: s.name || 'Série ' + (i + 1), u: c.unit || '', devise: '', color: s.color || SERIES_COLORS[i % SERIES_COLORS.length], values: labels.map((_, j) => num((s.values || [])[j])) })) };
 }
-function fillCoList(){
-  const box = $('atCoList'), q = norm(($('atCoQ') || {}).value); if (!box) return;
-  const v = ver(), used = new Set(Object.values(v.nodes).map(n => n.link).filter(Boolean));
-  const list = Object.values(D.docs).filter(x => x.type === 'entreprise' && !used.has(x.id) && (!q || norm(x.titre).includes(q))).slice(0, 12);
-  box.innerHTML = list.map(x => '<button type="button" data-linkdoc="' + x.id + '">' + docLogo(x, 20) + esc(x.titre) + '</button>').join('') + '<button type="button" class="new" data-linknew>＋ Créer un nouveau dossier d\'entreprise' + (q ? ' « ' + esc($('atCoQ').value.trim()) + ' »' : '') + '</button>';
+function chartConfig(c, d, big){
+  const tick = { color: '#8B93A0', font: { family: "'Plus Jakarta Sans', sans-serif", size: big ? 13 : 11 } };
+  if (c.type === 'donut'){
+    const rows = (c.rows || []).filter(r => num(r.v) > 0);
+    return { type: 'doughnut', data: { labels: rows.map(r => r.label), datasets: [{ data: rows.map(r => num(r.v)), backgroundColor: rows.map((r, i) => r.color || SERIES_COLORS[i % SERIES_COLORS.length]), borderColor: '#161B21', borderWidth: 3 }] },
+      options: { responsive: true, maintainAspectRatio: false, cutout: '64%', animation: { duration: 600 }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: x => ' ' + x.label + ' : ' + fr(x.raw, 1) + ' ' + (c.unit || '') } } } } };
+  }
+  const s = seriesData(c, d), first = s.sets[0];
+  const datasets = s.sets.map((x, i) => {
+    const isLine = c.type === 'courbes' || (i > 0 && first && x.u !== first.u);
+    const scale = x.u ? (x.u === '%' ? 'pct' : x.u === 'x' ? 'mul' : 'val') : 'val';
+    return { type: isLine ? 'line' : 'bar', label: x.name, data: x.values.map(v => v == null ? null : (x.u === 'Mcur' ? v / 1000 : v)), backgroundColor: isLine ? x.color : x.color, borderColor: x.color, borderWidth: isLine ? 3 : 0, borderRadius: 5, tension: 0.3, pointRadius: isLine ? (big ? 4 : 2.5) : 0, spanGaps: true, yAxisID: c.type === 'barres' && i > 0 && first && x.u !== first.u ? 'y1' : 'y', _u: x.u, _dev: x.devise, order: isLine ? 0 : 1 };
+  });
+  const fmtTick = u => v => u === '%' ? fr(v, 0) + ' %' : u === 'x' ? fr(v, 0) + 'x' : u === 'Mcur' ? fr(v, 1) + ' Md' : fr(v, Math.abs(v) < 10 ? 1 : 0);
+  const u2 = s.sets.find((x, i) => i > 0 && first && x.u !== first.u);
+  const scales = { x: { grid: { display: false }, ticks: tick }, y: { grid: { color: 'rgba(255,255,255,0.06)' }, ticks: Object.assign({ callback: fmtTick(first ? first.u : '') }, tick), beginAtZero: c.type === 'barres' } };
+  if (c.type === 'barres' && u2) scales.y1 = { position: 'right', grid: { display: false }, ticks: Object.assign({ callback: fmtTick(u2.u) }, tick) };
+  return { type: 'bar', data: { labels: s.labels, datasets }, options: { responsive: true, maintainAspectRatio: false, animation: { duration: 600 }, interaction: { mode: 'index', intersect: false },
+    plugins: { legend: { display: datasets.length > 1, labels: { color: '#B4BAC4', boxWidth: 10, boxHeight: 10, font: tick.font } }, tooltip: { callbacks: { label: x => ' ' + x.dataset.label + ' : ' + fmtVal(x.dataset._u === 'Mcur' ? x.raw * 1000 : x.raw, x.dataset._u, x.dataset._dev) } } }, scales } };
 }
-function linkCompany(parentId, target){
-  const d = doc(); const n = addNode(parentId, { link: target.id });
-  target.chaine = { doc: d.id, node: n.id }; if (!target.secteur && d.secteur) target.secteur = d.secteur;
-  ui.pop = null; ui.sel = n.id; touch(); renderShell();
-}
-function commitEdit(){
-  const ed = $('atEdit'); if (!ed || !ui.editing) return;
-  const v = ver(), n = v.nodes[ui.editing], txt = ed.textContent.replace(/\s+/g, ' ').trim();
-  ui.editing = null;
-  if (n && n.titre !== txt){ n.titre = txt; if (n.id === v.root && txt){ doc().titre = txt; } touch(); }
-  if (n && n.id === v.root) renderShell(); else renderMap();
+function drawCharts(root, list, big){
+  if (!window.Chart) return;
+  const d = doc(), v = ver();
+  root.querySelectorAll('canvas[data-chart]').forEach(cv => {
+    const id = cv.dataset.chart;
+    if (id.startsWith('conc-')){
+      const c = v.cards[id.slice(5)], co = c && findCompany(c.nom); if (!co) return;
+      list.push(new Chart(cv, chartConfig({ type: 'barres', mode: 'tv', keys: ['ca', 'eps'] }, { nom: co.key }, big))); return;
+    }
+    if (id.startsWith('kpi-')){
+      const c = v.cards[id.slice(4)], r = c && kpiData(c); if (!r || !r.series) return;
+      list.push(new Chart(cv, { type: 'bar', data: { labels: r.series.labels, datasets: [{ data: r.series.values.map(x => r.u === 'Mcur' ? x / 1000 : x), backgroundColor: r.series.values.map((x, i, a) => i === a.length - 1 ? '#F0C877' : '#D9A441'), borderRadius: 5 }] },
+        options: { responsive: true, maintainAspectRatio: false, animation: { duration: 700 }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: x => ' ' + fmtVal(r.u === 'Mcur' ? x.raw * 1000 : x.raw, r.u, r.devise, r.d) } } },
+          scales: { x: { grid: { display: false }, ticks: { color: '#8B93A0' } }, y: { grid: { color: 'rgba(255,255,255,0.06)' }, ticks: { color: '#8B93A0' }, beginAtZero: true } } } }));
+      return;
+    }
+    const c = v.cards[id]; if (!c) return;
+    try { list.push(new Chart(cv, chartConfig(c, d, big))); } catch(e){ /* graphique impossible : la carte reste lisible */ }
+  });
 }
 
-/* ---------- événements de la carte ---------- */
-function nodeAction(act, id){
-  const v = ver(), d = doc(), n = v.nodes[id]; if (!n) return;
-  if (act === 'toggle') return toggle(id);
-  if (act === 'fiche') return openFiche(id);
-  if (act === 'golink') return n.link && openDoc(n.link);
-  if (act === 'add'){ const c = addNode(id, {}); ui.sel = c.id; ui.editing = c.id; ui.pop = null; renderMap(); setTimeout(() => focusBranch(id), 60); return; }
-  if (act === 'rename'){ ui.editing = id; ui.pop = null; return renderMap(); }
-  if (act === 'style' || act === 'addco'){ ui.pop = ui.pop === act ? null : act; return renderMap(); }
-  if (act === 'del') return deleteNode(id);
-  if (act === 'dup') return duplicateNode(id);
-  if (act === 'up' || act === 'down'){ const ks = v.nodes[n.parent].kids, i = ks.indexOf(id), j = i + (act === 'up' ? -1 : 1); if (j < 0 || j >= ks.length) return; ks.splice(i, 1); ks.splice(j, 0, id); touch(); return renderMap(); }
+/* ---------- corps : grille ou organigramme ---------- */
+function renderBody(){
+  const host = $('awBody'); if (!host) return;
+  destroyCharts(charts);
+  ui.menu = null; closeMenu();
+  if (ui.view === 'org'){ host.innerHTML = '<div class="aw-org" id="awOrg"><div class="aw-org-w" id="awOrgW"><svg class="aw-org-svg" id="awOrgSvg"></svg></div></div>'; orgEls = {}; renderOrg(true); return; }
+  const v = ver(), ro = isRo();
+  host.innerHTML = v.sections.map((s, si) => {
+    const cards = s.cards.map(id => v.cards[id]).filter(Boolean);
+    return '<section class="aw-sec' + (s.collapsed ? ' closed' : '') + '" data-sid="' + s.id + '" style="--sc:' + (s.color || PALETTE[si % PALETTE.length]) + '"><div class="aw-sec-h">' +
+      '<button type="button" class="aw-kb" data-s-tog title="' + (s.collapsed ? 'Déplier' : 'Replier') + '">' + (s.collapsed ? ICO.chevR : ICO.chevD) + '</button><span class="aw-sec-dot"></span>' +
+      '<h2' + (ro ? '' : ' class="aw-editable" data-s-title title="Clic pour renommer"') + '>' + esc(s.titre) + '</h2><span class="aw-sec-n">' + cards.length + ' carte' + (cards.length > 1 ? 's' : '') + '</span>' +
+      (s.collapsed && cards.length ? '<span class="aw-sec-peek">' + cards.slice(0, 4).map(c => '<span>' + esc(cardTitle(c) || TYPES[c.type].l) + (keyFigure(c) && ['kpi', 'donut', 'barres', 'courbes'].includes(c.type) ? ' <b>' + esc(keyFigure(c)) + '</b>' : '') + '</span>').join('') + '</span>' : '') +
+      '<span style="flex:1"></span>' +
+      (ro ? '' : '<button type="button" class="aw-kb" data-s-up title="Monter"' + (si ? '' : ' disabled') + '>↑</button><button type="button" class="aw-kb" data-s-down title="Descendre"' + (si < v.sections.length - 1 ? '' : ' disabled') + '>↓</button><button type="button" class="aw-kb" data-s-del title="Mettre la section à la corbeille">🗑</button><button type="button" class="at-btn sm gold" data-s-add>' + ICO.plus + ' Carte</button>') + '</div>' +
+      (s.collapsed ? '' : ((s.hint || []).length && !ro ? '<div class="aw-hint">À couvrir : ' + s.hint.map(h => '<span>' + esc(h) + '</span>').join('') + '</div>' : '') +
+        '<div class="aw-grid" data-drop="' + s.id + '">' + cards.map(cardHtml).join('') + (ro || cards.length ? '' : '<button type="button" class="aw-empty" data-s-add>' + ICO.plus + ' Ajouter une première carte</button>') + '</div>') + '</section>';
+  }).join('') + (v.sections.length ? '' : '<p class="at-empty big">' + (ro ? 'Dossier vide.' : 'Aucune section. « ＋ Section » pour commencer.') + '</p>');
+  drawCharts(host, charts, false);
+  wireBody(host);
 }
-function wireMap(){
-  const view = $('atView'); if (!view) return;
-  let drag = null;
-  const world = e => { const r = view.getBoundingClientRect(); return { x: (e.clientX - r.left - view.clientWidth / 2 - cam.x) / cam.k, y: (e.clientY - r.top - view.clientHeight / 2 - cam.y) / cam.k }; };
-  view.addEventListener('wheel', e => {
-    if (e.target.closest('[data-nopan]')) return;
-    e.preventDefault(); cancelAnimationFrame(camTween);
-    const r = view.getBoundingClientRect(), px = e.clientX - r.left - view.clientWidth / 2, py = e.clientY - r.top - view.clientHeight / 2;
-    const k2 = Math.max(0.12, Math.min(3, cam.k * Math.exp(-e.deltaY * 0.0015)));
-    cam.x = px - (px - cam.x) * k2 / cam.k; cam.y = py - (py - cam.y) * k2 / cam.k; cam.k = k2; applyCam();
-  }, { passive: false });
-  view.addEventListener('pointerdown', e => {
-    if (e.button !== 0 || e.target.closest('.at-vbar,[data-nopan],button,[contenteditable="true"]')) return;
-    if (ui.editing) commitEdit();
-    const v = ver();
-    if (ui.draw){ const p = world(e); drag = { kind: 'draw', pts: [p] }; try { view.setPointerCapture(e.pointerId); } catch(err){ /* pointeur déjà relâché */ } return; }
-    const nel = e.target.closest('.at-node');
-    drag = { kind: nel ? 'node' : 'pan', id: nel && nel.dataset.id, sx: e.clientX, sy: e.clientY, cx: cam.x, cy: cam.y, moved: false };
-    if (nel && v.mode === 'libre' && !isRo()){ const ids = [drag.id].concat(descendants(v, drag.id)); drag.start = ids.map(i => ({ n: v.nodes[i], x: v.nodes[i].x, y: v.nodes[i].y })); }
-    try { view.setPointerCapture(e.pointerId); } catch(err){ /* pointeur déjà relâché */ }
-  });
-  view.addEventListener('pointermove', e => {
-    if (!drag) return;
-    const v = ver();
-    if (drag.kind === 'draw'){ const p = world(e), l = drag.pts[drag.pts.length - 1]; if (Math.hypot(p.x - l.x, p.y - l.y) * cam.k < 2) return; drag.pts.push(p);
-      const g = $('atStrokes'); let live = g.querySelector('.live'); if (!live){ live = document.createElementNS('http://www.w3.org/2000/svg', 'path'); live.setAttribute('class', 'live'); g.appendChild(live); }
-      live.setAttribute('d', 'M' + drag.pts.map(q => q.x.toFixed(0) + ' ' + q.y.toFixed(0)).join(' L')); live.setAttribute('stroke', ui.draw.c); live.setAttribute('stroke-width', ui.draw.w); return; }
-    const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
-    if (!drag.moved && Math.hypot(dx, dy) < 5) return;
-    drag.moved = true; cancelAnimationFrame(camTween);
-    if (drag.kind === 'node' && drag.start){
-      drag.start.forEach(s => { if (typeof s.x === 'number'){ s.n.x = Math.round(s.x + dx / cam.k); s.n.y = Math.round(s.y + dy / cam.k); if (pos[s.n.id]){ pos[s.n.id].x = s.n.x; pos[s.n.id].y = s.n.y; } } });
-      paint(v);
-    } else { cam.x = drag.cx + dx; cam.y = drag.cy + dy; applyCam(); }
-  });
-  const up = e => {
-    if (!drag) return; const g = drag; drag = null;
-    const v = ver();
-    if (g.kind === 'draw'){ if (g.pts.length > 1){ v.strokes = v.strokes || []; v.strokes.push({ c: ui.draw.c, w: ui.draw.w, d: 'M' + g.pts.map(q => q.x.toFixed(0) + ' ' + q.y.toFixed(0)).join(' L') }); touch(); } drawStrokes(v); return; }
-    if (g.moved){ if (g.kind === 'node' && g.start) touch(); return; }
-    if (g.kind === 'pan'){ if (ui.sel || ui.pop){ ui.sel = null; ui.pop = null; renderMap(); } return; }
-    const n = v.nodes[g.id]; if (!n) return;
-    if (isRo()){ if (n.kids.length) toggle(n.id); else if (n.link) openDoc(n.link); else openFiche(n.id); return; }
-    if (ui.sel !== n.id || ui.pop){ ui.sel = n.id; ui.pop = null; renderMap(); }
-  };
-  view.addEventListener('pointerup', up); view.addEventListener('pointercancel', up);
-  view.addEventListener('dblclick', e => { const nel = e.target.closest('.at-node'); if (nel && !isRo() && !ui.draw && !e.target.closest('button,[contenteditable="true"],[data-nopan]')) openFiche(nel.dataset.id); });
-  view.addEventListener('click', e => {
-    const b = e.target.closest('button'); if (!b) return;
-    const nel = b.closest('.at-node'), id = nel && nel.dataset.id, v = ver();
-    if (b.dataset.act && id) return nodeAction(b.dataset.act, id);
-    if (id && b.dataset.color !== undefined){ v.nodes[id].color = b.dataset.color; touch(); return renderMap(); }
-    if (id && b.dataset.icon !== undefined){ v.nodes[id].icon = b.dataset.icon; touch(); return renderMap(); }
-    if (id && b.dataset.linkdoc) return linkCompany(id, D.docs[b.dataset.linkdoc]);
-    if (id && b.dataset.linknew !== undefined){ const name = ($('atCoQ').value || '').trim(); if (!name){ $('atCoQ').focus(); return; } const nd = createDoc({ type: 'entreprise', titre: name, tpl: 'wolf-entreprise', secteur: doc().secteur }); return linkCompany(id, nd); }
-    if (b.dataset.zoom){ const k = Math.max(0.12, Math.min(3, cam.k * (b.dataset.zoom === '1' ? 1.25 : 0.8))); return camTo(cam.x * k / cam.k, cam.y * k / cam.k, k, true); }
-  });
-  view.addEventListener('keydown', e => { if (e.target.id === 'atEdit'){ if (e.key === 'Enter'){ e.preventDefault(); commitEdit(); } else if (e.key === 'Escape'){ e.preventDefault(); ui.editing = null; renderMap(); } e.stopPropagation(); } });
-  view.addEventListener('focusout', e => { if (e.target.id === 'atEdit') setTimeout(() => { if (ui.editing && document.activeElement !== $('atEdit')) commitEdit(); }, 0); });
-  applyCam();
-}
-document.addEventListener('keydown', e => {
-  const pg = page(); if (!pg || !pg.classList.contains('active') || !doc()) return;
-  if (e.key === 'Escape'){ if (ui.light){ closeLight(); return; } if (ui.modal){ ui.modal = null; renderModal(); return; } if (ui.fiche){ closeFiche(); return; } if (ui.video && !document.querySelector('.stylo-on')){ ui.video = false; renderShell(); requestAnimationFrame(() => fitAll(false)); return; } }
-  const t = e.target; if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
-  if (ui.fiche || ui.modal || e.ctrlKey || e.metaKey || e.altKey) return;
+function wireBody(host){
   const v = ver();
-  if (e.key === 'f' || e.key === 'F'){ e.preventDefault(); return fitAll(true); }
-  if (isRo() || !ui.sel || !v.nodes[ui.sel]) return;
-  const n = v.nodes[ui.sel];
-  if (e.key === 'Tab'){ e.preventDefault(); nodeAction('add', n.id); }
-  else if (e.key === 'Enter'){ e.preventDefault(); nodeAction('add', n.parent || n.id); }
-  else if (e.key === 'F2'){ e.preventDefault(); if (!n.link) nodeAction('rename', n.id); }
-  else if (e.key === 'Delete'){ e.preventDefault(); deleteNode(n.id); }
-  else if (e.key === ' '){ e.preventDefault(); toggle(n.id); }
-});
+  host.onclick = e => {
+    const b = e.target.closest('button,[data-s-title]'); if (!b) return;
+    const sEl = b.closest('[data-sid]'), sid = sEl && sEl.dataset.sid, sec = sid && v.sections.find(s => s.id === sid);
+    const cEl = b.closest('[data-cid]'), cid = cEl && cEl.dataset.cid, c = cid && v.cards[cid];
+    const ds = b.dataset;
+    if (ds.open){ openDoc(ds.open); return; }
+    if (ds.cBig !== undefined){ openBig(ds.cBig || cid, cEl); return; }
+    if (ds.cMenu !== undefined){ openMenu(cid, b); return; }
+    if (ds.cUnfold !== undefined && c){ c.collapsed = false; touch(); renderBody(); return; }
+    if (ds.sTog !== undefined && sec){ sec.collapsed = !sec.collapsed; if (!RO) touch(); renderBody(); return; }
+    if (ds.sTitle !== undefined && sec && !isRo()){ inlineRename(b, sec.titre, t => { sec.titre = t; touch(); renderBody(); }); return; }
+    if (isRo()) return;
+    if (ds.sAdd !== undefined && sec){ ui.lib = { secId: sec.id, q: '' }; renderLibrary(); return; }
+    if (ds.sDel !== undefined && sec){ deleteSection(sec.id); return; }
+    if ((ds.sUp !== undefined || ds.sDown !== undefined) && sec){ const i = v.sections.indexOf(sec), j = i + (ds.sUp !== undefined ? -1 : 1); if (j < 0 || j >= v.sections.length) return; v.sections.splice(i, 1); v.sections.splice(j, 0, sec); touch(); renderBody(); }
+  };
+  host.ondblclick = e => { const cEl = e.target.closest('[data-cid]'); if (cEl && !e.target.closest('button,a')) openBig(cEl.dataset.cid, cEl); };
+  if (isRo()) return;
+  // glisser-déposer : sur une autre carte = s'insère avant elle ; dans le vide d'une section = à la fin
+  host.ondragstart = e => { const cEl = e.target.closest('[data-cid]'); if (!cEl || e.target.closest('[data-c-resize]')) return; ui.drag = cEl.dataset.cid; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', ui.drag); } catch(err){} setTimeout(() => cEl.classList.add('dragging'), 0); };
+  host.ondragend = () => { ui.drag = null; host.querySelectorAll('.dragging,.drop-before,.drop-end').forEach(x => x.classList.remove('dragging', 'drop-before', 'drop-end')); };
+  host.ondragover = e => {
+    if (!ui.drag) return;
+    const cEl = e.target.closest('[data-cid]'), g = e.target.closest('[data-drop],[data-sid]'); if (!cEl && !g) return;
+    e.preventDefault(); host.querySelectorAll('.drop-before,.drop-end').forEach(x => x.classList.remove('drop-before', 'drop-end'));
+    if (cEl && cEl.dataset.cid !== ui.drag) cEl.classList.add('drop-before'); else if (g){ const grid = g.matches('[data-drop]') ? g : g.querySelector('[data-drop]'); if (grid) grid.classList.add('drop-end'); else g.classList.add('drop-end'); }
+  };
+  host.ondrop = e => {
+    if (!ui.drag) return; e.preventDefault();
+    const cEl = e.target.closest('[data-cid]'), sEl = e.target.closest('[data-sid]'), cid = ui.drag; ui.drag = null;
+    if (cEl && cEl.dataset.cid !== cid){ const to = secOf(v, cEl.dataset.cid); if (to) moveCard(cid, to.id, cEl.dataset.cid); }
+    else if (sEl) moveCard(cid, sEl.dataset.sid, null);
+  };
+  // poignée de format : vers la droite = horizontal, vers le bas = vertical, sinon carré
+  host.onpointerdown = e => {
+    const hd = e.target.closest('[data-c-resize]'); if (!hd) return;
+    e.preventDefault(); const cEl = hd.closest('[data-cid]'), c = v.cards[cEl.dataset.cid], x0 = e.clientX, y0 = e.clientY, r = cEl.getBoundingClientRect();
+    const mv = ev => { const dx = ev.clientX - x0, dy = ev.clientY - y0; cEl.style.outline = '2px dashed #D9A441'; cEl.dataset.next = dx > r.width * 0.45 ? 'h' : dy > r.height * 0.45 ? 'v' : (dx < -r.width * 0.3 || dy < -r.height * 0.3) ? 's' : c.size; };
+    const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); cEl.style.outline = ''; const n = cEl.dataset.next; if (n && n !== c.size){ c.size = n; touch(); renderBody(); } };
+    window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+  };
+}
+function inlineRename(el, cur, done){
+  const inp = document.createElement('input'); inp.className = 'at-in aw-rename'; inp.value = cur; el.replaceWith(inp); inp.focus(); inp.select();
+  let fin = false; const end = ok => { if (fin) return; fin = true; const t = inp.value.trim(); if (ok && t && t !== cur) done(t); else renderBody(); };
+  inp.onkeydown = e => { if (e.key === 'Enter'){ e.preventDefault(); end(true); } else if (e.key === 'Escape') end(false); e.stopPropagation(); };
+  inp.onblur = () => end(true);
+}
 
-/* ====================== FICHE D'UN NŒUD ====================== */
-function ficheNode(){ const v = ver(); return v && ui.fiche ? v.nodes[ui.fiche] : null; }
-function openFiche(id){
-  const v = ver(), n = v.nodes[id]; if (!n) return;
-  if (n.link && D.docs[n.link] && isRo()) return openDoc(n.link);
-  const el = els[id]; ui.ficheFrom = el ? el.getBoundingClientRect() : null;
-  ui.fiche = id; ui.sel = id; ui.pop = null; renderFiche(true);
+/* ---------- menu d'une carte ---------- */
+function closeMenu(){ const m = $('awMenu'); if (m) m.remove(); }
+function openMenu(cid, anchor){
+  closeMenu();
+  const v = ver(), c = v.cards[cid]; if (!c) return;
+  const r = anchor.getBoundingClientRect();
+  const m = document.createElement('div'); m.id = 'awMenu'; m.className = 'aw-menu';
+  m.innerHTML = '<button type="button" data-m="edit">Modifier</button><button type="button" data-m="big">Agrandir</button><button type="button" data-m="dup">Dupliquer</button>' +
+    '<div class="aw-menu-row"><span>Format</span>' + [['s', 'Carré'], ['v', 'Vertical'], ['h', 'Horizontal']].map(([k, l]) => '<button type="button" class="' + (c.size === k ? 'on' : '') + '" data-size="' + k + '">' + l + '</button>').join('') + '</div>' +
+    '<label class="aw-menu-sel">Déplacer vers<select data-m="move">' + v.sections.map(s => '<option value="' + s.id + '"' + (secOf(v, cid) === s ? ' selected' : '') + '>' + esc(s.titre) + '</option>').join('') + '</select></label>' +
+    '<button type="button" data-m="fold">' + (c.collapsed ? 'Déplier' : 'Replier') + '</button><div class="aw-menu-sep"></div><button type="button" class="danger" data-m="del">Mettre à la corbeille</button>';
+  document.body.appendChild(m);
+  const w = 236; m.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w)) + 'px';
+  const h = m.offsetHeight; m.style.top = (r.bottom + h + 8 > window.innerHeight ? Math.max(8, r.top - h - 6) : r.bottom + 6) + 'px';
+  m.onclick = e => { const b = e.target.closest('button'); if (!b) return; const k = b.dataset.m;
+    if (b.dataset.size){ c.size = b.dataset.size; c.collapsed = false; touch(); closeMenu(); renderBody(); return; }
+    closeMenu();
+    if (k === 'edit'){ ui.edit = cid; renderEditor(); }
+    else if (k === 'big') openBig(cid, document.querySelector('[data-cid="' + cid + '"]'));
+    else if (k === 'dup') duplicateCard(cid);
+    else if (k === 'fold'){ c.collapsed = !c.collapsed; touch(); renderBody(); }
+    else if (k === 'del') deleteCard(cid);
+  };
+  m.querySelector('select').onchange = e => { closeMenu(); moveCard(cid, e.target.value, null); };
+  setTimeout(() => document.addEventListener('pointerdown', function off(ev){ if (!m.contains(ev.target)){ closeMenu(); document.removeEventListener('pointerdown', off); } }), 0);
 }
-function closeFiche(){
-  flushFiche(); const host = $('atFicheHost'), f = host && host.firstElementChild;
-  charts.forEach(c => { try { c.destroy(); } catch(e){} }); charts = [];
-  ui.fiche = null;
-  if (f){ f.classList.remove('on'); setTimeout(() => { if (!ui.fiche) host.innerHTML = ''; }, 260); }
-  renderMap();
+
+/* ====================== VUE ORGANIGRAMME ====================== */
+let orgEls = {};
+// Pieuvre : le logo au centre, la première moitié des sections à droite, la seconde à gauche ; les cartes d'une section
+// ouverte sortent en colonne, à l'extérieur. Les colonnes de cartes ne comptent dans la largeur que si une section de
+// ce côté est ouverte (sinon la pieuvre serait inutilement réduite).
+function orgLayout(v, d){
+  const W0 = 230, SW = 260, SH = 76, CW = 330, CH = 70, GAP = 10, SG = 16, G1 = 80, G2 = 70;
+  const n = v.sections.length, half = Math.ceil(n / 2);
+  const sides = [{ dir: 1, secs: v.sections.slice(0, half) }, { dir: -1, secs: v.sections.slice(half) }];
+  const P = {}; let H = 200, minX = 0, maxX = W0;
+  sides.forEach(side => {
+    const blocks = side.secs.map(s => { const cards = ui.orgOpen[s.id] ? s.cards.map(id => v.cards[id]).filter(Boolean) : []; const ch = cards.length ? cards.length * (CH + GAP) - GAP : 0; return { s, cards, h: Math.max(SH, ch) }; });
+    const Hs = blocks.reduce((t, b) => t + b.h + SG, -SG); H = Math.max(H, Hs);
+    const sx = side.dir > 0 ? W0 + G1 : -G1 - SW, cx = side.dir > 0 ? sx + SW + G2 : sx - G2 - CW;
+    if (blocks.length){ minX = Math.min(minX, sx); maxX = Math.max(maxX, sx + SW); }
+    if (blocks.some(b => b.cards.length)){ minX = Math.min(minX, cx); maxX = Math.max(maxX, cx + CW); }
+    let y = -Hs / 2;
+    blocks.forEach(b => {
+      P['s:' + b.s.id] = { x: sx, y: y + (b.h - SH) / 2, w: SW, h: SH, dir: side.dir };
+      let cy = y + (b.h - (b.cards.length ? b.cards.length * (CH + GAP) - GAP : 0)) / 2;
+      b.cards.forEach(c => { P['c:' + c.id] = { x: cx, y: cy, w: CW, h: CH, from: 's:' + b.s.id, dir: side.dir }; cy += CH + GAP; });
+      y += b.h + SG;
+    });
+  });
+  P.root = { x: 0, y: -100, w: W0, h: 200 };
+  Object.values(P).forEach(p => { p.x -= minX; });
+  return { P, W: maxX - minX + 10, top: -H / 2, H };
 }
-function pathTo(v, n){ const out = []; let c = v.nodes[n.parent]; while (c){ out.unshift(c.titre || (c.link && D.docs[c.link] ? D.docs[c.link].titre : '')); c = v.nodes[c.parent]; } return out.filter(Boolean); }
-function blockHtml(b, i, n, ro){
-  const lbl = { texte: '📝 Texte', actu: '📰 Actualité', image: '🖼 Images', tv: '📡 Chiffres en direct', graph: '📈 Graphique' }[b.type] || '';
-  let body = '';
-  if (b.type === 'tv') body = '<div class="at-tv" data-tv="' + b.id + '">' + tvTiles(b.snap, b.snapAt) + '</div>';
-  else if (b.type === 'graph') body = (ro ? '' : '<select class="at-sel" data-metric>' + Object.keys(GRAPHS).map(k => '<option value="' + k + '"' + (b.metric === k ? ' selected' : '') + '>' + esc(GRAPHS[k][0]) + '</option>').join('') + '</select>') + '<div class="at-graph"><canvas data-graph="' + b.id + '"></canvas></div>';
-  else {
-    if (b.type === 'actu') body += ro ? (b.source ? '<div class="at-src">Source : ' + (/^https?:\/\//i.test(b.source) ? '<a href="' + esc(b.source) + '" target="_blank" rel="noopener">' + esc(b.source.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]) + '</a>' : esc(b.source)) + '</div>' : '')
-      : '<input type="text" class="at-in" data-f="source" placeholder="Source (nom ou lien)" value="' + esc(b.source || '') + '">';
-    if (!ro) body += '<div class="at-rt" data-nopan><button type="button" data-cmd="bold" title="Gras"><b>G</b></button><button type="button" data-cmd="italic" title="Italique"><i>I</i></button><button type="button" data-cmd="underline" title="Souligné"><u>S</u></button><button type="button" data-cmd="hilite" title="Surligner">🖍</button><button type="button" data-cmd="h2" title="Titre">T</button><button type="button" data-cmd="insertUnorderedList" title="Liste">•</button><button type="button" data-cmd="link" title="Lien">🔗</button><button type="button" data-cmd="removeFormat" title="Retirer la mise en forme">⌫</button></div>';
-    if (!ro || b.html) body += '<div class="at-text" ' + (ro ? '' : 'contenteditable="true" data-ph="' + (b.type === 'image' ? 'Commentaire (facultatif)…' : 'Écris ici… (Ctrl+V pour coller une image)') + '"') + '>' + clean(b.html) + '</div>';
-    body += '<div class="at-imgs">' + (b.imgs || []).map((im, k) => '<figure class="at-img"><img src="' + esc(mediaUrl(im.f)) + '" alt="" data-light="' + esc(im.f) + '" loading="lazy">' +
-      (ro ? (im.leg ? '<figcaption>' + esc(im.leg) + '</figcaption>' : '') : '<input type="text" class="at-in" data-leg="' + k + '" placeholder="Légende" value="' + esc(im.leg || '') + '"><button type="button" class="at-x" data-rmimg="' + k + '" title="Retirer l\'image de ce bloc (le fichier est gardé)">✕</button>') + '</figure>').join('') +
-      (ro ? '' : '<button type="button" class="at-addimg" data-addimg>＋ Image</button>') + '</div>';
+function orgNodeHtml(key, v, d){
+  if (key === 'root') return '<div class="aw-org-root">' + docLogo(d, 92) + '<b>' + esc(d.titre) + '</b></div>';
+  if (key.startsWith('s:')){
+    const s = v.sections.find(x => x.id === key.slice(2)), cards = s.cards.map(id => v.cards[id]).filter(Boolean);
+    const ratios = cards.filter(c => c.type === 'kpi').slice(0, 2).map(c => { const r = kpiData(c); return '<span>' + esc(shortLabel(r.label)) + ' <b>' + fmtVal(r.v, r.u, r.devise, r.d) + '</b></span>'; }).join('');
+    return '<button type="button" class="aw-org-sec' + (ui.orgOpen[s.id] ? ' open' : '') + '" data-org-sec="' + s.id + '" style="--sc:' + s.color + '"><span class="t">' + esc(s.titre) + '</span><span class="n">' + cards.length + '</span>' + (ratios ? '<span class="r">' + ratios + '</span>' : '') + '</button>';
   }
-  const head = ro ? '<div class="at-bhead ro">' + (b.date && b.type !== 'tv' && b.type !== 'graph' ? '<span class="at-date">' + frDate(b.date) + '</span>' : '') + (b.titre ? '<b>' + esc(b.titre) + '</b>' : '') + '</div>'
-    : '<div class="at-bhead"><span class="at-btype">' + lbl + '</span><input type="date" class="at-in date" data-f="date" value="' + esc(b.date || '') + '"><input type="text" class="at-in titre" data-f="titre" placeholder="Titre (facultatif)" value="' + esc(b.titre || '') + '">' +
-      '<span class="at-btools"><button type="button" data-bw title="Largeur : pleine ou moitié">' + (b.half ? '◧ ½' : '▭ 1') + '</button><button type="button" data-bup' + (i ? '' : ' disabled') + '>↑</button><button type="button" data-bdown' + (i < n.blocks.length - 1 ? '' : ' disabled') + '>↓</button><button type="button" data-bdel title="Mettre à la corbeille">🗑</button></span></div>';
-  return '<article class="at-block t-' + b.type + (b.half ? ' half' : '') + '" data-b="' + b.id + '" style="--i:' + i + '">' + head + body + '</article>';
+  const c = v.cards[key.slice(2)], t = TYPES[c.type], kf = keyFigure(c);
+  return '<div class="aw-org-card" data-cid="' + c.id + '"><span class="aw-dot" style="background:' + t.c + '"></span><div class="tx"><small>' + esc(t.l) + '</small><b>' + esc(cardTitle(c) || t.l) + '</b></div>' +
+    (kf && ['kpi', 'donut', 'barres', 'courbes'].includes(c.type) ? '<span class="kf">' + esc(kf) + '</span>' : '') + '<button type="button" class="aw-kb" data-c-big title="Agrandir">' + ICO.expand + '</button></div>';
 }
-function renderFiche(animate){
-  const host = $('atFicheHost'), d = doc(), v = ver(), n = ficheNode(); if (!host || !n){ if (host) host.innerHTML = ''; return; }
-  const ro = isRo(), link = n.link && D.docs[n.link], titre = link ? link.titre : n.titre, sc = host.querySelector('.at-fiche-body'), st = sc ? sc.scrollTop : 0;
-  charts.forEach(c => { try { c.destroy(); } catch(e){} }); charts = [];
-  host.innerHTML = '<div class="at-fiche' + (animate ? '' : ' on') + (ro ? ' ro' : '') + '" style="--c:' + colorOf(v, n) + '"><div class="at-fiche-in"><header class="at-fiche-head">' +
-    (n.id === v.root ? docLogo(d, 44) : (n.icon ? '<span class="at-fiche-ico">' + esc(n.icon) + '</span>' : '')) + '<div><small>' + esc([d.titre].concat(pathTo(v, n).slice(1)).join(' › ')) + '</small><h2>' + (esc(titre) || 'Sans titre') + '</h2></div>' +
-    (link ? '<button type="button" class="at-btn" data-golink>📁 Ouvrir le dossier</button>' : '') + '<button type="button" class="at-btn ico" data-fclose title="Fermer (Échap)">✕</button></header>' +
-    (ro ? '' : '<div class="at-fiche-bar"><button type="button" class="at-btn sm" data-addb="texte">＋ Texte</button><button type="button" class="at-btn sm" data-addb="image">＋ Images</button><button type="button" class="at-btn sm" data-addb="actu">＋ Actualité datée</button>' +
-      '<button type="button" class="at-btn sm" data-addb="tv">＋ Chiffres en direct</button><button type="button" class="at-btn sm" data-addb="graph">＋ Graphique</button><button type="button" class="at-btn sm" data-sortb title="Du plus récent au plus ancien">⇅ Trier par date</button><span class="at-faint">Colle (Ctrl+V) ou glisse une image n\'importe où</span></div>') +
-    '<div class="at-fiche-body"><div class="at-blocks">' + (n.blocks.length ? n.blocks.map((b, i) => blockHtml(b, i, n, ro)).join('') : '<p class="at-empty big">' + (ro ? 'Rien ici pour l\'instant.' : 'Fiche vide. Ajoute un texte, une image, une actualité datée, des chiffres en direct ou un graphique.') + '</p>') + '</div></div></div></div>';
-  const f = host.firstElementChild;
-  if (animate){ const r = ui.ficheFrom; if (r){ f.style.setProperty('--ox', (r.left + r.width / 2) + 'px'); f.style.setProperty('--oy', (r.top + r.height / 2) + 'px'); } setTimeout(() => f.classList.add('on'), 30); }
-  else host.querySelector('.at-fiche-body').scrollTop = st;
-  wireFiche(f, n);
-  n.blocks.forEach(b => { if (b.type === 'tv') refreshTv(b); if (b.type === 'graph') drawGraph(b); });
+const shortLabel = l => ({ 'Chiffre d\'affaires': 'CA', 'Marge opérationnelle': 'Marge op.', 'Rendement du dividende': 'Rendement', 'Actions en circulation': 'Actions', 'FCF par action': 'FCF/action', 'Dette nette / OCF': 'Dette/OCF' }[l] || l);
+function renderOrg(instant){
+  const box = $('awOrg'), w = $('awOrgW'), svg = $('awOrgSvg'); if (!box || !w) return;
+  const d = doc(), v = ver(), L = orgLayout(v, d), P = L.P;
+  const scale = Math.min(1.15, (box.clientWidth - 30) / L.W, Math.max(420, window.innerHeight * (ui.video ? 0.86 : 0.74)) / (L.H + 60));
+  w.style.marginLeft = Math.max(0, (box.clientWidth - 30 - L.W * scale) / 2) + 'px';
+  w.style.transform = 'scale(' + scale + ')'; w.style.width = L.W + 'px'; w.style.height = (L.H + 60) + 'px';
+  box.style.height = ((L.H + 60) * scale + 20) + 'px';
+  const oy = -L.top + 30, keys = Object.keys(P);
+  keys.forEach(k => {
+    let el = orgEls[k];
+    const p = P[k];
+    if (!el){
+      el = orgEls[k] = document.createElement('div'); el.className = 'aw-org-el'; el.dataset.k = k; w.appendChild(el);
+      const from = p.from && P[p.from] ? P[p.from] : null;
+      el.style.transform = 'translate(' + (from && !instant ? from.x : p.x) + 'px,' + ((from && !instant ? from.y : p.y) + oy) + 'px)';
+      el.style.opacity = instant || !from ? 1 : 0;
+      el.getBoundingClientRect();   // force le point de départ de l'animation
+    }
+    el.innerHTML = orgNodeHtml(k, v, d);
+    el.style.width = p.w + 'px'; el.style.height = p.h + 'px';
+    el.style.transform = 'translate(' + p.x + 'px,' + (p.y + oy) + 'px)'; el.style.opacity = 1; el._gone = false;
+  });
+  Object.keys(orgEls).forEach(k => {
+    if (P[k] || orgEls[k]._gone) return;
+    const el = orgEls[k]; el._gone = true;
+    const sk = el._from || ('s:' + (v.sections.find(s => s.cards.includes(k.slice(2))) || {}).id), sp = P[sk];
+    if (sp){ el.style.transform = 'translate(' + sp.x + 'px,' + (sp.y + oy) + 'px)'; }
+    el.style.opacity = 0; setTimeout(() => { if (el._gone){ el.remove(); delete orgEls[k]; } }, 380);
+  });
+  keys.forEach(k => { if (P[k].from) orgEls[k]._from = P[k].from; });
+  // liens courbes
+  let paths = '';
+  const r = P.root, ry = r.y + r.h / 2 + oy;
+  v.sections.forEach(s => {
+    const p = P['s:' + s.id], y2 = p.y + p.h / 2 + oy, right = p.dir > 0;
+    const rx = right ? r.x + r.w : r.x, sx = right ? p.x : p.x + p.w, mx = (rx + sx) / 2;
+    paths += '<path d="M' + rx + ' ' + ry + ' C' + mx + ' ' + ry + ' ' + mx + ' ' + y2 + ' ' + sx + ' ' + y2 + '" stroke="' + s.color + '" stroke-width="' + (ui.orgOpen[s.id] ? 3.5 : 2.2) + '" opacity="' + (ui.orgOpen[s.id] ? 1 : 0.6) + '"/>';
+    if (ui.orgOpen[s.id]) s.cards.forEach(id => { const c = P['c:' + id]; if (!c) return; const x1 = right ? p.x + p.w : p.x, x2 = right ? c.x : c.x + c.w, cy = c.y + c.h / 2 + oy, m2 = (x1 + x2) / 2; paths += '<path class="aw-org-in" d="M' + x1 + ' ' + y2 + ' C' + m2 + ' ' + y2 + ' ' + m2 + ' ' + cy + ' ' + x2 + ' ' + cy + '" stroke="' + s.color + '" stroke-width="2" opacity="0.75"/>'; });
+  });
+  svg.setAttribute('width', L.W); svg.setAttribute('height', L.H + 60);
+  svg.innerHTML = '<g fill="none" stroke-linecap="round">' + paths + '</g>';
+  if (!box._wired){
+    box._wired = true;
+    box.onclick = e => {
+      const sb = e.target.closest('[data-org-sec]');
+      if (sb){ const id = sb.dataset.orgSec; ui.orgOpen[id] = !ui.orgOpen[id]; renderOrg(false); return; }
+      const bb = e.target.closest('[data-c-big]'), cEl = e.target.closest('[data-cid]');
+      if (bb || cEl) openBig(cEl.dataset.cid, cEl);
+    };
+  }
 }
-function flushFiche(){
-  const n = ficheNode(), host = $('atFicheHost'); if (!n || !host || isRo()) return;
-  let ch = false;
-  host.querySelectorAll('.at-block').forEach(el => { const b = n.blocks.find(x => x.id === el.dataset.b), t = el.querySelector('.at-text[contenteditable]'); if (b && t){ const h = clean(t.innerHTML); if (h !== (b.html || '')){ b.html = h; ch = true; } } });
-  if (ch) touch();
+window.addEventListener('resize', () => { if (ui.view === 'org' && $('awOrg')) renderOrg(true); });
+
+/* ====================== CARTE AGRANDIE (arrière-plan flouté) ====================== */
+function bigBody(c){
+  const d = doc(), v = ver();
+  const statBox = (l, val) => '<div class="aw-stat"><span>' + esc(l) + '</span><b>' + val + '</b></div>';
+  switch (c.type){
+    case 'kpi': {
+      const r = kpiData(c), s = r.series;
+      let stats = '', table = '';
+      if (s && s.values.length > 1){
+        const vals = s.values, n = vals.length, cagr = (k) => n > k && vals[n - 1 - k] > 0 && vals[n - 1] > 0 && r.u !== '%' && r.u !== 'x' ? (Math.pow(vals[n - 1] / vals[n - 1 - k], 1 / k) - 1) * 100 : null;
+        const sorted = vals.slice().sort((a, b) => a - b), med = sorted[Math.floor(n / 2)];
+        stats = '<div class="aw-stats">' + statBox('Croissance annuelle 5 ans', cagr(5) == null ? '—' : fr(cagr(5), 1) + ' %/an') + statBox('Croissance annuelle 10 ans', cagr(10) == null ? '—' : fr(cagr(10), 1) + ' %/an') +
+          statBox('Plus bas (' + s.labels[vals.indexOf(sorted[0])] + ')', fmtVal(sorted[0], r.u, r.devise, r.d)) + statBox('Plus haut (' + s.labels[vals.indexOf(sorted[n - 1])] + ')', fmtVal(sorted[n - 1], r.u, r.devise, r.d)) + statBox('Médiane', fmtVal(med, r.u, r.devise, r.d)) + '</div>';
+        table = '<div class="aw-tscroll"><table class="aw-table big"><thead><tr><th></th>' + s.labels.slice(-12).map(y => '<th>' + y + '</th>').join('') + '</tr></thead><tbody><tr><td class="lb">' + esc(r.label) + '</td>' + s.values.slice(-12).map(x => '<td>' + fmtVal(x, r.u, r.devise, r.d) + '</td>').join('') + '</tr></tbody></table></div>';
+      }
+      return '<div class="aw-big-kpi"><div><div class="aw-kpi-l">' + esc(r.label) + (r.period ? ' <span>' + esc(r.period) + '</span>' : '') + '</div><div class="aw-kpi-v xl">' + fmtVal(r.v, r.u, r.devise, r.d) + '</div><div class="aw-kpi-d">' + deltaHtml(r) + (r.prev != null ? '<span class="at-faint">exercice précédent : ' + fmtVal(r.prev, r.u, r.devise, r.d) + '</span>' : '') + '</div>' + (c.note ? '<p class="aw-note">' + esc(c.note) + '</p>' : '') + '</div>' +
+        (s && s.values.length > 1 ? '<div class="aw-chart big"><canvas data-chart="kpi-' + c.id + '"></canvas></div>' : '') + '</div>' + stats + table + '<div class="aw-foot">' + (c.bind ? '<span class="aw-link">lié · ' + esc(r.label) + '</span>' : '') + '<span>Source : ' + esc(r.src || '—') + '</span></div>';
+    }
+    case 'donut': {
+      const rows = (c.rows || []).filter(r => num(r.v) > 0), tot = rows.reduce((s, r) => s + num(r.v), 0);
+      if (!tot) return '<p class="at-faint">Aucune donnée.</p>';
+      const sorted = rows.map((r, i) => Object.assign({ i }, r)).sort((a, b) => num(b.v) - num(a.v)), top = sorted[0];
+      return '<div class="aw-big-split"><div class="aw-donut-c xl"><canvas data-chart="' + c.id + '"></canvas><div class="aw-donut-t"><b>' + fr(tot, tot >= 100 ? 0 : 1) + '</b><span>' + esc(c.unit || 'total') + '</span></div></div><div>' +
+        '<p class="aw-lead">« ' + esc(top.label) + ' » pèse <b>' + fr(num(top.v) / tot * 100, 0) + ' %</b> du total' + (sorted[1] ? ', devant « ' + esc(sorted[1].label) + ' » (' + fr(num(sorted[1].v) / tot * 100, 0) + ' %)' : '') + '.</p>' +
+        '<table class="aw-table big"><thead><tr><th></th><th>Montant</th><th>Part</th></tr></thead><tbody>' + rows.map((r, i) => '<tr><td class="lb"><span class="aw-dot" style="background:' + (r.color || SERIES_COLORS[i % SERIES_COLORS.length]) + '"></span> ' + esc(r.label) + '</td><td>' + fr(num(r.v), 1) + ' ' + esc(c.unit || '') + '</td><td><b>' + fr(num(r.v) / tot * 100, 1) + ' %</b></td></tr>').join('') +
+        '<tr class="tot"><td class="lb">Total</td><td>' + fr(tot, 1) + ' ' + esc(c.unit || '') + '</td><td>100 %</td></tr></tbody></table></div></div>' + (sourceOf(v, c) ? '<div class="aw-foot"><span>Source : ' + esc(sourceOf(v, c).titre) + '</span></div>' : '');
+    }
+    case 'barres': case 'courbes': {
+      const s = seriesData(c, d);
+      if (!s.labels.length) return '<p class="at-faint">Aucune donnée.</p>';
+      const cagrs = s.sets.map(x => { const vals = x.values.filter(y => y != null); const n = vals.length; if (n < 2 || x.u === '%' || x.u === 'x' || vals[0] <= 0 || vals[n - 1] <= 0) return null; return { name: x.name, g: (Math.pow(vals[n - 1] / vals[0], 1 / (n - 1)) - 1) * 100, n: n - 1 }; }).filter(Boolean);
+      return '<div class="aw-chart xl"><canvas data-chart="' + c.id + '"></canvas></div>' +
+        (cagrs.length ? '<div class="aw-stats">' + cagrs.map(g => statBox(g.name + ' : croissance annuelle sur ' + g.n + ' ans', fr(g.g, 1) + ' %/an')).join('') + '</div>' : '') +
+        '<div class="aw-tscroll"><table class="aw-table big"><thead><tr><th></th>' + s.labels.map(y => '<th>' + esc(y) + '</th>').join('') + '</tr></thead><tbody>' + s.sets.map(x => '<tr><td class="lb"><span class="aw-dot" style="background:' + x.color + '"></span> ' + esc(x.name) + '</td>' + x.values.map(y => '<td>' + fmtVal(y, x.u, x.devise) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>';
+    }
+    case 'comparatif': return compTableHtml(c, true) + '<p class="aw-note">Vert : la meilleure valeur de la ligne · rouge : la moins bonne. Chiffres TradingView de l\'onglet Analyse, sauf valeurs saisies à la main.</p>';
+    case 'concurrent': return concHtml(c, true);
+    case 'source': return srcHtml(c, true, v);
+    case 'image': return '<div class="aw-big-imgs">' + (c.imgs || []).map(im => '<figure><img src="' + esc(mediaUrl(im.f)) + '" alt="">' + (im.leg ? '<figcaption>' + esc(im.leg) + '</figcaption>' : '') + '</figure>').join('') + '</div>' + (plain(c.html) ? '<div class="aw-text xl">' + clean(c.html) + '</div>' : '');
+    case 'citation': return '<div class="aw-quote-mark xl">«</div><div class="aw-quote xl">' + clean(c.html) + '</div><div class="aw-quote-l">' + esc(c.titre || '') + (c.date ? ' · ' + frDate(c.date) : '') + '</div>';
+    default: return (c.date ? '<span class="aw-date">' + frDate(c.date) + '</span>' : '') + '<div class="aw-text xl">' + clean(c.html) + '</div>' + (c.source ? '<p class="aw-note">Source : ' + esc(c.source) + '</p>' : '') + '<div class="aw-big-imgs">' + (c.imgs || []).map(im => '<figure><img src="' + esc(mediaUrl(im.f)) + '" alt=""></figure>').join('') + '</div>';
+  }
 }
+function bigOrder(cid){ const v = ver(), s = secOf(v, cid); return s ? s.cards.filter(id => v.cards[id]) : [cid]; }
+function openBig(cid, fromEl){
+  const v = ver(), c = v.cards[cid]; if (!c) return;
+  closeMenu();
+  ui.big = cid;
+  let ov = $('awBig');
+  const fresh = !ov;
+  if (fresh){ ov = document.createElement('div'); ov.id = 'awBig'; ov.className = 'aw-big'; document.body.appendChild(ov); }
+  destroyCharts(bigCharts);
+  const t = TYPES[c.type], sec = secOf(v, cid), order = bigOrder(cid), i = order.indexOf(cid);
+  ov.innerHTML = '<div class="aw-big-bg" data-big-close></div>' + (order.length > 1 ? '<button type="button" class="aw-big-nav l" data-big-go="-1" aria-label="Carte précédente">' + ICO.left + '</button><button type="button" class="aw-big-nav r" data-big-go="1" aria-label="Carte suivante">' + ICO.right + '</button>' : '') +
+    '<div class="aw-big-p t-' + c.type + '"><div class="aw-big-h"><div><div class="aw-tl"><span class="aw-dot" style="background:' + t.c + '"></span>' + esc((sec ? sec.titre + ' · ' : '') + t.l) + '</div><h2>' + esc(cardTitle(c) || t.l) + '</h2></div><span style="flex:1"></span>' +
+    (isRo() ? '' : '<button type="button" class="at-btn sm" data-big-edit>Modifier</button>') + '<span class="aw-big-i">' + (i + 1) + ' / ' + order.length + '</span><button type="button" class="aw-kb lg" data-big-close aria-label="Réduire">' + ICO.shrink + '</button></div><div class="aw-big-b">' + bigBody(c) + '</div></div>';
+  const p = ov.querySelector('.aw-big-p');
+  if (fresh){
+    const r = fromEl && fromEl.getBoundingClientRect ? fromEl.getBoundingClientRect() : null;
+    if (r && r.width){ p.style.transformOrigin = '0 0'; const pr = p.getBoundingClientRect(); p.style.transform = 'translate(' + (r.left - pr.left) + 'px,' + (r.top - pr.top) + 'px) scale(' + (r.width / pr.width) + ',' + (r.height / pr.height) + ')'; p.style.opacity = '0.4'; ov._from = r; }
+    p.getBoundingClientRect();
+    requestAnimationFrame(() => { ov.classList.add('on'); p.style.transform = ''; p.style.opacity = ''; });
+  } else ov.classList.add('on');
+  setTimeout(() => drawCharts(p, bigCharts, true), fresh ? 380 : 0);
+  ov.onclick = e => {
+    if (e.target.closest('[data-big-close]')) return closeBig();
+    const g = e.target.closest('[data-big-go]'); if (g){ const o = bigOrder(ui.big), j = (o.indexOf(ui.big) + Number(g.dataset.bigGo) + o.length) % o.length; openBig(o[j]); return; }
+    if (e.target.closest('[data-big-edit]')){ const id = ui.big; closeBig(); ui.edit = id; renderEditor(); return; }
+    const op = e.target.closest('[data-open]'); if (op){ closeBig(); openDoc(op.dataset.open); }
+  };
+}
+function closeBig(){
+  const ov = $('awBig'); if (!ov) return;
+  ui.big = null; ov.classList.remove('on');
+  const p = ov.querySelector('.aw-big-p'), r = ov._from;
+  if (p && r){ const pr = p.getBoundingClientRect(); p.style.transformOrigin = '0 0'; p.style.transform = 'translate(' + (r.left - pr.left) + 'px,' + (r.top - pr.top) + 'px) scale(' + (r.width / pr.width) + ',' + (r.height / pr.height) + ')'; p.style.opacity = '0'; }
+  setTimeout(() => { destroyCharts(bigCharts); ov.remove(); }, 320);
+}
+
+/* ====================== ÉDITION (panneau à droite) ====================== */
+const companyOptions = () => typeof companies === 'undefined' ? '' : Object.keys(companies).slice(0, 4000).map(n => '<option value="' + esc(typeof fmpDisplayName === 'function' ? fmpDisplayName(n) : n) + '">').join('');
+function bindOptions(d, cur, allowNone){
+  const facts = Object.values(d.facts || {});
+  return (allowNone ? '<option value="">Saisie à la main</option>' : '') + '<optgroup label="TradingView (onglet Analyse)">' + Object.keys(TVF).map(k => '<option value="tv:' + k + '"' + (cur === 'tv:' + k ? ' selected' : '') + '>' + esc(TVF[k].l) + '</option>').join('') + '</optgroup>' +
+    (facts.length ? '<optgroup label="Données du dossier">' + facts.map(f => '<option value="f:' + f.id + '"' + (cur === 'f:' + f.id ? ' selected' : '') + '>' + esc(f.label || 'Sans nom') + '</option>').join('') + '</optgroup>' : '');
+}
+const RT = '<div class="at-rt"><button type="button" data-cmd="bold" title="Gras"><b>G</b></button><button type="button" data-cmd="italic" title="Italique"><i>I</i></button><button type="button" data-cmd="underline" title="Souligné"><u>S</u></button><button type="button" data-cmd="hilite" title="Surligner">🖍</button><button type="button" data-cmd="h2" title="Titre">T</button><button type="button" data-cmd="insertUnorderedList" title="Liste">•</button><button type="button" data-cmd="removeFormat" title="Retirer la mise en forme">⌫</button></div>';
+function editorFields(c, d, v){
+  const val = x => x == null ? '' : esc(String(x).replace('.', ','));
+  const srcs = Object.values(v.cards).filter(x => x.type === 'source' && x.id !== c.id);
+  const common = '<label>Titre<input class="at-in" data-f="titre" value="' + esc(c.titre || '') + '" placeholder="' + esc(cardTitle(Object.assign({}, c, { titre: '' })) || 'Titre de la carte') + '"></label>';
+  const srcSel = srcs.length ? '<label>Source utilisée<select class="at-sel" data-f="srcId"><option value="">—</option>' + srcs.map(s => '<option value="' + s.id + '"' + (c.srcId === s.id ? ' selected' : '') + '>' + esc(s.titre || 'Source') + '</option>').join('') + '</select></label>' : '';
+  const dateF = '<label>Date (facultatif)<input type="date" class="at-in" data-f="date" value="' + esc(c.date || '') + '"></label>';
+  const rich = ph => RT + '<div class="aw-rich" contenteditable="true" data-rich data-ph="' + esc(ph) + '">' + clean(c.html) + '</div>';
+  const imgs = '<div class="aw-ed-imgs">' + (c.imgs || []).map((im, k) => '<div class="aw-ed-img"><img src="' + esc(mediaUrl(im.f)) + '" alt=""><input class="at-in" data-leg="' + k + '" value="' + esc(im.leg || '') + '" placeholder="Légende"><button type="button" class="at-x" data-rmimg="' + k + '" title="Retirer (le fichier est gardé)">✕</button></div>').join('') + '<button type="button" class="at-btn sm" data-addimg>＋ Image (ou Ctrl+V)</button></div>';
+  switch (c.type){
+    case 'texte': return common + dateF + rich('Écris ici… (Ctrl+V pour coller une image)') + imgs + srcSel + '<label>Source (texte libre)<input class="at-in" data-f="source" value="' + esc(c.source || '') + '"></label>';
+    case 'image': return common + dateF + imgs + rich('Description (facultatif)') + srcSel;
+    case 'citation': return '<label>Étiquette<input class="at-in" data-f="titre" value="' + esc(c.titre || '') + '" placeholder="ex. Thèse d\'investissement"></label>' + dateF + rich('Ta phrase clé…');
+    case 'kpi': return '<label>Donnée affichée<select class="at-sel" data-f="bind">' + bindOptions(d, c.bind || '', true) + '</select></label>' +
+      (c.bind ? '<p class="at-faint">Le chiffre, la comparaison avec l\'année précédente et le mini-historique se mettent à jour tout seuls.</p>' :
+        '<label>Libellé<input class="at-in" data-f="label" value="' + esc(c.label || '') + '"></label><div class="at-row2"><label>Valeur<input class="at-in" data-f="value" data-num value="' + val(c.value) + '"></label><label>Unité<input class="at-in" data-f="unit" value="' + esc(c.unit || '') + '" placeholder="%, x, €, Md€…"></label></div><div class="at-row2"><label>Valeur précédente<input class="at-in" data-f="prev" data-num value="' + val(c.prev) + '"></label><label>Période<input class="at-in" data-f="period" value="' + esc(c.period || '') + '" placeholder="2025"></label></div><label>Source<input class="at-in" data-f="source" value="' + esc(c.source || '') + '"></label><p class="at-faint">Astuce : saisis plutôt la donnée dans « 📊 Données » du dossier, puis choisis-la ici : elle pourra servir à plusieurs cartes.</p>') +
+      '<label>Note<input class="at-in" data-f="note" value="' + esc(c.note || '') + '"></label>';
+    case 'donut': return common + '<label>Unité<input class="at-in" data-f="unit" value="' + esc(c.unit || '') + '" placeholder="Md€, %…"></label><div class="aw-ed-rows">' +
+      (c.rows || []).map((r, k) => '<div class="aw-ed-row"><select class="aw-colsel" data-row-color="' + k + '" style="background:' + (r.color || SERIES_COLORS[k % SERIES_COLORS.length]) + '">' + SERIES_COLORS.map(col => '<option value="' + col + '" style="background:' + col + '"' + ((r.color || SERIES_COLORS[k % SERIES_COLORS.length]) === col ? ' selected' : '') + '></option>').join('') + '</select><input class="at-in" data-row-label="' + k + '" value="' + esc(r.label || '') + '" placeholder="Catégorie"><input class="at-in num" data-row-v="' + k + '" value="' + val(r.v) + '" placeholder="Montant"><button type="button" class="at-x" data-row-del="' + k + '">✕</button></div>').join('') +
+      '<button type="button" class="at-btn sm" data-row-add>＋ Catégorie</button></div>' + srcSel;
+    case 'barres': case 'courbes': {
+      const tv = c.mode === 'tv';
+      return common + '<div class="at-seg big"><button type="button" class="' + (tv ? 'on' : '') + '" data-mode="tv">TradingView</button><button type="button" class="' + (tv ? '' : 'on') + '" data-mode="manuel">Saisie à la main</button></div>' +
+        (tv ? '<div class="aw-ed-checks">' + Object.keys(TVF).filter(k => k !== 'croissanceCA' || true).map(k => '<label><input type="checkbox" data-key="' + k + '"' + ((c.keys || []).includes(k) ? ' checked' : '') + '> ' + esc(TVF[k].l) + '</label>').join('') + '</div><label>Années affichées<select class="at-sel" data-f="years">' + [5, 10, 15, 20].map(n => '<option value="' + n + '"' + ((c.years || 10) === n ? ' selected' : '') + '>' + n + ' ans</option>').join('') + '</select></label>'
+          : '<label>Années ou périodes (séparées par des virgules)<input class="at-in" data-labels value="' + esc((c.labels || []).join(', ')) + '"></label><label>Unité<input class="at-in" data-f="unit" value="' + esc(c.unit || '') + '"></label><div class="aw-ed-rows">' +
+            (c.series || []).map((s, k) => '<div class="aw-ed-series"><div class="aw-ed-row"><select class="aw-colsel" data-ser-color="' + k + '" style="background:' + (s.color || SERIES_COLORS[k]) + '">' + SERIES_COLORS.map(col => '<option value="' + col + '" style="background:' + col + '"' + ((s.color || SERIES_COLORS[k]) === col ? ' selected' : '') + '></option>').join('') + '</select><input class="at-in" data-ser-name="' + k + '" value="' + esc(s.name || '') + '" placeholder="Nom de la série"><button type="button" class="at-x" data-ser-del="' + k + '">✕</button></div><input class="at-in" data-ser-values="' + k + '" value="' + esc((s.values || []).map(x => x == null ? '' : String(x).replace('.', ',')).join('; ')) + '" placeholder="Valeurs séparées par ; (ex. 6,1; 6,4; 6,9)"></div>').join('') +
+            '<button type="button" class="at-btn sm" data-ser-add>＋ Série</button></div>') + srcSel;
+    }
+    case 'comparatif': {
+      const cols = compCols(c);
+      return common + '<div class="aw-ed-rows"><b class="aw-ed-h">Entreprises</b>' + (c.cols || []).map((n, k) => '<div class="aw-ed-row"><input class="at-in" list="awCos" data-col="' + k + '" value="' + esc(n === '@self' ? cols[k] + ' (ce dossier)' : n) + '"' + (n === '@self' ? ' disabled' : '') + '><button type="button" class="at-x" data-col-del="' + k + '">✕</button></div>').join('') + '<button type="button" class="at-btn sm" data-col-add>＋ Entreprise</button><datalist id="awCos">' + companyOptions() + '</datalist></div>' +
+        '<label class="aw-ed-check"><input type="checkbox" data-withconc' + (c.withConc !== false ? ' checked' : '') + '> Ajouter tout seul les cartes « Entreprise » du dossier</label>' +
+        '<b class="aw-ed-h">Indicateurs</b><div class="aw-ed-checks">' + Object.keys(TVF).map(k => '<label><input type="checkbox" data-metric="' + k + '"' + ((c.metrics || []).includes(k) ? ' checked' : '') + '> ' + esc(TVF[k].l) + '</label>').join('') + '</div>' +
+        '<b class="aw-ed-h">Corriger une valeur (vide = TradingView)</b><div class="aw-tscroll"><table class="aw-table ed"><thead><tr><th></th>' + cols.map(n => '<th>' + esc(n.slice(0, 12)) + '</th>').join('') + '</tr></thead><tbody>' + (c.metrics || []).filter(k => TVF[k]).map(k => '<tr><td class="lb">' + esc(TVF[k].l) + '</td>' + cols.map((n, i) => { const ov = c.over && c.over[k] && c.over[k][i]; const auto = compValue(Object.assign({}, c, { over: {} }), n, k, i); return '<td><input class="at-in num" data-over="' + k + '|' + i + '" value="' + (ov != null && ov !== '' ? esc(String(ov).replace('.', ',')) : '') + '" placeholder="' + (auto == null ? '—' : esc(fr(auto, TVF[k].d))) + '"></td>'; }).join('') + '</tr>').join('') + '</tbody></table></div>';
+    }
+    case 'concurrent': return '<label>Entreprise<input class="at-in" list="awCos" data-f="nom" value="' + esc(c.nom || '') + '"><datalist id="awCos">' + companyOptions() + '</datalist></label>' +
+      '<div class="at-row2"><label>Pays<input class="at-in" data-f="pays" value="' + esc(c.pays || '') + '"></label><label>Rôle<input class="at-in" data-f="role" value="' + esc(c.role || '') + '" placeholder="Concurrent direct, client…"></label></div>' +
+      '<label>Étiquettes (séparées par des virgules)<input class="at-in" data-f="tags" value="' + esc(c.tags || '') + '"></label><label>Forces<textarea class="at-in" rows="3" data-f="forces">' + esc(c.forces || '') + '</textarea></label><label>Faiblesses<textarea class="at-in" rows="3" data-f="faiblesses">' + esc(c.faiblesses || '') + '</textarea></label>' +
+      '<label>Son dossier dans l\'Atelier<select class="at-sel" data-f="docId"><option value="">— (trouvé par son nom s\'il existe)</option>' + Object.values(D.docs).filter(x => x.type === 'entreprise' && x.id !== d.id).map(x => '<option value="' + x.id + '"' + (c.docId === x.id ? ' selected' : '') + '>' + esc(x.titre) + '</option>').join('') + '</select></label>' +
+      '<label>Logo (adresse d\'image, facultatif)<input class="at-in" data-f="logo" value="' + esc(c.logo || '') + '"></label><p class="at-faint">Si l\'entreprise est connue de l\'onglet Analyse, son logo et ses chiffres s\'affichent tout seuls.</p>';
+    case 'source': return common + '<label>Type<select class="at-sel" data-f="kind">' + [['pdf', 'PDF'], ['web', 'Site web'], ['article', 'Article'], ['video', 'Vidéo']].map(([k, l]) => '<option value="' + k + '"' + (c.kind === k ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></label>' +
+      '<label>Lien (facultatif)<input class="at-in" data-f="url" value="' + esc(c.url || '') + '" placeholder="https://…"></label><div class="aw-ed-row"><button type="button" class="at-btn sm" data-addfile>' + (c.file ? 'Remplacer le fichier' : '＋ Joindre un PDF ou une image') + '</button>' + (c.file ? '<span class="at-faint">' + esc(c.file) + '</span>' : '') + '</div>' +
+      '<div class="at-row2"><label>Pages<input class="at-in" data-f="pages" value="' + esc(c.pages || '') + '"></label>' + dateF + '</div><label>Mes notes<textarea class="at-in" rows="4" data-f="note">' + esc(c.note || '') + '</textarea></label>';
+  }
+  return common;
+}
+function renderEditor(){
+  const host = $('awEditHost'); if (!host) return;
+  const v = ver(), c = ui.edit && v ? v.cards[ui.edit] : null;
+  if (!c || isRo()){ host.innerHTML = ''; ui.edit = null; return; }
+  const d = doc(), t = TYPES[c.type];
+  host.innerHTML = '<aside class="aw-ed"><div class="aw-ed-top"><span class="aw-tl"><span class="aw-dot" style="background:' + t.c + '"></span>Modifier · ' + esc(t.l) + '</span><span style="flex:1"></span><button type="button" class="aw-kb" data-ed-close aria-label="Fermer">' + ICO.close + '</button></div>' +
+    '<div class="aw-ed-body">' + editorFields(c, d, v) + '</div><div class="aw-ed-foot"><span class="at-faint">Enregistré automatiquement</span><button type="button" class="at-btn" data-ed-close>Fermer</button></div></aside>';
+  wireEditor(host.firstElementChild, c);
+}
+function refreshCard(c){
+  const el = document.querySelector('#awBody [data-cid="' + c.id + '"]');
+  if (!el || ui.view !== 'grid'){ if (ui.view === 'org') renderOrg(true); return; }
+  charts.filter(ch => el.contains(ch.canvas)).forEach(ch => { ch.destroy(); charts.splice(charts.indexOf(ch), 1); });
+  const tmp = document.createElement('div'); tmp.innerHTML = cardHtml(c); const n = tmp.firstElementChild; el.replaceWith(n);
+  drawCharts(n, charts, false);
+}
+function wireEditor(p, c){
+  const v = ver();
+  const changed = (rerenderEditor) => { touch(); clearTimeout(editTimer); editTimer = setTimeout(() => refreshCard(c), 150); if (rerenderEditor) renderEditor(); };
+  p.addEventListener('input', e => {
+    const t = e.target, ds = t.dataset;
+    if (ds.f){ c[ds.f] = ds.num !== undefined ? num(t.value) : t.value; if (ds.f === 'nom' && c.type === 'concurrent'){ const co = findCompany(t.value); if (co && !c.pays) {} } changed(false); }
+    else if (ds.rich !== undefined){ c.html = clean(t.innerHTML); changed(false); }
+    else if (ds.leg !== undefined){ c.imgs[+ds.leg].leg = t.value; changed(false); }
+    else if (ds.rowLabel !== undefined){ c.rows[+ds.rowLabel].label = t.value; changed(false); }
+    else if (ds.rowV !== undefined){ c.rows[+ds.rowV].v = num(t.value); changed(false); }
+    else if (ds.labels !== undefined){ c.labels = t.value.split(',').map(x => x.trim()).filter(Boolean); changed(false); }
+    else if (ds.serName !== undefined){ c.series[+ds.serName].name = t.value; changed(false); }
+    else if (ds.serValues !== undefined){ c.series[+ds.serValues].values = t.value.split(';').map(x => num(x)); changed(false); }
+    else if (ds.col !== undefined){ c.cols[+ds.col] = t.value.trim(); changed(false); }
+    else if (ds.over !== undefined){ const [k, i] = ds.over.split('|'); c.over = c.over || {}; c.over[k] = c.over[k] || []; c.over[k][+i] = t.value.trim() === '' ? null : num(t.value); changed(false); }
+  });
+  p.addEventListener('change', e => {
+    const t = e.target, ds = t.dataset;
+    if (ds.f === 'bind' || ds.f === 'years' || ds.f === 'srcId' || ds.f === 'kind' || ds.f === 'docId'){ c[ds.f] = ds.f === 'years' ? Number(t.value) : t.value; changed(ds.f === 'bind'); }
+    else if (ds.key !== undefined){ c.keys = c.keys || []; if (t.checked && !c.keys.includes(ds.key)) c.keys.push(ds.key); if (!t.checked) c.keys = c.keys.filter(k => k !== ds.key); changed(false); }
+    else if (ds.metric !== undefined){ c.metrics = c.metrics || []; if (t.checked && !c.metrics.includes(ds.metric)) c.metrics.push(ds.metric); if (!t.checked) c.metrics = c.metrics.filter(k => k !== ds.metric); changed(true); }
+    else if (ds.withconc !== undefined){ c.withConc = t.checked; changed(true); }
+    else if (ds.rowColor !== undefined){ c.rows[+ds.rowColor].color = t.value; t.style.background = t.value; changed(false); }
+    else if (ds.serColor !== undefined){ c.series[+ds.serColor].color = t.value; t.style.background = t.value; changed(false); }
+  });
+  p.querySelectorAll('.at-rt button').forEach(b => b.addEventListener('mousedown', e => e.preventDefault()));
+  p.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return; const ds = b.dataset;
+    if (ds.edClose !== undefined){ ui.edit = null; renderEditor(); return; }
+    if (ds.cmd){ const k = ds.cmd; if (k === 'hilite') document.execCommand('hiliteColor', false, 'rgba(240,200,119,0.45)'); else if (k === 'h2') document.execCommand('formatBlock', false, document.queryCommandValue('formatBlock').toLowerCase() === 'h2' ? 'div' : 'h2'); else document.execCommand(k, false, null); const r = p.querySelector('[data-rich]'); if (r){ c.html = clean(r.innerHTML); changed(false); } return; }
+    if (ds.mode){ c.mode = ds.mode; if (c.mode === 'manuel' && !c.series){ const s = seriesData(Object.assign({}, c, { mode: 'tv' }), doc()); c.labels = s.labels.length ? s.labels.map(String) : ['2023', '2024', '2025']; c.series = s.sets.length ? s.sets.map(x => ({ name: x.name, values: x.values, color: x.color })) : [{ name: 'Série 1', values: [], color: SERIES_COLORS[0] }]; } changed(true); return; }
+    if (ds.rowAdd !== undefined){ c.rows = c.rows || []; c.rows.push({ label: '', v: null }); changed(true); return; }
+    if (ds.rowDel !== undefined){ c.rows.splice(+ds.rowDel, 1); changed(true); return; }
+    if (ds.serAdd !== undefined){ c.series = c.series || []; c.series.push({ name: '', values: [], color: SERIES_COLORS[c.series.length % SERIES_COLORS.length] }); changed(true); return; }
+    if (ds.serDel !== undefined){ c.series.splice(+ds.serDel, 1); changed(true); return; }
+    if (ds.colAdd !== undefined){ c.cols = c.cols || []; c.cols.push(''); changed(true); return; }
+    if (ds.colDel !== undefined){ c.cols.splice(+ds.colDel, 1); Object.values(c.over || {}).forEach(a => a.splice(+ds.colDel, 1)); changed(true); return; }
+    if (ds.rmimg !== undefined){ c.imgs.splice(+ds.rmimg, 1); changed(true); return; }
+    if (ds.addimg !== undefined) return pick('image/png,image/jpeg,image/webp,image/gif', true, files => addFiles(c, files, 'img'));
+    if (ds.addfile !== undefined) return pick('application/pdf,image/png,image/jpeg,image/webp', false, files => addFiles(c, files, 'file'));
+  });
+  p.addEventListener('paste', e => {
+    const files = [...((e.clipboardData && e.clipboardData.files) || [])].filter(x => x.type.startsWith('image/'));
+    if (files.length && ['texte', 'image'].includes(c.type)){ e.preventDefault(); addFiles(c, files, 'img'); return; }
+    if (e.target.closest && e.target.closest('[data-rich]')){ e.preventDefault(); document.execCommand('insertText', false, (e.clipboardData || window.clipboardData).getData('text/plain')); }
+  });
+}
+function pick(accept, multi, cb){ const inp = document.createElement('input'); inp.type = 'file'; inp.accept = accept; inp.multiple = multi; inp.onchange = () => cb([...inp.files]); inp.click(); }
 async function upload(file){
-  if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) throw new Error('Format non pris en charge (' + (file.type || 'inconnu') + ') : png, jpg, webp ou gif.');
+  if (!/^(image\/(png|jpeg|webp|gif)|application\/pdf)$/.test(file.type)) throw new Error('Format non pris en charge (' + (file.type || 'inconnu') + ') : png, jpg, webp, gif ou pdf.');
   const r = await fetch('/api/atelier/media', { method: 'POST', headers: { 'Content-Type': file.type, 'X-Wolf-IA': '1' }, body: file });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok || !j.ok) throw new Error(j.error || 'envoi de l\'image refusé');
+  if (!r.ok || !j.ok) throw new Error(j.error || 'envoi du fichier refusé (relance le raccourci « Wolf Analysis » si le serveur est ancien)');
   return j.file;
 }
-async function addImages(files, blockId){
-  const n = ficheNode(); if (!n || !files.length) return;
-  flushFiche();
-  let b = blockId && n.blocks.find(x => x.id === blockId);
-  if (!b){ b = { id: uid('b'), type: 'image', date: today(), titre: '', html: '', imgs: [] }; n.blocks.push(b); }
-  b.imgs = b.imgs || [];
-  for (const f of files){ try { b.imgs.push({ f: await upload(f), leg: '' }); } catch(e){ ui.toast = { text: '⚠ ' + e.message }; showToast(); } }
-  touch(); renderFiche(false);
-}
-function wireFiche(f, n){
-  const bOf = el => { const a = el.closest('.at-block'); return a && n.blocks.find(x => x.id === a.dataset.b); };
-  f.addEventListener('click', e => {
-    if (e.target === f) return closeFiche();
-    const im = e.target.closest('[data-light]'); if (im && (isRo() || !e.target.closest('button'))) return openLight(im.dataset.light);
-    const b = e.target.closest('button'); if (!b) return;
-    if (b.dataset.fclose !== undefined) return closeFiche();
-    if (b.dataset.golink !== undefined) return openDoc(n.link);
-    if (b.dataset.cmd){ e.preventDefault(); const c = b.dataset.cmd;
-      if (c === 'hilite') document.execCommand('hiliteColor', false, 'rgba(240,200,119,0.45)');
-      else if (c === 'h2') document.execCommand('formatBlock', false, document.queryCommandValue('formatBlock').toLowerCase() === 'h2' ? 'div' : 'h2');
-      else if (c === 'link'){ const s = String(getSelection()); if (/^https?:\/\/\S+$/i.test(s.trim())) document.execCommand('createLink', false, s.trim()); else { ui.toast = { text: 'Sélectionne d\'abord une adresse complète (https://…) dans le texte pour en faire un lien.' }; showToast(); } }
-      else document.execCommand(c, false, null);
-      return; }
-    flushFiche();
-    if (b.dataset.addb){ const t = b.dataset.addb, nb = { id: uid('b'), type: t, date: today(), titre: '', html: '', imgs: [] }; if (t === 'graph') nb.metric = 'ca';
-      if (t === 'actu') n.blocks.unshift(nb); else n.blocks.push(nb); touch(); renderFiche(false);
-      const el = f.ownerDocument.querySelector('[data-b="' + nb.id + '"]'); if (el){ el.scrollIntoView({ block: 'center', behavior: 'smooth' }); const tx = el.querySelector('.at-text'); if (tx) tx.focus(); if (t === 'image') pickImages(nb.id); } return; }
-    if (b.dataset.sortb !== undefined){ n.blocks.sort((a, c) => String(c.date || '').localeCompare(String(a.date || ''))); touch(); return renderFiche(false); }
-    const blk = bOf(b); if (!blk) return; const i = n.blocks.indexOf(blk);
-    if (b.dataset.addimg !== undefined) return pickImages(blk.id);
-    if (b.dataset.rmimg !== undefined){ blk.imgs.splice(+b.dataset.rmimg, 1); touch(); return renderFiche(false); }
-    if (b.dataset.bw !== undefined){ blk.half = !blk.half; touch(); return renderFiche(false); }
-    if (b.dataset.bup !== undefined && i > 0){ n.blocks.splice(i, 1); n.blocks.splice(i - 1, 0, blk); touch(); return renderFiche(false); }
-    if (b.dataset.bdown !== undefined && i < n.blocks.length - 1){ n.blocks.splice(i, 1); n.blocks.splice(i + 1, 0, blk); touch(); return renderFiche(false); }
-    if (b.dataset.bdel !== undefined){ n.blocks.splice(i, 1); trash({ kind: 'block', docId: doc().id, verId: ver().id, node: n.id, index: i, data: blk }, 'Bloc « ' + (blk.titre || { texte: 'texte', actu: 'actualité', image: 'images', tv: 'chiffres', graph: 'graphique' }[blk.type]) + ' »'); touch(); return renderFiche(false); }
-  });
-  f.querySelectorAll('.at-rt button').forEach(b => b.addEventListener('mousedown', e => e.preventDefault()));   // garde la sélection du texte
-  f.addEventListener('input', e => {
-    const t = e.target, blk = bOf(t); if (!blk) return;
-    if (t.dataset.f){ blk[t.dataset.f] = t.value; touch(); }
-    else if (t.dataset.leg !== undefined){ blk.imgs[+t.dataset.leg].leg = t.value; touch(); }
-    else if (t.classList.contains('at-text')){ clearTimeout(wireFiche.tm); wireFiche.tm = setTimeout(flushFiche, 600); dirty = true; statusLabel(); }
-  });
-  f.addEventListener('change', e => { const t = e.target, blk = bOf(t); if (blk && t.dataset.metric !== undefined){ blk.metric = t.value; touch(); drawGraph(blk); } });
-  f.addEventListener('focusout', e => { if (e.target.classList && e.target.classList.contains('at-text')) flushFiche(); });
-  f.addEventListener('paste', e => {
-    if (isRo()) return;
-    const files = [...((e.clipboardData && e.clipboardData.files) || [])].filter(x => x.type.startsWith('image/'));
-    const blk = bOf(e.target);
-    if (files.length){ e.preventDefault(); addImages(files, blk && blk.type !== 'tv' && blk.type !== 'graph' ? blk.id : null); return; }
-    if (e.target.closest && e.target.closest('.at-text')){ e.preventDefault(); document.execCommand('insertText', false, (e.clipboardData || window.clipboardData).getData('text/plain')); }
-  });
-  f.addEventListener('dragover', e => { if (!isRo() && e.dataTransfer && [...e.dataTransfer.types].includes('Files')){ e.preventDefault(); f.classList.add('drop'); } });
-  f.addEventListener('dragleave', () => f.classList.remove('drop'));
-  f.addEventListener('drop', e => { f.classList.remove('drop'); if (isRo()) return; const files = [...(e.dataTransfer ? e.dataTransfer.files : [])].filter(x => x.type.startsWith('image/')); if (files.length){ e.preventDefault(); const blk = bOf(e.target); addImages(files, blk && blk.type !== 'tv' && blk.type !== 'graph' ? blk.id : null); } });
-}
-function pickImages(blockId){
-  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/png,image/jpeg,image/webp,image/gif'; inp.multiple = true;
-  inp.onchange = () => addImages([...inp.files], blockId); inp.click();
-}
-function openLight(f){ ui.light = true; let el = $('atLight'); if (!el){ el = document.createElement('div'); el.id = 'atLight'; el.className = 'at-light'; document.body.appendChild(el); el.onclick = closeLight; }
-  el.innerHTML = '<img src="' + esc(mediaUrl(f)) + '" alt="">'; setTimeout(() => el.classList.add('on'), 20); }
-function closeLight(){ ui.light = false; const el = $('atLight'); if (el) el.classList.remove('on'); }
-
-/* ---------- chiffres TradingView en direct ---------- */
-function tvTiles(s, at){
-  if (!s) return '<p class="at-empty">Chargement des chiffres TradingView…</p>';
-  const f = (v, d, suf) => (typeof v === 'number' && isFinite(v)) ? v.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }) + (suf || '') : '—';
-  const cap = s.market_cap_basic, capTxt = typeof cap === 'number' ? (cap >= 1e9 ? f(cap / 1e9, 1, ' Md') : f(cap / 1e6, 0, ' M')) : '—';
-  const tiles = [['Cours', f(s.close, 2, ' ' + (s.currency || ''))], ['Capitalisation', capTxt], ['PER', f(s.price_earnings_ttm, 1, 'x')], ['P/FCF', f(s.price_free_cash_flow_ttm, 1, 'x')],
-    ['EV/EBITDA', f(s.enterprise_value_ebitda_current != null ? s.enterprise_value_ebitda_current : s.enterprise_value_ebitda_ttm, 1, 'x')], ['P/B', f(s.price_book_fq, 2, 'x')],
-    ['Rendement', f(s.dividends_yield, 2, ' %')], ['ROIC', f(s.return_on_invested_capital_fy, 1, ' %')], ['Marge op.', f(s.operating_margin, 1, ' %')]];
-  return '<div class="at-tiles">' + tiles.map(t => '<div class="at-tile"><small>' + t[0] + '</small><b>' + t[1] + '</b></div>').join('') + '</div><div class="at-tv-at">TradingView · ' + (at ? 'relevé le ' + new Date(at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '') + '</div>';
-}
-async function refreshTv(b){
-  const d = doc(), box = () => document.querySelector('[data-tv="' + b.id + '"]');
-  try {
-    if (typeof tvFetchSnapshot !== 'function') throw new Error('lecture TradingView indisponible');
-    if (!d.tv){
-      if (d.nom && typeof tvResolveSymbol === 'function') d.tv = await tvResolveSymbol(d.nom) || '';
-      if (!d.tv){ const r = await fetch('/api/tv/search?q=' + encodeURIComponent(d.titre.slice(0, 50)), { cache: 'no-store' }); const j = await r.json(); if (j.ok && j.results && j.results[0]) d.tv = j.results[0].symbol; }
-      if (!d.tv) throw new Error('symbole TradingView introuvable : indique-le dans ⚙ (ex. EURONEXT:ASML)');
-      touch();
-    }
-    const s = await tvFetchSnapshot(d.tv);
-    const meta = (typeof tvSnapMeta !== 'undefined' && tvSnapMeta[d.tv]) || {};
-    const keep = {}; ['close', 'currency', 'market_cap_basic', 'price_earnings_ttm', 'price_free_cash_flow_ttm', 'enterprise_value_ebitda_current', 'enterprise_value_ebitda_ttm', 'price_book_fq', 'dividends_yield', 'return_on_invested_capital_fy', 'operating_margin'].forEach(k => { keep[k] = s[k]; });
-    const at = meta.stale ? meta.at : Date.now();
-    if (!b.snapAt || Date.now() - b.snapAt > 3600000 || !b.snap){ b.snap = keep; b.snapAt = at; markDirty(); } else { b.snap = keep; b.snapAt = at; }
-    if (box()) box().innerHTML = tvTiles(keep, at) + (meta.stale ? '<div class="at-warn">⚠ TradingView ne répond pas : derniers chiffres connus.</div>' : '');
-  } catch(e){ if (box()) box().innerHTML = tvTiles(b.snap, b.snapAt).replace('Chargement des chiffres TradingView…', '') + '<div class="at-warn">⚠ ' + esc(e.message || 'erreur') + '</div>'; }
-}
-function drawGraph(b){
-  const cv = document.querySelector('[data-graph="' + b.id + '"]'), d = doc(); if (!cv) return;
-  const old = charts.find(c => c.canvas === cv); if (old){ old.destroy(); charts = charts.filter(c => c !== old); }
-  const c = findCompany(d.nom || d.titre), box = cv.parentElement, G = GRAPHS[b.metric] || GRAPHS.ca;
-  const rows = c && typeof companies !== 'undefined' ? companies[c.key].filter(r => typeof r[b.metric] === 'number' && isFinite(r[b.metric])) : [];
-  box.querySelectorAll('.at-warn').forEach(x => x.remove());
-  if (!window.Chart || rows.length < 2){ cv.style.display = 'none'; box.insertAdjacentHTML('beforeend', '<div class="at-warn">' + (!c ? 'Cette entreprise n\'est pas dans la base de l\'onglet Analyse : ouvre-la une fois dans « Analyse » (ou vérifie le nom dans ⚙).' : 'Pas assez d\'historique pour ce graphique.') + '</div>'); return; }
-  cv.style.display = '';
-  const gold = '#D9A441', blue = '#4A9FE0', col = G[1] === 'bar' ? gold : blue;
-  charts.push(new Chart(cv, { type: G[1], data: { labels: rows.map(r => r.annee), datasets: [{ label: G[0], data: rows.map(r => r[b.metric]), backgroundColor: G[1] === 'bar' ? gold : 'rgba(74,159,224,0.15)', borderColor: col, borderWidth: 2.5, tension: 0.3, fill: G[1] !== 'bar', pointRadius: 3, borderRadius: 4 }] },
-    options: { responsive: true, maintainAspectRatio: false, animation: { duration: 700 }, plugins: { legend: { display: false }, title: { display: true, text: G[0] + ' — ' + d.titre, color: '#E9EBEE', font: { size: 14, family: "'Plus Jakarta Sans', sans-serif" } } },
-      scales: { x: { grid: { display: false }, ticks: { color: '#8B93A0' } }, y: { grid: { color: 'rgba(255,255,255,0.06)' }, ticks: { color: '#8B93A0' } } } } }));
+async function addFiles(c, files, kind){
+  for (const f of files){
+    try { const name = await upload(f); if (kind === 'file'){ c.file = name; if (!c.titre) c.titre = f.name.replace(/\.[a-z0-9]+$/i, ''); if (f.type === 'application/pdf') c.kind = 'pdf'; } else { c.imgs = c.imgs || []; c.imgs.push({ f: name, leg: '' }); if (c.type === 'texte' && !plain(c.html)) {} } }
+    catch(e){ ui.toast = { text: '⚠ ' + e.message }; showToast(); }
+  }
+  touch(); refreshCard(c); renderEditor();
 }
 
-/* ====================== FENÊTRES (nouveau dossier, propriétés, modèle) ====================== */
+/* ====================== BIBLIOTHÈQUE « Ajouter une carte » ====================== */
+function renderLibrary(){
+  let host = $('awLib');
+  if (!ui.lib){ if (host) host.remove(); return; }
+  if (!host){ host = document.createElement('div'); host.id = 'awLib'; host.className = 'at-modal-bg'; document.body.appendChild(host); }
+  const v = ver(), sec = v.sections.find(s => s.id === ui.lib.secId), q = norm(ui.lib.q);
+  const cats = ['Rédaction', 'Chiffres', 'Comparaison', 'Documents'];
+  const custom = Object.values(D.templates).filter(t => t.card);
+  host.innerHTML = '<div class="at-modal aw-lib"><div class="aw-lib-h"><h3>Ajouter une carte</h3><span class="at-faint">dans « ' + esc(sec ? sec.titre : '') + ' »</span><span style="flex:1"></span><input type="search" class="at-search" id="awLibQ" placeholder="Rechercher : camembert, concurrent, PDF…" value="' + esc(ui.lib.q) + '"><button type="button" class="aw-kb" data-lib-close aria-label="Fermer">' + ICO.close + '</button></div>' +
+    cats.map(cat => { const list = Object.keys(TYPES).filter(k => TYPES[k].cat === cat && (!q || norm(TYPES[k].l + ' ' + TYPES[k].d).includes(q))); if (!list.length) return '';
+      return '<h4>' + esc(cat) + '</h4><div class="aw-lib-tiles">' + list.map(k => '<button type="button" class="aw-lib-tile" data-lib-add="' + k + '"><span class="aw-lib-prev">' + libPreview(k) + '</span><b>' + esc(TYPES[k].l) + '</b><span>' + esc(TYPES[k].d) + '</span></button>').join('') + '</div>'; }).join('') + '</div>';
+  host.onclick = e => {
+    if (e.target === host || e.target.closest('[data-lib-close]')){ ui.lib = null; renderLibrary(); return; }
+    const b = e.target.closest('[data-lib-add]'); if (!b) return;
+    const c = addCard(ui.lib.secId, b.dataset.libAdd); ui.lib = null; renderLibrary(); renderBody();
+    if (c){ ui.edit = c.id; renderEditor(); setTimeout(() => { const el = document.querySelector('[data-cid="' + c.id + '"]'); if (el){ el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.classList.add('aw-new'); } }, 50); }
+  };
+  const qi = $('awLibQ'); qi.oninput = () => { ui.lib.q = qi.value; const p = qi.selectionStart; renderLibrary(); const n = $('awLibQ'); n.focus(); n.setSelectionRange(p, p); };
+  if (!ui.lib.q) qi.focus();
+}
+function libPreview(k){
+  switch (k){
+    case 'texte': return '<i class="ln w6 hi"></i><i class="ln"></i><i class="ln"></i><i class="ln w8"></i>';
+    case 'image': return '<i class="ph"></i><i class="ln w6 hi"></i>';
+    case 'citation': return '<em>«</em>';
+    case 'kpi': return '<strong>12,4 Md</strong><small>+8,2 %</small>';
+    case 'donut': return '<svg viewBox="0 0 60 60" width="44" height="44"><g transform="rotate(-90 30 30)" fill="none" stroke-width="10"><circle cx="30" cy="30" r="22" stroke="#D9A441" stroke-dasharray="64 138"/><circle cx="30" cy="30" r="22" stroke="#4A9FE0" stroke-dasharray="39 138" stroke-dashoffset="-65"/><circle cx="30" cy="30" r="22" stroke="#F0C877" stroke-dasharray="33 138" stroke-dashoffset="-105"/></g></svg>';
+    case 'barres': return '<span class="bars"><i style="height:40%"></i><i style="height:55%"></i><i style="height:70%"></i><i style="height:92%" class="last"></i></span>';
+    case 'courbes': return '<svg viewBox="0 0 100 50" width="76" height="38"><polyline points="0,40 20,34 40,36 60,22 80,16 100,8" fill="none" stroke="#4A9FE0" stroke-width="3"/><polyline points="0,45 20,43 40,40 60,37 80,33 100,30" fill="none" stroke="#D9A441" stroke-width="3"/></svg>';
+    case 'comparatif': return '<span class="cmp"><i></i><i class="g"></i><i></i><i class="r"></i></span>';
+    case 'concurrent': return '<span class="logo">AB</span>';
+    case 'source': return '<span class="pg"></span>';
+  }
+  return '';
+}
+
+/* ====================== DONNÉES DU DOSSIER ====================== */
+function renderFacts(){
+  let host = $('awFacts');
+  if (!ui.facts){ if (host) host.remove(); return; }
+  if (!host){ host = document.createElement('div'); host.id = 'awFacts'; host.className = 'at-modal-bg'; document.body.appendChild(host); }
+  const d = doc(), co = findCompany(d.nom || d.titre), facts = Object.values(d.facts || {});
+  const used = id => Object.values(ver().cards).filter(c => c.bind === 'f:' + id).length;
+  host.innerHTML = '<div class="at-modal aw-facts"><div class="aw-lib-h"><h3>📊 Données du dossier</h3><span style="flex:1"></span><button type="button" class="aw-kb" data-f-close aria-label="Fermer">' + ICO.close + '</button></div>' +
+    '<p class="at-faint">Une donnée est saisie ici une seule fois, avec son unité, sa période et sa source. Les cartes « Indicateur » qui la choisissent se mettent toutes à jour quand tu la modifies.</p>' +
+    '<h4>Mes données</h4><div class="aw-facts-t"><div class="aw-facts-r h"><span>Libellé</span><span>Valeur</span><span>Unité</span><span>Période</span><span>Source</span><span></span></div>' +
+    facts.map(f => '<div class="aw-facts-r" data-fid="' + f.id + '"><input class="at-in" data-ff="label" value="' + esc(f.label || '') + '"><input class="at-in num" data-ff="value" value="' + esc(f.value == null ? '' : String(f.value).replace('.', ',')) + '"><input class="at-in" data-ff="unit" value="' + esc(f.unit || '') + '"><input class="at-in" data-ff="period" value="' + esc(f.period || '') + '"><input class="at-in" data-ff="source" value="' + esc(f.source || '') + '"><button type="button" class="at-x" data-f-del title="Corbeille' + (used(f.id) ? ' (utilisée par ' + used(f.id) + ' carte(s))' : '') + '">✕</button></div>').join('') +
+    '</div><button type="button" class="at-btn sm" data-f-add>＋ Donnée</button>' +
+    '<h4>TradingView (onglet Analyse, mis à jour tout seul)</h4>' + (co ? '<div class="aw-facts-tv">' + Object.keys(TVF).map(k => { const s = tvSeries(co, k); const n = s.values.length; return '<div><span>' + esc(TVF[k].l) + '</span><b>' + fmtVal(n ? s.values[n - 1] : null, TVF[k].u, co.devise, TVF[k].d) + '</b><small>' + (n ? s.labels[n - 1] : '') + '</small></div>'; }).join('') + '</div>'
+      : '<p class="at-faint">Cette entreprise n\'est pas reconnue dans l\'onglet Analyse. Vérifie son nom dans ⚙ (« Nom dans l\'onglet Analyse »).</p>') + '</div>';
+  host.oninput = e => { const r = e.target.closest('[data-fid]'), k = e.target.dataset.ff; if (!r || !k) return; const f = d.facts[r.dataset.fid]; f[k] = k === 'value' ? num(e.target.value) : e.target.value; touch(); clearTimeout(editTimer); editTimer = setTimeout(renderBody, 300); };
+  host.onclick = e => {
+    if (e.target === host || e.target.closest('[data-f-close]')){ ui.facts = false; renderFacts(); renderBody(); return; }
+    if (e.target.closest('[data-f-add]')){ d.facts = d.facts || {}; const id = uid('f'); d.facts[id] = { id, label: '', value: null, unit: '', period: '', source: '' }; touch(); renderFacts(); return; }
+    const del = e.target.closest('[data-f-del]'); if (del){ const id = del.closest('[data-fid]').dataset.fid, f = d.facts[id]; delete d.facts[id]; trash({ kind: 'fact', docId: d.id, data: f }, 'Donnée « ' + (f.label || 'sans nom') + ' »'); touch(); renderFacts(); }
+  };
+}
+
+/* ====================== FENÊTRES (nouveau dossier, réglages, modèle) ====================== */
 function renderModal(){
   const host = $('atModalHost'); if (!host) return;
   const m = ui.modal; if (!m){ host.innerHTML = ''; return; }
@@ -835,10 +1175,9 @@ function renderModal(){
   let h = '';
   if (m.kind === 'new'){
     const tpls = Object.values(BUILTIN).concat(Object.values(D.templates)).filter(t => t.type === m.type || t.id === 'vide');
-    const names = typeof companies !== 'undefined' ? Object.keys(companies).slice(0, 4000) : [];
-    h = '<h3>Nouveau dossier</h3><div class="at-seg big">' + Object.keys(TYPE_LABEL).map(t => '<button type="button" class="' + (m.type === t ? 'on' : '') + '" data-mtype="' + t + '">' + esc(TYPE_LABEL[t]) + '</button>').join('') + '</div>' +
-      '<label>' + (m.type === 'entreprise' ? 'Entreprise' : m.type === 'chaine' ? 'Nom de la chaîne de valeur (ex. Semi-conducteurs)' : 'Titre de la carte') + '<input type="text" class="at-in" id="atMName" list="atMNames" value="' + esc(m.titre || '') + '" autocomplete="off"></label>' +
-      (m.type === 'entreprise' ? '<datalist id="atMNames">' + names.map(n => '<option value="' + esc(typeof fmpDisplayName === 'function' ? fmpDisplayName(n) : n) + '">').join('') + '</datalist><p class="at-faint">Si l\'entreprise est connue de l\'onglet Analyse, son logo, son secteur et ses chiffres TradingView sont repris automatiquement.</p>' : '') +
+    h = '<h3>Nouveau dossier</h3><div class="at-seg big">' + Object.keys(DOC_LABEL).map(t => '<button type="button" class="' + (m.type === t ? 'on' : '') + '" data-mtype="' + t + '">' + esc(DOC_LABEL[t]) + '</button>').join('') + '</div>' +
+      '<label>' + (m.type === 'entreprise' ? 'Entreprise' : m.type === 'chaine' ? 'Nom de la chaîne de valeur (ex. Semi-conducteurs)' : 'Titre du dossier') + '<input type="text" class="at-in" id="atMName" list="atMNames" value="' + esc(m.titre || '') + '" autocomplete="off"></label>' +
+      (m.type === 'entreprise' ? '<datalist id="atMNames">' + companyOptions() + '</datalist><p class="at-faint">Si l\'entreprise est connue de l\'onglet Analyse, son logo, son secteur et ses chiffres TradingView sont repris automatiquement.</p>' : '') +
       (m.type !== 'libre' ? '<div class="at-row2"><label>Secteur<select class="at-sel" id="atMSec">' + secOpts(m.secteur || '') + '</select></label>' + (m.type === 'entreprise' ? '<label>Sous-secteur<input type="text" class="at-in" id="atMSub" list="atMSubs" value="' + esc(m.sousSecteur || '') + '"><datalist id="atMSubs">' + subs.map(s => '<option value="' + esc(s) + '">').join('') + '</datalist></label>' : '') + '</div>' : '') +
       '<label>Structure de départ<select class="at-sel" id="atMTpl">' + tpls.map(t => '<option value="' + t.id + '">' + esc(t.nom) + (t.builtin ? '' : ' (mon modèle)') + '</option>').join('') + '</select></label>' +
       '<div class="at-mbtns"><button type="button" class="at-btn" data-mclose>Annuler</button><button type="button" class="at-btn gold" data-mok>Créer le dossier</button></div>';
@@ -846,18 +1185,18 @@ function renderModal(){
     const d = doc(), v = ver();
     h = '<h3>Réglages du dossier</h3><label>Titre<input type="text" class="at-in" id="atPTitre" value="' + esc(d.titre) + '"></label>' +
       '<div class="at-row2"><label>Secteur<select class="at-sel" id="atPSec">' + secOpts(d.secteur || '') + '</select></label><label>Sous-secteur<input type="text" class="at-in" id="atPSub" list="atMSubs" value="' + esc(d.sousSecteur || '') + '"><datalist id="atMSubs">' + subs.map(s => '<option value="' + esc(s) + '">').join('') + '</datalist></label></div>' +
-      (d.type === 'entreprise' ? '<div class="at-row2"><label>Symbole TradingView<input type="text" class="at-in" id="atPTv" placeholder="ex. EURONEXT:ASML" value="' + esc(d.tv || '') + '"></label><label>Nom dans l\'onglet Analyse<input type="text" class="at-in" id="atPNom" value="' + esc(d.nom || '') + '"></label></div>' : '') +
+      (d.type === 'entreprise' ? '<div class="at-row2"><label>Symbole TradingView<input type="text" class="at-in" id="atPTv" placeholder="ex. EURONEXT:ASML" value="' + esc(d.tv || '') + '"></label><label>Nom dans l\'onglet Analyse<input type="text" class="at-in" id="atPNom" list="atMNames" value="' + esc(d.nom || '') + '"><datalist id="atMNames">' + companyOptions() + '</datalist></label></div>' : '') +
       '<label>Logo (adresse d\'une image)<input type="text" class="at-in" id="atPLogo" placeholder="https://…" value="' + esc(d.logo || '') + '"></label>' +
       '<label>Nom de la version affichée<input type="text" class="at-in" id="atPVer" value="' + esc(v.label) + '"></label>' +
       '<div class="at-mbtns"><button type="button" class="at-btn danger" data-deldoc>🗑 Dossier à la corbeille</button>' + (d.versions.length > 1 ? '<button type="button" class="at-btn danger" data-delver>🗑 Cette version</button>' : '') + '<span style="flex:1"></span><button type="button" class="at-btn" data-mclose>Annuler</button><button type="button" class="at-btn gold" data-mok>Enregistrer</button></div>';
   } else if (m.kind === 'tpl'){
-    h = '<h3>Enregistrer cette structure comme modèle</h3><p class="at-faint">Seules les branches (titres, icônes, couleurs) sont gardées, pas le contenu des fiches. Le modèle sera proposé à chaque nouveau dossier.</p>' +
+    h = '<h3>Enregistrer cette structure comme modèle</h3><p class="at-faint">Les sections et les cartes sont gardées (types, titres, formats, liens aux chiffres TradingView), sans leur contenu. Le modèle sera proposé à chaque nouveau dossier.</p>' +
       '<label>Nom du modèle<input type="text" class="at-in" id="atTName" value="' + esc(m.nom || '') + '"></label><div class="at-mbtns"><button type="button" class="at-btn" data-mclose>Annuler</button><button type="button" class="at-btn gold" data-mok>Enregistrer le modèle</button></div>';
   }
   host.innerHTML = '<div class="at-modal-bg"><div class="at-modal">' + h + '</div></div>';
   const bg = host.firstElementChild, close = () => { ui.modal = null; host.innerHTML = ''; };
   bg.addEventListener('mousedown', e => { if (e.target === bg) close(); });
-  const first = bg.querySelector('input[type=text]'); if (first && !m.noFocus){ first.focus(); first.select(); }
+  const first = bg.querySelector('input[type=text]'); if (first){ first.focus(); first.select(); }
   const ok = () => {
     if (m.kind === 'new'){
       const titre = $('atMName').value.trim(); if (!titre){ $('atMName').focus(); return; }
@@ -865,14 +1204,15 @@ function renderModal(){
       close(); openDoc(nd.id);
     } else if (m.kind === 'props'){
       const d = doc(), v = ver(), t = $('atPTitre').value.trim();
-      if (t){ d.titre = t; v.nodes[v.root].titre = t; }
+      if (t) d.titre = t;
       d.secteur = $('atPSec').value; d.sousSecteur = $('atPSub').value.trim(); d.logo = $('atPLogo').value.trim();
-      if ($('atPTv')){ d.tv = $('atPTv').value.trim().toUpperCase(); d.nom = $('atPNom').value.trim(); }
+      if ($('atPTv')){ d.tv = $('atPTv').value.trim().toUpperCase(); const co = findCompany($('atPNom').value.trim()); d.nom = co ? co.key : $('atPNom').value.trim(); if (co && !d.logo) d.logo = co.logo; }
       v.label = $('atPVer').value.trim() || v.label;
       touch(); close(); renderShell();
     } else if (m.kind === 'tpl'){
       const nom = $('atTName').value.trim(); if (!nom){ $('atTName').focus(); return; }
-      const d = doc(), v = ver(), id = uid('m'); D.templates[id] = { id, nom, type: d.type, tree: Object.assign(treeOf(v, v.root), { titre: '' }) };
+      const d = doc(), v = ver(), id = uid('m');
+      D.templates[id] = { id, nom, type: d.type, sections: v.sections.map(s => ({ titre: s.titre, hint: s.hint || [], color: s.color, cards: s.cards.map(cid => v.cards[cid]).filter(Boolean).map(c => { const o = { type: c.type, titre: c.titre || '', size: c.size }; ['bind', 'mode', 'keys', 'years', 'metrics', 'unit'].forEach(k => { if (c[k] != null) o[k] = JSON.parse(JSON.stringify(c[k])); }); if (c.type === 'comparatif' && (c.cols || []).includes('@self')) o.self = true; if (c.type === 'donut' && c.rows) o.rows = c.rows.map(r => ({ label: r.label, v: null, color: r.color })); return o; }) })) };
       markDirty(); close(); ui.toast = { text: '💾 Modèle « ' + nom + ' » enregistré' }; showToast();
     }
   };
@@ -894,46 +1234,56 @@ function renderModal(){
 function wireShell(){
   const pg = page();
   pg.onclick = e => {
-    const b = e.target.closest('button'); if (!b || b.closest('#atView') || b.closest('#atFicheHost') || b.closest('#atModalHost')) return;
+    const b = e.target.closest('button'); if (!b || b.closest('#awBody') || b.closest('#atModalHost') || b.closest('#awEditHost')) return;
     const ds = b.dataset;
-    if (b.id === 'atReload'){ load().then(() => { if (ui.docId && !(D && D.docs[ui.docId])) ui.docId = null; renderShell(); if (doc()) requestAnimationFrame(() => fitAll(false)); }); return; }
-    if (ds.home !== undefined){ ui.docId = null; return renderShell(); }
-    if (ds.goprix !== undefined){ if (window.PRIX_UI) window.PRIX_UI.show(ds.goprix); return; }
+    if (b.id === 'atReload'){ load().then(() => { if (ui.docId && !(D && D.docs[ui.docId])) ui.docId = null; renderShell(); }); return; }
+    if (ds.home !== undefined){ ui.docId = null; ui.edit = null; return renderShell(); }
     if (ds.open) return openDoc(ds.open);
+    if (ds.goprix !== undefined){ if (window.PRIX_UI) window.PRIX_UI.show(ds.goprix); return; }
     if (ds.new !== undefined){ ui.modal = { kind: 'new', type: ds.new || 'entreprise' }; return renderModal(); }
     if (ds.tog){ ui.open[ds.tog] = ui.open[ds.tog] === false; $('atSide').innerHTML = sideHtml(); statusLabel(); return wireSearch(); }
     if (ds.restore) return restore(ds.restore);
-    if (ds.deltpl){ const t = D.templates[ds.deltpl]; delete D.templates[ds.deltpl]; D.trash.unshift({ id: uid('t'), kind: 'template', at: new Date().toISOString(), label: 'Modèle « ' + t.nom + ' »', data: t }); markDirty(); return renderShell(); }
+    if (ds.deltpl){ const t = D.templates[ds.deltpl]; delete D.templates[ds.deltpl]; trash({ kind: 'template', data: t }, 'Modèle « ' + t.nom + ' »'); markDirty(); return renderShell(); }
     if (ds.export !== undefined){ const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(D, null, 1)], { type: 'application/json' })); a.download = 'atelier-analyses-' + today() + '.json'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); return; }
     if (!doc()) return;
     const v = ver(), d = doc();
-    if (ds.side !== undefined){ ui.side = !ui.side; pg.classList.toggle('at-noside', !ui.side); return setTimeout(applyCam, 0); }
+    if (ds.side !== undefined){ ui.side = !ui.side; pg.classList.toggle('at-noside', !ui.side); if (ui.view === 'org') setTimeout(() => renderOrg(true), 30); return; }
+    if (ds.view){ ui.view = ds.view; renderShell(); return; }
+    if (ds.allsec !== undefined){ v.sections.forEach(s => { s.collapsed = ds.allsec === '0'; }); if (!RO) touch(); renderBody(); return; }
+    if (ds.orgall !== undefined){ v.sections.forEach(s => { ui.orgOpen[s.id] = ds.orgall === '1'; }); renderOrg(false); return; }
+    if (ds.addsec !== undefined){ const s = addSection(); renderBody(); setTimeout(() => { const h = document.querySelector('[data-sid="' + s.id + '"] [data-s-title]'); if (h){ h.scrollIntoView({ block: 'center' }); h.click(); } }, 30); return; }
     if (ds.newver !== undefined){ const c = JSON.parse(JSON.stringify(v)); c.id = uid('v'); c.label = 'Version du ' + frDate(today()) + (d.versions.some(x => x.label === 'Version du ' + frDate(today())) ? ' (' + (d.versions.length + 1) + ')' : ''); c.date = today(); d.versions.push(c); d.cur = c.id; touch(); openDoc(d.id); ui.toast = { text: 'Nouvelle version créée : l\'ancienne reste intacte dans la liste.' }; return showToast(); }
-    if (ds.mode) return setMode(ds.mode);
-    if (ds.exp !== undefined) return setExpanded(ds.exp === '1');
-    if (ds.fit !== undefined) return fitAll(true);
-    if (ds.draw !== undefined){ ui.draw = ui.draw ? null : { c: '#F0C877', w: 6 }; ui.sel = null; renderShell(); return; }
-    if (ds.dc){ ui.draw.c = ds.dc; return renderShell(); }
-    if (ds.dw){ ui.draw.w = +ds.dw; return renderShell(); }
-    if (ds.dundo !== undefined){ if ((v.strokes || []).length){ v.strokes.pop(); touch(); drawStrokes(v); } return; }
-    if (ds.dclear !== undefined){ if ((v.strokes || []).length){ const old = v.strokes; v.strokes = []; trash({ kind: 'strokes', docId: d.id, verId: v.id, data: old }, 'Dessins de la carte'); touch(); drawStrokes(v); } return; }
-    if (ds.ddone !== undefined){ ui.draw = null; return renderShell(); }
+    if (ds.facts !== undefined){ ui.facts = true; return renderFacts(); }
     if (ds.savetpl !== undefined){ ui.modal = { kind: 'tpl', nom: d.type === 'entreprise' ? 'Ma trame d\'analyse' : d.titre }; return renderModal(); }
     if (ds.props !== undefined){ ui.modal = { kind: 'props' }; return renderModal(); }
-    if (ds.video !== undefined){ flushFiche(); ui.video = !ui.video; ui.sel = null; ui.draw = null; renderShell(); return requestAnimationFrame(() => fitAll(false)); }
+    if (ds.video !== undefined){ ui.video = !ui.video; ui.edit = null; renderShell(); return; }
   };
   const vs = $('atVer'); if (vs) vs.onchange = () => { doc().cur = vs.value; touch(); openDoc(ui.docId); };
-  wireSearch(); wireMap();
+  wireSearch();
 }
 function wireSearch(){ const s = $('atSearch'); if (s) s.oninput = () => { ui.q = s.value; const p = s.selectionStart; $('atSide').innerHTML = sideHtml(); statusLabel(); wireSearch(); const n = $('atSearch'); n.focus(); n.setSelectionRange(p, p); }; }
-window.addEventListener('resize', () => { if (doc()) applyCam(); });
+document.addEventListener('keydown', e => {
+  const pg = page(); if (!pg || !pg.classList.contains('active')) return;
+  if (ui.big){
+    if (e.key === 'Escape'){ e.preventDefault(); closeBig(); return; }
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft'){ e.preventDefault(); const o = bigOrder(ui.big), j = (o.indexOf(ui.big) + (e.key === 'ArrowRight' ? 1 : -1) + o.length) % o.length; openBig(o[j]); return; }
+    return;
+  }
+  if (e.key === 'Escape'){
+    if (ui.lib){ ui.lib = null; renderLibrary(); return; }
+    if (ui.facts){ ui.facts = false; renderFacts(); renderBody(); return; }
+    if (ui.modal){ ui.modal = null; renderModal(); return; }
+    if (ui.edit){ ui.edit = null; renderEditor(); return; }
+    if (ui.video && !document.querySelector('.stylo-on')){ ui.video = false; renderShell(); }
+  }
+});
 
 async function onShow(force){
   if (!D || force === true){ await load(); }
   renderShell();
-  if (doc()) requestAnimationFrame(() => fitAll(false));
 }
 document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-page="' + PAGE_ID + '"]'); if (b) setTimeout(onShow, 0); });
+
 // Ouvre le dossier d'une entreprise (créé avec le modèle d'analyse s'il n'existe pas encore) — appelé par la liste de prix.
 async function openFor(name, o){
   if (!D) await load();
@@ -943,13 +1293,16 @@ async function openFor(name, o){
   if (typeof switchPage === 'function') switchPage(PAGE_ID);
   openDoc(d.id);
 }
-// Copie destinée au site public : tout sauf la corbeille. Liste des images réellement utilisées.
+// Copie destinée au site public : tout sauf la corbeille. Liste des images et PDF réellement utilisés.
 async function snapshot(){
   if (!D || RO) await load();
   if (!D || RO) return null;
   const media = new Set();
-  Object.values(D.docs).forEach(d => d.versions.forEach(v => Object.values(v.nodes).forEach(n => (n.blocks || []).forEach(b => (b.imgs || []).forEach(i => media.add(i.f))))));
+  Object.values(D.docs).forEach(d => d.versions.forEach(v => {
+    Object.values(v.cards || {}).forEach(c => { (c.imgs || []).forEach(i => media.add(i.f)); if (c.file) media.add(c.file); });
+    Object.values(v.nodes || {}).forEach(n => (n.blocks || []).forEach(b => (b.imgs || []).forEach(i => media.add(i.f))));
+  }));
   return { data: { version: 1, publishedAt: new Date().toISOString(), docs: D.docs }, media: [...media] };
 }
-window.ATELIER_UI = { onShow, openFor, snapshot, hasDoc: name => !!(D && Object.values(D.docs).some(x => x.type === 'entreprise' && norm(x.titre) === norm(name))), _state: () => ({ D, ui, cam, pos, sizes, RO }) };
+window.ATELIER_UI = { onShow, openFor, snapshot, hasDoc: name => !!(D && Object.values(D.docs).some(x => x.type === 'entreprise' && norm(x.titre) === norm(name))), _state: () => ({ D, ui, RO }), _test: { migrateVersion, resolveBind, seriesData, keyFigure } };
 })();

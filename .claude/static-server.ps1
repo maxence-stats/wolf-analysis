@@ -94,7 +94,7 @@ Write-Host "Serving $root on http://localhost:$port/  (IA dir: $iaDirPath, store
 $mime = @{
   ".html" = "text/html"; ".htm" = "text/html"; ".css" = "text/css"; ".js" = "application/javascript";
   ".json" = "application/json"; ".png" = "image/png"; ".jpg" = "image/jpeg"; ".jpeg" = "image/jpeg";
-  ".svg" = "image/svg+xml"; ".ico" = "image/x-icon"; ".woff" = "font/woff"; ".woff2" = "font/woff2"; ".webmanifest" = "application/manifest+json";
+  ".svg" = "image/svg+xml"; ".ico" = "image/x-icon"; ".woff" = "font/woff"; ".woff2" = "font/woff2"; ".pdf" = "application/pdf"; ".webmanifest" = "application/manifest+json";
 }
 
 function Send-Json($res, [int]$code, $obj){
@@ -399,7 +399,7 @@ function Handle-PublishGo($req, $res){
     $nMedia = 0
     foreach ($m in @($b.media)){
       $name = [string]$m
-      if ($name -notmatch '^[a-z0-9-]{8,60}\.(png|jpg|webp|gif)$'){ continue }
+      if ($name -notmatch '^[a-z0-9-]{8,60}\.(png|jpg|webp|gif|pdf)$'){ continue }
       $src = Join-Path $atelierMedia $name; $dst = Join-Path $publicDir ("media\" + $name)
       if ((Test-Path $src -PathType Leaf) -and -not (Test-Path $dst -PathType Leaf)){ Copy-Item $src $dst }
       if (Test-Path $dst -PathType Leaf){ $nMedia++ }
@@ -430,11 +430,11 @@ function Handle-PublishGo($req, $res){
 function Handle-AtelierMedia($req, $res){
   if ($req.HttpMethod -eq "GET"){
     $n = [string]$req.QueryString["f"]
-    if ($n -notmatch '^[a-z0-9-]{8,60}\.(png|jpg|webp|gif)$'){ Send-Json $res 400 @{ ok = $false; error = "nom invalide" }; return }
+    if ($n -notmatch '^[a-z0-9-]{8,60}\.(png|jpg|webp|gif|pdf)$'){ Send-Json $res 400 @{ ok = $false; error = "nom invalide" }; return }
     $p = Join-Path $atelierMedia $n
     if (-not (Test-Path $p -PathType Leaf)){ $res.StatusCode = 404; return }
     $ext = [System.IO.Path]::GetExtension($p)
-    $ctOut = $mime[$ext]; if ($ext -eq ".webp"){ $ctOut = "image/webp" } elseif ($ext -eq ".gif"){ $ctOut = "image/gif" }
+    $ctOut = $mime[$ext]; if ($ext -eq ".webp"){ $ctOut = "image/webp" } elseif ($ext -eq ".gif"){ $ctOut = "image/gif" } elseif ($ext -eq ".pdf"){ $ctOut = "application/pdf" }
     $res.ContentType = $ctOut
     $res.Headers.Add("Cache-Control", "private, max-age=31536000, immutable")
     $res.Headers.Add("X-Content-Type-Options", "nosniff")
@@ -447,10 +447,10 @@ function Handle-AtelierMedia($req, $res){
   if ($req.Headers["X-Wolf-IA"] -ne "1"){ Send-Json $res 403 @{ ok = $false; error = "en-tete manquant" }; return }
   $origin = $req.Headers["Origin"]
   if ($origin -and $origin -ne "http://localhost:$port"){ Send-Json $res 403 @{ ok = $false; error = "origine refusee" }; return }
-  $extMap = @{ "image/png" = "png"; "image/jpeg" = "jpg"; "image/webp" = "webp"; "image/gif" = "gif" }
+  $extMap = @{ "image/png" = "png"; "image/jpeg" = "jpg"; "image/webp" = "webp"; "image/gif" = "gif"; "application/pdf" = "pdf" }
   $ct = ([string]$req.ContentType).Split(';')[0].Trim().ToLower()
   $e = $extMap[$ct]
-  if (-not $e){ Send-Json $res 415 @{ ok = $false; error = "format d'image non pris en charge (png, jpg, webp, gif)" }; return }
+  if (-not $e){ Send-Json $res 415 @{ ok = $false; error = "format non pris en charge (png, jpg, webp, gif, pdf)" }; return }
   $bytes = Read-BodyBytes $req $res $maxMedia
   if ($null -eq $bytes){ return }
   if ($bytes.Length -lt 16){ Send-Json $res 400 @{ ok = $false; error = "image vide" }; return }
@@ -623,7 +623,7 @@ while ($listener.IsListening) {
     $path = [System.Uri]::UnescapeDataString($req.Url.AbsolutePath)
     if ($path -eq "/api/ia/ping") {
       New-Item -ItemType Directory -Force -Path $iaDirPath | Out-Null
-      Send-Json $res 200 @{ ok = $true; writable = $true; v = 13; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
+      Send-Json $res 200 @{ ok = $true; writable = $true; v = 14; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
     } elseif ($path -eq "/api/ia/save") {
       Handle-IaSave $req $res
     } elseif ($path -eq "/api/ia/refresh") {

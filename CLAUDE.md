@@ -651,6 +651,18 @@ Les anciennes pages Sheet (Wolf Portfolio, Perso) sont conservées telles quelle
   départ 695,22 € DÉDUITES du Sheet, à vérifier) ; Wolf depuis le journal du Sheet (cash 6 936,05 € vs 6 933,12 € au Sheet).
 
 ### Onglet « 🗂 Atelier d'analyses » — cartes mentales interactives (fait, 2026-11-10)
+**REFONTE DU 2026-11-11 : la carte mentale est remplacée par un espace en CARTES** (demande de l'utilisateur, maquette validée :
+https://claude.ai/artifact/6VQhFtrUpir9Za5pbkWY9n). Dossier = sections (`v.sections[{id,titre,hint,color,collapsed,cards:[ids]}]`) +
+cartes (`v.cards{id:{type,size:'s'|'v'|'h',collapsed,titre,…}}`), `v.kind='cards'`. 10 types : texte, image, citation, kpi, donut,
+barres, courbes, comparatif, concurrent (« Entreprise »), source (PDF/site, fichiers via /api/atelier/media, PDF accepté, serveur v=14).
+Données séparées de la présentation : une carte se LIE à `tv:<champ>` (historique companies[nom], table `TVF`) ou `f:<id>` (« 📊 Données »
+du dossier, `doc.facts`). Vues : Grille et Organigramme (pieuvre des deux côtés, les cartes d'une section sortent en éventail). Bouton
+agrandir sur chaque carte (fond flouté, ← →, Échap) avec vue enrichie (historique, statistiques, tableau). Édition dans un panneau à
+droite ; bibliothèque « Ajouter une carte » ; menu ⋯ (modifier, dupliquer, format, déplacer vers une section, replier, corbeille) ;
+glisser-déposer ; poignée de format. Les anciennes versions carte mentale sont converties au chargement (`migrateVersion`), leurs
+`v.nodes` restent dans le fichier. ATTENTION : margeOp et roic n'ont qu'UNE année dans data/tv-analyse.json (pas d'historique).
+Le texte ci-dessous décrit l'ancienne carte mentale (historique).
+
 Nouvel onglet principal (`#pageAtelier`, `js/atelier.js`, CSS `.at-*` en fin de `style.css`), À CÔTÉ du Cerveau numérique (qui
 reste intact, décision de l'utilisateur). Répertoire visuel de toutes les analyses, pensé pour les vidéos YouTube.
 - **Un dossier = une carte mentale** (logo au centre, branches qui se déplient avec animation, caméra zoom/déplacement). Trois
