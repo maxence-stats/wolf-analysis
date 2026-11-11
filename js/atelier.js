@@ -222,8 +222,10 @@ function sectionsFromTemplate(tpl){
 }
 function newVersion(tpl, label){
   const v = { id: uid('v'), label: label || 'Version du ' + frDate(today()), date: today(), kind: 'cards', sections: [], cards: {} };
+  let lastMain = null;
   sectionsFromTemplate(tpl).forEach((s, i) => {
     const sec = { id: uid('s'), titre: s.titre, hint: (s.hint || []).slice(), color: s.color || PALETTE[i % PALETTE.length], collapsed: false, cards: [] };
+    if (s.sub && lastMain) sec.parent = lastMain.id; else lastMain = sec;
     (s.cards || []).forEach(c => { const n = newCard(c.type, c); delete n.self; if (c.self) n.cols = ['@self']; if (n.type === 'comparatif' && !n.metrics) n.metrics = ['croissanceCA', 'margeOp', 'roic', 'per', 'pFcf']; if (n.type === 'geo' && !n.rows) n.rows = [{ zone: 'Europe', v: null }, { zone: 'Amérique du Nord', v: null }, { zone: 'Asie-Pacifique', v: null }, { zone: 'Reste du monde', v: null }]; v.cards[n.id] = n; sec.cards.push(n.id); });
     v.sections.push(sec);
   });
@@ -588,6 +590,19 @@ function deleteDoc(id){
   trash({ kind: 'doc', data: d }, 'Dossier « ' + d.titre + ' »'); markDirty(); renderShell();
 }
 const secOf = (v, cid) => v.sections.find(s => s.cards.includes(cid));
+// Sous-segments (2026-11-11) : une section principale peut avoir des sous-blocs (s.parent = id de la section mère), chacun avec
+// SES cartes. Une sous-section dont la mère a été mise à la corbeille s'affiche comme une section normale (rien n'est masqué) et
+// redevient sous-section si la mère est restaurée.
+const isSub = (v, s) => !!(s.parent && v.sections.some(x => x.id === s.parent && !x.parent));
+const subsOf = (v, m) => v.sections.filter(x => x.parent === m.id && x !== m);
+const mainsOf = v => v.sections.filter(s => !isSub(v, s));
+function orderedSections(v){ return mainsOf(v).flatMap(m => [m].concat(subsOf(v, m))); }
+const secLabel = (v, s) => isSub(v, s) ? v.sections.find(x => x.id === s.parent).titre + ' › ' + s.titre : s.titre;
+function addSubSection(m){
+  const v = ver(), subs = subsOf(v, m), after = subs.length ? subs[subs.length - 1] : m;
+  const s = { id: uid('s'), titre: 'Nouveau sous-segment', parent: m.id, hint: [], color: m.color, collapsed: false, cards: [] };
+  v.sections.splice(v.sections.indexOf(after) + 1, 0, s); m.collapsed = false; touch(); return s;
+}
 function addCard(secId, type, o){
   const v = ver(), sec = v.sections.find(s => s.id === secId) || v.sections[0]; if (!sec) return null;
   const c = newCard(type, o || {});
@@ -885,6 +900,7 @@ function concHtml(c, big){
     (big ? '<p class="aw-note">' + (ttmOf(c.nom) ? '12 derniers mois (4 trimestres glissants), TradingView' : 'Dernier exercice, TradingView') + (hasOver ? ' · ✎ = saisi à la main' : '') + '</p>' : '') : '';
   return '<div class="aw-conc-top"><div class="aw-conc-logo">' + (logo ? '<img src="' + esc(logo) + '" alt="">' : '<span>' + esc((c.nom || '?').slice(0, 2).toUpperCase()) + '</span>') + '</div><div><div class="aw-conc-n">' + esc(c.nom || 'Entreprise') + '</div><div class="aw-conc-s">' + esc([c.pays, c.role].filter(Boolean).join(' · ')) + '</div></div></div>' +
     (c.tags ? '<div class="aw-tags">' + String(c.tags).split(',').map(t => t.trim()).filter(Boolean).map(t => '<span>' + esc(t) + '</span>').join('') + '</div>' : '') + metrics +
+    ((c.imgs || []).length ? (big ? '<div class="aw-big-imgs">' + c.imgs.map(im => '<figure><img src="' + esc(mediaUrl(im.f)) + '" alt="">' + (im.leg ? '<figcaption>' + esc(im.leg) + '</figcaption>' : '') + '</figure>').join('') + '</div>' : '<div class="aw-conc-img"><img src="' + esc(mediaUrl(c.imgs[0].f)) + '" alt="" loading="lazy">' + (c.imgs[0].leg ? '<span>' + esc(c.imgs[0].leg) + '</span>' : '') + '</div>') : '') +
     (c.forces ? '<div class="aw-fw"><b class="pos">Forces</b><p>' + esc(c.forces) + '</p></div>' : '') + (c.faiblesses ? '<div class="aw-fw"><b class="neg">Faiblesses</b><p>' + esc(c.faiblesses) + '</p></div>' : '') +
     (big && known ? '<div class="aw-chart big2"><canvas data-chart="conc-' + c.id + '"></canvas></div>' : '') +
     (linked ? '<button type="button" class="aw-linkbtn" data-open="' + linked.id + '">Ouvrir son dossier ›</button>' : '');
@@ -1203,7 +1219,7 @@ function drawCharts(root, list, big){
 
 /* ---------- Parcours (2026-11-11) : une étape (section) à la fois, ligne d'étapes de gauche à droite, « Suivant » ----------
    Mêmes cartes que la grille. Les sections vides, « Actualités » et « Sources » ne sont pas des étapes. */
-function tourSections(v){ return v.sections.filter(s => s.cards.some(id => v.cards[id]) && !/actualite|source/.test(norm(s.titre))); }
+function tourSections(v){ return orderedSections(v).filter(s => s.cards.some(id => v.cards[id]) && !/actualite|source/.test(norm(s.titre))); }
 function renderTour(host){
   const v = ver(), secs = tourSections(v), d = doc();
   if (!secs.length){ host.innerHTML = '<p class="at-empty big">Aucune carte à présenter pour l\'instant.</p>'; return; }
@@ -1212,7 +1228,7 @@ function renderTour(host){
   const s = secs[i], si = v.sections.indexOf(s), color = s.color || PALETTE[si % PALETTE.length], cards = s.cards.map(id => v.cards[id]).filter(Boolean);
   const prev = secs[i - 1], next = secs[i + 1];
   host.innerHTML = '<div class="aw-tour" style="--sc:' + color + '">' +
-    '<div class="aw-tour-line" role="tablist">' + secs.map((x, k) => '<button type="button" role="tab" aria-selected="' + (k === i) + '" class="aw-step' + (k < i ? ' done' : k === i ? ' on' : '') + '" data-tour-go="' + k + '" title="' + esc(x.titre) + '"><i>' + (k + 1) + '</i><span>' + esc(x.titre) + '</span></button>').join('') + '</div>' +
+    '<div class="aw-tour-line" role="tablist">' + secs.map((x, k) => '<button type="button" role="tab" aria-selected="' + (k === i) + '" class="aw-step' + (k < i ? ' done' : k === i ? ' on' : '') + '" data-tour-go="' + k + '" title="' + esc(secLabel(v, x)) + '"><i>' + (k + 1) + '</i><span>' + esc(x.titre) + '</span></button>').join('') + '</div>' +
     '<div class="aw-tour-stage"><div class="aw-tour-h"><span class="aw-tour-k">Étape ' + (i + 1) + ' sur ' + secs.length + '</span><h2>' + esc(s.titre) + '</h2></div>' +
     '<section class="aw-sec aw-tour-sec" data-sid="' + s.id + '" style="--sc:' + color + '"><div class="aw-grid" data-drop="' + s.id + '">' + cards.map(cardHtml).join('') + '</div></section></div>' +
     '<div class="aw-tour-nav"><button type="button" class="at-btn" data-tour="-1"' + (prev ? '' : ' disabled') + '>← ' + esc(prev ? prev.titre : 'Début') + '</button>' +
@@ -1241,18 +1257,21 @@ function renderBody(){
   ui.menu = null; closeMenu();
   if (ui.view === 'org') ui.view = 'tour';   // l'ancien organigramme est remplacé par le parcours
   if (ui.view === 'tour') return renderTour(host);
-  const v = ver(), ro = isRo();
-  host.innerHTML = v.sections.map((s, si) => {
-    const cards = s.cards.map(id => v.cards[id]).filter(Boolean);
-    return '<section class="aw-sec' + (s.collapsed ? ' closed' : '') + '" data-sid="' + s.id + '" style="--sc:' + (s.color || PALETTE[si % PALETTE.length]) + '"><div class="aw-sec-h">' +
+  const v = ver(), ro = isRo(), mains = mainsOf(v);
+  const secHtml = (s, si, sibs, sub) => {
+    const cards = s.cards.map(id => v.cards[id]).filter(Boolean), subs = sub ? [] : subsOf(v, s);
+    return '<section class="aw-sec' + (sub ? ' aw-subsec' : '') + (s.collapsed ? ' closed' : '') + '" data-sid="' + s.id + '" style="--sc:' + (s.color || PALETTE[si % PALETTE.length]) + '"><div class="aw-sec-h">' +
       '<button type="button" class="aw-kb" data-s-tog title="' + (s.collapsed ? 'Déplier' : 'Replier') + '">' + (s.collapsed ? ICO.chevR : ICO.chevD) + '</button><span class="aw-sec-dot"></span>' +
-      '<h2' + (ro ? '' : ' class="aw-editable" data-s-title title="Clic pour renommer"') + '>' + esc(s.titre) + '</h2><span class="aw-sec-n">' + cards.length + ' carte' + (cards.length > 1 ? 's' : '') + '</span>' +
+      (sub ? '<h3' : '<h2') + (ro ? '' : ' class="aw-editable" data-s-title title="Clic pour renommer"') + '>' + esc(s.titre) + (sub ? '</h3>' : '</h2>') + '<span class="aw-sec-n">' + cards.length + ' carte' + (cards.length > 1 ? 's' : '') + (subs.length ? ' · ' + subs.length + ' sous-segment' + (subs.length > 1 ? 's' : '') : '') + '</span>' +
       (s.collapsed && cards.length ? '<span class="aw-sec-peek">' + cards.slice(0, 4).map(c => '<span>' + esc(cardTitle(c) || TYPES[c.type].l) + (keyFigure(c) && ['kpi', 'donut', 'barres', 'courbes'].includes(c.type) ? ' <b>' + esc(keyFigure(c)) + '</b>' : '') + '</span>').join('') + '</span>' : '') +
       '<span style="flex:1"></span>' +
-      (ro ? '' : '<button type="button" class="aw-kb" data-s-up title="Monter"' + (si ? '' : ' disabled') + '>↑</button><button type="button" class="aw-kb" data-s-down title="Descendre"' + (si < v.sections.length - 1 ? '' : ' disabled') + '>↓</button><button type="button" class="aw-kb" data-s-del title="Mettre la section à la corbeille">🗑</button><button type="button" class="at-btn sm gold" data-s-add>' + ICO.plus + ' Carte</button>') + '</div>' +
+      (ro ? '' : '<button type="button" class="aw-kb" data-s-up title="Monter"' + (si ? '' : ' disabled') + '>↑</button><button type="button" class="aw-kb" data-s-down title="Descendre"' + (si < sibs - 1 ? '' : ' disabled') + '>↓</button><button type="button" class="aw-kb" data-s-del title="Mettre ' + (sub ? 'ce sous-segment' : 'la section') + ' à la corbeille">🗑</button>' +
+        (sub ? '' : '<button type="button" class="at-btn sm" data-s-sub title="Ajouter un bloc avec ses propres cartes dans cette section">' + ICO.plus + ' Sous-segment</button>') + '<button type="button" class="at-btn sm gold" data-s-add>' + ICO.plus + ' Carte</button>') + '</div>' +
       (s.collapsed ? '' : ((s.hint || []).length && !ro ? '<div class="aw-hint">À couvrir : ' + s.hint.map(h => '<span>' + esc(h) + '</span>').join('') + '</div>' : '') +
-        '<div class="aw-grid" data-drop="' + s.id + '">' + cards.map(cardHtml).join('') + (ro || cards.length ? '' : '<button type="button" class="aw-empty" data-s-add>' + ICO.plus + ' Ajouter une première carte</button>') + '</div>') + '</section>';
-  }).join('') + (v.sections.length ? '' : '<p class="at-empty big">' + (ro ? 'Dossier vide.' : 'Aucune section. « ＋ Section » pour commencer.') + '</p>');
+        (cards.length || !subs.length ? '<div class="aw-grid" data-drop="' + s.id + '">' + cards.map(cardHtml).join('') + (ro || cards.length ? '' : '<button type="button" class="aw-empty" data-s-add>' + ICO.plus + ' Ajouter une première carte</button>') + '</div>' : '<div class="aw-grid aw-grid-min" data-drop="' + s.id + '"></div>') +
+        (subs.length ? '<div class="aw-subs">' + subs.map((x, k) => secHtml(x, k, subs.length, true)).join('') + '</div>' : '')) + '</section>';
+  };
+  host.innerHTML = mains.map((s, si) => secHtml(s, si, mains.length, false)).join('') + (v.sections.length ? '' : '<p class="at-empty big">' + (ro ? 'Dossier vide.' : 'Aucune section. « ＋ Section » pour commencer.') + '</p>');
   drawCharts(host, charts, false);
   drawGeos(host);
   wireBody(host);
@@ -1278,7 +1297,9 @@ function wireBody(host){
     if (ds.vcImp && c){ vcImportInto(c, ds.vcImp); return; }
     if (ds.sAdd !== undefined && sec){ ui.lib = { secId: sec.id, q: '' }; renderLibrary(); return; }
     if (ds.sDel !== undefined && sec){ deleteSection(sec.id); return; }
-    if ((ds.sUp !== undefined || ds.sDown !== undefined) && sec){ const i = v.sections.indexOf(sec), j = i + (ds.sUp !== undefined ? -1 : 1); if (j < 0 || j >= v.sections.length) return; v.sections.splice(i, 1); v.sections.splice(j, 0, sec); touch(); renderBody(); }
+    if (ds.sSub !== undefined && sec){ const n = addSubSection(sec); renderBody(); setTimeout(() => { const h = document.querySelector('[data-sid="' + n.id + '"] [data-s-title]'); if (h){ h.scrollIntoView({ block: 'center' }); h.click(); } }, 30); return; }
+    // monter / descendre : parmi les sections principales, ou parmi les sous-segments de la même section
+    if ((ds.sUp !== undefined || ds.sDown !== undefined) && sec){ const sibs = isSub(v, sec) ? subsOf(v, v.sections.find(x => x.id === sec.parent)) : mainsOf(v), k = sibs.indexOf(sec), o = sibs[k + (ds.sUp !== undefined ? -1 : 1)]; if (!o) return; const i = v.sections.indexOf(sec), j = v.sections.indexOf(o); v.sections[i] = o; v.sections[j] = sec; touch(); renderBody(); }
   };
   host.ondblclick = e => { const cEl = e.target.closest('[data-cid]'); if (cEl && !e.target.closest('button,a')) openBig(cEl.dataset.cid, cEl); };
   if (isRo()) return;
@@ -1322,7 +1343,7 @@ function openMenu(cid, anchor){
   const m = document.createElement('div'); m.id = 'awMenu'; m.className = 'aw-menu';
   m.innerHTML = '<button type="button" data-m="edit">Modifier</button><button type="button" data-m="big">Agrandir</button><button type="button" data-m="dup">Dupliquer</button>' + (window.WOLF_PUB ? '<button type="button" data-m="pub">📤 Créer une publication</button>' : '') +
     '<div class="aw-menu-row"><span>Format</span>' + [['s', 'Carré'], ['v', 'Vertical'], ['h', 'Horizontal']].map(([k, l]) => '<button type="button" class="' + (c.size === k ? 'on' : '') + '" data-size="' + k + '">' + l + '</button>').join('') + '</div>' +
-    '<label class="aw-menu-sel">Déplacer vers<select data-m="move">' + v.sections.map(s => '<option value="' + s.id + '"' + (secOf(v, cid) === s ? ' selected' : '') + '>' + esc(s.titre) + '</option>').join('') + '</select></label>' +
+    '<label class="aw-menu-sel">Déplacer vers<select data-m="move">' + orderedSections(v).map(s => '<option value="' + s.id + '"' + (secOf(v, cid) === s ? ' selected' : '') + '>' + esc(secLabel(v, s)) + '</option>').join('') + '</select></label>' +
     '<button type="button" data-m="fold">' + (c.collapsed ? 'Déplier' : 'Replier') + '</button><div class="aw-menu-sep"></div><button type="button" class="danger" data-m="del">Mettre à la corbeille</button>';
   document.body.appendChild(m);
   const w = 236; m.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w)) + 'px';
@@ -1586,7 +1607,7 @@ function editorFields(c, d, v){
       '<div class="at-row2"><label>Pays<input class="at-in" data-f="pays" value="' + esc(c.pays || '') + '"></label><label>Rôle<input class="at-in" data-f="role" value="' + esc(c.role || '') + '" placeholder="Concurrent direct, client…"></label></div>' +
       '<label>Étiquettes (séparées par des virgules)<input class="at-in" data-f="tags" value="' + esc(c.tags || '') + '"></label><label>Forces<textarea class="at-in" rows="3" data-f="forces">' + esc(c.forces || '') + '</textarea></label><label>Faiblesses<textarea class="at-in" rows="3" data-f="faiblesses">' + esc(c.faiblesses || '') + '</textarea></label>' +
       '<label>Son dossier dans l\'Atelier<select class="at-sel" data-f="docId"><option value="">— (trouvé par son nom s\'il existe)</option>' + Object.values(D.docs).filter(x => x.type === 'entreprise' && x.id !== d.id).map(x => '<option value="' + x.id + '"' + (c.docId === x.id ? ' selected' : '') + '>' + esc(x.titre) + '</option>').join('') + '</select></label>' +
-      '<label>Logo (adresse d\'image, facultatif)<input class="at-in" data-f="logo" value="' + esc(c.logo || '') + '"></label><p class="at-faint">Le logo et les chiffres (12 derniers mois) viennent tout seuls de TradingView.</p>' +
+      '<b class="aw-ed-h">Image (usine, produit, siège…)</b>' + imgs + '<label>Logo (adresse d\'image, facultatif)<input class="at-in" data-f="logo" value="' + esc(c.logo || '') + '"></label><p class="at-faint">Le logo et les chiffres (12 derniers mois) viennent tout seuls de TradingView.</p>' +
       '<b class="aw-ed-h">Corriger un chiffre (vide = TradingView)</b><div class="aw-ed-grid">' + CONC_KEYS.map(k => { const auto = concVal(Object.assign({}, c, { over: {} }), k), ov = c.over && c.over[k];
         return '<label>' + esc(TVF[k].l) + (TVF[k].u === '%' ? ' (%)' : TVF[k].u === 'x' ? ' (x)' : '') + '<input class="at-in num" data-cover="' + k + '" value="' + (ov != null && ov !== '' ? esc(String(ov).replace('.', ',')) : '') + '" placeholder="' + (auto == null ? '—' : esc(fr(auto, TVF[k].d))) + '"></label>'; }).join('') + '</div>';
     case 'bourse': return common + '<label>Période affichée<select class="at-sel" data-f="range">' + RANGES.map(r => '<option value="' + r[0] + '"' + ((c.range || '5a') === r[0] ? ' selected' : '') + '>' + r[2] + '</option>').join('') + '</select></label><p class="at-faint">Le cours vient de TradingView et reste figé à la date du relevé du dossier (« ↻ Actualiser » en haut pour le relire).</p>';
@@ -1692,7 +1713,7 @@ function wireEditor(p, c){
   });
   p.addEventListener('paste', e => {
     const files = [...((e.clipboardData && e.clipboardData.files) || [])].filter(x => x.type.startsWith('image/'));
-    if (files.length && ['texte', 'image', 'profil'].includes(c.type)){ e.preventDefault(); addFiles(c, files, 'img'); return; }
+    if (files.length && ['texte', 'image', 'profil', 'concurrent'].includes(c.type)){ e.preventDefault(); addFiles(c, files, 'img'); return; }
     if (e.target.closest && e.target.closest('[data-rich]')){ e.preventDefault(); document.execCommand('insertText', false, (e.clipboardData || window.clipboardData).getData('text/plain')); }
   });
 }
@@ -1835,7 +1856,7 @@ function renderModal(){
     } else if (m.kind === 'tpl'){
       const nom = $('atTName').value.trim(); if (!nom){ $('atTName').focus(); return; }
       const d = doc(), v = ver(), id = uid('m');
-      D.templates[id] = { id, nom, type: d.type, sections: v.sections.map(s => ({ titre: s.titre, hint: s.hint || [], color: s.color, cards: s.cards.map(cid => v.cards[cid]).filter(Boolean).map(c => { const o = { type: c.type, titre: c.titre || '', size: c.size }; ['bind', 'mode', 'keys', 'years', 'metrics', 'unit'].forEach(k => { if (c[k] != null) o[k] = JSON.parse(JSON.stringify(c[k])); }); if (c.type === 'comparatif' && (c.cols || []).includes('@self')) o.self = true; if (c.type === 'donut' && c.rows) o.rows = c.rows.map(r => ({ label: r.label, v: null, color: r.color })); return o; }) })) };
+      D.templates[id] = { id, nom, type: d.type, sections: orderedSections(v).map(s => ({ titre: s.titre, sub: isSub(v, s) || undefined, hint: s.hint || [], color: s.color, cards: s.cards.map(cid => v.cards[cid]).filter(Boolean).map(c => { const o = { type: c.type, titre: c.titre || '', size: c.size }; ['bind', 'mode', 'keys', 'years', 'metrics', 'unit'].forEach(k => { if (c[k] != null) o[k] = JSON.parse(JSON.stringify(c[k])); }); if (c.type === 'comparatif' && (c.cols || []).includes('@self')) o.self = true; if (c.type === 'donut' && c.rows) o.rows = c.rows.map(r => ({ label: r.label, v: null, color: r.color })); return o; }) })) };
       markDirty(); close(); ui.toast = { text: '💾 Modèle « ' + nom + ' » enregistré' }; showToast();
     }
   };

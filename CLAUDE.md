@@ -729,6 +729,11 @@ les cartes concurrents d'un maillon dans la section « Concurrence » (avec `sym
 https://claude.ai/artifact/FrPPWmmqRoepe2tbtmrf2X) : « Flux » (style C, par défaut sur la carte, `c.view`) et « <entreprise> au centre »
 (style B, par défaut dans la vue agrandie, `c.bigView`), bascule par boutons ; les tuiles (style A) ont été écartées. Prysmian / Nexans /
 NKT figurent aussi dans « Pose & installation » (elles posent leurs câbles sous-marins avec leurs navires).
+**Sous-segments (2026-11-11)** : bouton « ＋ Sous-segment » sur chaque section principale = bloc imbriqué avec SES cartes
+(`s.parent` = id de la section mère, sections toujours à plat dans `v.sections`, `isSub` / `subsOf` / `mainsOf` / `orderedSections`).
+Un seul niveau. ↑↓ parmi les frères ; mère mise à la corbeille = ses sous-segments s'affichent comme sections normales (rien de
+masqué) et se rattachent de nouveau si elle est restaurée. Parcours, « Déplacer vers » et modèles (`sub: true`) en tiennent compte.
+Carte Entreprise : images (fichier, Ctrl+V, adresse) — la première remplit l'espace libre de l'aperçu, toutes en vue agrandie.
 Le texte ci-dessous décrit l'ancienne carte mentale (historique).
 
 Nouvel onglet principal (`#pageAtelier`, `js/atelier.js`, CSS `.at-*` en fin de `style.css`), À CÔTÉ du Cerveau numérique (qui
