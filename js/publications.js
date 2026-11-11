@@ -151,19 +151,26 @@ async function frame(P, label, source){
   if (source) txt(x, source, W / 2, P.H - 118, BD(500, 23), C.faint, 'center');
 }
 function compose(P, blocks){
+  // Mise en page sûre : on retire / réduit des éléments tant que tout (titre + blocs + écarts minimaux) ne tient pas
+  // entre le haut et la signature, puis on répartit l'espace restant en écarts égaux. Rien ne peut déborder.
+  const top = P.big ? 150 : 96, bot = P.H - 160, area = bot - top, MIN = P.small ? 22 : 28;
   blocks = blocks.filter(Boolean);
-  const top = P.big ? 150 : 96, bot = P.H - 156, area = bot - top, n = blocks.length;
-  for (let guard = 0; guard < 20; guard++){ const tot = blocks.reduce((s, b) => s + b.h, 0) + 30 * n; if (tot <= area) break; const r = blocks.slice().reverse().find(b => b.shrink && b.shrink()); if (!r) break; }
+  for (let guard = 0; guard < 40; guard++){
+    const live = blocks.filter(b => b.h > 0), need = live.reduce((s, b) => s + b.h, 0) + MIN * live.length;
+    if (need <= area) break;
+    const r = blocks.slice().reverse().find(b => b.h > 0 && b.shrink && b.shrink()); if (!r) break;
+  }
   blocks = blocks.filter(b => b.h > 0);
-  blocks = blocks.filter(b => b.h > 0); const sum = blocks.reduce((s, b) => s + b.h, 0), m = blocks.length;
-  const gap = m > 1 ? Math.max(24, Math.min(P.big ? 110 : 64, (area - sum) / (m + 1))) : 0;
-  // le titre reste en haut ; le reste est centré dans l'espace qui suit
-  let y = top;
-  if (m > 1){ blocks[0].draw(y); y += blocks[0].h; const rest = blocks.slice(1), rs = rest.reduce((s, b) => s + b.h, 0), free = bot - y - rs, g2 = Math.max(24, Math.min(P.big ? 120 : 76, free / (rest.length + 1)));
-    y += Math.max(g2, (free - g2 * (rest.length - 1)) / 2 * (P.big ? 0.9 : 0.6)); rest.forEach(b => { b.draw(y); y += b.h + g2; }); }
-  else blocks.forEach(b => { b.draw(y); y += b.h + gap; });
+  const m = blocks.length; if (!m) return;
+  const title = blocks[0], rest = blocks.slice(1), rs = rest.reduce((s, b) => s + b.h, 0);
+  const free = Math.max(0, area - title.h - rs), g = rest.length ? Math.min(P.big ? 130 : 84, free / (rest.length + 1)) : 0;
+  // le surplus éventuel (au-delà des écarts maximaux) est réparti : un tiers en haut, deux tiers en bas
+  const extra = Math.max(0, free - g * (rest.length + 1)), off = extra / 3;
+  let y = top; title.draw(y); y += title.h + g + off;
+  P.layout = [{ y: top, h: title.h }];
+  rest.forEach(b => { b.draw(y); P.layout.push({ y, h: b.h }); y += b.h + g; });
+  P.bottom = y - g;
 }
-
 /* ---------- blocs ---------- */
 const B = {
   // Titre condensé en capitales SANS accents + surlignage or (sous-titre ou, à défaut, sur-titre)
@@ -264,7 +271,7 @@ const B = {
   cmpBars(P, items){
     items = items.map((it, i) => Object.assign({}, it, { text: P.t('c' + i + 'v', it.label + ' : chiffre', it.text), label: P.t('c' + i + 'l', 'Barre ' + (i + 1) + ' : nom', it.label) }));
     const x = P.x;
-    const blk = { h: P.small ? 470 : P.big ? 680 : 560, shrink(){ if (blk.h <= 380) return false; blk.h -= 60; return true; }, draw(y){ const h = blk.h;
+    const blk = { h: P.small ? 470 : P.big ? 680 : 560, shrink(){ if (blk.h <= (P.small ? 320 : 380)) return false; blk.h -= 40; return true; }, draw(y){ const h = blk.h;
       const n = items.length, bw = Math.min(230, (P.CW - 60 * (n - 1)) / n), gap = (P.CW - bw * n) / Math.max(1, n - 1), base = y + h - 150, top = y + 90;
       const vals = items.map(i => i.v), mx = Math.max(...vals.map(Math.abs), 0.1);
       items.forEach((it, i) => { const X = P.L + i * (bw + gap), bh = Math.max(16, Math.abs(it.v) / mx * (base - top)), by = base - bh;
@@ -291,18 +298,19 @@ const B = {
     return blk;
   },
   vbars(P, labels, values, unit, h){
-    const x = P.x; h = h || (P.small ? 420 : P.big ? 640 : 520);
-    return { h, draw(y){ const vals = values.map(v => isNum(v) ? v : 0), max = Math.max(...vals.map(Math.abs), 1e-9), n = vals.length, gw = P.CW / n, bw = Math.min(58, gw * 0.64), base = y + h - 46, top = y + 60;
+    const x = P.x;
+    const blk = { h: h || (P.small ? 420 : P.big ? 640 : 520), shrink(){ if (blk.h <= 260) return false; blk.h -= 40; return true; }, draw(y){ const h = blk.h; const vals = values.map(v => isNum(v) ? v : 0), max = Math.max(...vals.map(Math.abs), 1e-9), n = vals.length, gw = P.CW / n, bw = Math.min(58, gw * 0.64), base = y + h - 46, top = y + 60;
       vals.forEach((v, i) => { const bh = Math.abs(v) / max * (base - top), X = P.L + gw * i + (gw - bw) / 2, last = i === n - 1;
         let fill = v < 0 ? C.red : C.gold; if (last){ fill = x.createLinearGradient(0, base - bh, 0, base); fill.addColorStop(0, C.gold2); fill.addColorStop(1, C.gold); }
         rr(x, X, base - bh, bw, Math.max(bh, 3), Math.min(12, bw / 3), fill);
         const st = Math.ceil(n / 10); if (n <= 12 || (i % st === 0 && n - 1 - i >= st) || last) txt(x, n > 12 ? '’' + String(labels[i]).slice(-2) : String(labels[i]), X + bw / 2, base + 38, BD(600, 22), C.dim, 'center');
         if (last || i === 0) txt(x, unit(v), X + bw / 2, base - bh - 16, TT(P.small ? 36 : 42), last ? C.gold2 : C.dim, 'center'); });
     } };
+    return blk;
   },
   line(P, series, opts){
     opts = opts || {}; const x = P.x;
-    const blk = { h: opts.h || (P.small ? 400 : P.big ? 620 : 500), shrink(){ if (blk.h <= 240) return false; blk.h -= 50; return true; }, draw(y){ const h = blk.h;
+    const blk = { h: opts.h || (P.small ? 400 : P.big ? 620 : 500), shrink(){ if (blk.h <= (P.small ? 170 : 240)) return false; blk.h -= 40; return true; }, draw(y){ const h = blk.h;
       const all = series.flatMap(s => s.values.filter(isNum)).concat((opts.hlines || []).map(l => l.v)), lo = Math.min(...all), hi = Math.max(...all), pad = (hi - lo) * 0.08 || 1;
       const min = lo - pad, max = hi + pad, X0 = P.L + 10, X1 = P.R - 10, Y0 = y + 24, Y1 = y + h - 50;
       const n = Math.max(...series.map(s => s.values.length)), px = i => X0 + (X1 - X0) * i / Math.max(1, n - 1), py = v => Y1 - (v - min) / (max - min) * (Y1 - Y0);
@@ -311,7 +319,7 @@ const B = {
       if (opts.zero && min < 0 && max > 0){ x.setLineDash([8, 10]); x.strokeStyle = C.track; x.lineWidth = 2; x.beginPath(); x.moveTo(X0, py(0)); x.lineTo(X1, py(0)); x.stroke(); x.setLineDash([]); }
       let lastLab = null;
       (opts.hlines || []).slice().sort((a, b) => b.v - a.v).forEach(l => { x.setLineDash([12, 10]); x.strokeStyle = l.color; x.lineWidth = 3; x.beginPath(); x.moveTo(X0, py(l.v)); x.lineTo(X1, py(l.v)); x.stroke(); x.setLineDash([]);
-        let ly = py(l.v) - 44; if (lastLab != null && ly < lastLab + 42) ly = py(l.v) + 8; lastLab = ly;
+        let ly = py(l.v) - 44; if (lastLab != null && ly < lastLab + 42) ly = lastLab + 42; lastLab = ly;
         const lf = BD(800, 23); x.font = lf; const tw = x.measureText(l.label).width + 26; rr(x, X1 - tw - 4, ly, tw, 36, 9, C.bg); txt(x, l.label, X1 - 17, ly + 25, lf, l.color, 'right'); });
       series.forEach((s, si) => {
         const pts = s.values.map((v, i) => isNum(v) ? [px(i), py(v)] : null).filter(Boolean); if (pts.length < 2) return;
@@ -361,6 +369,7 @@ const B = {
 const cap = (P, s, m, l) => P.small ? s : P.big ? l : m;   // nombre d'éléments selon le format
 
 /* ======================= MODÈLES ======================= */
+const SCEN = [['real', 'Réaliste'], ['pess', 'Pessimiste'], ['opt', 'Optimiste']];
 const RANGES = [['1m', '1 mois', 30], ['3m', '3 mois', 91], ['6m', '6 mois', 182], ['1a', '1 an', 365], ['3a', '3 ans', 1096], ['5a', '5 ans', 1826], ['10a', '10 ans', 3652], ['20a', '20 ans', 7305]];
 const METRICS = {
   net_margin_ttm: { l: 'Marge nette (12 mois)', u: '%', d: 1, t: 'Les rois des marges', s: 'Marge nette des 12 derniers mois' },
@@ -392,14 +401,14 @@ const T = [
     if (op.type === 'BUY'){
       const after = w.E.replay(sorted.slice(0, sorted.indexOf(op) + 1)), p = after.pos[op.symbol], tot = w.E.valueAt(w.ops, w.S, op.date).value, pe = w.E.priceEur(w.S, op.symbol, op.date) || (op.fx ? op.px * op.fx : op.px);
       return [B.title(P, 'Wolf Portfolio · ' + frDate(op.date), o.titre || 'Nouvel achat', o.sous || null), B.head(P, im, s.name, 'Achat', C.green),
-        B.big(P, money(op.px, op.ccy), C.gold, 'prix d\'achat · ' + fr(op.qty, op.qty % 1 ? 2 : 0) + ' actions'),
-        B.kpis(P, [{ l: 'Montant', v: money(-op.eur, 'EUR', 0) }, { l: 'Poids', v: p && tot > 0 ? fr(p.qty * pe / tot * 100, 1) + ' %' : '—' }, { l: 'PRU', v: p ? money(p.cost / p.qty, 'EUR') : '—' }])];
+        B.big(P, money(op.px, op.ccy), C.gold, 'Prix d\'achat le ' + frDate(op.date)),
+        B.kpis(P, [{ l: 'Poids dans le portefeuille', v: p && tot > 0 ? fr(p.qty * pe / tot * 100, 1) + ' %' : '—' }, { l: 'Prix de revient moyen', v: p ? money(p.cost / p.qty, 'EUR') : '—' }])];
     }
     const p = before.pos[op.symbol]; if (!p) throw new Error('Position introuvable avant cette vente.');
     const pru = p.cost / p.qty, net = op.eur / op.qty, pct = (net / pru - 1) * 100, days = w.E.daysBetween(p.open, op.date), gain = op.eur - pru * op.qty;
     return [B.title(P, 'Wolf Portfolio · ' + frDate(op.date), o.titre || (pct >= 0 ? 'Prise de bénéfices' : 'Vente'), o.sous || null), B.head(P, im, s.name, 'Vente', C.red),
-      B.big(P, sgn(pct), pct >= 0 ? C.green : C.red, (gain >= 0 ? '+' : '−') + fr(Math.abs(gain), 0) + ' € de ' + (gain >= 0 ? 'plus' : 'moins') + '-value · détenue ' + duree(days)),
-      B.kpis(P, [{ l: 'Prix de vente', v: money(op.px, op.ccy) }, { l: 'PRU', v: money(pru, 'EUR') }, { l: 'Par an', v: days >= 30 ? sgn((Math.pow(net / pru, 365 / Math.max(days, 1)) - 1) * 100) : '—', c: pct >= 0 ? C.green : C.red }])];
+      B.big(P, sgn(pct), pct >= 0 ? C.green : C.red, 'Achetée le ' + frDate(p.open) + ' · vendue le ' + frDate(op.date) + ' (' + duree(days) + ')'),
+      B.kpis(P, [{ l: 'Prix d\'achat', v: money(pru, 'EUR') }, { l: 'Prix de vente', v: money(op.px, op.ccy) }])];
   } },
 { k: 'recap', group: 'Portefeuille', ic: '📅', name: 'Récap semaine / mois', desc: 'Performance face aux indices, opérations en logos',
   fields: [{ id: 'per', type: 'select', label: 'Période', options: () => { const t = dt(today()), out = [['w0', 'Cette semaine'], ['w1', 'La semaine dernière'], ['m0', 'Ce mois-ci']];
@@ -483,6 +492,7 @@ const T = [
 /* ----- Entreprises (TradingView) ----- */
 { k: 'valo', group: 'Entreprises', ic: '⚖️', name: 'Valorisation', desc: 'Cours, prix juste, marge de sécurité',
   fields: [{ id: 'src', type: 'select', label: 'Où prendre le prix juste ?', rerender: true, options: [['prix', 'Prix par secteur (ma simulation)'], ['analyse', 'Fiche Analyse']] },
+    { id: 'sc', type: 'select', label: 'Ton scénario (Prix par secteur)', options: SCEN },
     { id: 'nom', type: 'select', label: 'Entreprise', options: async o => (o.src || 'prix') === 'prix' ? (window.PRIX_UI ? (await PRIX_UI.pubItems()).filter(x => isNum(x.juste)).map(x => [x.nom, x.nom + ' · ' + x.secteurLabel]) : []) : followed().map(n => [n, n]) }],
   async build(P, o){
     const src = o.src || 'prix';
@@ -490,12 +500,13 @@ const T = [
     if (src === 'prix'){
       const all = window.PRIX_UI ? (await PRIX_UI.pubItems()).filter(x => isNum(x.juste)) : [], it = all.find(x => x.nom === nom) || all[0];
       if (!it) throw new Error('Aucune simulation dans « Prix par secteur ».');
-      nom = it.nom; cours = it.cours; juste = it.sc.real; ccy = it.devise || 'EUR'; sym = it.sym; logo = it.logo;
+      const scK = o.sc || 'real'; nom = it.nom; cours = it.cours; juste = it.sc[scK]; ccy = it.devise || 'EUR'; sym = it.sym; logo = it.logo;
       if (isNum(it.sc.pess)) lines.push({ v: it.sc.pess, color: C.red, label: 'Pessimiste ' + fr(it.sc.pess, 0) });
       lines.push({ v: juste, color: C.gold2, label: 'Réaliste ' + fr(juste, 0) });
       if (isNum(it.sc.opt)) lines.push({ v: it.sc.opt, color: C.green, label: 'Optimiste ' + fr(it.sc.opt, 0) });
       extra = { l: 'Rendement 5 ans', v: isNum(it.rdt) ? sgn(it.rdt * 100) + '/an' : '—', c: it.rdt >= 0 ? C.green : C.red };
-      P.info = 'Source : ta simulation « Prix par secteur » (scénario réaliste pour le prix juste). Cours : ' + money(cours, ccy) + '.';
+      const sv = it.saisie[scK] || {};
+      P.info = 'Chiffres : ta fiche « Prix par secteur », scénario ' + SCEN.find(z => z[0] === scK)[1].toLowerCase() + ' : base ' + fr(it.base, 2) + ' × multiple ' + fr(sv.mult, 1) + ' = ' + money(juste, ccy) + '. Cours ' + money(cours, ccy) + (it.coursAuto ? ' (cours de l\'appli)' : ' (saisi)') + '. Rien n\'est estimé par l\'appli : corrige plus bas si besoin.';
     } else {
       nom = nom || followed()[0]; const rows = (typeof companies !== 'undefined' && companies[nom]) || [], last = rows[rows.length - 1];
       if (!last || !isNum(last.prixJuste)) throw new Error('Pas de prix juste dans la fiche Analyse pour cette entreprise.');
@@ -507,7 +518,7 @@ const T = [
     if (!isNum(cours) || !isNum(juste) || juste <= 0) throw new Error('Cours ou prix juste manquant pour ' + nom + '.');
     const h = sym ? await history(sym, addD(today(), -1826)).catch(() => null) : null, step = h ? Math.ceil(h.c.length / 300) : 1, marge = (juste / cours - 1) * 100;
     const img = await logoFor({ sym, logo, name: nom });
-    return [B.title(P, null, o.titre || (marge >= 0 ? 'Sous-evaluee ?' : 'Trop chere ?'), src === 'prix' ? 'Ma valorisation · prix juste ' + money(juste, ccy, 0) : 'Prix juste ' + money(juste, ccy, 0)),
+    return [B.title(P, null, o.titre || (marge >= 0 ? 'Sous-evaluee ?' : 'Trop chere ?'), src === 'prix' ? 'Mon prix juste : ' + money(juste, ccy, 0) : 'Prix juste ' + money(juste, ccy, 0)),
       B.head(P, img, nom, marge >= 0 ? 'Sous son prix juste' : 'Au-dessus du prix juste', marge >= 0 ? C.green : C.red),
       B.big(P, sgn(marge, 0), marge >= 0 ? C.green : C.red, marge >= 0 ? 'de potentiel jusqu\'au prix juste' : 'au-dessus du prix juste'),
       h ? B.line(P, [{ values: h.c.filter((_, i) => i % step === 0), color: C.blue, width: 4, fill: true }], { hlines: lines, labels: [frDate(h.d[0]), frDate(h.d[h.d.length - 1])], h: cap(P, 260, 340, 520) }) : null,
@@ -562,7 +573,7 @@ const T = [
     if (!list.length) throw new Error('Aucune publication prévue dans cette fenêtre pour ces entreprises.');
     const shown = list.slice(0, cap(P, 5, 7, 12));
     return [B.title(P, 'Agenda des résultats', o.titre || 'Ils publient', o.sous || 'Du ' + frDate(today()) + ' au ' + frDate(shown[shown.length - 1].date)),
-      B.rows(P, shown.map(x => ({ img: x.img, name: x.name, mid: shortDate(x.date), right: isNum(x.eps) ? money(x.eps, x.ccy) : '—', rightSub: 'BPA attendu', rightColor: C.white })))];
+      B.rows(P, shown.map(x => ({ img: x.img, name: x.name, right: shortDate(x.date), rightColor: C.ink })))];
   } },
 { k: 'verdict', group: 'Agenda et marché', ic: '⚖️', name: 'Verdict des résultats', desc: 'Battu ou manqué face au consensus',
   fields: [{ id: 'cos', type: 'companies', label: 'Entreprises', max: 30, quick: 'held' }, { id: 'win', type: 'select', label: 'Publiés dans les', options: [['7', '7 derniers jours'], ['14', '14 derniers jours'], ['30', '30 derniers jours'], ['90', '3 derniers mois']] }],
@@ -576,15 +587,20 @@ const T = [
     return [B.title(P, 'Résultats vs consensus', o.titre || 'Le verdict', o.sous || beats + ' sur ' + list.length + ' ont battu les attentes'),
       B.rows(P, shown.map(x => ({ img: x.img, name: x.name, sub: shortDate(x.date) + (isNum(x.sur) ? ' · BPA ' + sgn(x.sur) : ''), right: x.beat ? 'Battu' : 'Manqué', pill: true, rightColor: x.beat ? C.green : C.red, pillBg: x.beat ? 'rgba(79,209,165,.14)' : 'rgba(229,99,107,.14)' })))];
   } },
-{ k: 'deals', group: 'Agenda et marché', ic: '🏷', name: 'Bonnes affaires du secteur', desc: 'Sous leur prix juste, écart en gros',
-  fields: [{ id: 'sec', type: 'select', label: 'Secteur (Prix par secteur)', options: async () => { const it = window.PRIX_UI ? await PRIX_UI.pubItems() : []; const m = {}; it.forEach(x => { m[x.secteur] = x.secteurLabel; }); return [['', 'Tous les secteurs']].concat(Object.keys(m).map(k => [k, m[k]])); } }],
+{ k: 'deals', group: 'Agenda et marché', ic: '🏷', name: 'Prix par secteur', desc: 'Tes prix justes face au cours, écart en gros',
+  fields: [{ id: 'sec', type: 'select', label: 'Secteur (Prix par secteur)', rerender: true, options: async () => { const it = window.PRIX_UI ? await PRIX_UI.pubItems() : []; const m = {}; it.forEach(x => { m[x.secteur] = x.secteurLabel; }); return [['', 'Tous les secteurs']].concat(Object.keys(m).map(k => [k, m[k]])); } },
+    { id: 'sc', type: 'select', label: 'Ton scénario à utiliser', options: SCEN },
+    { id: 'pick', type: 'checks', label: 'Entreprises à mettre', options: async o => (window.PRIX_UI ? await PRIX_UI.pubItems() : []).filter(x => !o.sec || x.secteur === o.sec).map(x => [x.nom, x.nom]) }],
   async build(P, o){
-    const all = window.PRIX_UI ? await PRIX_UI.pubItems() : [], list = all.filter(x => (!o.sec || x.secteur === o.sec) && isNum(x.ecart) && x.ecart < 0).sort((a, b) => a.ecart - b.ecart);
-    if (!list.length) throw new Error('Aucune entreprise sous son prix juste dans ce secteur.');
-    const shown = list.slice(0, cap(P, 5, 7, 11)), lab = o.sec ? (all.find(x => x.secteur === o.sec) || {}).secteurLabel : 'Tous secteurs';
+    const sc = o.sc || 'real', all = window.PRIX_UI ? await PRIX_UI.pubItems() : [];
+    let list = all.filter(x => (!o.sec || x.secteur === o.sec) && (!Array.isArray(o.pick) || o.pick.includes(x.nom)));
+    list = list.map(x => Object.assign({}, x, { prix: x.sc[sc], e: isNum(x.sc[sc]) && x.sc[sc] > 0 && isNum(x.cours) ? x.cours / x.sc[sc] - 1 : null })).filter(x => x.e != null).sort((a, b) => a.e - b.e);
+    if (!list.length) throw new Error('Aucune entreprise avec ton prix « ' + SCEN.find(z => z[0] === sc)[1] + ' » et un cours.');
+    const shown = list.slice(0, cap(P, 5, 7, 11)), lab = o.sec ? (all.find(x => x.secteur === o.sec) || {}).secteurLabel : 'Tous secteurs', below = list.filter(x => x.e < 0).length;
     for (const x of shown){ const c = typeof companies !== 'undefined' && companies[x.nom]; const tk = c && c[c.length - 1] && c[c.length - 1].ticker; x.img = await logoFor({ sym: x.sym || tk, logo: x.logo }); }
-    return [B.title(P, 'Prix par secteur · ' + lab, o.titre || 'Les bonnes affaires', o.sous || shown.length + ' entreprise' + (shown.length > 1 ? 's' : '') + ' sous leur prix juste'),
-      B.rows(P, shown.map(x => ({ img: x.img, name: x.nom, sub: 'Cours ' + money(x.cours, x.devise, 0) + ' · prix juste ' + money(x.juste, x.devise, 0), right: sgn(x.ecart * 100, 0), rightColor: C.green })))];
+    P.info = 'Chiffres : ta fiche « Prix par secteur », scénario ' + SCEN.find(z => z[0] === sc)[1].toLowerCase() + ' (' + shown.map(x => x.nom + ' : base ' + fr(x.base, 2) + ' × ' + fr((x.saisie[sc] || {}).mult, 1) + ' = ' + fr(x.prix, 0)).join(' ; ') + '). Écart = cours ÷ ton prix − 1. Rien n\'est estimé par l\'appli.';
+    return [B.title(P, null, o.titre || lab, o.sous || below + ' sous mon prix · ' + (list.length - below) + ' au-dessus'),
+      B.rows(P, shown.map(x => ({ img: x.img, name: x.nom, sub: 'Cours ' + money(x.cours, x.devise, 0) + ' · mon prix ' + money(x.prix, x.devise, 0), right: sgn(x.e * 100, 0), rightColor: x.e < 0 ? C.green : C.red })))];
   } },
 { k: 'atelier', group: 'Agenda et marché', ic: '🗂', name: 'Carte de l\'Atelier', desc: 'Une carte de l\'Atelier transformée en post',
   fields: [{ id: 'cid', type: 'select', label: 'Carte (du dossier ouvert dans l\'Atelier)', options: () => atelierCards().map(c => [c.id, c.label]) }],
@@ -638,6 +654,10 @@ async function renderControls(t){
       let opts = []; try { opts = typeof f.options === 'function' ? await f.options(ui.opts) : f.options; } catch(e){ opts = []; html += '<p class="pb-err">' + esc(e.message) + '</p>'; }
       if ((ui.opts[f.id] == null || !opts.some(o => String(o[0]) === String(ui.opts[f.id]))) && opts[0]) ui.opts[f.id] = opts[0][0];
       html += '<label>' + esc(f.label) + '<select data-pb-f="' + f.id + '">' + (opts.length ? opts.map(o => '<option value="' + esc(o[0]) + '"' + (String(ui.opts[f.id]) === String(o[0]) ? ' selected' : '') + '>' + esc(o[1]) + '</option>').join('') : '<option value="">(rien à choisir)</option>') + '</select></label>';
+    } else if (f.type === 'checks'){
+      let opts = []; try { opts = await f.options(ui.opts); } catch(e){ opts = []; }
+      const sel = Array.isArray(ui.opts[f.id]) ? ui.opts[f.id] : null;
+      html += '<div class="pb-field"><span class="pb-lab">' + esc(f.label) + '</span><div class="pb-checks">' + (opts.length ? opts.map(o => '<label class="pb-check"><input type="checkbox" data-pb-chk="' + f.id + '" value="' + esc(o[0]) + '"' + (!sel || sel.includes(o[0]) ? ' checked' : '') + '> ' + esc(o[1]) + '</label>').join('') : '<span class="pb-faint">Aucune entreprise.</span>') + '</div></div>';
     } else if (f.type === 'check'){
       html += '<label class="pb-check"><input type="checkbox" data-pb-f="' + f.id + '"' + (ui.opts[f.id] ? ' checked' : '') + '> ' + esc(f.label) + '</label>';
     } else if (f.type === 'company' || f.type === 'companies'){
@@ -732,8 +752,10 @@ function wire(){
       await renderControls(T.find(x => x.k === ui.tpl)); schedule(); } catch(err){ msg(err.message); } return; }
   });
   // changer une donnée (opération, entreprise, période…) efface les corrections manuelles, qui ne valaient que pour l'ancienne donnée
-  el.addEventListener('change', async e => { const t = e.target, f = t.dataset && t.dataset.pbF; if (!f) return; ui.opts[f] = t.type === 'checkbox' ? t.checked : t.value; ui.opts.ov = {}; ui.editSig = '';
-    const fd = (T.find(x => x.k === ui.tpl) || { fields: [] }).fields.find(x => x.id === f); if (fd && fd.rerender) await renderControls(T.find(x => x.k === ui.tpl)); schedule(); });
+  el.addEventListener('change', async e => { const t = e.target;
+    if (t.dataset && t.dataset.pbChk){ const id = t.dataset.pbChk; ui.opts[id] = [...el.querySelectorAll('[data-pb-chk="' + id + '"]')].filter(x => x.checked).map(x => x.value); ui.opts.ov = {}; ui.editSig = ''; return schedule(); }
+    const f = t.dataset && t.dataset.pbF; if (!f) return; ui.opts[f] = t.type === 'checkbox' ? t.checked : t.value; ui.opts.ov = {}; ui.editSig = '';
+    const fd = (T.find(x => x.k === ui.tpl) || { fields: [] }).fields.find(x => x.id === f); if (fd && fd.rerender){ if (f === 'sec') ui.opts.pick = null; await renderControls(T.find(x => x.k === ui.tpl)); } schedule(); });
   el.addEventListener('input', e => { const t = e.target; if (t.dataset && t.dataset.pbOv){ ui.opts.ov = Object.assign({}, ui.opts.ov, { [t.dataset.pbOv]: t.value }); return schedule(); }
     if (t.dataset && t.dataset.pbQ) return search(t.dataset.pbQ, t.value); if (t.dataset && (t.dataset.pbF === 'titre' || t.dataset.pbF === 'sous')){ ui.opts[t.dataset.pbF] = t.value; schedule(); } });
 }
@@ -745,5 +767,5 @@ function open(k, preset){
   wire(); ui.tpl = k; ui.opts = Object.assign({}, prefs()[k] || {}, preset || {}); ui.sugg = {}; ui.q = {}; renderPage();
   try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch(e){}
 }
-window.WOLF_PUB = { open, templates: T.map(t => t.k), _render: async (k, opts, fmt, theme) => { await fontsReady(); setTheme(theme || 'nuit'); const t = T.find(x => x.k === k), P = mk(fmt || 'f45'); P.ov = (opts && opts.ov) || {}; const b = await t.build(P, opts || {}); await frame(P, t.name, 'test'); compose(P, b); return P.c; } };
+window.WOLF_PUB = { open, templates: T.map(t => t.k), _render: async (k, opts, fmt, theme) => { await fontsReady(); setTheme(theme || 'nuit'); const t = T.find(x => x.k === k), P = mk(fmt || 'f45'); P.ov = (opts && opts.ov) || {}; const b = await t.build(P, opts || {}); await frame(P, t.name, 'test'); compose(P, b); P.c._layout = { blocks: P.layout, bottom: P.bottom, limit: P.H - 160 }; return P.c; } };
 })();

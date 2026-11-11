@@ -778,6 +778,11 @@ reste intact, décision de l'utilisateur). Répertoire visuel de toutes les anal
   `P.info` = encadré de vérification (source des chiffres ; pour les résultats : « à vérifier sur le communiqué » + chiffres bruts) ;
   Valorisation : source AU CHOIX, « Prix par secteur » (ta simulation : pessimiste / réaliste / optimiste, `PRIX_UI.pubItems().sc`)
   ou « Fiche Analyse » ; Performance d'une action affiche le logo. Thème par défaut : BEIGE (choix de l'utilisateur).
+  **Règles de l'utilisateur (2026-11-11)** : Transaction = performance en % + dates d'achat et de vente (durée), JAMAIS de montant
+  en euros ni de « % par an » ; les posts « Prix par secteur » (ex-« bonnes affaires ») et Valorisation prennent les chiffres SAISIS
+  dans Prix par secteur, scénario CHOISI par l'utilisateur, entreprises cochées par lui (rien d'estimé par l'appli ; `P.info`
+  détaille base × multiple) ; Résultats à venir sans BPA attendu. `compose()` garantit qu'aucun bloc ne passe sous la signature
+  (blocs réductibles via `shrink()`, vérifié sur 16 cas × 3 formats avec `canvas._layout`).
   WOLF PORTFOLIO SEULEMENT (jamais PEA/CTO). Boutons « 📤 » : journal et mois par mois du Wolf (mes-portefeuilles), tag
   « 📤 Publier » de l'onglet Analyse, menu ⋯ d'une carte de l'Atelier, en-tête de secteur de Prix par secteur ->
   `WOLF_PUB.open(modèle, réglages)`. Réglages gardés par modèle (localStorage `wolfPubPrefs`, simple confort).

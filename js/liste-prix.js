@@ -177,7 +177,7 @@ function wire(){
   pg.onclick = e => {
     const b = e.target.closest('button'); if (!b || b.closest('#lpModalHost')) return;
     const ds = b.dataset;
-    if (ds.pub !== undefined && window.WOLF_PUB){ WOLF_PUB.open('deals', { sec: ds.pub }); return; }
+    if (ds.pub !== undefined && window.WOLF_PUB){ WOLF_PUB.open('deals', { sec: ds.pub, pick: null }); return; }
     if (ds.tog !== undefined){ ui.open[ds.tog] = ds.tog === '_trash' ? !ui.open._trash : ui.open[ds.tog] === false; return render(); }
     if (ds.add !== undefined){ ui.modal = { it: { id: null, nom: '', secteur: ds.add, sousSecteur: '', devise: 'EUR', metric: METRICS[0], sc: { pess: {}, real: {}, opt: {} } } }; return renderModal(); }
     if (ds.restore !== undefined){ const t = D.trash.splice(+ds.restore, 1)[0]; if (t){ delete t.deletedAt; D.items[t.id] = t; markDirty(); } return render(); }
@@ -257,7 +257,8 @@ async function pubItems(){
     const sec = sectors().find(s => s.key === it.secteur), tk = c && typeof companies !== 'undefined' && companies[c.key] ? (companies[c.key][companies[c.key].length - 1] || {}).ticker : null;
     return { nom: c ? c.key : it.nom, sym: it.tvSym || tk || null, logo: (c && c.logo) || it.logo || '', secteur: it.secteur || '', secteurLabel: sec ? sec.label : 'Sans secteur',
       cours, juste: r ? r.juste : null, ecart: r ? r.ecart : null, devise: c ? c.devise : (it.devise || 'EUR'), metric: it.metric || null,
-      sc: { pess: pe && pe.juste, real: r && r.juste, opt: op && op.juste }, p5: r ? r.p5 : null, rdt: r ? r.rdt : null }; });
+      sc: { pess: pe && pe.juste, real: r && r.juste, opt: op && op.juste }, p5: r ? r.p5 : null, rdt: r ? r.rdt : null,
+      base: num(it.base), saisie: it.sc || {}, coursAuto: coursOf(it).auto, maj: it.updatedAt || null }; });
 }
 window.PRIX_UI = { onShow, show, chip, snapshot, pubItems, _state: () => ({ D, RO, ui }), _calc: calc };
 })();
