@@ -260,12 +260,40 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzdFIgTvpl6lGyC
 // délai), ce qui faisait échouer TOUT le chargement au hasard (écran d'erreur complet,
 // y compris quand seul le Wolf Portfolio ou le Perso avaient besoin d'un peu plus de
 // temps). Délai porté à 45s + une nouvelle tentative automatique avant d'abandonner.
-async function loadAllDataFromAppsScript(retried){
+// 2026-11-11 — DÉMARRAGE SANS GOOGLE SHEET. L'appli n'attend plus le Google Sheet (appel de ~3 Mo, jusqu'à 45 s,
+// et qui bloquait TOUT, y compris sur téléphone) : les entreprises viennent de TradingView (data/tv-analyse.json, ou sa
+// copie publiée data/public/tv-analyse.json sur le site en ligne), les portefeuilles de « Mes portefeuilles », les
+// analyses de l'Atelier. Le Google Sheet ne sert plus QU'À l'onglet Macroéconomie (cycle de marché, rotation sectorielle,
+// force relative, indicateurs US via le relais Apps Script) : il n'est lu qu'à la première ouverture de cet onglet
+// (ensureMacroData). Les anciens onglets « WOLF Portefeuille » et « SYNTHESE PORTEFEUILLE » ne sont plus lus du tout.
+async function loadAllDataFromAppsScript(){
   document.getElementById('loadingScreen').style.display = 'block';
   document.getElementById('errorScreen').style.display = 'none';
   document.getElementById('dashboard').style.display = 'none';
   setSync('loading');
-  setDebug(retried ? 'Nouvelle tentative de connexion…' : 'Connexion via la méthode alternative (script)…');
+  setDebug('');
+  try{
+    await loadTvAnalyse();
+  }catch(e){
+    console.error('Chargement des entreprises :', e);
+    const online = !/^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+    showError(online
+      ? "Les données des entreprises n'ont pas encore été publiées en ligne. Sur ton PC, ouvre l'appli avec le raccourci « Wolf Analysis » puis clique sur « 🌐 Publier en ligne »."
+      : "Le fichier des données TradingView (data/tv-analyse.json) est introuvable. Ferme l'appli puis relance le raccourci « Wolf Analysis ».");
+    return;
+  }
+  if (macroDataState) loadMacroSheet();   // « Mettre à jour » relit aussi la macro si elle a déjà été ouverte
+}
+
+let macroDataState = null;   // null = jamais demandée · 'loading' · 'ok' · 'err'
+function ensureMacroData(){
+  if (macroDataState) return;
+  loadMacroSheet();
+  loadCreditIndicators();
+  loadSectorEtfData();
+}
+async function loadMacroSheet(retried){
+  macroDataState = 'loading';
   try{
     const res = await Promise.race([
       fetch(APPS_SCRIPT_URL, { cache:'no-store' }),
@@ -274,13 +302,6 @@ async function loadAllDataFromAppsScript(retried){
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (typeof data !== 'object' || data === null) throw new Error('réponse invalide');
-    setDebug('Connecté via la méthode alternative (script).');
-    // Entreprises, ratios, valorisation : TradingView (data/tv-analyse.json), PAS le Sheet.
-    // Le Sheet n'apporte plus que les portefeuilles (transactions) et la macro ci-dessous.
-    await loadTvAnalyse();
-    if (data['WOLF Portefeuille']) handlePortfolioRows(data['WOLF Portefeuille']);
-    // L'ancien onglet "PRIX ACTION 20 ANS" (cours par action saisis dans le Sheet) n'est plus lu :
-    // le cours de bourse vient des fichiers de prix locaux + repli en ligne (voir loadStockChart()).
     if (data['DATA SECTORIELS US']){
       handleMacroRotationRows(data['DATA SECTORIELS US']);
       handleMacroCycleRowsFromSectoriels(data['DATA SECTORIELS US']);
@@ -290,11 +311,11 @@ async function loadAllDataFromAppsScript(retried){
       dashboardCycleRawRows = data['DASHBOARD CYCLE']; // repli local si BEA/FRED échouent, voir loadMacroFundamentalsFromApi()
       loadMacroFundamentalsFromApi();
     }
-    if (data['SYNTHESE PORTEFEUILLE']) handlePersoRows(data['SYNTHESE PORTEFEUILLE']);
+    macroDataState = 'ok';
   }catch(e){
-    if (!retried){ loadAllDataFromAppsScript(true); return; }
-    console.error('Erreur de chargement (Apps Script) :', e);
-    showError("Impossible de charger les données depuis l'endpoint Apps Script après deux tentatives. Vérifie que le script est bien déployé (Déployer → Gérer les déploiements → Nouvelle version) et que le lien est correct. Détail technique en console (F12).");
+    if (!retried) return loadMacroSheet(true);
+    macroDataState = 'err';
+    console.error('Macroéconomie (Google Sheet) :', e);
   }
 }
 
@@ -6352,6 +6373,7 @@ const NAV_GROUPS = [
   { key:'macro', subnavId:'macroSubnav', pages:MACRO_GROUP_PAGES }
 ];
 function switchPage(pageId){
+  if (MACRO_GROUP_PAGES.includes(pageId)) ensureMacroData();
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === pageId));
   document.querySelectorAll('.page-nav-btn').forEach(b => b.classList.toggle('active',
     b.dataset.page === pageId ||
@@ -20890,7 +20912,7 @@ document.getElementById('wolfLaboFullscreenBtn').addEventListener('click', () =>
 });
 window.addEventListener('resize', () => { if (wolfLaboPenActive) resizeWolfLaboPenCanvas(); renderWolfLaboHandles(); });
 
-document.getElementById('refreshBtn').addEventListener('click', loadAllDataFromAppsScript);
+document.getElementById('refreshBtn').addEventListener('click', () => loadAllDataFromAppsScript());
 document.querySelectorAll('.page-nav-btn').forEach(btn => {
   btn.addEventListener('click', () => switchPage(btn.dataset.page));
 });
@@ -21024,8 +21046,7 @@ document.getElementById('persoBlurToggleBtn').addEventListener('click', function
   loadDividendPortfolioBaseline();
   loadConstructionBaseline();
   loadAllDataFromAppsScript();
-  loadCreditIndicators();
-  loadSectorEtfData();
+  // macro (Google Sheet, FRED, ETF sectoriels) : seulement à l'ouverture de l'onglet Macroéconomie, voir ensureMacroData()
   loadLogosManifest();
   loadRankingSummary();
 })();

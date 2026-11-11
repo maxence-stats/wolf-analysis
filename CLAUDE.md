@@ -684,6 +684,18 @@ reste intact, décision de l'utilisateur). Répertoire visuel de toutes les anal
   (`:where(#dashboard …) :where(*){min-width:0}` en fin de `style.css`, spécificité nulle) qui supprime les débordements
   horizontaux des grilles (Analyse à ~900 px, scénarios à ~620 px).
 
+### Site public, appli téléphone, Google Sheet (2026-11-11)
+- **Démarrage sans Google Sheet** : `loadAllDataFromAppsScript()` ne lit plus que `loadTvAnalyse()` (data/tv-analyse.json, sinon
+  data/public/tv-analyse.json). Le Google Sheet (relais Apps Script) ne sert plus QU'À la Macroéconomie et n'est lu qu'à la
+  première ouverture d'une page Macro (`ensureMacroData()` dans `switchPage`, avec FRED et les ETF sectoriels). Les onglets
+  Sheet « WOLF Portefeuille » et « SYNTHESE PORTEFEUILLE » ne sont plus lus.
+- **Site public** (GitHub Pages) = lecture seule de copies dans `data/public/` (versionnées), faites par le bouton
+  « 🌐 Publier en ligne » (`js/publier.js`, serveur v=13 `/api/publish/file` + `/api/publish/go`, qui fait `git commit` +
+  `git push` de `data/public` seulement) : Wolf Portfolio SEUL (`MP_UI.publicSnapshot`, jamais PEA/CTO), Atelier (sans
+  corbeille) + images citées, Prix par secteur (`js/liste-prix.js`), données Analyse. Sans serveur local, `mes-portefeuilles.js`,
+  `atelier.js`, `liste-prix.js` passent en `RO` (lecture seule). Appli installable : `manifest.webmanifest`, `icons/`, pas de
+  service worker ; la page se recharge seule si `index.html` annonce une nouvelle version (`js/publier.js`).
+
 ### Onglet Portefeuille IA (fait, 2026-09-19)
 Sous-onglet de « 💼 Portefeuille » : 4 portefeuilles simulés (ChatGPT, Claude, Gemini, Grok, logos
 dans `data/ai-logos/`), 10 000 € chacun, l'utilisateur y enregistre à la main les achats/ventes que
