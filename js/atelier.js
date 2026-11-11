@@ -44,6 +44,7 @@ const TYPES = {
   courbes:    { l: 'Courbes',      c: '#4A9FE0', size: 'h', cat: 'Chiffres',   d: 'Évolution d\'un ou plusieurs indicateurs' },
   comparatif: { l: 'Comparatif',   c: '#B8A1F0', size: 'h', cat: 'Entreprises et personnes', d: 'Entreprises en colonnes, meilleure valeur surlignée' },
   concurrent: { l: 'Entreprise',   c: '#E5636B', size: 'v', cat: 'Entreprises et personnes', d: 'Concurrent, client, fournisseur : logo, chiffres, forces' },
+  vchain:     { l: 'Chaîne de valeur', c: '#4FD1A5', size: 'h', cat: 'Entreprises et personnes', d: 'Maillons, sociétés et logos : chaîne prête à importer ou dossier de l\'Atelier' },
   profil:     { l: 'Dirigeant',    c: '#F08A4B', size: 'v', cat: 'Entreprises et personnes', d: 'Photo, poste, parcours, actions détenues' },
   these:      { l: 'Thèse',        c: '#D9A441', size: 'h', cat: 'Thèse', d: 'Tes 7 questions, au départ ou à la fin de l\'analyse' },
   thesecmp:   { l: 'Thèse : avant / après', c: '#D9A441', size: 'h', cat: 'Thèse', d: 'Départ et fin côte à côte, avec un verdict' },
@@ -75,6 +76,48 @@ const TVF = {
   fcf:          { l: 'Free cash-flow',           u: 'Mcur', d: 0 }
 };
 const C = (type, titre, o) => Object.assign({ type, titre: titre || '' }, o || {});
+// Chaînes de valeur prêtes à importer (carte « Chaîne de valeur » ou nouveau dossier « Chaîne de valeur »).
+// Société : nom, symbole TradingView ('-' = non cotée), logoid TradingView, rôle. Symboles et logos vérifiés sur TradingView le 2026-11-11.
+const CO = (n, s, l, r) => ({ nom: n, sym: s === '-' ? '' : s, nc: s === '-' ? true : undefined, logo: l ? 'https://s3-symbol-logo.tradingview.com/' + l + '--big.svg' : '', role: r || '' });
+const ELEC_STEPS = ['Matières premières', 'Production d\'électricité', 'Transport haute tension', 'Distribution & raccordement', 'Usages finaux'];
+const CHAINES = {
+  cables: { id: 'cables', short: 'Câbles (Prysmian, Nexans, NKT…)', titre: 'Câbles d\'énergie et de télécommunication',
+    parent: { id: 'electrification', titre: 'Électrification & réseaux électriques', steps: ELEC_STEPS, at: [2, 3] },
+    steps: [
+      { titre: 'Matières premières', note: 'Cuivre et aluminium (la plus grosse part du coût d\'un câble, en général répercutée au client), polymères isolants (polyéthylène réticulé XLPE).', cos: [
+        CO('Freeport-McMoRan', 'NYSE:FCX', 'freeport-mcmoran', 'Cuivre (mines)'), CO('Southern Copper', 'NYSE:SCCO', 'southern-copper', 'Cuivre (mines)'), CO('Glencore', 'LSE:GLEN', 'glencore', 'Cuivre, négoce'),
+        CO('Aurubis', 'XETR:NDA', 'aurubis-ag', 'Cuivre raffiné, fil machine'), CO('Norsk Hydro', 'OSL:NHY', 'norsk-hydro', 'Aluminium'), CO('Alcoa', 'NYSE:AA', 'alcoa', 'Aluminium'),
+        CO('Dow', 'NYSE:DOW', 'dow', 'Polyéthylène, isolants'), CO('Borealis', '-', '', 'Isolants XLPE haute tension (non cotée, OMV / ADNOC)')] },
+      { titre: 'Fabricants de câbles', note: 'Haute tension sous-marine et terrestre (HVDC), moyenne et basse tension, câbles du bâtiment et de l\'industrie, fibre optique et télécom.', cos: [
+        CO('Prysmian', 'MIL:PRY', 'prysmian', 'N°1 mondial : énergie, HVDC, télécom'), CO('Nexans', 'EURONEXT:NEX', 'nexans', 'Haute tension, réseaux, bâtiment'), CO('NKT', 'OMXCOP:NKT', 'nkt-a-s', 'Haute tension, HVDC'),
+        CO('LS Corp', 'KRX:006260', 'ls-marine-solution', 'LS Cable & System, haute tension'), CO('Taihan Cable & Solution', 'KRX:001440', 'taihan-elec-wire', 'Haute tension'),
+        CO('Sumitomo Electric', 'TSE:5802', 'sumitomo-electric-industries', 'HVDC, fibre'), CO('Furukawa Electric', 'TSE:5801', 'furukawa-electric-co-ltd', 'Énergie, fibre'), CO('Fujikura', 'TSE:5803', 'fujikura', 'Fibre, centres de données'),
+        CO('Hengtong Optic-Electric', 'SSE:600487', 'hengtong-optic-electric-coltd', 'Sous-marin, fibre'), CO('ZTT (Zhongtian)', 'SSE:600522', 'jiangsu-zhongtian-technology-coltd', 'Sous-marin, fibre'),
+        CO('Southwire', '-', '', 'N°1 nord-américain (non cotée)'), CO('El Sewedy Electric', 'EGX:SWDY', 'elswedy-electric', 'Moyen-Orient, Afrique'), CO('Polycab', 'NSE:POLYCAB', 'polycab', 'Inde'), CO('KEI Industries', 'NSE:KEI', 'kei-industries', 'Inde'),
+        CO('Corning', 'NYSE:GLW', 'corning', 'Fibre optique'), CO('Belden', 'NYSE:BDC', 'belden', 'Câbles de données, industrie')] },
+      { titre: 'Équipements des liaisons', note: 'Stations de conversion HVDC, transformateurs, appareillage haute tension : achetés avec le câble pour les grands projets.', cos: [
+        CO('Hitachi', 'TSE:6501', 'hitachi', 'Hitachi Energy : HVDC, transformateurs'), CO('Siemens Energy', 'XETR:ENR', 'siemens-energy', 'HVDC, transformateurs'), CO('GE Vernova', 'NYSE:GEV', 'ge-verona', 'HVDC, réseaux'),
+        CO('HD Hyundai Electric', 'KRX:267260', 'hd-hyundai-construction-equipment', 'Transformateurs'), CO('Mitsubishi Electric', 'TSE:6503', 'mitsubishi', 'HVDC, appareillage')] },
+      { titre: 'Pose & installation', note: 'Navires câbliers, ensouillage, raccordement en mer. Sur les grands projets sous-marins, Prysmian, Nexans et NKT vendent le câble posé avec leurs propres navires (un goulot d\'étranglement) ; ailleurs, elles fabriquent seulement.', cos: [
+        CO('Prysmian', 'MIL:PRY', 'prysmian', 'Pose ses câbles sous-marins (navires Leonardo da Vinci, Monna Lisa…)'), CO('Nexans', 'EURONEXT:NEX', 'nexans', 'Pose ses câbles sous-marins (navire Aurora)'), CO('NKT', 'OMXCOP:NKT', 'nkt-a-s', 'Pose ses câbles sous-marins (NKT Victoria)'),
+        CO('DEME', 'EURONEXT:DEME', 'deme', 'Pose en mer'), CO('Subsea 7', 'OSL:SUBC', 'subsea-7', 'Travaux sous-marins'), CO('Saipem', 'MIL:SPM', 'saipem', 'Travaux en mer'),
+        CO('Jan De Nul', '-', '', 'Pose en mer (non cotée)'), CO('Van Oord', '-', '', 'Pose en mer (non cotée)')] },
+      { titre: 'Distribution', note: 'Grossistes en matériel électrique : la voie vers les installateurs pour les câbles basse tension du bâtiment.', cos: [
+        CO('Rexel', 'EURONEXT:RXL', 'rexel', 'Distribution électrique'), CO('WESCO', 'NYSE:WCC', 'wesco-international', 'Distribution électrique'), CO('Sonepar', '-', '', 'N°1 mondial (non cotée)')] },
+      { titre: 'Clients', note: 'Gestionnaires de réseaux (interconnexions, renforcement), éolien en mer, énergéticiens, télécoms et centres de données, bâtiment et industrie.', cos: [
+        CO('TenneT', '-', '', 'Réseau Pays-Bas / Allemagne (non cotée)'), CO('RTE', '-', '', 'Réseau France (non cotée)'), CO('Terna', 'MIL:TRN', 'terna', 'Réseau Italie'), CO('Elia Group', 'EURONEXT:ELI', 'elia', 'Réseau Belgique / Allemagne'),
+        CO('National Grid', 'LSE:NG.', 'national-grid', 'Réseau Royaume-Uni / États-Unis'), CO('Ørsted', 'OMXCOP:ORSTED', 'orsted', 'Éolien en mer'), CO('Iberdrola', 'BME:IBE', 'iberdrola', 'Énergéticien, réseaux'),
+        CO('E.ON', 'XETR:EOAN', 'e-on', 'Réseaux de distribution'), CO('Equinix', 'NASDAQ:EQIX', 'equinix', 'Centres de données')] }
+    ] },
+  electrification: { id: 'electrification', short: 'Électrification & réseaux (chaîne globale)', titre: 'Électrification & réseaux électriques', parent: null,
+    steps: [
+      { titre: ELEC_STEPS[0], note: 'Cuivre, aluminium, acier électrique, terres rares.', cos: [CO('Freeport-McMoRan', 'NYSE:FCX', 'freeport-mcmoran', 'Cuivre'), CO('Glencore', 'LSE:GLEN', 'glencore', 'Cuivre'), CO('Aurubis', 'XETR:NDA', 'aurubis-ag', 'Cuivre raffiné'), CO('Norsk Hydro', 'OSL:NHY', 'norsk-hydro', 'Aluminium')] },
+      { titre: ELEC_STEPS[1], note: 'Éolien, solaire, gaz, nucléaire : chaque nouvelle centrale doit être raccordée au réseau.', cos: [CO('Vestas', 'OMXCOP:VWS', 'vestas', 'Éoliennes'), CO('Siemens Energy', 'XETR:ENR', 'siemens-energy', 'Turbines, éolien'), CO('GE Vernova', 'NYSE:GEV', 'ge-verona', 'Turbines, éolien'), CO('Iberdrola', 'BME:IBE', 'iberdrola', 'Producteur'), CO('Ørsted', 'OMXCOP:ORSTED', 'orsted', 'Éolien en mer')] },
+      { titre: ELEC_STEPS[2], note: 'Câbles haute tension et HVDC, interconnexions entre pays, raccordement de l\'éolien en mer, stations de conversion. Sous-chaîne : « Câbles ».', cos: [CO('Prysmian', 'MIL:PRY', 'prysmian', 'Câbles HT / HVDC'), CO('Nexans', 'EURONEXT:NEX', 'nexans', 'Câbles HT'), CO('NKT', 'OMXCOP:NKT', 'nkt-a-s', 'Câbles HVDC'), CO('Hitachi', 'TSE:6501', 'hitachi', 'Hitachi Energy'), CO('Terna', 'MIL:TRN', 'terna', 'Gestionnaire de réseau'), CO('National Grid', 'LSE:NG.', 'national-grid', 'Gestionnaire de réseau'), CO('Elia Group', 'EURONEXT:ELI', 'elia', 'Gestionnaire de réseau')] },
+      { titre: ELEC_STEPS[3], note: 'Câbles moyenne et basse tension, transformateurs, tableaux électriques, distribution.', cos: [CO('Schneider Electric', 'EURONEXT:SU', 'schneider', 'Distribution électrique'), CO('ABB', 'SIX:ABBN', 'abb', 'Électrification'), CO('Legrand', 'EURONEXT:LR', 'legrand', 'Bâtiment'), CO('HD Hyundai Electric', 'KRX:267260', 'hd-hyundai-construction-equipment', 'Transformateurs'), CO('Rexel', 'EURONEXT:RXL', 'rexel', 'Grossiste'), CO('E.ON', 'XETR:EOAN', 'e-on', 'Réseaux de distribution')] },
+      { titre: ELEC_STEPS[4], note: 'Centres de données, véhicules électriques, pompes à chaleur, électrification de l\'industrie et des bâtiments.', cos: [CO('Equinix', 'NASDAQ:EQIX', 'equinix', 'Centres de données'), CO('Schneider Electric', 'EURONEXT:SU', 'schneider', 'Bâtiments, centres de données')] }
+    ] }
+};
 // Modèle intégré : les 18 points de la checklist de l'utilisateur (2026-11-10) + Actualités + Sources. Les sous-points
 // s'affichent en « à couvrir » sous le titre de chaque section ; quelques cartes reliées aux chiffres TradingView sont
 // déjà posées, elles se remplissent toutes seules pour une entreprise connue de l'onglet Analyse.
@@ -85,7 +128,7 @@ const WOLF_SECTIONS = [
   ['Répartition du chiffre d\'affaires', ['Par pays & régions', 'Par activités', 'Par filiales', 'Évolution historique'], [C('geo', '', { size: 'h' }), C('donut', '')]],
   ['Analyse des segments', ['Chiffre d\'affaires & croissance', 'Marges', 'Contribution aux résultats', 'Marché, concurrence, moat et perspectives par activité'], []],
   ['Marché', ['Taille (TAM / SAM / SOM)', 'Croissance', 'Tendances', 'Réglementation', 'Facteurs cycliques', 'Parts de marché'], []],
-  ['Chaîne de valeur', ['Fournisseurs', 'Clients & distributeurs', 'Position de l\'entreprise', 'Dépendances stratégiques', 'Matières premières'], []],
+  ['Chaîne de valeur', ['Fournisseurs', 'Clients & distributeurs', 'Position de l\'entreprise', 'Dépendances stratégiques', 'Matières premières'], [C('vchain', '', { size: 'h' })]],
   ['Avantage concurrentiel (moat)', ['Marque', 'Coûts de changement', 'Économies d\'échelle', 'Brevets', 'Effet de réseau', 'Coûts de production', 'Barrières à l\'entrée', 'Durabilité du moat'], []],
   ['Concurrence', ['Concurrents par activité', 'Parts de marché', 'Positionnement', 'Forces & faiblesses', 'Substituts', 'Nouveaux entrants'], [C('comparatif', '', { self: true })]],
   ['Perspectives de croissance', ['Moteurs organiques', 'Acquisitions', 'Nouveaux marchés', 'Investissements & innovations', 'Objectifs de la direction'], []],
@@ -107,6 +150,9 @@ const BUILTIN = {
   'wolf-chaine': { id: 'wolf-chaine', nom: 'Chaîne de valeur — 4 maillons', type: 'chaine', builtin: true, sections: ['Amont', 'Transformation', 'Distribution', 'Services & aval'].map(titre => ({ titre, hint: [], cards: [] })) },
   'vide': { id: 'vide', nom: 'Dossier vide (une section)', type: 'libre', builtin: true, sections: [{ titre: 'Notes', hint: [], cards: [] }] }
 };
+Object.values(CHAINES).forEach(ch => { BUILTIN['chaine-' + ch.id] = { id: 'chaine-' + ch.id, nom: 'Chaîne de valeur — ' + ch.titre, type: 'chaine', builtin: true,
+  sections: [{ titre: 'Vue d\'ensemble', hint: [], cards: [C('vchain', '', Object.assign({ size: 'h' }, vcFromChain(ch.id)))] }].concat(ch.steps.map(s => ({ titre: s.titre, hint: s.note ? [s.note] : [],
+    cards: s.cos.filter(co => co.sym).map(co => C('concurrent', '', { nom: co.nom, sym: co.sym, role: co.role, logo: co.logo })) }))) }; });
 
 /* ---------- état ---------- */
 let D = null, serverOk = false, loadErr = null, storeFile = '';
@@ -395,9 +441,9 @@ async function captureTv(){
     }
     if (t.self && t.prices) t.self.rows = addYearEndPrices(t.self.rows, t.prices);
     // autres entreprises citées (comparatif, cartes Entreprise)
-    const names = new Set();
-    Object.values(v.cards).forEach(c => { if (c.type === 'concurrent' && c.nom) names.add(c.nom); if (c.type === 'comparatif') compCols(c).forEach((n, i) => { if (!(i === 0 && (c.cols || [])[0] === '@self')) names.add(n); }); });
-    for (const n of names){ try { const o = await tvRowsFor(n, await tvSymbolFor(n)); if (o) t.others[norm(n)] = { rows: o.rows, devise: o.devise, logo: o.logo || '', ttm: o.ttm || null }; } catch(e){} }
+    const names = new Set(), symOf = {};
+    Object.values(v.cards).forEach(c => { if (c.type === 'concurrent' && c.nom){ names.add(c.nom); if (c.sym) symOf[c.nom] = c.sym; } if (c.type === 'comparatif') compCols(c).forEach((n, i) => { if (!(i === 0 && (c.cols || [])[0] === '@self')) names.add(n); }); });
+    for (const n of names){ try { const o = await tvRowsFor(n, await tvSymbolFor(n, symOf[n])); if (o) t.others[norm(n)] = { rows: o.rows, devise: o.devise, logo: o.logo || '', ttm: o.ttm || null }; } catch(e){} }
     v.tvData = t; ui.tvMsg = null; touch(); renderShell();
   } catch(e){ ui.tvMsg = '⚠ TradingView indisponible : ' + (e.message || 'erreur'); tvBar(); }
   tvBusy = false;
@@ -522,6 +568,8 @@ function createDoc(o){
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), versions: [], cur: null, facts: {} };
   const v = newVersion(tpl, 'Version 1 — ' + frDate(today()));
   d.versions.push(v); d.cur = v.id;
+  // carte « Chaîne de valeur » du modèle : remplie toute seule si l'entreprise figure dans une chaîne prête
+  if (o.type === 'entreprise'){ const k = vcChainFor(o.titre); if (k) Object.values(v.cards).forEach(x => { if (x.type === 'vchain' && !(x.steps || []).length) Object.assign(x, vcFromChain(k, o.titre)); }); }
   D.docs[d.id] = d; markDirty();
   return d;
 }
@@ -551,6 +599,7 @@ function addCard(secId, type, o){
   if (type === 'geo' && !c.rows) c.rows = [{ zone: 'Europe', v: null }, { zone: 'Amérique du Nord', v: null }, { zone: 'Asie-Pacifique', v: null }, { zone: 'Reste du monde', v: null }];
   if (type === 'these' && !c.phase) c.phase = Object.values(ver().cards).some(x => x.type === 'these' && x.phase !== 'finale' && x.id !== c.id) ? 'finale' : 'depart';
   if (type === 'bourse' && !ver().tvData && !RO) setTimeout(captureTv, 50);
+  if (type === 'vchain' && !c.steps){ const k = vcChainFor(doc().nom || doc().titre); if (k){ Object.assign(c, vcFromChain(k, doc().titre)); setTimeout(() => vcResolveLogos(c), 50); } else c.steps = []; }
   if (type === 'overlay'){ if (!c.keys) c.keys = ['fcfParAction', 'dividende']; if (!c.range) c.range = '10a'; if (!ver().tvData && !RO) setTimeout(captureTv, 50); }
   v.cards[c.id] = c; sec.cards.push(c.id); sec.collapsed = false;
   touch(); return c;
@@ -689,6 +738,7 @@ function cardTitle(c){
   if (c.type === 'overlay') return 'Cours et fondamentaux';
   if (c.type === 'kpi'){ const d = doc(); return c.bind ? bindLabel(d, c.bind) : (c.label || ''); }
   if (c.type === 'concurrent') return c.nom || '';
+  if (c.type === 'vchain') return c.cname || 'Chaîne de valeur';
   return '';
 }
 const sourceOf = (v, c) => c.srcId && v.cards[c.srcId] ? v.cards[c.srcId] : null;
@@ -786,6 +836,7 @@ function cardHtml(c){
     case 'these': body = theseHtml(c, false); break;
     case 'thesecmp': body = theseCmpHtml(c, false); break;
     case 'concurrent': body = concHtml(c, false); break;
+    case 'vchain': body = vcHtml(c, false); break;
     case 'source': body = srcHtml(c, false, v); break;
   }
   return chromeHtml(c, body, foot);
@@ -838,6 +889,91 @@ function concHtml(c, big){
     (big && known ? '<div class="aw-chart big2"><canvas data-chart="conc-' + c.id + '"></canvas></div>' : '') +
     (linked ? '<button type="button" class="aw-linkbtn" data-open="' + linked.id + '">Ouvrir son dossier ›</button>' : '');
 }
+/* ---------- Carte « Chaîne de valeur » (2026-11-11) : maillons de gauche à droite, sociétés avec logos TradingView,
+   l'entreprise du dossier entourée d'or, et la chaîne globale dans laquelle elle s'insère (bandeau du haut). ---------- */
+function firstWord(s){ return norm(s).split(/[\s.,()&]+/).filter(Boolean)[0] || ''; }
+function vcFromChain(id, focus){ const ch = CHAINES[id]; if (!ch) return null; return JSON.parse(JSON.stringify({ chain: id, cname: ch.titre, focus: focus || '', parent: ch.parent || null, steps: ch.steps })); }
+function vcFromDoc(id){
+  const d = D.docs[id], v = d && (d.versions.find(x => x.id === d.cur) || d.versions[d.versions.length - 1]); if (!v || !v.sections) return null;
+  const fz = v.tvData && v.tvData.others || {};
+  return { chainDoc: id, cname: d.titre, focus: '', parent: null, steps: v.sections.filter(s => !/actualite|source|vue d'ensemble/.test(norm(s.titre))).map(s => ({ titre: s.titre, note: (s.hint || [])[0] || '',
+    cos: s.cards.map(cid => v.cards[cid]).filter(x => x && x.type === 'concurrent' && x.nom).map(x => ({ nom: x.nom, sym: x.sym || '', role: x.role || '', logo: x.logo || (fz[norm(x.nom)] && fz[norm(x.nom)].logo) || '' })) })).filter(s => s.cos.length || s.note) };
+}
+// Chaîne prête où figure l'entreprise (la plus précise d'abord : « cables » avant « electrification »)
+function vcChainFor(name){ const w = firstWord(name); if (w.length < 3) return null; return Object.keys(CHAINES).find(k => CHAINES[k].steps.some(s => s.cos.some(co => co.sym && firstWord(co.nom) === w))) || null; }
+function vcSources(){ return Object.values(CHAINES).map(ch => ({ key: 'b:' + ch.id, l: ch.short })).concat(Object.values(D.docs).filter(x => x.type === 'chaine').map(x => ({ key: 'd:' + x.id, l: '🔗 ' + x.titre }))); }
+function vcImportInto(c, key){
+  const d = doc(), data = key.startsWith('b:') ? vcFromChain(key.slice(2), d.type === 'entreprise' ? d.titre : '') : vcFromDoc(key.slice(2)); if (!data) return;
+  let t = c;
+  if (c.steps && c.steps.length){ const sec = secOf(ver(), c.id); t = addCard(sec ? sec.id : null, 'vchain', { steps: [] }); if (!t) return; }
+  Object.assign(t, data); touch(); renderBody(); vcResolveLogos(t);
+  ui.toast = { text: '🔗 Chaîne « ' + data.cname + ' » importée' + (t !== c ? ' dans une nouvelle carte' : '') }; showToast();
+}
+let vcTimer = null; const vcBusy = {};
+async function vcResolveLogos(c){
+  if (RO || !serverOk || vcBusy[c.id]) return; vcBusy[c.id] = true; let ch = false;
+  try { for (const s of c.steps || []) for (const co of s.cos || []){
+    if (co.logo || co.nc || co.tried) continue; co.tried = true; ch = true;
+    if (!co.sym) co.sym = await tvSymbolFor(co.nom);
+    if (co.sym) co.logo = await tvLogo(co.sym);
+  } } finally { vcBusy[c.id] = false; }
+  if (ch){ touch(); refreshCard(c); }
+}
+// « ＋ Cartes Entreprise » : les sociétés cotées d'un maillon deviennent des cartes Entreprise (section Concurrence, sinon celle de la carte)
+function vcConcCards(c, k){
+  const v = ver(), st = (c.steps || [])[k]; if (!st) return;
+  const sec = (v.sections.find(s => /^concurrence/.test(norm(s.titre))) || v.sections.find(s => /concurrents?/.test(norm(s.titre)))) || secOf(v, c.id); if (!sec) return;
+  const fw = firstWord(c.focus || doc().titre), have = new Set(Object.values(v.cards).filter(x => x.type === 'concurrent').map(x => norm(x.nom))), added = [];
+  st.cos.filter(co => co.sym && firstWord(co.nom) !== fw && !have.has(norm(co.nom))).forEach(co => { addCard(sec.id, 'concurrent', { nom: co.nom, sym: co.sym, role: co.role || st.titre, logo: co.logo || '' }); added.push(co); });
+  ui.toast = { text: added.length ? '＋ ' + added.length + ' carte' + (added.length > 1 ? 's' : '') + ' Entreprise dans « ' + sec.titre + ' »' : 'Ces sociétés ont déjà leur carte Entreprise' }; showToast();
+  closeBig(); renderBody();
+  if (added.length && v.tvData && !RO) (async () => { for (const co of added){ try { const o = await tvRowsFor(co.nom, co.sym); if (o){ v.tvData.others = v.tvData.others || {}; v.tvData.others[norm(co.nom)] = { rows: o.rows, devise: o.devise, logo: o.logo || '', ttm: o.ttm || null }; } } catch(e){} } touch(); renderBody(); })();
+}
+function vcHtml(c, big){
+  const steps = c.steps || [];
+  if (!steps.length) return '<p class="at-faint">Importe une chaîne de valeur prête, ou construis-la maillon par maillon (⋯ › Modifier).</p>' + (isRo() ? '' : '<div class="aw-vc-imp">' + vcSources().map(x => '<button type="button" class="at-btn sm" data-vc-imp="' + esc(x.key) + '">' + esc(x.l) + '</button>').join('') + '</div>');
+  // Deux vues validées le 2026-11-11 (maquette https://claude.ai/artifact/FrPPWmmqRoepe2tbtmrf2X) : « Flux » (style C : maillons
+  // en flèches, sociétés en colonnes, bande or là où intervient l'entreprise) et « Au centre » (style B : l'entreprise au milieu,
+  // fournisseurs à gauche, partenaires et clients à droite). Carte : Flux par défaut (c.view) ; vue agrandie : Au centre (c.bigView).
+  const d = doc(), focusName = c.focus || (d && d.type === 'entreprise' ? d.titre : ''), fw = firstWord(focusName);
+  const shortName = focusName ? String(focusName).split(/[\s.,(]+/)[0] : '';
+  const isMe = co => !!fw && firstWord(co.nom) === fw;
+  const fIdx = steps.map((s, k) => (s.cos || []).some(isMe) ? k : -1).filter(k => k >= 0);
+  const view = fIdx.length ? (big ? (c.bigView || 'centre') : (c.view || 'flux')) : 'flux';
+  const par = c.parent && c.parent.steps ? '<div class="aw-vt-gl">Chaîne globale : ' + esc(c.parent.titre) + '</div><div class="aw-vt-global">' + c.parent.steps.map((t, i) => '<div class="aw-vt-gs' + ((c.parent.at || []).includes(i) ? ' on' : '') + '">' + esc(t) + '</div>').join('') + '</div>' : '';
+  const logoOf = (co, cls) => '<span class="aw-vt-logo' + (isMe(co) ? ' me' : '') + (co.logo ? '' : ' nc') + (cls ? ' ' + cls : '') + '">' + (co.logo ? '<img src="' + esc(co.logo) + '" alt="" loading="lazy">' : esc(co.nom.slice(0, 2).toUpperCase())) + '</span>';
+  const tip = co => esc(co.nom + (co.role ? ' · ' + co.role : '') + (co.sym ? ' · ' + co.sym : ' · non cotée'));
+  const nmCls = co => 'aw-vt-n' + (isMe(co) ? ' me' : '') + (co.sym ? '' : ' nc');
+  const concBtn = k => big && !isRo() && (steps[k].cos || []).some(co => co.sym && !isMe(co)) ? '<button type="button" class="at-btn sm aw-vt-add" data-vc-conc="' + k + '" title="Ajoute les sociétés cotées de ce maillon comme cartes Entreprise (logo et chiffres TradingView)">＋ Cartes Entreprise</button>' : '';
+  const more = rest => rest.length ? '<div class="aw-vf-co" title="' + esc(rest.map(x => x.nom).join(', ')) + '"><span class="aw-vt-logo more">+' + rest.length + '</span><span class="aw-vt-n nc">autres</span></div>' : '';
+  const toggle = fIdx.length ? '<span class="aw-range aw-vt-views"><button type="button" data-vc-view="flux" class="' + (view === 'flux' ? 'on' : '') + '">Flux</button><button type="button" data-vc-view="centre" class="' + (view === 'centre' ? 'on' : '') + '">' + esc(shortName || 'Entreprise') + ' au centre</button></span>' : '';
+  const head = '<div class="aw-vt-top">' + (c.titre || big ? '<span></span>' : '<div class="aw-vt-t">' + esc(c.cname || 'Chaîne de valeur') + '</div>') + toggle + '</div>';
+  let main;
+  if (view === 'flux'){
+    const max = big ? 99 : 7, cols = ['#8FA3B8', '#4A9FE0', '#5CC8D7', '#B8A1F0', '#F08A4B', '#4FD1A5'];
+    const heads = steps.map((s, k) => '<div class="aw-vf-h" style="background:' + (fIdx.includes(k) ? 'var(--gold)' : cols[k % cols.length]) + '">' + esc(s.titre || 'Maillon') + '</div>').join('');
+    const bodies = steps.map((s, k) => { const cos = s.cos || [], shown = cos.length > max ? cos.slice(0, max - 1) : cos;
+      return '<div class="aw-vf-col">' + shown.map(co => '<div class="aw-vf-co' + (isMe(co) ? ' me' : '') + '" title="' + tip(co) + '">' + logoOf(co) + '<span class="' + nmCls(co) + '">' + esc(co.nom) + (co.role ? '<small>' + esc(co.role) + '</small>' : '') + '</span></div>').join('') + more(cos.slice(shown.length)) +
+        (s.note && big ? '<p class="aw-vf-note">' + esc(s.note) + '</p>' : '') + concBtn(k) + '</div>'; }).join('');
+    const me = fIdx.length ? steps[fIdx[0]].cos.find(isMe) : null;
+    const band = fIdx.length ? '<div class="aw-vf-band" style="grid-column:' + (fIdx[0] + 1) + ' / ' + (fIdx[fIdx.length - 1] + 2) + '">' + logoOf(me, 'xs') + '<span>' + esc(shortName) + ' : ' + esc(fIdx.map(k => steps[k].titre).join(' · ')) + '</span></div>' : '';
+    main = '<div class="aw-vf-scroll"><div class="aw-vf" style="grid-template-columns:repeat(' + steps.length + ',minmax(' + (big ? 170 : 140) + 'px,1fr))">' + heads + bodies + band + '</div></div>';
+  } else {
+    const last = fIdx[fIdx.length - 1], first = fIdx[0], me = steps[first].cos.find(isMe);
+    const left = steps.map((s, k) => k).filter(k => k < last && !fIdx.includes(k)), right = fIdx.slice(1).concat(steps.map((s, k) => k).filter(k => k > last));
+    const maxC = big ? 99 : 6;
+    const grp = k => { const cos = (steps[k].cos || []).filter(co => !isMe(co)), shown = cos.length > maxC ? cos.slice(0, maxC - 1) : cos;
+      return '<div class="aw-vb-grp"><b>' + esc(steps[k].titre) + (fIdx.includes(k) ? ' <em>' + esc(shortName) + ' aussi</em>' : '') + '</b><div class="aw-vb-row">' + shown.map(co => '<span class="aw-vb-chip" title="' + tip(co) + '">' + logoOf(co, 'sm') + '<span class="' + nmCls(co) + '">' + esc(co.nom) + '</span></span>').join('') +
+        (shown.length < cos.length ? '<span class="aw-vb-chip" title="' + esc(cos.slice(shown.length).map(x => x.nom).join(', ')) + '"><span class="aw-vt-logo sm more">+' + (cos.length - shown.length) + '</span></span>' : '') + '</div>' + (big && steps[k].note ? '<p class="aw-vf-note">' + esc(steps[k].note) + '</p>' : '') + concBtn(k) + '</div>'; };
+    const peers = (steps[first].cos || []).filter(co => !isMe(co));
+    main = '<div class="aw-vb"><div class="aw-vb-side"><h4>Fournisseurs</h4>' + (left.length ? left.map(grp).join('') : '<p class="at-faint">—</p>') + '</div><div class="aw-vb-arrow" aria-hidden="true">→</div>' +
+      '<div class="aw-vb-mid" title="' + tip(me) + '">' + logoOf(me, 'xl') + '<div class="aw-vb-name">' + esc(focusName) + '</div><div class="aw-vb-roles">' + fIdx.map(k => '<span>' + esc(steps[k].titre) + '</span>').join('') + '</div>' +
+        (me.role ? '<p>' + esc(me.role) + '</p>' : '') + '<h4>Concurrents directs (' + esc(steps[first].titre) + ')</h4><div class="aw-vb-peers">' + peers.slice(0, big ? 99 : 9).map(co => '<span class="aw-vb-peer" title="' + tip(co) + '">' + logoOf(co, big ? '' : 'sm') + (big ? '<span class="' + nmCls(co) + '">' + esc(co.nom) + '</span>' : '') + '</span>').join('') + (!big && peers.length > 9 ? '<span class="aw-vt-logo sm more">+' + (peers.length - 9) + '</span>' : '') + '</div>' + concBtn(first) + '</div>' +
+      '<div class="aw-vb-arrow" aria-hidden="true">→</div><div class="aw-vb-side"><h4>Partenaires et clients</h4>' + (right.length ? right.map(grp).join('') : '<p class="at-faint">—</p>') + '</div></div>';
+  }
+  return '<div class="aw-vt' + (big ? ' big' : '') + '">' + par + head + main +
+    (big ? '<p class="aw-note">Or : ' + esc(focusName) + ' et ses maillons · grisé : société non cotée · logos TradingView.</p>' : '') + '</div>';
+}
 function srcHtml(c, big, v){
   const used = Object.values(v.cards).filter(x => x.srcId === c.id).length;
   const kind = { pdf: 'PDF', web: 'Site web', article: 'Article', video: 'Vidéo' }[c.kind] || 'Document';
@@ -864,7 +1000,29 @@ function seriesData(c, d){
 // ---------- Cours de bourse (relevé TradingView figé : clôtures hebdomadaires) ----------
 const YRS = [[5, '5 ans'], [10, '10 ans'], [20, '20 ans'], [99, 'Max']];
 // Sélecteur d'années des graphiques TradingView (barres / courbes), sur la carte et en grand
-function yrsSeg(c){ return c.mode === 'tv' ? '<div class="aw-bourse-h"><span></span><span class="aw-range">' + YRS.map(r => '<button type="button" data-years="' + r[0] + '" class="' + ((c.years || 10) === r[0] ? 'on' : '') + '">' + r[1] + '</button>').join('') + '</span></div>' : ''; }
+function yrsSeg(c){ return '<div class="aw-bourse-h"><button type="button" class="aw-yoy' + (c.yoy ? ' on' : '') + '" data-yoy title="Afficher au-dessus de chaque barre l\'évolution en % par rapport à la précédente">Δ % d\'une année à l\'autre</button>' +
+  (c.mode === 'tv' ? '<span class="aw-range">' + YRS.map(r => '<button type="button" data-years="' + r[0] + '" class="' + ((c.years || 10) === r[0] ? 'on' : '') + '">' + r[1] + '</button>').join('') + '</span>' : '') + '</div>'; }
+// Évolution de chaque valeur par rapport à la précédente connue, en % ; base négative : rapportée à sa valeur absolue.
+function yoyList(vals){ let p = null; return (vals || []).map(v => { if (v == null || !isFinite(v)) return null; const g = p != null && p !== 0 ? (v - p) / Math.abs(p) * 100 : null; p = v; return g; }); }
+function prevOf(vals, j){ for (let i = j - 1; i >= 0; i--) if (vals[i] != null && isFinite(vals[i])) return vals[i]; return null; }
+const fmtPct = g => (g >= 0 ? '+' : '') + fr(g, Math.abs(g) < 10 ? 1 : 0) + ' %';
+// Étiquettes vertes / rouges au-dessus des barres (ou des points d'une courbe) ; verticales si la barre est trop étroite.
+const yoyPlugin = { id: 'awYoy', afterDatasetsDraw(ch, args, o){
+  const ctx = ch.ctx, area = ch.chartArea, n = ch.data.labels.length || 1, size = o && o.big ? 13 : 10;
+  ctx.save(); ctx.font = '700 ' + size + 'px "Plus Jakarta Sans", sans-serif';
+  ch.data.datasets.forEach((ds, i) => {
+    if (!ch.isDatasetVisible(i)) return;
+    const meta = ch.getDatasetMeta(i), g = yoyList(ds.data), isBar = meta.type === 'bar';
+    meta.data.forEach((el, j) => {
+      if (g[j] == null || !el) return;
+      const txt = fmtPct(g[j]), w = isBar ? el.width : area.width / n, top = isBar ? Math.min(el.y, el.base) : el.y;
+      ctx.fillStyle = g[j] >= 0 ? '#4FD1A5' : '#E5636B';
+      if (ctx.measureText(txt).width + 4 > w){ ctx.save(); ctx.translate(el.x, top - 5); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(txt, 0, 0); ctx.restore(); }
+      else { ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(txt, el.x, top - (isBar ? 4 : 7)); }
+    });
+  });
+  ctx.restore();
+} };
 const RANGES = [['1a', 1, '1 an'], ['5a', 5, '5 ans'], ['10a', 10, '10 ans'], ['max', 99, 'Max']];
 function pricesFor(c){
   const p = ver().tvData && ver().tvData.prices; if (!p || !p.closes.length) return null;
@@ -1016,8 +1174,11 @@ function chartConfig(c, d, big){
   const u2 = s.sets.find((x, i) => i > 0 && first && x.u !== first.u);
   const scales = { x: { grid: { display: false }, ticks: tick }, y: { grid: { color: 'rgba(255,255,255,0.06)' }, ticks: Object.assign({ callback: fmtTick(first ? first.u : '') }, tick), beginAtZero: c.type === 'barres' } };
   if (c.type === 'barres' && u2) scales.y1 = { position: 'right', grid: { display: false }, ticks: Object.assign({ callback: fmtTick(u2.u) }, tick) };
-  return { type: 'bar', data: { labels: s.labels, datasets }, options: { responsive: true, maintainAspectRatio: false, animation: { duration: 600 }, interaction: { mode: 'index', intersect: false },
-    plugins: { legend: { display: datasets.length > 1, labels: { color: '#B4BAC4', boxWidth: 10, boxHeight: 10, font: tick.font } }, tooltip: { callbacks: { label: x => ' ' + x.dataset.label + ' : ' + fmtVal(x.dataset._u === 'Mcur' ? x.raw * 1000 : x.raw, x.dataset._u, x.dataset._dev) } } }, scales } };
+  const yoyTxt = x => { if (!c.yoy) return ''; const p = prevOf(x.dataset.data, x.dataIndex); if (p == null || p === 0 || x.raw == null) return ''; return '  (' + fmtPct((x.raw - p) / Math.abs(p) * 100) + (x.dataset._u === '%' ? ', ' + (x.raw - p >= 0 ? '+' : '') + fr(x.raw - p, 1) + ' pt' : '') + ')'; };
+  const narrow = !big && s.labels.length * Math.max(1, datasets.filter(x => x.type === 'bar').length) > 8;
+  return { type: 'bar', data: { labels: s.labels, datasets }, plugins: c.yoy ? [yoyPlugin] : [], options: { responsive: true, maintainAspectRatio: false, animation: { duration: 600 }, interaction: { mode: 'index', intersect: false },
+    layout: { padding: { top: c.yoy ? (narrow ? 44 : big ? 26 : 20) : 0 } },
+    plugins: { awYoy: { big }, legend: { display: datasets.length > 1, labels: { color: '#B4BAC4', boxWidth: 10, boxHeight: 10, font: tick.font } }, tooltip: { callbacks: { label: x => ' ' + x.dataset.label + ' : ' + fmtVal(x.dataset._u === 'Mcur' ? x.raw * 1000 : x.raw, x.dataset._u, x.dataset._dev) + yoyTxt(x) } } }, scales } };
 }
 function drawCharts(root, list, big){
   if (!window.Chart) return;
@@ -1109,9 +1270,12 @@ function wireBody(host){
     if (ds.cUnfold !== undefined && c){ c.collapsed = false; touch(); renderBody(); return; }
     if (ds.range && c){ c.range = ds.range; if (!isRo()) touch(); refreshCard(c); return; }
     if (ds.years && c){ c.years = Number(ds.years); if (!isRo()) touch(); refreshCard(c); return; }
+    if (ds.yoy !== undefined && c){ c.yoy = !c.yoy; if (!isRo()) touch(); refreshCard(c); return; }
+    if (ds.vcView && c){ c.view = ds.vcView; if (!isRo()) touch(); refreshCard(c); return; }
     if (ds.sTog !== undefined && sec){ sec.collapsed = !sec.collapsed; if (!RO) touch(); renderBody(); return; }
     if (ds.sTitle !== undefined && sec && !isRo()){ inlineRename(b, sec.titre, t => { sec.titre = t; touch(); renderBody(); }); return; }
     if (isRo()) return;
+    if (ds.vcImp && c){ vcImportInto(c, ds.vcImp); return; }
     if (ds.sAdd !== undefined && sec){ ui.lib = { secId: sec.id, q: '' }; renderLibrary(); return; }
     if (ds.sDel !== undefined && sec){ deleteSection(sec.id); return; }
     if ((ds.sUp !== undefined || ds.sDown !== undefined) && sec){ const i = v.sections.indexOf(sec), j = i + (ds.sUp !== undefined ? -1 : 1); if (j < 0 || j >= v.sections.length) return; v.sections.splice(i, 1); v.sections.splice(j, 0, sec); touch(); renderBody(); }
@@ -1303,7 +1467,8 @@ function bigBody(c){
       const cagrs = s.sets.map(x => { const vals = x.values.filter(y => y != null); const n = vals.length; if (n < 2 || x.u === '%' || x.u === 'x' || vals[0] <= 0 || vals[n - 1] <= 0) return null; return { name: x.name, g: (Math.pow(vals[n - 1] / vals[0], 1 / (n - 1)) - 1) * 100, n: n - 1 }; }).filter(Boolean);
       return yrsSeg(c) + '<div class="aw-chart xl"><canvas data-chart="' + c.id + '"></canvas></div>' +
         (cagrs.length ? '<div class="aw-stats">' + cagrs.map(g => statBox(g.name + ' : croissance annuelle sur ' + g.n + ' ans', fr(g.g, 1) + ' %/an')).join('') + '</div>' : '') +
-        '<div class="aw-tscroll"><table class="aw-table big"><thead><tr><th></th>' + s.labels.map(y => '<th>' + esc(y) + '</th>').join('') + '</tr></thead><tbody>' + s.sets.map(x => '<tr><td class="lb"><span class="aw-dot" style="background:' + x.color + '"></span> ' + esc(x.name) + '</td>' + x.values.map(y => '<td>' + fmtVal(y, x.u, x.devise) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>';
+        '<div class="aw-tscroll"><table class="aw-table big"><thead><tr><th></th>' + s.labels.map(y => '<th>' + esc(y) + '</th>').join('') + '</tr></thead><tbody>' + s.sets.map(x => '<tr><td class="lb"><span class="aw-dot" style="background:' + x.color + '"></span> ' + esc(x.name) + '</td>' + x.values.map(y => '<td>' + fmtVal(y, x.u, x.devise) + '</td>').join('') + '</tr>' +
+          '<tr class="aw-yoy-row"><td class="lb">↳ évolution</td>' + yoyList(x.values).map(g => '<td class="' + (g == null ? '' : g >= 0 ? 'pos' : 'neg') + '">' + (g == null ? '—' : fmtPct(g)) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>';
     }
     case 'comparatif': return compTableHtml(c, true) + '<p class="aw-note">Vert : la meilleure valeur de la ligne · rouge : la moins bonne. Chiffres TradingView ' + (c.period === 'fy' ? 'du dernier exercice annuel' : 'des 12 derniers mois') + (ver().tvData ? ' relevés le ' + frDate(ver().tvData.at) : '') + ', sauf valeurs saisies à la main.</p>';
     case 'bourse': return bourseHtml(c, true);
@@ -1317,6 +1482,7 @@ function bigBody(c){
     case 'these': return theseHtml(c, true);
     case 'thesecmp': return theseCmpHtml(c, true);
     case 'concurrent': return concHtml(c, true);
+    case 'vchain': return vcHtml(c, true);
     case 'source': return srcHtml(c, true, v);
     case 'image': return '<div class="aw-big-imgs">' + (c.imgs || []).map(im => '<figure><img src="' + esc(mediaUrl(im.f)) + '" alt="">' + (im.leg ? '<figcaption>' + esc(im.leg) + '</figcaption>' : '') + '</figure>').join('') + '</div>' + (plain(c.html) ? '<div class="aw-text xl">' + clean(c.html) + '</div>' : '');
     case 'citation': return '<div class="aw-quote-mark xl">«</div><div class="aw-quote xl">' + clean(c.html) + '</div><div class="aw-quote-l">' + esc(c.titre || '') + (c.date ? ' · ' + frDate(c.date) : '') + '</div>';
@@ -1349,6 +1515,9 @@ function openBig(cid, fromEl){
     const g = e.target.closest('[data-big-go]'); if (g){ const o = bigOrder(ui.big), j = (o.indexOf(ui.big) + Number(g.dataset.bigGo) + o.length) % o.length; openBig(o[j]); return; }
     if (e.target.closest('[data-big-edit]')){ const id = ui.big; closeBig(); ui.edit = id; renderEditor(); return; }
     const op = e.target.closest('[data-open]'); if (op){ closeBig(); openDoc(op.dataset.open); return; }
+    const yo = e.target.closest('[data-yoy]'); if (yo){ const c = ver().cards[ui.big]; if (c){ c.yoy = !c.yoy; if (!isRo()) touch(); refreshCard(c); openBig(c.id); } return; }
+    const vv = e.target.closest('[data-vc-view]'); if (vv){ const c = ver().cards[ui.big]; if (c){ c.bigView = vv.dataset.vcView; if (!isRo()) touch(); openBig(c.id); } return; }
+    const vk = e.target.closest('[data-vc-conc]'); if (vk && !isRo()){ const c = ver().cards[ui.big]; if (c) vcConcCards(c, +vk.dataset.vcConc); return; }
     const yb = e.target.closest('[data-years]'); if (yb){ const c = ver().cards[ui.big]; if (c){ c.years = Number(yb.dataset.years); if (!isRo()) touch(); refreshCard(c); openBig(c.id); } return; }
     const rg = e.target.closest('[data-range]'); if (rg){ const c = ver().cards[ui.big]; if (c){ c.range = rg.dataset.range; if (!isRo()) touch(); refreshCard(c); openBig(c.id); } }
   };
@@ -1389,10 +1558,10 @@ function editorFields(c, d, v){
       (c.rows || []).map((r, k) => '<div class="aw-ed-row"><select class="aw-colsel" data-row-color="' + k + '" style="background:' + (r.color || SERIES_COLORS[k % SERIES_COLORS.length]) + '">' + SERIES_COLORS.map(col => '<option value="' + col + '" style="background:' + col + '"' + ((r.color || SERIES_COLORS[k % SERIES_COLORS.length]) === col ? ' selected' : '') + '></option>').join('') + '</select><input class="at-in" data-row-label="' + k + '" value="' + esc(r.label || '') + '" placeholder="Catégorie"><input class="at-in num" data-row-v="' + k + '" value="' + val(r.v) + '" placeholder="Montant"><button type="button" class="at-x" data-row-del="' + k + '">✕</button></div>').join('') +
       '<button type="button" class="at-btn sm" data-row-add>＋ Catégorie</button></div>' + srcSel;
     case 'barres': case 'courbes': {
-      const tv = c.mode === 'tv';
+      const tv = c.mode === 'tv', yoyCk = '<label class="aw-ed-check"><input type="checkbox" data-yoyck' + (c.yoy ? ' checked' : '') + '> Afficher l\'évolution en % d\'une année à l\'autre</label>';
       return common + '<div class="at-seg big"><button type="button" class="' + (tv ? 'on' : '') + '" data-mode="tv">TradingView</button><button type="button" class="' + (tv ? '' : 'on') + '" data-mode="manuel">Saisie à la main</button></div>' +
-        (tv ? '<div class="aw-ed-checks">' + Object.keys(TVF).filter(k => k !== 'croissanceCA' || true).map(k => '<label><input type="checkbox" data-key="' + k + '"' + ((c.keys || []).includes(k) ? ' checked' : '') + '> ' + esc(TVF[k].l) + '</label>').join('') + '</div><label>Années affichées<select class="at-sel" data-f="years">' + [5, 10, 15, 20, 99].map(n => '<option value="' + n + '"' + ((c.years || 10) === n ? ' selected' : '') + '>' + (n === 99 ? "Tout l'historique" : n + ' ans') + '</option>').join('') + '</select></label>'
-          : '<label>Années ou périodes (séparées par des virgules)<input class="at-in" data-labels value="' + esc((c.labels || []).join(', ')) + '"></label><label>Unité<input class="at-in" data-f="unit" value="' + esc(c.unit || '') + '"></label><div class="aw-ed-rows">' +
+        (tv ? '<div class="aw-ed-checks">' + Object.keys(TVF).filter(k => k !== 'croissanceCA' || true).map(k => '<label><input type="checkbox" data-key="' + k + '"' + ((c.keys || []).includes(k) ? ' checked' : '') + '> ' + esc(TVF[k].l) + '</label>').join('') + '</div><label>Années affichées<select class="at-sel" data-f="years">' + [5, 10, 15, 20, 99].map(n => '<option value="' + n + '"' + ((c.years || 10) === n ? ' selected' : '') + '>' + (n === 99 ? "Tout l'historique" : n + ' ans') + '</option>').join('') + '</select></label>' + yoyCk
+          : yoyCk + '<label>Années ou périodes (séparées par des virgules)<input class="at-in" data-labels value="' + esc((c.labels || []).join(', ')) + '"></label><label>Unité<input class="at-in" data-f="unit" value="' + esc(c.unit || '') + '"></label><div class="aw-ed-rows">' +
             (c.series || []).map((s, k) => '<div class="aw-ed-series"><div class="aw-ed-row"><select class="aw-colsel" data-ser-color="' + k + '" style="background:' + (s.color || SERIES_COLORS[k]) + '">' + SERIES_COLORS.map(col => '<option value="' + col + '" style="background:' + col + '"' + ((s.color || SERIES_COLORS[k]) === col ? ' selected' : '') + '></option>').join('') + '</select><input class="at-in" data-ser-name="' + k + '" value="' + esc(s.name || '') + '" placeholder="Nom de la série"><button type="button" class="at-x" data-ser-del="' + k + '">✕</button></div><input class="at-in" data-ser-values="' + k + '" value="' + esc((s.values || []).map(x => x == null ? '' : String(x).replace('.', ',')).join('; ')) + '" placeholder="Valeurs séparées par ; (ex. 6,1; 6,4; 6,9)"></div>').join('') +
             '<button type="button" class="at-btn sm" data-ser-add>＋ Série</button></div>') + srcSel;
     }
@@ -1403,6 +1572,15 @@ function editorFields(c, d, v){
         '<b class="aw-ed-h">Indicateurs</b><div class="aw-ed-checks">' + Object.keys(TVF).map(k => '<label><input type="checkbox" data-metric="' + k + '"' + ((c.metrics || []).includes(k) ? ' checked' : '') + '> ' + esc(TVF[k].l) + '</label>').join('') + '</div>' +
         '<label>Période des chiffres<select class="at-sel" data-f="period"><option value="ttm"' + (c.period !== 'fy' ? ' selected' : '') + '>12 derniers mois (4 trimestres glissants)</option><option value="fy"' + (c.period === 'fy' ? ' selected' : '') + '>Dernier exercice annuel</option></select></label>' +
         '<b class="aw-ed-h">Corriger une valeur (vide = TradingView)</b><div class="aw-tscroll"><table class="aw-table ed"><thead><tr><th></th>' + cols.map(n => '<th>' + esc(n.slice(0, 12)) + '</th>').join('') + '</tr></thead><tbody>' + (c.metrics || []).filter(k => TVF[k]).map(k => '<tr><td class="lb">' + esc(TVF[k].l) + '</td>' + cols.map((n, i) => { const ov = c.over && c.over[k] && c.over[k][i]; const auto = compValue(Object.assign({}, c, { over: {} }), n, k, i); return '<td><input class="at-in num" data-over="' + k + '|' + i + '" value="' + (ov != null && ov !== '' ? esc(String(ov).replace('.', ',')) : '') + '" placeholder="' + (auto == null ? '—' : esc(fr(auto, TVF[k].d))) + '"></td>'; }).join('') + '</tr>').join('') + '</tbody></table></div>';
+    }
+    case 'vchain': {
+      const lines = s => (s.cos || []).map(co => co.nom + ' | ' + (co.sym || (co.nc ? '-' : '')) + (co.role ? ' | ' + co.role : '')).join('\n');
+      return common + '<b class="aw-ed-h">Importer une chaîne prête</b><div class="aw-vc-imp">' + vcSources().map(x => '<button type="button" class="at-btn sm" data-vc-imp="' + esc(x.key) + '">' + esc(x.l) + '</button>').join('') + '</div>' +
+        '<p class="at-faint">Si cette carte est déjà remplie, la chaîne importée arrive dans une NOUVELLE carte : rien n\'est remplacé.</p>' +
+        '<label>Nom de la chaîne<input class="at-in" data-f="cname" value="' + esc(c.cname || '') + '"></label><label>Entreprise mise en avant (anneau or)<input class="at-in" data-f="focus" value="' + esc(c.focus || '') + '" placeholder="' + esc(d.nom || d.titre || '') + '"></label>' +
+        '<b class="aw-ed-h">Maillons</b><div class="aw-ed-rows">' + (c.steps || []).map((s, k) => '<div class="aw-ed-series"><div class="aw-ed-row"><input class="at-in" data-vc-t="' + k + '" value="' + esc(s.titre || '') + '" placeholder="Maillon"><button type="button" class="at-x" data-vc-del="' + k + '" title="Retirer ce maillon">✕</button></div>' +
+          '<input class="at-in" data-vc-note="' + k + '" value="' + esc(s.note || '') + '" placeholder="Note (facultatif)"><textarea class="at-in" rows="4" data-vc-cos="' + k + '" placeholder="Une société par ligne : Nom | symbole TradingView | rôle">' + esc(lines(s)) + '</textarea></div>').join('') +
+        '<button type="button" class="at-btn sm" data-vc-add>＋ Maillon</button></div><p class="at-faint">Symbole « - » = société non cotée. Sans symbole, il est cherché sur TradingView par le nom ; les logos viennent tout seuls. Dans la vue agrandie, « ＋ Cartes Entreprise » ajoute les sociétés d\'un maillon dans la section Concurrence.</p>';
     }
     case 'concurrent': return '<label>Entreprise<input class="at-in" list="awCos" data-f="nom" value="' + esc(c.nom || '') + '"><datalist id="awCos">' + companyOptions() + '</datalist></label>' +
       '<div class="at-row2"><label>Pays<input class="at-in" data-f="pays" value="' + esc(c.pays || '') + '"></label><label>Rôle<input class="at-in" data-f="role" value="' + esc(c.role || '') + '" placeholder="Concurrent direct, client…"></label></div>' +
@@ -1468,6 +1646,12 @@ function wireEditor(p, c){
     else if (ds.geoZone !== undefined){ c.rows[+ds.geoZone].zone = t.value; changed(false); }
     else if (ds.geoV !== undefined){ c.rows[+ds.geoV].v = num(t.value); changed(false); }
     else if (ds.cover !== undefined){ c.over = c.over || {}; c.over[ds.cover] = t.value.trim() === '' ? null : num(t.value); changed(false); }
+    else if (ds.vcT !== undefined){ c.steps[+ds.vcT].titre = t.value; changed(false); }
+    else if (ds.vcNote !== undefined){ c.steps[+ds.vcNote].note = t.value; changed(false); }
+    else if (ds.vcCos !== undefined){ const st = c.steps[+ds.vcCos], old = st.cos || [];
+      st.cos = t.value.split('\n').map(l => l.split('|').map(x => x.trim())).filter(a => a[0]).map(a => { const raw = a[1] || '', nc = raw === '-', sym = nc ? '' : raw.toUpperCase(), o = old.find(x => norm(x.nom) === norm(a[0]) && (x.sym || '') === sym && !!x.nc === nc);
+        return Object.assign({}, o || {}, { nom: a[0], sym, nc: nc || undefined, role: a.slice(2).join(' | ') }); });
+      changed(false); clearTimeout(vcTimer); vcTimer = setTimeout(() => vcResolveLogos(c), 1500); }
     else if (ds.over !== undefined){ const [k, i] = ds.over.split('|'); c.over = c.over || {}; c.over[k] = c.over[k] || []; c.over[k][+i] = t.value.trim() === '' ? null : num(t.value); changed(false); }
   });
   p.addEventListener('change', e => {
@@ -1479,6 +1663,7 @@ function wireEditor(p, c){
     else if (ds.withconc !== undefined){ c.withConc = t.checked; changed(true); }
     else if (ds.ovprice !== undefined){ c.price = t.checked; changed(false); }
     else if (ds.ovnorm !== undefined){ c.norm = t.checked; changed(false); }
+    else if (ds.yoyck !== undefined){ c.yoy = t.checked; changed(false); }
     else if (ds.rowColor !== undefined){ c.rows[+ds.rowColor].color = t.value; t.style.background = t.value; changed(false); }
     else if (ds.serColor !== undefined){ c.series[+ds.serColor].color = t.value; t.style.background = t.value; changed(false); }
   });
@@ -1488,6 +1673,9 @@ function wireEditor(p, c){
     if (ds.edClose !== undefined){ ui.edit = null; renderEditor(); return; }
     if (ds.cmd){ const k = ds.cmd; if (k === 'hilite') document.execCommand('hiliteColor', false, 'rgba(240,200,119,0.45)'); else if (k === 'h2') document.execCommand('formatBlock', false, document.queryCommandValue('formatBlock').toLowerCase() === 'h2' ? 'div' : 'h2'); else document.execCommand(k, false, null); const r = p.querySelector('[data-rich]'); if (r){ c.html = clean(r.innerHTML); changed(false); } return; }
     if (ds.mode){ c.mode = ds.mode; if (c.mode === 'manuel' && !c.series){ const s = seriesData(Object.assign({}, c, { mode: 'tv' }), doc()); c.labels = s.labels.length ? s.labels.map(String) : ['2023', '2024', '2025']; c.series = s.sets.length ? s.sets.map(x => ({ name: x.name, values: x.values, color: x.color })) : [{ name: 'Série 1', values: [], color: SERIES_COLORS[0] }]; } changed(true); return; }
+    if (ds.vcImp){ vcImportInto(c, ds.vcImp); renderEditor(); return; }
+    if (ds.vcAdd !== undefined){ c.steps = c.steps || []; c.steps.push({ titre: '', note: '', cos: [] }); changed(true); return; }
+    if (ds.vcDel !== undefined){ c.steps.splice(+ds.vcDel, 1); changed(true); return; }
     if (ds.rowAdd !== undefined){ c.rows = c.rows || []; c.rows.push({ label: '', v: null }); changed(true); return; }
     if (ds.rowDel !== undefined){ c.rows.splice(+ds.rowDel, 1); changed(true); return; }
     if (ds.serAdd !== undefined){ c.series = c.series || []; c.series.push({ name: '', values: [], color: SERIES_COLORS[c.series.length % SERIES_COLORS.length] }); changed(true); return; }
@@ -1567,6 +1755,7 @@ function libPreview(k){
     case 'courbes': return '<svg viewBox="0 0 100 50" width="76" height="38"><polyline points="0,40 20,34 40,36 60,22 80,16 100,8" fill="none" stroke="#4A9FE0" stroke-width="3"/><polyline points="0,45 20,43 40,40 60,37 80,33 100,30" fill="none" stroke="#D9A441" stroke-width="3"/></svg>';
     case 'comparatif': return '<span class="cmp"><i></i><i class="g"></i><i></i><i class="r"></i></span>';
     case 'concurrent': return '<span class="logo">AB</span>';
+    case 'vchain': return '<span class="cmp"><i class="g"></i><i></i><i></i><i></i></span>';
     case 'source': return '<span class="pg"></span>';
     case 'bourse': return '<svg viewBox="0 0 100 50" width="80" height="40"><polyline points="0,38 10,30 20,34 30,22 40,26 50,14 60,20 70,12 80,18 90,6 100,10" fill="none" stroke="#D9A441" stroke-width="2.5"/></svg>';
     case 'overlay': return '<svg viewBox="0 0 100 50" width="80" height="40"><polyline points="0,38 10,30 20,34 30,22 40,26 50,14 60,20 70,12 80,18 90,6 100,10" fill="none" stroke="#D9A441" stroke-width="2"/><polyline points="0,44 25,40 50,33 75,26 100,20" fill="none" stroke="#4A9FE0" stroke-width="2.5"/><polyline points="0,47 25,45 50,42 75,40 100,37" fill="none" stroke="#F0C877" stroke-width="2.5"/></svg>';

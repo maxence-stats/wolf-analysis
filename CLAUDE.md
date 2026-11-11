@@ -716,6 +716,19 @@ TradingView (ex. Prysmian) : convertis en devise de cotation par `tvFetchSnapsho
 **Parcours (remplace l'Organigramme, 2026-11-11)** : vue « Parcours » = ligne d'étapes de gauche à droite (sections avec cartes,
 sans « Actualités » ni « Sources »), une étape à la fois avec ses cartes, « ← / → » (boutons et flèches du clavier). `renderTour`,
 `tourGo`. L'ancien code d'organigramme reste mais n'est plus affiché.
+**Δ % et chaîne de valeur (2026-11-11, 3e passe)** : cartes barres / courbes : bouton « Δ % d'une année à l'autre » (`c.yoy`,
+aussi dans l'éditeur) = étiquettes vertes/rouges au-dessus de chaque barre (`yoyPlugin`, verticales si la barre est étroite), variation
+dans l'infobulle (+ points pour les séries en %), ligne « ↳ évolution » dans le tableau de la vue agrandie. Base négative : rapportée à
+sa valeur absolue. Nouvelle carte `vchain` (« Chaîne de valeur ») : maillons de gauche à droite, logos TradingView, entreprise du dossier
+en or, bandeau de la chaîne globale (`c.parent`). Chaînes prêtes dans `CHAINES` (`cables` = sous-chaîne de Prysmian/Nexans/NKT,
+`electrification` = chaîne globale ; symboles et logoid vérifiés le 11/11) ; aussi importable depuis un dossier « Chaîne de valeur »
+de l'Atelier (`vcFromDoc`). Remplie toute seule à la création d'un dossier ou à l'ajout de la carte si l'entreprise y figure
+(`vcChainFor`). Importer sur une carte déjà remplie = NOUVELLE carte (rien d'écrasé). « ＋ Cartes Entreprise » (vue agrandie) crée
+les cartes concurrents d'un maillon dans la section « Concurrence » (avec `sym`, utilisé par `captureTv`). Modèles de dossier
+`chaine-cables` et `chaine-electrification` dans `BUILTIN`. **Deux vues choisies par l'utilisateur** (maquette
+https://claude.ai/artifact/FrPPWmmqRoepe2tbtmrf2X) : « Flux » (style C, par défaut sur la carte, `c.view`) et « <entreprise> au centre »
+(style B, par défaut dans la vue agrandie, `c.bigView`), bascule par boutons ; les tuiles (style A) ont été écartées. Prysmian / Nexans /
+NKT figurent aussi dans « Pose & installation » (elles posent leurs câbles sous-marins avec leurs navires).
 Le texte ci-dessous décrit l'ancienne carte mentale (historique).
 
 Nouvel onglet principal (`#pageAtelier`, `js/atelier.js`, CSS `.at-*` en fin de `style.css`), À CÔTÉ du Cerveau numérique (qui
