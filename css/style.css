@@ -3053,7 +3053,7 @@
 .pb-tpls{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
 .pb-tpl{background:var(--card-bg);border:1px solid rgba(255,255,255,.05);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:6px;text-align:left;color:var(--text);cursor:pointer;font:inherit;transition:border-color .15s,transform .15s}
 .pb-tpl:hover{border-color:var(--gold);transform:translateY(-2px)} .pb-tpl:focus-visible{outline:2px solid var(--gold-2);outline-offset:2px}
-.pb-tpl .pb-ic{font-size:26px} .pb-tpl b{font-family:"Roboto Slab",Georgia,serif;font-size:17px} .pb-tpl span:last-child{font-size:12.5px;color:var(--text-dim)}
+.pb-tpl .pb-ic{font-size:26px} .pb-tpl b{font-family:Anton,Impact,sans-serif;font-weight:400;font-size:20px;letter-spacing:.01em;text-transform:uppercase} .pb-tpl span:last-child{font-size:12.5px;color:var(--text-dim)}
 .pb-bar{display:flex;align-items:center;gap:14px}
 .pb-back,.pb-sec{background:var(--panel-2);border:1px solid var(--hair);color:var(--text);font:600 13px var(--font-body);padding:8px 14px;border-radius:10px;cursor:pointer}
 .pb-back:hover,.pb-sec:hover{border-color:var(--gold)} .pb-sec.small{padding:6px 10px;font-size:12px;align-self:flex-start}

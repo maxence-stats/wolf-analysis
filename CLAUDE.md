@@ -758,9 +758,11 @@ reste intact, décision de l'utilisateur). Répertoire visuel de toutes les anal
   performance d'une action ; Entreprises : valorisation, classement comparatif, duel 1 000 €, historique d'un chiffre ; Agenda :
   résultats à venir, verdict, bonnes affaires du secteur, carte de l'Atelier). Posts DESSINÉS sur canvas (PNG 1080 px, carré
   1080 / portrait 1350 / story 1920), blocs à hauteur connue répartis par `compose()` (une liste perd des lignes si ça déborde).
-  **Charte Wolf Academy, PAS celle des références** (l'utilisateur : « ça se voit que j'ai pompé l'inspiration ») : titres Roboto
-  Slab 700, sous-titres Lora italique or clair, étiquettes JetBrains Mono espacées, filet or, fond uni #0E1114, en-tête tête de loup +
-  « WOLF ACADEMY INVEST ». Logos TradingView chargés en CORS (jamais d'image sans CORS : sinon export impossible).
+  **Style VALIDÉ le 2026-11-11 (maquette https://claude.ai/artifact/BJeSzekJZektRW5WmngoaG)** : titres Anton en capitales SANS
+  ACCENTS (`up()`), surlignage or (sous-titre), logos en grand (tuile arrondie ou rond + anneau or, badges 1-2-3), gros chiffres
+  Anton, fond uni #121418 à quadrillage léger, signature DISCRÈTE en bas (tête de loup + « Wolf Academy Invest », sans pastille).
+  Rejeté : Roboto Slab / Lora / JetBrains Mono, petites étiquettes espacées, filets (« trop Claude Code »). Récap = barres Wolf vs
+  CAC 40 vs S&P 500 + logos des opérations. Logos TradingView chargés en CORS (jamais d'image sans CORS : sinon export impossible).
   WOLF PORTFOLIO SEULEMENT (jamais PEA/CTO). Boutons « 📤 » : journal et mois par mois du Wolf (mes-portefeuilles), tag
   « 📤 Publier » de l'onglet Analyse, menu ⋯ d'une carte de l'Atelier, en-tête de secteur de Prix par secteur ->
   `WOLF_PUB.open(modèle, réglages)`. Réglages gardés par modèle (localStorage `wolfPubPrefs`, simple confort).

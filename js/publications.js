@@ -13,9 +13,9 @@
 'use strict';
 const PAGE_ID = 'pagePublications';
 const W = 1080, HS = { f1: 1080, f45: 1350, f916: 1920 };
-const C = { bg: '#0E1114', card: '#171C22', card2: '#1F252C', line: '#2A323B', text: '#F2F3F5', dim: '#A2A9B4', faint: '#6B737E',
-  gold: '#D9A441', gold2: '#E7C67A', green: '#4FD1A5', red: '#E5636B', blue: '#4A9FE0', white: '#FFFFFF' };
-const F = { title: '"Roboto Slab", Georgia, serif', sub: 'Lora, Georgia, serif', mono: '"JetBrains Mono", Consolas, monospace', body: '"Plus Jakarta Sans", "Segoe UI", sans-serif' };
+const C = { bg: '#121418', card: '#1B1F25', card2: '#242A31', line: '#2A2F36', text: '#F4F5F7', dim: '#9AA1AB', faint: '#6F7782',
+  gold: '#F2B33D', gold2: '#FFD27A', green: '#3DDC97', red: '#FF5C64', blue: '#4A9FE0', white: '#FFFFFF' };
+const F = { title: 'Anton, Impact, "Arial Narrow", sans-serif', body: '"Plus Jakarta Sans", "Segoe UI", sans-serif' };
 const WOLF = 'data/wolf-tete.png';
 const SERIES = [C.gold, C.blue, C.green, '#B8A1F0', '#F08A4B', '#5CC8D7', C.red, '#8FA3B8'];
 const $ = id => document.getElementById(id);
@@ -88,205 +88,247 @@ async function wolf(){
   return { D, S: st.S || {}, ops, E: MP_ENGINE, sym, cac: D.config.cac || 'EURONEXT:PX1', spx: D.config.spx || 'SP:SPX' };
 }
 
-/* ======================= DESSIN ======================= */
+/* ======================= DESSIN (style validé le 2026-11-11 : titres condensés SANS accents, surlignage or,
+   logos en grand, gros chiffres, fond uni à quadrillage léger, signature discrète en bas, sans pastille) ======================= */
+const up = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
 function mk(fmt){
   const c = document.createElement('canvas'); c.width = W; c.height = HS[fmt]; const x = c.getContext('2d');
-  x.fillStyle = C.bg; x.fillRect(0, 0, W, c.height);
-  return { c, x, fmt, H: c.height, L: 70, R: W - 70, CW: W - 140, big: fmt === 'f916', small: fmt === 'f1' };
+  const g = x.createRadialGradient(W / 2, c.height * 0.4, 50, W / 2, c.height * 0.4, c.height * 0.8); g.addColorStop(0, '#1A1D22'); g.addColorStop(1, C.bg);
+  x.fillStyle = g; x.fillRect(0, 0, W, c.height);
+  x.fillStyle = 'rgba(255,255,255,0.028)'; for (let i = 0; i < W; i += 72) x.fillRect(i, 0, 2, c.height); for (let j = 0; j < c.height; j += 72) x.fillRect(0, j, W, 2);
+  return { c, x, fmt, H: c.height, L: 76, R: W - 76, CW: W - 152, big: fmt === 'f916', small: fmt === 'f1' };
 }
-function setF(x, f){ x.font = f; }
 function txt(x, s, X, Y, f, col, align){ x.font = f; x.fillStyle = col; x.textAlign = align || 'left'; x.textBaseline = 'alphabetic'; x.fillText(s, X, Y); }
-function tracked(x, s, X, Y, size, col, track, align, weight){
-  x.font = (weight || 500) + ' ' + size + 'px ' + F.mono; x.fillStyle = col; x.textAlign = 'left'; x.textBaseline = 'alphabetic';
-  const chars = [...String(s)], wTot = chars.reduce((a, ch) => a + x.measureText(ch).width + track, 0) - track;
-  let cx = align === 'right' ? X - wTot : align === 'center' ? X - wTot / 2 : X;
-  chars.forEach(ch => { x.fillText(ch, cx, Y); cx += x.measureText(ch).width + track; });
-  return wTot;
-}
 function wrap(x, s, f, maxW){
   x.font = f; const out = [];
   String(s).split('\n').forEach(par => { let line = ''; par.split(/\s+/).forEach(w => { const t = line ? line + ' ' + w : w; if (x.measureText(t).width > maxW && line){ out.push(line); line = w; } else line = t; }); out.push(line); });
   return out;
 }
-function fit(x, s, weightFamily, size, maxW, min){ let k = size; x.font = weightFamily.replace('%', k); while (k > (min || 20) && x.measureText(s).width > maxW){ k -= 2; x.font = weightFamily.replace('%', k); } return k; }
+function fit(x, s, fam, size, maxW, min){ let k = size; x.font = fam.replace('%', k); while (k > (min || 20) && x.measureText(s).width > maxW){ k -= 2; x.font = fam.replace('%', k); } return k; }
+const TT = k => '400 ' + k + 'px ' + F.title;          // Anton (un seul graisse)
+const BD = (w, k) => w + ' ' + k + 'px ' + F.body;
 function rr(x, X, Y, w, h, r, fill, stroke){
   x.beginPath(); x.moveTo(X + r, Y); x.arcTo(X + w, Y, X + w, Y + h, r); x.arcTo(X + w, Y + h, X, Y + h, r); x.arcTo(X, Y + h, X, Y, r); x.arcTo(X, Y, X + w, Y, r); x.closePath();
   if (fill){ x.fillStyle = fill; x.fill(); } if (stroke){ x.strokeStyle = stroke; x.lineWidth = 2; x.stroke(); }
 }
-function logoC(x, im, cx, cy, r, fallback){
+function drawLogo(x, im, cx, cy, half){
+  if (typeof drawLogoInCircle === 'function') drawLogoInCircle(x, im, cx, cy, half, im.src);
+  else { const k = Math.max(2 * half / im.width, 2 * half / im.height); x.drawImage(im, cx - im.width * k / 2, cy - im.height * k / 2, im.width * k, im.height * k); }
+}
+function fallbackMark(x, cx, cy, r, name){ x.fillStyle = C.card2; x.fillRect(cx - r, cy - r, 2 * r, 2 * r); txt(x, up(name).slice(0, 1), cx, cy + r * 0.38, TT(Math.round(r * 1.05)), C.gold, 'center'); }
+// logo rond
+function logoC(x, im, cx, cy, r, name){
   x.save(); x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.closePath(); x.fillStyle = '#FFFFFF'; x.fill(); x.clip();
-  if (im){ if (typeof drawLogoInCircle === 'function') drawLogoInCircle(x, im, cx, cy, r, im.src); else { const k = Math.max(2 * r / im.width, 2 * r / im.height); x.drawImage(im, cx - im.width * k / 2, cy - im.height * k / 2, im.width * k, im.height * k); } }
-  else { x.fillStyle = C.card2; x.fillRect(cx - r, cy - r, 2 * r, 2 * r); txt(x, String(fallback || '?').slice(0, 1).toUpperCase(), cx, cy + r * 0.36, '700 ' + Math.round(r) + 'px ' + F.title, C.gold, 'center'); }
+  if (im) drawLogo(x, im, cx, cy, r); else fallbackMark(x, cx, cy, r, name);
   x.restore();
 }
-// En-tête et pied de page de la charte Wolf Academy (comme le Kit Investisseur du Loup)
-async function frame(P, label, source){
-  const x = P.x, head = await loadImg(WOLF);
-  if (head){ const s = 58, k = s / Math.max(head.width, head.height); x.drawImage(head, P.L, 50, head.width * k, head.height * k); }
-  const w = tracked(x, 'WOLF ACADEMY INVEST', P.L + 76, 88, 20, C.dim, 4);
-  if (label){ x.fillStyle = C.gold; x.fillRect(P.L + 76 + w + 22, 81, 40, 3); tracked(x, label.toUpperCase(), P.L + 76 + w + 78, 88, 20, C.gold, 4); }
-  x.fillStyle = C.line; x.fillRect(P.L, P.H - 96, P.CW, 2);
-  txt(x, 'Contenu pédagogique — pas un conseil en investissement', P.L, P.H - 52, '500 21px ' + F.body, C.faint);
-  if (source) tracked(x, source.toUpperCase(), P.R, P.H - 52, 17, C.faint, 2, 'right');
+// logo en tuile arrondie (façon icône d'appli), avec ombre
+function logoT(x, im, X, Y, s, name){
+  x.save(); x.shadowColor = 'rgba(0,0,0,.45)'; x.shadowBlur = 36; x.shadowOffsetY = 16; rr(x, X, Y, s, s, s * 0.26, '#FFFFFF'); x.restore();
+  x.save(); rr(x, X, Y, s, s, s * 0.26); x.clip(); if (im) drawLogo(x, im, X + s / 2, Y + s / 2, s / 2); else fallbackMark(x, X + s / 2, Y + s / 2, s / 2, name); x.restore();
+  rr(x, X, Y, s, s, s * 0.26, null, 'rgba(255,255,255,.08)');
 }
-// Répartit les blocs dans l'espace libre (centrés, écarts réguliers)
+// Signature discrète en bas (sans pastille) + source au-dessus
+async function frame(P, label, source){
+  const x = P.x, head = await loadImg(WOLF), cy = P.H - 64;
+  x.font = BD(700, 28); const tw = x.measureText('Wolf Academy Invest').width, s = 46, tot = s + 14 + tw, X0 = (W - tot) / 2;
+  if (head){ const k = s / Math.max(head.width, head.height); x.globalAlpha = 0.9; x.drawImage(head, X0, cy - head.height * k / 2, head.width * k, head.height * k); x.globalAlpha = 1; }
+  txt(x, 'Wolf Academy Invest', X0 + s + 14, cy + 10, BD(700, 28), 'rgba(242,243,245,.72)');
+  if (source) txt(x, source, W / 2, P.H - 118, BD(500, 23), C.faint, 'center');
+}
 function compose(P, blocks){
   blocks = blocks.filter(Boolean);
-  const top = 150, bot = P.H - 140, area = bot - top, n = blocks.length;
-  for (let guard = 0; guard < 20; guard++){ const tot = blocks.reduce((s, b) => s + b.h, 0) + 24 * (n - 1); if (tot <= area) break; const r = blocks.slice().reverse().find(b => b.shrink && b.shrink()); if (!r) break; }
-  blocks = blocks.filter(b => b.h > 0); const sum = blocks.reduce((s, b) => s + b.h, 0);
-  const m = blocks.length, gap = m > 1 ? Math.max(24, Math.min(P.big ? 120 : 84, (area - sum) / (m + 1))) : 0;
-  let y = top + Math.max(0, (area - sum - gap * (m - 1)) / 2);
-  blocks.forEach(b => { b.draw(y); y += b.h + gap; });
+  const top = P.big ? 150 : 96, bot = P.H - 156, area = bot - top, n = blocks.length;
+  for (let guard = 0; guard < 20; guard++){ const tot = blocks.reduce((s, b) => s + b.h, 0) + 30 * n; if (tot <= area) break; const r = blocks.slice().reverse().find(b => b.shrink && b.shrink()); if (!r) break; }
+  blocks = blocks.filter(b => b.h > 0); const sum = blocks.reduce((s, b) => s + b.h, 0), m = blocks.length;
+  const gap = m > 1 ? Math.max(24, Math.min(P.big ? 110 : 64, (area - sum) / (m + 1))) : 0;
+  // le titre reste en haut ; le reste est centré dans l'espace qui suit
+  let y = top;
+  if (m > 1){ blocks[0].draw(y); y += blocks[0].h; const rest = blocks.slice(1), rs = rest.reduce((s, b) => s + b.h, 0), free = bot - y - rs, g2 = Math.max(24, Math.min(P.big ? 120 : 76, free / (rest.length + 1)));
+    y += Math.max(g2, (free - g2 * (rest.length - 1)) / 2 * (P.big ? 0.9 : 0.6)); rest.forEach(b => { b.draw(y); y += b.h + g2; }); }
+  else blocks.forEach(b => { b.draw(y); y += b.h + gap; });
 }
 
 /* ---------- blocs ---------- */
 const B = {
+  // Titre condensé en capitales SANS accents + surlignage or (sous-titre ou, à défaut, sur-titre)
   title(P, eyebrow, title, sub){
-    const x = P.x, size = P.small ? 82 : 96, tf = '700 ' + size + 'px ' + F.title, lines = wrap(x, title, tf, P.CW).slice(0, 3);
-    const sf = 'italic 400 ' + (P.small ? 34 : 38) + 'px ' + F.sub, subs = sub ? wrap(x, sub, sf, P.CW).slice(0, 2) : [];
-    const h = (eyebrow ? 46 : 0) + lines.length * size * 1.06 + (subs.length ? 18 + subs.length * 48 : 0) + 34;
+    const x = P.x, size = P.small ? 116 : 132, T = up(title), lines = wrap(x, T, TT(size), P.CW).slice(0, 3);
+    const hl = sub || eyebrow || '', hf = BD(800, P.small ? 36 : 40);
+    x.font = hf; let hlTxt = hl; while (hlTxt && x.measureText(hlTxt).width > P.CW - 40) hlTxt = hlTxt.slice(0, -2);
+    if (hlTxt !== hl) hlTxt = hlTxt.trim() + '…';
+    const h = lines.length * size * 0.94 + (hl ? 26 + (P.small ? 54 : 60) : 0);
     return { h, draw(y){
-      let Y = y;
-      if (eyebrow){ tracked(x, eyebrow.toUpperCase(), P.L, Y + 24, 22, C.gold, 5); Y += 46; }
-      lines.forEach(l => { Y += size * 1.02; txt(x, l, P.L, Y, tf, C.white); }); Y += size * 0.04 * lines.length;
-      if (subs.length){ Y += 18; subs.forEach(s => { Y += 44; txt(x, s, P.L, Y, sf, C.gold2); }); Y += 4; }
-      x.fillStyle = C.gold; x.fillRect(P.L, Y + 22, 84, 5);
+      lines.forEach((l, i) => txt(x, l, P.L, y + size * 0.86 + i * size * 0.94, TT(size), '#F4F5F7'));
+      if (hl){ const Y = y + lines.length * size * 0.94 + 26, hh = P.small ? 54 : 60; x.font = hf; const w = x.measureText(hlTxt).width + 34; rr(x, P.L, Y, w, hh, 9, C.gold); txt(x, hlTxt, P.L + 17, Y + hh * 0.72, hf, '#111111'); }
     } };
   },
   big(P, value, color, caption){
-    const x = P.x, size = P.small ? 168 : P.big ? 230 : 200, cf = '500 ' + (P.small ? 30 : 34) + 'px ' + F.body;
-    const k = fit(x, value, '700 %px ' + F.title, size, P.CW, 90);
+    const x = P.x, size = P.small ? 210 : P.big ? 270 : 250, cf = BD(600, P.small ? 32 : 37);
+    const k = fit(x, value, TT('%'), size, P.CW, 90);
     const caps = caption ? wrap(x, caption, cf, P.CW).slice(0, 2) : [];
-    return { h: k * 0.95 + (caps.length ? 20 + caps.length * 44 : 0), draw(y){
-      txt(x, value, P.L - 4, y + k * 0.82, '700 ' + k + 'px ' + F.title, color || C.white);
-      caps.forEach((c, i) => txt(x, c, P.L, y + k * 0.95 + 20 + 34 + i * 44, cf, C.dim));
+    return { h: k * 0.92 + (caps.length ? 16 + caps.length * 46 : 0), draw(y){
+      txt(x, value, P.L - 4, y + k * 0.86, TT(k), color || '#F4F5F7');
+      caps.forEach((c, i) => txt(x, c, P.L, y + k * 0.92 + 16 + 36 + i * 46, cf, '#D8DCE1'));
     } };
   },
   kpis(P, items){
-    items = items.filter(Boolean).slice(0, 3); const x = P.x, n = items.length, g = 18, w = (P.CW - g * (n - 1)) / n, h = P.small ? 138 : 158;
-    return { h, draw(y){ items.forEach((it, i) => { const X = P.L + i * (w + g); rr(x, X, y, w, h, 22, C.card);
-      tracked(x, it.l.toUpperCase(), X + 26, y + 46, 18, C.faint, 3);
-      const k = fit(x, it.v, '700 %px ' + F.title, P.small ? 46 : 52, w - 52, 24); txt(x, it.v, X + 26, y + 46 + 18 + k, '700 ' + k + 'px ' + F.title, it.c || C.white); }); } };
+    items = items.filter(Boolean).slice(0, 3); const x = P.x, n = items.length, g = 20, w = (P.CW - g * (n - 1)) / n, h = P.small ? 140 : 160;
+    return { h, draw(y){ items.forEach((it, i) => { const X = P.L + i * (w + g); rr(x, X, y, w, h, 26, C.card);
+      txt(x, it.l, X + 28, y + 50, BD(600, 27), C.dim);
+      const k = fit(x, it.v, TT('%'), P.small ? 52 : 58, w - 56, 26); txt(x, it.v, X + 28, y + 50 + 16 + k * 0.95, TT(k), it.c || '#F4F5F7'); }); } };
   },
   head(P, im, name, tag, tagColor, sub){
-    const x = P.x, r = P.small ? 72 : 84, h = 2 * r;
+    const x = P.x, s = P.small ? 170 : 200, h = s;
     return { h, draw(y){
-      logoC(x, im, P.L + r, y + r, r, name); x.beginPath(); x.arc(P.L + r, y + r, r + 5, 0, Math.PI * 2); x.strokeStyle = 'rgba(217,164,65,.35)'; x.lineWidth = 3; x.stroke();
-      const X = P.L + 2 * r + 34, k = fit(x, name, '700 %px ' + F.title, P.small ? 64 : 72, P.R - X, 34);
-      txt(x, name, X, y + r + (tag || sub ? -6 : k * 0.35), '700 ' + k + 'px ' + F.title, C.white);
-      let tx = X;
-      if (tag){ x.font = '700 22px ' + F.mono; const tw = x.measureText(tag.toUpperCase()).width + tag.length * 4 + 28;
-        rr(x, X, y + r + 18, tw, 46, 10, tagColor === C.red ? 'rgba(229,99,107,.16)' : tagColor === C.green ? 'rgba(79,209,165,.16)' : 'rgba(217,164,65,.16)');
-        tracked(x, tag.toUpperCase(), X + 16, y + r + 50, 22, tagColor || C.gold, 4, 'left', 700); tx = X + tw + 18; }
-      if (sub) txt(x, sub, tx, y + r + 50, '500 26px ' + F.body, C.dim);
+      logoT(x, im, P.L, y, s, name);
+      const X = P.L + s + 40, N = up(name), k = fit(x, N, TT('%'), P.small ? 92 : 108, P.R - X, 44);
+      txt(x, N, X, y + s / 2 + (tag ? -2 : k * 0.35), TT(k), '#F4F5F7');
+      if (tag){ const tf = BD(800, P.small ? 30 : 33); x.font = tf; const tw = x.measureText(tag).width + 70, th = P.small ? 54 : 60, Y = y + s / 2 + 22;
+        const bg = tagColor === C.red ? 'rgba(255,92,100,.16)' : tagColor === C.green ? 'rgba(61,220,151,.16)' : 'rgba(242,179,61,.16)';
+        rr(x, X, Y, tw, th, th / 2, bg); x.beginPath(); x.arc(X + 26, Y + th / 2, 7, 0, Math.PI * 2); x.fillStyle = tagColor || C.gold; x.fill(); txt(x, tag, X + 46, Y + th * 0.68, tf, tagColor || C.gold); }
+      if (sub && !tag) txt(x, sub, X, y + s / 2 + 52, BD(600, 28), C.dim);
     } };
   },
   pills(P, items){
-    const x = P.x, h = 58;
-    return { h, draw(y){ let X = P.L; items.filter(Boolean).forEach(it => { x.font = '600 25px ' + F.body; const w1 = x.measureText(it.l + '  ').width; x.font = '800 25px ' + F.body; const w = w1 + x.measureText(it.v).width + 40;
-      rr(x, X, y, w, h, 14, C.card); txt(x, it.l, X + 20, y + 38, '600 25px ' + F.body, C.dim); txt(x, it.v, X + 20 + w1, y + 38, '800 25px ' + F.body, it.c || C.white); X += w + 14; }); } };
+    const x = P.x, h = 62;
+    return { h, draw(y){ let X = P.L; items.filter(Boolean).forEach(it => { x.font = BD(600, 27); const w1 = x.measureText(it.l + '  ').width; x.font = BD(800, 27); const w = w1 + x.measureText(it.v).width + 44;
+      rr(x, X, y, w, h, 16, C.card); txt(x, it.l, X + 22, y + 41, BD(600, 27), C.dim); txt(x, it.v, X + 22 + w1, y + 41, BD(800, 27), it.c || '#F4F5F7'); X += w + 14; }); } };
   },
   rows(P, items){
-    const x = P.x, rh = items.length <= 3 ? (P.small ? 108 : 124) : P.small ? 88 : 102, g = 14;
-    const blk = { h: items.length * (rh + g) - g, shrink(){ if (!items.length) return false; items = items.slice(0, -1); blk.h = items.length ? items.length * (rh + g) - g : 0; return true; }, draw(y){ items.forEach((it, i) => { const Y = y + i * (rh + g); rr(x, P.L, Y, P.CW, rh, 20, C.card);
-      const r = rh * 0.34; logoC(x, it.img, P.L + 22 + r, Y + rh / 2, r, it.name);
-      const X = P.L + 22 + 2 * r + 22, rightW = it.right ? 260 : 0;
-      const k = fit(x, it.name, '700 %px ' + F.body, 32, P.R - X - rightW - (it.mid ? 230 : 0) - 20, 20);
-      txt(x, it.name, X, Y + rh / 2 + (it.sub ? -4 : 11), '700 ' + k + 'px ' + F.body, C.white);
-      if (it.sub) txt(x, it.sub, X, Y + rh / 2 + 30, '500 22px ' + F.body, C.faint);
-      if (it.mid) txt(x, it.mid, P.R - rightW - 30, Y + rh / 2 + 10, '700 27px ' + F.body, C.gold, 'right');
-      if (it.pill){ x.font = '700 24px ' + F.body; const w = x.measureText(it.right).width + 52; rr(x, P.R - 22 - w, Y + rh / 2 - 24, w, 48, 24, it.pillBg);
-        x.beginPath(); x.arc(P.R - 22 - w + 20, Y + rh / 2, 6, 0, Math.PI * 2); x.fillStyle = it.rightColor; x.fill(); txt(x, it.right, P.R - 22 - w + 34, Y + rh / 2 + 9, '700 24px ' + F.body, it.rightColor); }
-      else if (it.right){ txt(x, it.right, P.R - 26, Y + rh / 2 + (it.rightSub ? -2 : 11), '700 ' + (P.small ? 30 : 34) + 'px ' + F.title, it.rightColor || C.white, 'right');
-        if (it.rightSub) txt(x, it.rightSub, P.R - 26, Y + rh / 2 + 30, '500 21px ' + F.body, C.faint, 'right'); }
+    const x = P.x, rh = items.length <= 3 ? (P.small ? 112 : 128) : P.small ? 92 : 106, g = 14;
+    const blk = { h: items.length * (rh + g) - g, shrink(){ if (!items.length) return false; items = items.slice(0, -1); blk.h = items.length ? items.length * (rh + g) - g : 0; return true; }, draw(y){ items.forEach((it, i) => { const Y = y + i * (rh + g); rr(x, P.L, Y, P.CW, rh, 22, C.card);
+      const s = rh - 30; logoT(x, it.img, P.L + 15, Y + 15, s, it.name);
+      const X = P.L + 15 + s + 24, rightW = it.right ? 250 : 0;
+      const k = fit(x, it.name, BD(800, '%'), 34, P.R - X - rightW - (it.mid ? 230 : 0) - 20, 20);
+      txt(x, it.name, X, Y + rh / 2 + (it.sub ? -4 : 12), BD(800, k), '#F4F5F7');
+      if (it.sub) txt(x, it.sub, X, Y + rh / 2 + 32, BD(500, 24), C.dim);
+      if (it.mid) txt(x, it.mid, P.R - rightW - 30, Y + rh / 2 + 11, BD(800, 28), C.gold, 'right');
+      if (it.pill){ const pf = BD(800, 27); x.font = pf; const w = x.measureText(it.right).width + 58; rr(x, P.R - 22 - w, Y + rh / 2 - 26, w, 52, 26, it.pillBg);
+        x.beginPath(); x.arc(P.R - 22 - w + 22, Y + rh / 2, 7, 0, Math.PI * 2); x.fillStyle = it.rightColor; x.fill(); txt(x, it.right, P.R - 22 - w + 38, Y + rh / 2 + 10, pf, it.rightColor); }
+      else if (it.right){ txt(x, it.right, P.R - 26, Y + rh / 2 + (it.rightSub ? 0 : 15), TT(P.small ? 40 : 46), it.rightColor || '#F4F5F7', 'right');
+        if (it.rightSub) txt(x, it.rightSub, P.R - 26, Y + rh / 2 + 34, BD(500, 21), C.dim, 'right'); }
     }); } };
     return blk;
   },
   rings(P, items, max){
-    const x = P.x, cols = items.length <= 4 ? items.length : items.length <= 8 ? 4 : 5, rowsN = Math.ceil(items.length / cols), cw = P.CW / cols;
-    const r = Math.min(cw * 0.36, P.small ? 62 : 76), rowH = 2 * r + (P.small ? 118 : 150);
-    return { h: rowsN * rowH, draw(y){ items.forEach((it, i) => { const cx = P.L + cw * (i % cols) + cw / 2, Y = y + Math.floor(i / cols) * rowH, cy = Y + 44 + r + 10;
-      txt(x, it.label, cx, Y + 32, '600 ' + (P.small ? 24 : 27) + 'px ' + F.mono, C.dim, 'center');
-      x.beginPath(); x.arc(cx, cy, r + 9, 0, Math.PI * 2); x.strokeStyle = C.line; x.lineWidth = 9; x.stroke();
+    const x = P.x, cols = items.length <= 3 ? items.length : items.length <= 8 ? 4 : 5, rowsN = Math.ceil(items.length / cols), cw = P.CW / cols;
+    const r = Math.min(cw * 0.36, P.small ? 66 : 74), rowH = 2 * r + (P.small ? 132 : 162);
+    const blk = { h: rowsN * rowH, shrink(){ if (items.length <= cols) return false; items = items.slice(0, items.length - cols); blk.h = Math.ceil(items.length / cols) * rowH; return true; }, draw(y){ items.forEach((it, i) => { const cx = P.L + cw * (i % cols) + cw / 2, Y = y + Math.floor(i / cols) * rowH, cy = Y + 52 + r + 14;
+      txt(x, it.label, cx, Y + 34, BD(700, P.small ? 26 : 30), '#C9CED5', 'center');
+      x.beginPath(); x.arc(cx, cy, r + 13, 0, Math.PI * 2); x.strokeStyle = '#2A2F36'; x.lineWidth = 9; x.stroke();
       const f = Math.max(0.02, Math.min(1, (it.ring != null ? it.ring : it.v / max)));
-      x.beginPath(); x.arc(cx, cy, r + 9, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2); x.strokeStyle = C.gold; x.lineCap = 'round'; x.stroke(); x.lineCap = 'butt';
+      x.beginPath(); x.arc(cx, cy, r + 13, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2); x.strokeStyle = C.gold; x.lineCap = 'round'; x.stroke(); x.lineCap = 'butt';
       logoC(x, it.img, cx, cy, r, it.name);
-      txt(x, it.text, cx, cy + r + 58, '700 ' + (P.small ? 30 : 34) + 'px ' + F.title, C.white, 'center');
+      if (i < 3){ const bx = cx - r - 4, by = cy - r + 4; x.save(); x.shadowColor = 'rgba(0,0,0,.4)'; x.shadowBlur = 12; x.beginPath(); x.arc(bx, by, 24, 0, Math.PI * 2); x.fillStyle = C.gold; x.fill(); x.restore(); txt(x, String(i + 1), bx, by + 9, BD(800, 25), '#111111', 'center'); }
+      txt(x, it.text, cx, cy + r + 70, TT(P.small ? 50 : 56), '#F4F5F7', 'center');
     }); } };
+    return blk;
   },
   bars(P, items, max){
-    const x = P.x, rh = P.small ? 64 : 76, g = P.small ? 16 : 22;
-    return { h: items.length * (rh + g) - g, draw(y){ items.forEach((it, i) => { const Y = y + i * (rh + g), r = rh / 2; logoC(x, it.img, P.L + r, Y + r, r, it.name);
+    const x = P.x, rh = P.small ? 66 : 78, g = P.small ? 16 : 22;
+    const blk = { h: items.length * (rh + g) - g, shrink(){ if (items.length <= 2) return false; items = items.slice(0, -1); blk.h = items.length * (rh + g) - g; return true; }, draw(y){ items.forEach((it, i) => { const Y = y + i * (rh + g), r = rh / 2; logoC(x, it.img, P.L + r, Y + r, r, it.name);
       const X = P.L + 2 * r + 22, tw = 170, bw = P.R - X - tw - 16, f = Math.max(0.01, Math.min(1, Math.abs(it.v) / max));
-      rr(x, X, Y + rh * 0.18, bw, rh * 0.64, rh * 0.2, C.card);
-      const grd = x.createLinearGradient(X, 0, X + bw * f, 0); grd.addColorStop(0, it.v < 0 ? '#9C3F45' : '#A97A2A'); grd.addColorStop(1, it.v < 0 ? C.red : C.gold2);
-      rr(x, X, Y + rh * 0.18, Math.max(rh * 0.4, bw * f), rh * 0.64, rh * 0.2, grd);
-      txt(x, it.text, P.R, Y + r + 12, '700 ' + (P.small ? 32 : 36) + 'px ' + F.title, C.white, 'right');
+      rr(x, X, Y + rh * 0.16, bw, rh * 0.68, rh * 0.22, C.card);
+      const grd = x.createLinearGradient(X, 0, X + bw * f, 0); grd.addColorStop(0, it.v < 0 ? '#9C3F45' : C.gold); grd.addColorStop(1, it.v < 0 ? C.red : C.gold2);
+      rr(x, X, Y + rh * 0.16, Math.max(rh * 0.44, bw * f), rh * 0.68, rh * 0.22, grd);
+      txt(x, it.text, P.R, Y + r + 17, TT(P.small ? 44 : 50), '#F4F5F7', 'right');
     }); } };
+    return blk;
+  },
+  // Barres verticales de comparaison (portefeuille contre indices), valeurs au-dessus, étiquette et pastille dessous
+  cmpBars(P, items){
+    const x = P.x;
+    const blk = { h: P.small ? 470 : P.big ? 680 : 560, shrink(){ if (blk.h <= 380) return false; blk.h -= 60; return true; }, draw(y){ const h = blk.h;
+      const n = items.length, bw = Math.min(230, (P.CW - 60 * (n - 1)) / n), gap = (P.CW - bw * n) / Math.max(1, n - 1), base = y + h - 150, top = y + 90;
+      const vals = items.map(i => i.v), mx = Math.max(...vals.map(Math.abs), 0.1);
+      items.forEach((it, i) => { const X = P.L + i * (bw + gap), bh = Math.max(16, Math.abs(it.v) / mx * (base - top)), by = base - bh;
+        let fill = it.color; if (it.grad){ fill = x.createLinearGradient(0, by, 0, by + bh); fill.addColorStop(0, C.gold2); fill.addColorStop(1, C.gold); }
+        rr(x, X, by, bw, bh, Math.min(28, bh / 2, bw / 6), fill);
+        txt(x, it.text, X + bw / 2, by - 22, TT(P.small ? 62 : 72), it.v > 0.05 ? C.green : it.v < -0.05 ? C.red : '#F4F5F7', 'center');
+        const s = 84, ly = base + 26;
+        if (it.img){ rr(x, X + bw / 2 - s / 2, ly, s, s, 22, '#0B0D10', it.ring || null); const k = (s - 14) / Math.max(it.img.width, it.img.height); x.drawImage(it.img, X + bw / 2 - it.img.width * k / 2, ly + s / 2 - it.img.height * k / 2, it.img.width * k, it.img.height * k); }
+        else { rr(x, X + bw / 2 - s / 2, ly, s, s, 22, it.chip || '#C9CED5'); const t = it.short || ''; const k = fit(x, t, TT('%'), 40, s - 12, 18); txt(x, t, X + bw / 2, ly + s / 2 + k * 0.36, TT(k), '#111111', 'center'); }
+        txt(x, it.label, X + bw / 2, ly + s + 40, BD(800, 29), '#F4F5F7', 'center');
+      });
+    } };
+    return blk;
+  },
+  // Rangée de logos (opérations du mois) avec pastille + / −
+  logoRow(P, items, caption){
+    const x = P.x, s = P.small ? 104 : 124, h = s + (caption ? 64 : 0);
+    const blk = { h, draw(y){
+      if (caption) txt(x, caption, W / 2, y + 34, BD(700, 30), '#C9CED5', 'center');
+      const n = items.length, g = 26, tot = n * s + (n - 1) * g; let X = (W - tot) / 2; const Y = y + (caption ? 64 : 0);
+      items.forEach(it => { logoT(x, it.img, X, Y, s, it.name); if (it.badge){ x.beginPath(); x.arc(X + s - 6, Y + s - 6, 24, 0, Math.PI * 2); x.fillStyle = it.badgeColor; x.fill(); x.lineWidth = 6; x.strokeStyle = C.bg; x.stroke(); txt(x, it.badge, X + s - 6, Y + s + 4, BD(800, 28), '#111111', 'center'); } X += s + g; });
+    }, shrink(){ if (!items.length) return false; items = []; blk.h = 0; return true; } };
+    return blk;
   },
   vbars(P, labels, values, unit, h){
     const x = P.x; h = h || (P.small ? 420 : P.big ? 640 : 520);
-    return { h, draw(y){ const vals = values.map(v => isNum(v) ? v : 0), max = Math.max(...vals.map(Math.abs), 1e-9), n = vals.length, gw = P.CW / n, bw = Math.min(56, gw * 0.62), base = y + h - 44, top = y + 54;
-      x.fillStyle = C.line; x.fillRect(P.L, base, P.CW, 2);
+    return { h, draw(y){ const vals = values.map(v => isNum(v) ? v : 0), max = Math.max(...vals.map(Math.abs), 1e-9), n = vals.length, gw = P.CW / n, bw = Math.min(58, gw * 0.64), base = y + h - 46, top = y + 60;
       vals.forEach((v, i) => { const bh = Math.abs(v) / max * (base - top), X = P.L + gw * i + (gw - bw) / 2, last = i === n - 1;
-        rr(x, X, base - bh, bw, Math.max(bh, 3), Math.min(10, bw / 3), last ? C.gold2 : v < 0 ? C.red : C.gold);
-        const st = Math.ceil(n / 10); if (n <= 12 || (i % st === 0 && n - 1 - i >= st) || last) txt(x, n > 12 ? '’' + String(labels[i]).slice(-2) : String(labels[i]), X + bw / 2, base + 36, '500 20px ' + F.mono, C.faint, 'center');
-        if (last || i === 0) txt(x, unit(v), X + bw / 2, base - bh - 14, '700 ' + (P.small ? 24 : 27) + 'px ' + F.body, last ? C.gold2 : C.dim, 'center'); });
+        let fill = v < 0 ? C.red : C.gold; if (last){ fill = x.createLinearGradient(0, base - bh, 0, base); fill.addColorStop(0, C.gold2); fill.addColorStop(1, C.gold); }
+        rr(x, X, base - bh, bw, Math.max(bh, 3), Math.min(12, bw / 3), fill);
+        const st = Math.ceil(n / 10); if (n <= 12 || (i % st === 0 && n - 1 - i >= st) || last) txt(x, n > 12 ? '’' + String(labels[i]).slice(-2) : String(labels[i]), X + bw / 2, base + 38, BD(600, 22), C.dim, 'center');
+        if (last || i === 0) txt(x, unit(v), X + bw / 2, base - bh - 16, TT(P.small ? 36 : 42), last ? C.gold2 : C.dim, 'center'); });
     } };
   },
   line(P, series, opts){
-    opts = opts || {}; const x = P.x, h = opts.h || (P.small ? 400 : P.big ? 620 : 500);
-    return { h, draw(y){
+    opts = opts || {}; const x = P.x;
+    const blk = { h: opts.h || (P.small ? 400 : P.big ? 620 : 500), shrink(){ if (blk.h <= 240) return false; blk.h -= 50; return true; }, draw(y){ const h = blk.h;
       const all = series.flatMap(s => s.values.filter(isNum)).concat((opts.hlines || []).map(l => l.v)), lo = Math.min(...all), hi = Math.max(...all), pad = (hi - lo) * 0.08 || 1;
-      const min = lo - pad, max = hi + pad, X0 = P.L, X1 = P.R - (opts.hlines && opts.hlines.length ? 0 : 0), Y0 = y + 20, Y1 = y + h - 44;
+      const min = lo - pad, max = hi + pad, X0 = P.L + 10, X1 = P.R - 10, Y0 = y + 24, Y1 = y + h - 50;
       const n = Math.max(...series.map(s => s.values.length)), px = i => X0 + (X1 - X0) * i / Math.max(1, n - 1), py = v => Y1 - (v - min) / (max - min) * (Y1 - Y0);
-      rr(x, X0 - 10, y, X1 - X0 + 20, h, 22, C.card);
+      rr(x, P.L - 6, y, P.CW + 12, h, 26, C.card);
       for (let k = 1; k < 4; k++){ x.fillStyle = 'rgba(255,255,255,.05)'; x.fillRect(X0, Y0 + (Y1 - Y0) * k / 4, X1 - X0, 2); }
       if (opts.zero && min < 0 && max > 0){ x.setLineDash([8, 10]); x.strokeStyle = 'rgba(255,255,255,.25)'; x.lineWidth = 2; x.beginPath(); x.moveTo(X0, py(0)); x.lineTo(X1, py(0)); x.stroke(); x.setLineDash([]); }
-      (opts.hlines || []).forEach(l => { x.setLineDash([12, 10]); x.strokeStyle = l.color; x.lineWidth = 3; x.beginPath(); x.moveTo(X0, py(l.v)); x.lineTo(X1, py(l.v)); x.stroke(); x.setLineDash([]);
-        x.font = '700 22px ' + F.body; const tw = x.measureText(l.label).width + 24; rr(x, X1 - tw - 6, py(l.v) - 42, tw, 34, 8, C.bg); txt(x, l.label, X1 - 18, py(l.v) - 18, '700 22px ' + F.body, l.color, 'right'); });
+      let lastLab = null;
+      (opts.hlines || []).slice().sort((a, b) => b.v - a.v).forEach(l => { x.setLineDash([12, 10]); x.strokeStyle = l.color; x.lineWidth = 3; x.beginPath(); x.moveTo(X0, py(l.v)); x.lineTo(X1, py(l.v)); x.stroke(); x.setLineDash([]);
+        let ly = py(l.v) - 44; if (lastLab != null && ly < lastLab + 42) ly = py(l.v) + 8; lastLab = ly;
+        const lf = BD(800, 23); x.font = lf; const tw = x.measureText(l.label).width + 26; rr(x, X1 - tw - 4, ly, tw, 36, 9, C.bg); txt(x, l.label, X1 - 17, ly + 25, lf, l.color, 'right'); });
       series.forEach((s, si) => {
         const pts = s.values.map((v, i) => isNum(v) ? [px(i), py(v)] : null).filter(Boolean); if (pts.length < 2) return;
         if (s.fill){ const g = x.createLinearGradient(0, Y0, 0, Y1); g.addColorStop(0, s.color + '55'); g.addColorStop(1, s.color + '00'); x.beginPath(); x.moveTo(pts[0][0], Y1); pts.forEach(p => x.lineTo(p[0], p[1])); x.lineTo(pts[pts.length - 1][0], Y1); x.closePath(); x.fillStyle = g; x.fill(); }
         x.beginPath(); pts.forEach((p, i) => i ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1])); x.strokeStyle = s.color; x.lineWidth = s.width || 5; x.lineJoin = 'round'; x.stroke();
-        const e = pts[pts.length - 1]; x.beginPath(); x.arc(e[0], e[1], si === 0 ? 10 : 7, 0, Math.PI * 2); x.fillStyle = s.color; x.fill();
+        const e = pts[pts.length - 1]; x.beginPath(); x.arc(e[0], e[1], si === series.length - 1 ? 11 : 8, 0, Math.PI * 2); x.fillStyle = s.color; x.fill();
       });
-      if (opts.labels){ txt(x, opts.labels[0], X0, Y1 + 36, '500 21px ' + F.mono, C.faint); txt(x, opts.labels[1], X1, Y1 + 36, '500 21px ' + F.mono, C.faint, 'right'); }
-      if (opts.legend){ let LX = X0 + 6; opts.legend.forEach(l => { x.fillStyle = l.color; x.fillRect(LX, Y0 + 2, 30, 6); txt(x, l.label, LX + 40, Y0 + 12, '600 22px ' + F.body, C.dim); x.font = '600 22px ' + F.body; LX += 70 + x.measureText(l.label).width; }); }
+      if (opts.labels){ txt(x, opts.labels[0], X0, Y1 + 38, BD(600, 22), C.dim); txt(x, opts.labels[1], X1, Y1 + 38, BD(600, 22), C.dim, 'right'); }
+      if (opts.legend){ let LX = X0 + 6; opts.legend.forEach(l => { x.fillStyle = l.color; rr(x, LX, Y0 + 2, 30, 8, 4, l.color); txt(x, l.label, LX + 42, Y0 + 14, BD(700, 24), C.dim); x.font = BD(700, 24); LX += 76 + x.measureText(l.label).width; }); }
     } };
+    return blk;
   },
   donut(P, items, center){
-    const x = P.x, h = P.small ? 470 : P.big ? 620 : 560;
+    const x = P.x, h = P.small ? 480 : P.big ? 640 : 580;
     return { h, draw(y){
-      const r = Math.min(h / 2 - 20, P.CW * 0.25), cx = P.L + r + 10, cy = y + h / 2, tot = items.reduce((s, i) => s + i.v, 0);
-      let a = -Math.PI / 2; items.forEach((it, i) => { const da = it.v / tot * Math.PI * 2; x.beginPath(); x.arc(cx, cy, r, a, a + da); x.arc(cx, cy, r * 0.62, a + da, a, true); x.closePath(); x.fillStyle = it.color || SERIES[i % SERIES.length]; x.fill(); x.strokeStyle = C.bg; x.lineWidth = 4; x.stroke(); a += da; });
+      const r = Math.min(h / 2 - 20, P.CW * 0.25), cx = P.L + r + 6, cy = y + h / 2, tot = items.reduce((s, i) => s + i.v, 0);
+      let a = -Math.PI / 2; items.forEach((it, i) => { const da = it.v / tot * Math.PI * 2; x.beginPath(); x.arc(cx, cy, r, a, a + da); x.arc(cx, cy, r * 0.62, a + da, a, true); x.closePath(); x.fillStyle = it.color || SERIES[i % SERIES.length]; x.fill(); x.strokeStyle = C.bg; x.lineWidth = 5; x.stroke(); a += da; });
       if (center){ const s = r * 0.9, k = s / Math.max(center.width, center.height); x.drawImage(center, cx - center.width * k / 2, cy - center.height * k / 2, center.width * k, center.height * k); }
-      const LX = cx + r + 60, rowH = Math.min(78, (h - 20) / items.length);
+      const LX = cx + r + 54, rowH = Math.min(82, (h - 20) / items.length);
       items.forEach((it, i) => { const Y = y + (h - rowH * items.length) / 2 + i * rowH + rowH / 2;
-        x.fillStyle = it.color || SERIES[i % SERIES.length]; rr(x, LX, Y - 7, 22, 14, 4, it.color || SERIES[i % SERIES.length]);
-        const NX = it.sym ? LX + 94 : LX + 40; if (it.sym) logoC(x, it.img, LX + 58, Y, rowH * 0.32, it.name);
-        const k = fit(x, it.name, '600 %px ' + F.body, 28, P.R - NX - 130, 18); txt(x, it.name, NX, Y + 10, '600 ' + k + 'px ' + F.body, C.text);
-        txt(x, fr(it.v / tot * 100, 1) + ' %', P.R, Y + 11, '700 32px ' + F.title, C.white, 'right'); });
+        rr(x, LX, Y - 8, 22, 16, 5, it.color || SERIES[i % SERIES.length]);
+        const NX = it.sym ? LX + 100 : LX + 42; if (it.sym) logoT(x, it.img, LX + 38, Y - rowH * 0.34, rowH * 0.68, it.name);
+        const k = fit(x, it.name, BD(700, '%'), 29, P.R - NX - 130, 18); txt(x, it.name, NX, Y + 10, BD(700, k), '#F4F5F7');
+        txt(x, fr(it.v / tot * 100, 1) + ' %', P.R, Y + 14, TT(38), '#F4F5F7', 'right'); });
     } };
   },
   duel(P, a, b){
-    const x = P.x, h = P.small ? 330 : 380;
-    return { h, draw(y){ [a, b].forEach((s, i) => { const w = (P.CW - 20) / 2, X = P.L + i * (w + 20); rr(x, X, y, w, h, 26, C.card); x.fillStyle = s.color; x.fillRect(X + 26, y, 70, 5);
-      logoC(x, s.img, X + w / 2, y + 96, 58, s.name);
-      const k = fit(x, s.name, '700 %px ' + F.body, 30, w - 40, 18); txt(x, s.name, X + w / 2, y + 196, '700 ' + k + 'px ' + F.body, C.dim, 'center');
-      const kk = fit(x, s.value, '700 %px ' + F.title, P.small ? 62 : 70, w - 40, 30); txt(x, s.value, X + w / 2, y + 196 + 26 + kk, '700 ' + kk + 'px ' + F.title, s.win ? C.green : C.white, 'center');
-      txt(x, s.sub, X + w / 2, y + h - 30, '600 24px ' + F.body, C.faint, 'center'); }); } };
+    const x = P.x, h = P.small ? 360 : 410;
+    return { h, draw(y){ [a, b].forEach((s, i) => { const w = (P.CW - 22) / 2, X = P.L + i * (w + 22); rr(x, X, y, w, h, 28, C.card);
+      const ls = P.small ? 120 : 140; logoT(x, s.img, X + w / 2 - ls / 2, y + 34, ls, s.name);
+      const k = fit(x, s.name, BD(800, '%'), 30, w - 40, 18); txt(x, s.name, X + w / 2, y + 34 + ls + 50, BD(800, k), C.dim, 'center');
+      const kk = fit(x, s.value, TT('%'), P.small ? 78 : 92, w - 40, 30); txt(x, s.value, X + w / 2, y + 34 + ls + 56 + kk, TT(kk), s.win ? C.green : '#F4F5F7', 'center');
+      txt(x, s.sub, X + w / 2, y + h - 26, BD(700, 26), C.dim, 'center'); }); } };
   },
   image(P, im, maxH){
     const x = P.x, k = Math.min(P.CW / im.width, (maxH || 700) / im.height), w = im.width * k, h = im.height * k;
-    return { h: h + 40, draw(y){ rr(x, P.L, y, P.CW, h + 40, 24, C.card); x.drawImage(im, P.L + (P.CW - w) / 2, y + 20, w, h); } };
+    return { h: h + 40, draw(y){ rr(x, P.L, y, P.CW, h + 40, 26, C.card); x.drawImage(im, P.L + (P.CW - w) / 2, y + 20, w, h); } };
   },
   para(P, s, maxLines){
-    const x = P.x, f = '400 ' + (P.small ? 32 : 36) + 'px ' + F.sub, lines = wrap(x, s, f, P.CW - 60).slice(0, maxLines || 10), lh = P.small ? 46 : 52;
-    return { h: lines.length * lh + 50, draw(y){ rr(x, P.L, y, P.CW, lines.length * lh + 50, 24, C.card); lines.forEach((l, i) => txt(x, l, P.L + 30, y + 25 + lh * (i + 1) - 12, f, C.text)); } };
+    const x = P.x, f = BD(500, P.small ? 32 : 36), lines = wrap(x, s, f, P.CW - 60).slice(0, maxLines || 10), lh = P.small ? 46 : 52;
+    return { h: lines.length * lh + 50, draw(y){ rr(x, P.L, y, P.CW, lines.length * lh + 50, 26, C.card); lines.forEach((l, i) => txt(x, l, P.L + 30, y + 25 + lh * (i + 1) - 12, f, '#F4F5F7')); } };
   },
-  note(P, s){ const x = P.x; return { h: 34, draw(y){ txt(x, s, P.L, y + 26, 'italic 400 26px ' + F.sub, C.faint); } }; },
+  note(P, s){ const x = P.x; const blk = { h: 34, shrink(){ if (!blk.h) return false; blk.h = 0; return true; }, draw(y){ if (blk.h) txt(x, s, P.L, y + 26, BD(500, 24), C.faint); } }; return blk; },
 };
 const cap = (P, s, m, l) => P.small ? s : P.big ? l : m;   // nombre d'éléments selon le format
 
@@ -343,16 +385,16 @@ const T = [
       label = MOIS[m - 1][0].toUpperCase() + MOIS[m - 1].slice(1) + ' ' + y; eyebrow = 'Récap du mois'; }
     const rows = w.E.periodRows(w.ops, w.S, { from, to, step: 'day' }); if (!rows.length) throw new Error('Pas de données pour cette période.');
     const perf = w.E.chain(rows) * 100, cac = w.E.chain(w.E.benchRows(rows, w.S, w.cac)) * 100, spx = w.E.chain(w.E.benchRows(rows, w.S, w.spx, 'FX_IDC:EURUSD')) * 100;
-    const ops = w.E.sortOps(w.ops).filter(x => x.date > from && x.date <= to && ['BUY', 'SELL', 'DIV'].includes(x.type)).reverse();
-    const n = o.courbe ? cap(P, 0, 2, 5) : cap(P, 3, 4, 7), shown = await Promise.all(ops.slice(0, n).map(async x => { const s = w.sym(x.symbol);
-      return { img: await logoFor(s), name: s.name, sub: shortDate(x.date), right: x.type === 'DIV' ? '+' + fr(x.eur, 2) + ' €' : x.type === 'BUY' ? 'Achat' : 'Vente', rightColor: x.type === 'DIV' ? C.gold : x.type === 'BUY' ? C.green : C.red }; }));
-    const blocks = [B.title(P, eyebrow, o.titre || label, o.sous || (perf >= cac ? 'Devant le CAC 40 de ' + fr(perf - cac, 1) + ' point' + (Math.abs(perf - cac) >= 2 ? 's' : '') : 'Derrière le CAC 40 de ' + fr(cac - perf, 1) + ' point' + (Math.abs(perf - cac) >= 2 ? 's' : ''))),
-      B.big(P, sgn(perf, 2), perf >= 0 ? C.green : C.red, 'Wolf Portfolio'),
-      B.pills(P, [{ l: 'CAC 40', v: sgn(cac, 2), c: cac >= 0 ? C.green : C.red }, { l: 'S&P 500 (€)', v: sgn(spx, 2), c: spx >= 0 ? C.green : C.red }])];
+    const ops = w.E.sortOps(w.ops).filter(x => x.date > from && x.date <= to && ['BUY', 'SELL', 'DIV'].includes(x.type));
+    const nb = { BUY: ops.filter(x => x.type === 'BUY').length, SELL: ops.filter(x => x.type === 'SELL').length, DIV: ops.filter(x => x.type === 'DIV').length };
+    const capTxt = [nb.BUY ? nb.BUY + ' achat' + (nb.BUY > 1 ? 's' : '') : '', nb.SELL ? nb.SELL + ' vente' + (nb.SELL > 1 ? 's' : '') : '', nb.DIV ? nb.DIV + ' dividende' + (nb.DIV > 1 ? 's' : '') : ''].filter(Boolean).join(', ');
+    const logos = await Promise.all(ops.slice(-cap(P, 5, 6, 7)).map(async x => { const s = w.sym(x.symbol); return { img: await logoFor(s), name: s.name, badge: x.type === 'BUY' ? '+' : x.type === 'SELL' ? '−' : '€', badgeColor: x.type === 'BUY' ? C.green : x.type === 'SELL' ? C.red : C.gold }; }));
+    const blocks = [B.title(P, null, o.titre || label, o.sous || 'Wolf Portfolio vs les indices'),
+      B.cmpBars(P, [{ v: perf, text: sgn(perf), label: 'Wolf', img: await loadImg(WOLF), ring: C.gold, grad: true }, { v: cac, text: sgn(cac), label: 'CAC 40', short: 'CAC', chip: C.blue, color: C.blue }, { v: spx, text: sgn(spx), label: 'S&P 500', short: 'S&P', chip: '#C9CED5', color: '#8E96A1' }])];
     if (o.courbe){ let a = 1, b = 1, c2 = 1; const cr = w.E.benchRows(rows, w.S, w.cac), sr = w.E.benchRows(rows, w.S, w.spx, 'FX_IDC:EURUSD');
       const pv = [0].concat(rows.map(r => ((a *= 1 + r.r) - 1) * 100)), cv = [0].concat(cr.map(r => ((b *= 1 + r.r) - 1) * 100)), sv = [0].concat(sr.map(r => ((c2 *= 1 + r.r) - 1) * 100));
-      blocks.push(B.line(P, [{ values: cv, color: C.blue, width: 4 }, { values: sv, color: '#B4BAC4', width: 4 }, { values: pv, color: C.gold, width: 6, fill: true }], { zero: true, h: cap(P, 300, 360, 460), legend: [{ label: 'Wolf', color: C.gold }, { label: 'CAC 40', color: C.blue }, { label: 'S&P 500', color: '#B4BAC4' }] })); }
-    if (shown.length) blocks.push(B.rows(P, shown));
+      blocks.push(B.line(P, [{ values: cv, color: C.blue, width: 4 }, { values: sv, color: '#B4BAC4', width: 4 }, { values: pv, color: C.gold, width: 6, fill: true }], { zero: true, h: cap(P, 260, 320, 440), legend: [{ label: 'Wolf', color: C.gold }, { label: 'CAC 40', color: C.blue }, { label: 'S&P 500', color: '#B4BAC4' }] })); }
+    if (logos.length) blocks.push(B.logoRow(P, logos, (per[0] === 'w' ? 'Cette semaine : ' : 'Ce mois-ci : ') + capTxt));
     return blocks;
   } },
 { k: 'compo', group: 'Portefeuille', ic: '🍩', name: 'Composition', desc: 'Les lignes du portefeuille et leur poids',
@@ -393,7 +435,7 @@ const T = [
     const d = await snap(co.sym, true); if (!d || !isNum(d.earnings_per_share_fq) || !isNum(d.earnings_per_share_forecast_fq)) throw new Error('TradingView ne donne pas encore le dernier résultat de ' + co.name + '.');
     const beat = d.earnings_per_share_fq >= d.earnings_per_share_forecast_fq, sur = isNum(d.eps_surprise_percent_fq) ? d.eps_surprise_percent_fq : (d.earnings_per_share_fq / d.earnings_per_share_forecast_fq - 1) * 100;
     const ccy = d.fundamental_currency_code || d.currency, rev = isNum(d.revenue_fq) && isNum(d.revenue_forecast_fq) ? (d.revenue_fq / d.revenue_forecast_fq - 1) * 100 : null, date = tsIso(d.earnings_release_date);
-    return [B.title(P, 'Résultats' + (date ? ' · ' + frDate(date) : ''), o.titre || co.name, o.sous || 'Le verdict face au consensus'), B.head(P, await logoFor(co), co.name, beat ? 'Battu' : 'Manqué', beat ? C.green : C.red),
+    return [B.title(P, null, o.titre || 'Résultats', o.sous || (date ? 'Publiés le ' + frDate(date) : 'Dernier trimestre') + ' · face au consensus'), B.head(P, await logoFor(co), co.name, beat ? 'Battu' : 'Manqué', beat ? C.green : C.red),
       B.big(P, beat ? 'BATTU' : 'MANQUÉ', beat ? C.green : C.red, 'Bénéfice par action ' + sgn(sur) + ' par rapport au consensus'),
       B.kpis(P, [{ l: 'BPA publié', v: money(d.earnings_per_share_fq, ccy) }, { l: 'BPA attendu', v: money(d.earnings_per_share_forecast_fq, ccy) }, { l: 'CA vs attendu', v: sgn(rev), c: rev >= 0 ? C.green : C.red }])];
   } },
@@ -579,7 +621,7 @@ async function search(fid, q){
 let drawSeq = 0, drawTimer = null;
 function schedule(){ clearTimeout(drawTimer); drawTimer = setTimeout(draw, 250); }
 async function fontsReady(){
-  try { await Promise.all(['700 40px "Roboto Slab"', 'italic 400 40px Lora', '500 20px "JetBrains Mono"', '700 20px "JetBrains Mono"', '600 20px "Plus Jakarta Sans"', '800 20px "Plus Jakarta Sans"'].map(f => document.fonts.load(f))); } catch(e){}
+  try { await Promise.all(['400 40px Anton', '500 20px "Plus Jakarta Sans"', '600 20px "Plus Jakarta Sans"', '700 20px "Plus Jakarta Sans"', '800 20px "Plus Jakarta Sans"'].map(f => document.fonts.load(f))); } catch(e){}
 }
 async function draw(){
   const t = T.find(x => x.k === ui.tpl), box = $('pbCanvas'); if (!t || !box) return;
@@ -589,7 +631,7 @@ async function draw(){
     await fontsReady();
     const P = mk(ui.fmt), blocks = await t.build(P, ui.opts);
     if (seq !== drawSeq) return;
-    await frame(P, t.name, t.group === 'Portefeuille' ? 'Wolf Portfolio' : 'Données TradingView · ' + frDate(today()));
+    await frame(P, t.name, t.group === 'Portefeuille' ? null : 'Données TradingView · ' + frDate(today()));
     compose(P, blocks);
     ui.canvas = P.c; P.c.className = 'pb-out'; box.innerHTML = ''; box.appendChild(P.c); msg('');
   } catch(e){ if (seq !== drawSeq) return; ui.canvas = null; box.innerHTML = '<p class="pb-err">⚠ ' + esc(e.message || 'erreur') + '</p>'; }
