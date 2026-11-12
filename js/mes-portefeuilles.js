@@ -446,6 +446,7 @@ function compute(acc){
 function render(){
   const page = document.getElementById(PAGE_ID);
   if (!page || !page.classList.contains('active')) return;
+  const scPrev = document.getElementById('mpScBg'), scScroll = scPrev ? scPrev.scrollTop : 0;   // la fenêtre SCPI garde sa position après une saisie
   closeZoom();
   Object.values(charts).forEach(c => { try { c.destroy(); } catch(e){} }); charts = {};
   if (!serverOk && location.protocol === 'https:'){ page.innerHTML = `<div class="mp-card mp-empty">Le Wolf Portfolio n'a pas encore été publié en ligne.</div>`; return; }
@@ -473,9 +474,12 @@ function render(){
       + `<div class="mp-card">${journalHtml()}</div>`;
   }
   page.innerHTML = `<div class="mp${locked ? ' mp-locked' : ''}${RO ? ' mp-ro' : ''}">${titleHtml()}${accountCardsHtml()}${body}</div>` + (ui.modal ? `<div class="mp-modal-bg" id="mpModalBg"><div class="mp-modal" id="mpModal">${modalHtml()}</div></div>` : '')
-    + (ui.epargne && !RO ? `<div class="mp-modal-bg" id="mpEpBg"><div class="mp-modal mp-ep-modal" id="mpEpModal">${epargneModalHtml()}</div></div>` : '');
+    + (ui.epargne && !RO ? `<div class="mp-modal-bg" id="mpEpBg"><div class="mp-modal mp-ep-modal" id="mpEpModal">${epargneModalHtml()}</div></div>` : '')
+    + (ui.scpi && !RO ? `<div class="mp-modal-bg" id="mpScBg"><div class="mp-modal sc-modal" id="mpScModal">${scpiModalHtml()}</div></div>` : '');
   wire();
   wireEpargne();
+  wireScpi();
+  const scBg = document.getElementById('mpScBg'); if (scBg){ scBg.scrollTop = scScroll; drawScpiChart(); }
   if (c && histAt && typeof Chart !== 'undefined'){ drawPerfChart(c); drawDonut(c, locked); }
   if (ui.modal) wireModal();
 }
@@ -489,14 +493,14 @@ function titleHtml(){
     ${ui.msg ? `<div class="mp-banner ${ui.msg.err ? 'err' : 'ok'}"><span>${esc(ui.msg.text)}</span><span>${ui.msg.undo ? `<button class="mp-ghost" data-mp-restore="${esc(ui.msg.undo)}">↶ Annuler</button>` : ''}<button class="mp-x" data-mp-msgx>✕</button></span></div>` : ''}`;
 }
 function accountCardsHtml(){
-  return `<div class="mp-accounts mp-accounts5">${ACCOUNTS.map(a => {
+  return `<div class="mp-accounts ${RO ? '' : 'mp-accounts6'}">${ACCOUNTS.map(a => {
     const c = cache[a.k], lockedA = a.k !== 'wolf' && !persoOk();
     const v = c ? c.now.value : null, p = c && c.perf ? c.perf.twr * 100 : null;
     return `<button class="mp-acc ${ui.acc === a.k ? 'active' : ''} ${a.k === 'perso' ? 'mp-acc-sum' : ''}" data-mp-acc="${a.k}">
       <span class="mp-acc-top"><span class="mp-acc-ico">${a.icon}</span><span><b>${a.label}</b><small>${a.sub}</small></span></span>
       <span class="mp-acc-val${lockedA ? ' mp-blur' : ''}">${histLoading && !histAt ? '…' : eur(v, 0)}${c && c.missing.length && !lockedA ? ' <span class="mp-acc-warn" title="Cours manquants : valeur incomplète">⚠</span>' : ''}</span>
       <span class="mp-acc-perf ${cls(p)}">${lockedA ? '🔒 chiffres fictifs' : pct(p) + ' ' + (periodRange().label || 'depuis le début')}</span></button>`;
-  }).join('')}${RO ? '' : epargneCardHtml()}</div>`;
+  }).join('')}${RO ? '' : epargneCardHtml() + scpiCardHtml()}</div>`;
 }
 function toolbarHtml(){
   const years = [...new Set(Object.values(D.accounts).flatMap(a => a.ops.map(o => o.date.slice(0, 4))))].sort().reverse();
@@ -806,30 +810,32 @@ function analysisHtml(c){
 }
 
 /* ======================= ÉPARGNE : LDDS + LIVRET A (soldes mis à jour à la main) ======================= */
+const epTot = x => x ? (x.ldds || 0) + (x.livretA || 0) + (x.precaution || 0) : 0;
 function epargneLast(){ const e = (D.epargne && D.epargne.entries) || []; return e.slice().sort((a, b) => a.date < b.date ? 1 : -1)[0] || null; }
 function epargneCardHtml(){
   const last = epargneLast(), locked = !persoOk();
-  const tot = last ? (last.ldds || 0) + (last.livretA || 0) : null;
-  const bourse = cache && cache.perso ? cache.perso.now.value : null;
+  const tot = last ? epTot(last) : null;
+  const bourse = cache && cache.perso ? cache.perso.now.value : null, scpi = scpiTotal() || 0;
   return `<button class="mp-acc mp-acc-ep ${ui.epargne ? 'active' : ''}" data-mp-epargne>
-    <span class="mp-acc-top"><span class="mp-acc-ico">💶</span><span><b>Épargne</b><small>LDDS + Livret A</small></span></span>
+    <span class="mp-acc-top"><span class="mp-acc-ico">💶</span><span><b>Épargne</b><small>LDDS · Livret A · précaution</small></span></span>
     <span class="mp-acc-val${locked ? ' mp-blur' : ''}">${tot == null ? '—' : eur(tot, 0)}</span>
-    <span class="mp-acc-perf">${locked ? '🔒' : last ? 'au ' + fmtD(last.date) + (bourse != null ? ' · patrimoine ' + eur(bourse + tot, 0) : '') : 'à renseigner'}</span></button>`;
+    <span class="mp-acc-perf">${locked ? '🔒' : last ? 'au ' + fmtD(last.date) + (bourse != null ? ' · patrimoine ' + eur(bourse + tot + scpi, 0) : '') : 'à renseigner'}</span></button>`;
 }
 function epargneModalHtml(){
   const last = epargneLast(), e = ((D.epargne && D.epargne.entries) || []).slice().sort((a, b) => a.date < b.date ? 1 : -1), locked = !persoOk();
   const s2 = v => v == null ? '' : String(v).replace('.', ',');
-  const bourse = cache && cache.perso ? cache.perso.now.value : null, tot = last ? (last.ldds || 0) + (last.livretA || 0) : 0;
-  return `<div class="mp-modal-head"><h3>💶 Épargne · LDDS + Livret A</h3><button class="mp-x" data-mp-epclose>✕</button></div>
+  const bourse = cache && cache.perso ? cache.perso.now.value : null, tot = last ? epTot(last) : 0, scpi = scpiTotal() || 0;
+  return `<div class="mp-modal-head"><h3>💶 Épargne · LDDS, Livret A, épargne de précaution</h3><button class="mp-x" data-mp-epclose>✕</button></div>
     <div class="mp-ep ${locked ? 'mp-locked' : ''}">
       ${locked ? '<div class="mp-banner err">🔒 Déverrouille le PEA / CTO (ton code) pour voir et modifier ton épargne.</div>' : `
-      <div class="mp-ep-sum"><div><span>Épargne</span><b>${eur(tot, 0)}</b></div><div><span>Bourse (PEA + CTO)</span><b>${eur(bourse, 0)}</b></div><div class="tot"><span>Patrimoine</span><b>${bourse != null ? eur(bourse + tot, 0) : '—'}</b></div></div>
+      <div class="mp-ep-sum"><div><span>Épargne</span><b>${eur(tot, 0)}</b></div><div><span>Bourse (PEA + CTO)</span><b>${eur(bourse, 0)}</b></div><div><span>SCPI</span><b>${eur(scpi, 0)}</b></div><div class="tot"><span>Patrimoine</span><b>${bourse != null ? eur(bourse + tot + scpi, 0) : '—'}</b></div></div>
       <div class="mp-f-grid"><div><label>Date</label><input type="date" data-ep="date" value="${E.isoToday()}"></div>
         <div><label>LDDS (€)</label><input inputmode="decimal" data-ep="ldds" value="${s2(last && last.ldds)}"></div>
         <div><label>Livret A (€)</label><input inputmode="decimal" data-ep="livretA" value="${s2(last && last.livretA)}"></div>
+        <div class="mp-f-full"><label>Épargne de précaution (€)</label><input inputmode="decimal" data-ep="precaution" value="${s2(last && last.precaution)}" placeholder="argent de côté pour les imprévus (compte courant, livret…)"></div>
         <div class="mp-f-full"><label>Note (facultatif)</label><input data-ep="note" placeholder="ex. intérêts de l'année, virement…"></div></div>
       <div class="mp-modal-foot"><span class="mp-err" id="mpEpErr"></span><button class="refresh-btn" data-mp-epsave>Enregistrer les soldes</button></div>
-      <h4 class="mp-h">Historique</h4><div class="mp-ep-hist">${e.length ? e.map(x => `<div class="mp-ep-row"><span>${fmtD(x.date)}</span><span>LDDS <b>${eur(x.ldds, 0)}</b></span><span>Livret A <b>${eur(x.livretA, 0)}</b></span><span>Total <b>${eur((x.ldds || 0) + (x.livretA || 0), 0)}</b></span>${x.note ? `<em>${esc(x.note)}</em>` : '<em></em>'}<button class="mp-del" data-mp-epdel="${esc(x.id)}" title="Retirer ce relevé">🗑</button></div>`).join('') : '<div class="mp-empty">Aucun relevé : saisis tes soldes actuels ci-dessus.</div>'}</div>`}
+      <h4 class="mp-h">Historique</h4><div class="mp-ep-hist">${e.length ? e.map(x => `<div class="mp-ep-row"><span>${fmtD(x.date)}</span><span>LDDS <b>${eur(x.ldds, 0)}</b></span><span>Livret A <b>${eur(x.livretA, 0)}</b></span><span>Précaution <b>${eur(x.precaution || 0, 0)}</b></span><span>Total <b>${eur(epTot(x), 0)}</b></span>${x.note ? `<em>${esc(x.note)}</em>` : '<em></em>'}<button class="mp-del" data-mp-epdel="${esc(x.id)}" title="Retirer ce relevé">🗑</button></div>`).join('') : '<div class="mp-empty">Aucun relevé : saisis tes soldes actuels ci-dessus.</div>'}</div>`}
     </div>`;
 }
 async function epargneSave(entry, removeId){
@@ -848,11 +854,246 @@ function wireEpargne(){
   const sv = m.querySelector('[data-mp-epsave]');
   if (sv) sv.addEventListener('click', () => {
     const g = k => m.querySelector('[data-ep="' + k + '"]').value;
-    const ldds = parseNum(g('ldds')), livretA = parseNum(g('livretA')), date = g('date');
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || (ldds == null && livretA == null)){ document.getElementById('mpEpErr').textContent = 'Indique une date et au moins un solde.'; return; }
-    epargneSave({ id: 'ep-' + Date.now().toString(36), date, ldds: ldds || 0, livretA: livretA || 0, note: g('note').trim() || undefined, at: new Date().toISOString() });
+    const ldds = parseNum(g('ldds')), livretA = parseNum(g('livretA')), precaution = parseNum(g('precaution')), date = g('date');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || (ldds == null && livretA == null && precaution == null)){ document.getElementById('mpEpErr').textContent = 'Indique une date et au moins un solde.'; return; }
+    epargneSave({ id: 'ep-' + Date.now().toString(36), date, ldds: ldds || 0, livretA: livretA || 0, precaution: precaution || 0, note: g('note').trim() || undefined, at: new Date().toISOString() });
   });
   m.querySelectorAll('[data-mp-epdel]').forEach(b => b.addEventListener('click', () => epargneSave(null, b.dataset.mpEpdel)));
+}
+
+/* ======================= SCPI (parts, revalorisations du prix de part, revenus mensuels) =======================
+   D.scpi = { items:[{ id, nom, societe?, commission? (% de frais de sortie -> valeur de retrait),
+                       achats:[{id, date, parts, prix (prix de souscription par part), frais? €}],
+                       prix:[{id, date (date d'effet), prix (nouveau prix de part), note?}],
+                       revenus:[{id, mois:'AAAA-MM', eur (net reçu), note?}] }],
+              trash:[{kind, scpi, entry, at}] }
+   Rien n'est supprimé pour de bon : tout retrait part dans D.scpi.trash (même fichier, mêmes sauvegardes).
+   Valeur = parts × dernier prix de part en vigueur (revalorisation, sinon prix d'achat).
+   Performance globale = (valeur + revenus reçus − investi) ÷ investi ; TRI = XIRR (achats, revenus, valeur du jour). */
+const scItems = () => (D && D.scpi && D.scpi.items) || [];
+const ymOf = iso => iso.slice(0, 7);
+const ymAdd = (ym, n) => { const y = +ym.slice(0, 4), m = +ym.slice(5, 7) - 1 + n; const d = new Date(Date.UTC(y, m, 1)); return d.toISOString().slice(0, 7); };
+const ymEnd = ym => addDays(ymAdd(ym, 1) + '-01', -1);
+const ymLabel = ym => MOIS[+ym.slice(5, 7) - 1] + ' ' + ym.slice(0, 4);
+const scId = p => p + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+function scPriceEvents(it){
+  return (it.achats || []).map(a => ({ date: a.date, prix: a.prix, src: 'achat' }))
+    .concat((it.prix || []).map(p => ({ date: p.date, prix: p.prix, src: 'revalo', id: p.id, note: p.note })))
+    .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : (a.src === 'revalo') - (b.src === 'revalo'));
+}
+function scPriceAt(it, iso){
+  const ev = scPriceEvents(it); let p = ev.length ? ev[0].prix : null;
+  ev.forEach(e => { if (e.date <= iso) p = e.prix; });
+  return p;
+}
+function scStats(it, today){
+  today = today || E.isoToday();
+  const achats = it.achats || [], revs = it.revenus || [];
+  const parts = achats.reduce((s, a) => s + (a.parts || 0), 0);
+  const investi = achats.reduce((s, a) => s + a.parts * a.prix + (a.frais || 0), 0);
+  const prix = scPriceAt(it, today), valeur = prix != null ? parts * prix : 0;
+  const retrait = it.commission ? valeur * (1 - it.commission / 100) : null;
+  const revTot = revs.reduce((s, r) => s + (r.eur || 0), 0);
+  const from12 = ymAdd(ymOf(today), -11);
+  const rev12 = revs.filter(r => r.mois >= from12 && r.mois <= ymOf(today)).reduce((s, r) => s + (r.eur || 0), 0);
+  const prixMoyen = parts ? achats.reduce((s, a) => s + a.parts * a.prix, 0) / parts : null;
+  const cfs = achats.map(a => ({ d: a.date, a: -(a.parts * a.prix + (a.frais || 0)) }))
+    .concat(revs.map(r => ({ d: ymEnd(r.mois) > today ? today : ymEnd(r.mois), a: r.eur || 0 })))
+    .concat([{ d: today, a: valeur }]).sort((a, b) => a.d < b.d ? -1 : 1);
+  const first = achats.length ? achats.map(a => a.date).sort()[0] : null;
+  return { parts, investi, prix, prixMoyen, valeur, retrait, revTot, rev12, first,
+    pvParts: valeur - investi, perf: investi ? (valeur + revTot - investi) / investi : null,
+    rdt12: investi ? rev12 / investi : null, distrib: valeur ? rev12 / valeur : null, tri: first && daysBetween(first, today) >= 30 ? E.xirr(cfs) : null };
+}
+function scpiTotal(){ const its = scItems(); if (!its.length) return null; return its.reduce((s, it) => s + scStats(it).valeur, 0); }
+function scpiCardHtml(){
+  const its = scItems(), locked = !persoOk();
+  const st = its.map(it => scStats(it)), val = st.reduce((s, x) => s + x.valeur, 0), r12 = st.reduce((s, x) => s + x.rev12, 0), inv = st.reduce((s, x) => s + x.investi, 0);
+  return `<button class="mp-acc mp-acc-ep ${ui.scpi ? 'active' : ''}" data-mp-scpi>
+    <span class="mp-acc-top"><span class="mp-acc-ico">🏢</span><span><b>SCPI</b><small>${its.length ? its.length + ' SCPI · pierre-papier' : 'Immobilier'}</small></span></span>
+    <span class="mp-acc-val${locked ? ' mp-blur' : ''}">${its.length ? eur(val, 0) : '—'}</span>
+    <span class="mp-acc-perf ${locked ? '' : 'pos'}">${locked ? '🔒' : its.length ? 'revenus 12 mois ' + eur(r12, 0) + (inv ? ' · ' + pct(r12 / inv * 100, 2) : '') : 'à renseigner'}</span></button>`;
+}
+function scpiModalHtml(){
+  const locked = !persoOk(), its = scItems(), today = E.isoToday(), F = ui.scForm || {};
+  const s2 = v => v == null ? '' : String(v).replace('.', ',');
+  const head = `<div class="mp-modal-head"><h3>🏢 SCPI · parts, revalorisations et revenus</h3><button class="mp-x" data-sc-close>✕</button></div>`;
+  if (locked) return head + '<div class="mp-banner err">🔒 Déverrouille le PEA / CTO (ton code) pour voir et modifier tes SCPI.</div>';
+  const st = its.map(it => scStats(it, today));
+  const T = k => st.reduce((s, x) => s + (x[k] || 0), 0);
+  const inv = T('investi'), val = T('valeur'), rev = T('revTot'), r12 = T('rev12');
+  const k = (l, v, sub, c) => `<div><span>${l}</span><b class="${c || ''}">${v}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
+  const sum = its.length ? `<div class="sc-sum">
+      ${k('Valeur des parts', eur(val, 0), 'au dernier prix de part')}
+      ${k('Investi', eur(inv, 0), 'prix de souscription + frais')}
+      ${k('Revenus reçus', eur(rev, 0), 'depuis le début')}
+      ${k('Revenus 12 mois', eur(r12, 0), inv ? pct(r12 / inv * 100, 2) + ' de l\'investi' : '')}
+      ${k('Performance globale', pct(inv ? (val + rev - inv) / inv * 100 : null, 1), 'parts + revenus', cls(val + rev - inv))}</div>` : '';
+  // saisie des revenus du mois : un champ par SCPI, tout s'enregistre d'un coup
+  const mois = F.mois || ymAdd(ymOf(today), -1);
+  const revForm = its.length ? `<div class="sc-box sc-rev"><h4 class="mp-h">💶 Revenus du mois</h4>
+      <div class="sc-rev-grid"><div><label>Mois</label><input type="month" data-sc-mois value="${mois}"></div>
+      ${its.map(it => { const ex = (it.revenus || []).find(r => r.mois === mois); return `<div><label>${esc(it.nom)} (€)</label><input inputmode="decimal" data-sc-rev="${esc(it.id)}" value="${s2(ex && ex.eur)}" placeholder="0,00"></div>`; }).join('')}
+      <div class="sc-rev-btn"><button class="refresh-btn" data-sc-revsave>Enregistrer ${ymLabel(mois)}</button></div></div>
+      <p class="mp-hint">Mets le montant NET reçu sur ton compte. Un champ laissé vide ne change rien ; un mois déjà saisi est simplement corrigé (l'ancien montant reste dans la corbeille du fichier).</p></div>` : '';
+  const chart = its.some(it => (it.revenus || []).length) ? `<div class="sc-box"><h4 class="mp-h">Revenus mois par mois</h4><div class="sc-chart"><canvas id="mpScChart"></canvas></div>${scYearTable(its)}</div>` : '';
+  const cards = its.map((it, i) => scItemHtml(it, st[i], F)).join('');
+  const add = F.k === 'new' ? `<div class="sc-box sc-form"><h4 class="mp-h">Nouvelle SCPI</h4><div class="mp-f-grid sc-f4">
+      <div><label>Nom</label><input data-sf="nom" placeholder="ex. Iroko Zen"></div>
+      <div><label>Société de gestion (facultatif)</label><input data-sf="societe"></div>
+      <div><label>Date d'achat</label><input type="date" data-sf="date" value="${today}"></div>
+      <div><label>Nombre de parts</label><input inputmode="decimal" data-sf="parts"></div>
+      <div><label>Prix de souscription par part (€)</label><input inputmode="decimal" data-sf="prix"></div>
+      <div><label>Frais en plus (€, facultatif)</label><input inputmode="decimal" data-sf="frais" placeholder="souvent déjà dans le prix"></div>
+      <div><label>Frais de sortie % (facultatif)</label><input inputmode="decimal" data-sf="commission" placeholder="ex. 10 → valeur de retrait"></div></div>
+      <div class="mp-modal-foot"><span class="mp-err" id="mpScErr"></span><div><button class="mp-ghost" data-sc-cancel>Annuler</button><button class="refresh-btn" data-sc-newsave>Ajouter la SCPI</button></div></div></div>`
+    : `<button class="mp-quick sc-addbtn" data-sc-form="new">＋ Ajouter une SCPI</button>`;
+  const undo = ui.scUndo ? `<div class="mp-banner ok"><span>${esc(ui.scUndo.text)}</span><span><button class="mp-ghost" data-sc-undo>↶ Annuler</button><button class="mp-x" data-sc-undox>✕</button></span></div>` : '';
+  return head + `<div class="sc">${undo}${sum}${revForm}${chart}${cards}${add}
+    ${!its.length ? '<p class="mp-hint">Ajoute tes deux SCPI avec leur premier achat. Ensuite : « + Revalorisation » quand le prix de part change, et chaque mois « Revenus du mois ».</p>' : ''}</div>`;
+}
+function scYearTable(its){
+  const years = [...new Set(its.flatMap(it => (it.revenus || []).map(r => r.mois.slice(0, 4))))].sort().reverse();
+  if (!years.length) return '';
+  const invAt = (it, y) => (it.achats || []).filter(a => a.date <= y + '-12-31').reduce((s, a) => s + a.parts * a.prix + (a.frais || 0), 0);
+  const revY = (it, y) => (it.revenus || []).filter(r => r.mois.startsWith(y)).reduce((s, r) => s + (r.eur || 0), 0);
+  const nM = (it, y) => (it.revenus || []).filter(r => r.mois.startsWith(y) && r.eur).length;
+  return `<div class="mp-seg-scroll"><table class="mp-seg-t sc-yt"><thead><tr><th style="text-align:left">Année</th>${its.map(it => `<th>${esc(it.nom)}</th>`).join('')}<th>Total</th><th>Rendement</th></tr></thead><tbody>
+    ${years.map(y => { const tot = its.reduce((s, it) => s + revY(it, y), 0), inv = its.reduce((s, it) => s + invAt(it, y), 0);
+      return `<tr><td class="lb">${y}${y === E.isoToday().slice(0, 4) ? ' <small>en cours</small>' : ''}</td>${its.map(it => `<td>${eur(revY(it, y), 0)}<small>${nM(it, y)} mois · ${pct(invAt(it, y) ? revY(it, y) / invAt(it, y) * 100 : null, 2)}</small></td>`).join('')}<td><b>${eur(tot, 0)}</b></td><td class="pos">${pct(inv ? tot / inv * 100 : null, 2)}</td></tr>`; }).join('')}
+    </tbody></table></div><p class="mp-hint">Rendement de l'année = revenus de l'année ÷ argent investi à la fin de l'année (une année en cours est forcément incomplète).</p>`;
+}
+function scItemHtml(it, s, F){
+  const s2 = v => v == null ? '' : String(v).replace('.', ',');
+  const ev = scPriceEvents(it);
+  let prev = null;
+  const hist = ev.map(e => { const ch = prev ? (e.prix / prev - 1) * 100 : null; prev = e.prix;
+    return `<div class="sc-row"><span>${fmtD(e.date)}</span><span>${e.src === 'revalo' ? '🔁 Revalorisation' : '↗ Prix d\'achat'}</span><b>${eur(e.prix, 2)}</b><span class="${ch == null ? '' : cls(ch)}">${ch == null ? '' : pct(ch, 2)}</span><em>${esc(e.note || '')}</em>${e.src === 'revalo' ? `<button class="mp-del" data-sc-del="prix|${esc(it.id)}|${esc(e.id)}" title="Retirer">🗑</button>` : '<span></span>'}</div>`; }).reverse().join('');
+  const achats = (it.achats || []).slice().sort((a, b) => a.date < b.date ? 1 : -1).map(a => `<div class="sc-row"><span>${fmtD(a.date)}</span><span>${num(a.parts, 4)} parts × ${eur(a.prix, 2)}</span><b>${eur(a.parts * a.prix + (a.frais || 0), 2)}</b><span>${a.frais ? 'frais ' + eur(a.frais) : ''}</span><em></em>${(it.achats || []).length > 1 ? `<button class="mp-del" data-sc-del="achats|${esc(it.id)}|${esc(a.id)}" title="Retirer cet achat">🗑</button>` : '<span></span>'}</div>`).join('');
+  const revs = (it.revenus || []).slice().sort((a, b) => a.mois < b.mois ? 1 : -1);
+  const revList = revs.slice(0, ui.scAllRev === it.id ? 999 : 6).map(r => `<div class="sc-row"><span>${ymLabel(r.mois)}</span><span>Revenus</span><b>${eur(r.eur, 2)}</b><span>${s.parts ? eur(r.eur / s.parts, 2) + ' / part' : ''}</span><em>${esc(r.note || '')}</em><button class="mp-del" data-sc-del="revenus|${esc(it.id)}|${esc(r.id)}" title="Retirer ce mois">🗑</button></div>`).join('');
+  const form = F.id !== it.id ? '' : F.k === 'achat' ? `<div class="sc-form"><div class="mp-f-grid sc-f4">
+      <div><label>Date</label><input type="date" data-sf="date" value="${E.isoToday()}"></div>
+      <div><label>Parts achetées</label><input inputmode="decimal" data-sf="parts"></div>
+      <div><label>Prix par part (€)</label><input inputmode="decimal" data-sf="prix" value="${s2(s.prix)}"></div>
+      <div><label>Frais en plus (€)</label><input inputmode="decimal" data-sf="frais"></div></div>
+      <div class="mp-modal-foot"><span class="mp-err" id="mpScErr"></span><div><button class="mp-ghost" data-sc-cancel>Annuler</button><button class="refresh-btn" data-sc-achatsave="${esc(it.id)}">Ajouter l'achat</button></div></div></div>`
+    : F.k === 'revalo' ? `<div class="sc-form"><div class="mp-f-grid sc-f4">
+      <div><label>Date d'effet de la revalorisation</label><input type="date" data-sf="date" value="${E.isoToday().slice(0, 4)}-01-01"></div>
+      <div><label>Nouveau prix de part (€)</label><input inputmode="decimal" data-sf="prix" placeholder="actuel ${s2(s.prix)}"></div>
+      <div class="sc-span2"><label>Note (facultatif)</label><input data-sf="note" placeholder="ex. hausse annoncée par la société de gestion"></div></div>
+      <div class="mp-modal-foot"><span class="mp-err" id="mpScErr"></span><div><button class="mp-ghost" data-sc-cancel>Annuler</button><button class="refresh-btn" data-sc-revalosave="${esc(it.id)}">Enregistrer la revalorisation</button></div></div></div>`
+    : F.k === 'edit' ? `<div class="sc-form"><div class="mp-f-grid sc-f4">
+      <div><label>Nom</label><input data-sf="nom" value="${esc(it.nom)}"></div>
+      <div><label>Société de gestion</label><input data-sf="societe" value="${esc(it.societe || '')}"></div>
+      <div><label>Frais de sortie %</label><input inputmode="decimal" data-sf="commission" value="${s2(it.commission)}"></div></div>
+      <div class="mp-modal-foot"><span class="mp-err" id="mpScErr"></span><div><button class="mp-ghost" data-sc-delitem="${esc(it.id)}">${ui.scDelItem === it.id ? '⚠ Confirmer : retirer la SCPI ?' : '🗑 Retirer la SCPI'}</button><button class="mp-ghost" data-sc-cancel>Annuler</button><button class="refresh-btn" data-sc-editsave="${esc(it.id)}">Enregistrer</button></div></div></div>` : '';
+  const kp = (l, v, sub, c) => `<div><span>${l}</span><b class="${c || ''}">${v}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
+  return `<div class="sc-box sc-item"><div class="sc-item-head"><div><h4>${esc(it.nom)}</h4><small>${esc(it.societe || '')}${it.societe ? ' · ' : ''}${num(s.parts, 4)} parts depuis le ${fmtD(s.first)}</small></div>
+      <div class="sc-acts"><button class="mp-quick" data-sc-form="achat|${esc(it.id)}">＋ Achat de parts</button><button class="mp-quick" data-sc-form="revalo|${esc(it.id)}">🔁 Revalorisation</button><button class="mp-ghost" data-sc-form="edit|${esc(it.id)}" title="Modifier">✏</button></div></div>
+    ${form}
+    <div class="sc-kpis">
+      ${kp('Prix de part', eur(s.prix, 2), s.prixMoyen ? 'acheté ' + eur(s.prixMoyen, 2) + ' en moyenne' : '')}
+      ${kp('Valeur', eur(s.valeur, 0), s.retrait != null ? 'retrait ' + eur(s.retrait, 0) : 'investi ' + eur(s.investi, 0))}
+      ${kp('Plus-value des parts', sEur(s.pvParts, 0), s.investi ? pct(s.pvParts / s.investi * 100, 1) : '', cls(s.pvParts))}
+      ${kp('Revenus reçus', eur(s.revTot, 0), '12 mois : ' + eur(s.rev12, 0))}
+      ${kp('Rendement 12 mois', pct(s.rdt12 != null ? s.rdt12 * 100 : null, 2), 'sur l\'investi · ' + pct(s.distrib != null ? s.distrib * 100 : null, 2) + ' sur la valeur')}
+      ${kp('Performance globale', pct(s.perf != null ? s.perf * 100 : null, 1), s.tri != null ? 'TRI ' + pct(s.tri * 100, 2) + ' / an' : 'parts + revenus', cls(s.perf))}</div>
+    <div class="sc-cols"><div><h5>Prix de part et revalorisations</h5>${hist}</div>
+      <div><h5>Achats</h5>${achats}<h5>Derniers revenus</h5>${revList || '<div class="mp-hint">Aucun revenu saisi.</div>'}${revs.length > 6 ? `<button class="mp-ghost" data-sc-allrev="${esc(it.id)}">${ui.scAllRev === it.id ? 'Moins' : 'Tout voir (' + revs.length + ')'}</button>` : ''}</div></div></div>`;
+}
+async function scpiSave(mutate, okText, undo){
+  const before = JSON.stringify(D.scpi || null);
+  D.scpi = D.scpi || { items: [], trash: [] }; D.scpi.trash = D.scpi.trash || [];
+  try { mutate(D.scpi); await save(); ui.scForm = null; ui.scDelItem = null; ui.scUndo = undo || null; ui.msg = okText ? { text: okText } : ui.msg; }
+  catch(e){ D.scpi = JSON.parse(before); ui.msg = { err: true, text: e.message }; }
+  render();
+}
+const scTrash = (S, kind, scpi, entry) => S.trash.push({ kind, scpi, entry: JSON.parse(JSON.stringify(entry)), at: new Date().toISOString() });
+function drawScpiChart(){
+  const cv = document.getElementById('mpScChart'); if (!cv || typeof Chart === 'undefined') return;
+  const its = scItems(), all = its.flatMap(it => (it.revenus || []).map(r => r.mois)).sort();
+  if (!all.length) return;
+  const end = ymOf(E.isoToday()) > all[all.length - 1] ? ymOf(E.isoToday()) : all[all.length - 1];
+  let start = all[0]; if (start < ymAdd(end, -35)) start = ymAdd(end, -35);
+  const months = []; for (let m = start; m <= end; m = ymAdd(m, 1)) months.push(m);
+  charts.scpi = new Chart(cv, { type: 'bar', data: { labels: months.map(m => MOIS[+m.slice(5, 7) - 1].slice(0, 4) + ' ' + m.slice(2, 4)),
+      datasets: its.map((it, i) => ({ label: it.nom, backgroundColor: PALETTE[i % PALETTE.length], borderRadius: 4, stack: 's',
+        data: months.map(m => { const r = (it.revenus || []).find(x => x.mois === m); return r ? r.eur : 0; }) })) },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#C9CED6' } },
+        tooltip: { callbacks: { label: c => c.dataset.label + ' : ' + eur(c.parsed.y), footer: items => 'Total : ' + eur(items.reduce((s, x) => s + x.parsed.y, 0)) } } },
+      scales: { x: { stacked: true, grid: { display: false }, ticks: { color: '#8B93A0' } }, y: { stacked: true, ticks: { color: '#8B93A0', callback: v => v + ' €' }, grid: { color: 'rgba(255,255,255,0.06)' } } } } });
+}
+function wireScpi(){
+  const m = document.getElementById('mpScModal'); if (!m) return;
+  const close = () => { ui.scpi = false; ui.scForm = null; ui.scUndo = null; render(); };
+  document.getElementById('mpScBg').addEventListener('mousedown', e => { if (e.target.id === 'mpScBg') close(); });
+  m.querySelectorAll('[data-sc-close]').forEach(b => b.addEventListener('click', close));
+  const err = t => { const x = document.getElementById('mpScErr'); if (x) x.textContent = t; };
+  const g = k => { const x = m.querySelector('[data-sf="' + k + '"]'); return x ? x.value.trim() : ''; };
+  const isD = d => /^\d{4}-\d{2}-\d{2}$/.test(d);
+  m.querySelectorAll('[data-sc-form]').forEach(b => b.addEventListener('click', () => { const [k, id] = b.dataset.scForm.split('|'); ui.scForm = Object.assign({}, ui.scForm, { k, id }); ui.scDelItem = null; render(); }));
+  m.querySelectorAll('[data-sc-cancel]').forEach(b => b.addEventListener('click', () => { ui.scForm = { mois: (ui.scForm || {}).mois }; ui.scDelItem = null; render(); }));
+  m.querySelectorAll('[data-sc-allrev]').forEach(b => b.addEventListener('click', () => { ui.scAllRev = ui.scAllRev === b.dataset.scAllrev ? null : b.dataset.scAllrev; render(); }));
+  const mo = m.querySelector('[data-sc-mois]');
+  if (mo) mo.addEventListener('change', () => { if (/^\d{4}-\d{2}$/.test(mo.value)){ ui.scForm = Object.assign({}, ui.scForm, { mois: mo.value }); render(); } });
+  const rs = m.querySelector('[data-sc-revsave]');
+  if (rs) rs.addEventListener('click', () => {
+    const mois = mo.value; if (!/^\d{4}-\d{2}$/.test(mois)) return;
+    const vals = [...m.querySelectorAll('[data-sc-rev]')].map(x => ({ id: x.dataset.scRev, v: x.value.trim() === '' ? null : parseNum(x.value) }));
+    if (vals.some(x => x.v == null && m.querySelector('[data-sc-rev="' + x.id + '"]').value.trim() !== '')){ ui.msg = { err: true, text: 'Un montant de revenus est illisible.' }; render(); return; }
+    const todo = vals.filter(x => x.v != null);
+    if (!todo.length) return;
+    scpiSave(S => todo.forEach(x => { const it = S.items.find(i => i.id === x.id); it.revenus = it.revenus || [];
+      const ex = it.revenus.find(r => r.mois === mois);
+      if (ex){ if (ex.eur === x.v) return; scTrash(S, 'revenus-corrige', it.id, ex); ex.eur = x.v; ex.editedAt = new Date().toISOString(); }
+      else it.revenus.push({ id: scId('rv'), mois, eur: x.v, at: new Date().toISOString() }); }),
+      '✔ Revenus de ' + ymLabel(mois) + ' enregistrés.');
+  });
+  const ns = m.querySelector('[data-sc-newsave]');
+  if (ns) ns.addEventListener('click', () => {
+    const nom = g('nom'), date = g('date'), parts = parseNum(g('parts')), prix = parseNum(g('prix')), frais = parseNum(g('frais')), com = parseNum(g('commission'));
+    if (!nom || !isD(date) || !(parts > 0) || !(prix > 0)) return err('Indique le nom, la date, le nombre de parts et le prix par part.');
+    scpiSave(S => S.items.push({ id: scId('scpi'), nom, societe: g('societe') || undefined, commission: com || undefined, createdAt: new Date().toISOString(),
+      achats: [{ id: scId('ac'), date, parts, prix, frais: frais || undefined }], prix: [], revenus: [] }), '✔ SCPI « ' + nom + ' » ajoutée.');
+  });
+  const as = m.querySelector('[data-sc-achatsave]');
+  if (as) as.addEventListener('click', () => {
+    const date = g('date'), parts = parseNum(g('parts')), prix = parseNum(g('prix')), frais = parseNum(g('frais'));
+    if (!isD(date) || !(parts > 0) || !(prix > 0)) return err('Indique la date, le nombre de parts et le prix par part.');
+    scpiSave(S => S.items.find(i => i.id === as.dataset.scAchatsave).achats.push({ id: scId('ac'), date, parts, prix, frais: frais || undefined }), '✔ Achat de parts ajouté.');
+  });
+  const vs = m.querySelector('[data-sc-revalosave]');
+  if (vs) vs.addEventListener('click', () => {
+    const date = g('date'), prix = parseNum(g('prix'));
+    if (!isD(date) || !(prix > 0)) return err('Indique la date d\'effet et le nouveau prix de part.');
+    scpiSave(S => { const it = S.items.find(i => i.id === vs.dataset.scRevalosave); it.prix = it.prix || [];
+      const ex = it.prix.find(p => p.date === date); if (ex){ scTrash(S, 'prix-corrige', it.id, ex); ex.prix = prix; ex.note = g('note') || ex.note; }
+      else it.prix.push({ id: scId('px'), date, prix, note: g('note') || undefined }); }, '✔ Revalorisation enregistrée.');
+  });
+  const es = m.querySelector('[data-sc-editsave]');
+  if (es) es.addEventListener('click', () => {
+    const nom = g('nom'); if (!nom) return err('Le nom est obligatoire.');
+    scpiSave(S => { const it = S.items.find(i => i.id === es.dataset.scEditsave); it.nom = nom; it.societe = g('societe') || undefined; it.commission = parseNum(g('commission')) || undefined; }, '✔ SCPI modifiée.');
+  });
+  m.querySelectorAll('[data-sc-delitem]').forEach(b => b.addEventListener('click', () => {
+    const id = b.dataset.scDelitem;
+    if (ui.scDelItem !== id){ ui.scDelItem = id; render(); return; }
+    scpiSave(S => { const i = S.items.findIndex(x => x.id === id); scTrash(S, 'scpi', id, S.items[i]); S.items.splice(i, 1); }, null, { text: 'SCPI retirée (gardée dans la corbeille du fichier).', kind: 'scpi', id });
+  }));
+  m.querySelectorAll('[data-sc-del]').forEach(b => b.addEventListener('click', () => {
+    const [kind, sid, eid] = b.dataset.scDel.split('|');
+    scpiSave(S => { const it = S.items.find(i => i.id === sid), arr = it[kind], i = arr.findIndex(x => x.id === eid); scTrash(S, kind, sid, arr[i]); arr.splice(i, 1); },
+      null, { text: 'Ligne retirée (gardée dans la corbeille du fichier).', kind, id: sid, eid });
+  }));
+  const ub = m.querySelector('[data-sc-undo]');
+  if (ub) ub.addEventListener('click', () => {
+    const u = ui.scUndo;
+    scpiSave(S => { const ti = S.trash.map(t => t.kind === u.kind && t.scpi === u.id && (!u.eid || t.entry.id === u.eid)).lastIndexOf(true); if (ti < 0) return;
+      const t = S.trash.splice(ti, 1)[0];
+      if (u.kind === 'scpi') S.items.push(t.entry); else S.items.find(i => i.id === u.id)[u.kind].push(t.entry); }, '↶ Rétabli.');
+  });
+  const ux = m.querySelector('[data-sc-undox]'); if (ux) ux.addEventListener('click', () => { ui.scUndo = null; render(); });
 }
 
 function journalHtml(){
@@ -1209,6 +1450,7 @@ function wire(){
   // 📤 : ouvre l'onglet Publications prérempli (Wolf Portfolio seulement)
   page.querySelectorAll('[data-mp-pub]').forEach(b => b.addEventListener('click', () => { if (window.WOLF_PUB) WOLF_PUB.open(b.dataset.pubType === 'DIV' ? 'div' : 'tx', { op: b.dataset.mpPub }); }));
   page.querySelectorAll('[data-mp-pubm]').forEach(b => b.addEventListener('click', () => { if (window.WOLF_PUB) WOLF_PUB.open('recap', { per: b.dataset.mpPubm }); }));
+  page.querySelectorAll('[data-mp-scpi]').forEach(b => b.addEventListener('click', () => { ui.scpi = true; render(); }));
   page.querySelectorAll('[data-mp-epargne]').forEach(b => b.addEventListener('click', () => { ui.epargne = true; render(); }));
   page.querySelectorAll('[data-mp-zoom]').forEach(b => b.addEventListener('click', () => openZoom(b.dataset.mpZoom)));
   page.querySelectorAll('[data-mp-restore]').forEach(b => b.addEventListener('click', () => restore(b.dataset.mpRestore)));

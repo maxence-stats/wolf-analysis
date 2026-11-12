@@ -642,7 +642,7 @@ Les anciennes pages Sheet (Wolf Portfolio, Perso) sont conservées telles quelle
 - **Ajouts du 2026-11-11** : « ✏ » sur chaque opération (pas sur une copie Wolf) = même fenêtre préremplie, même `id`/`createdAt`,
   `editedAt` ; la copie Wolf liée suit (même rapport de quantité). Périodes 1/2/3/5 ans (barre et fenêtre agrandie). Section « Analyse de
   données » (`analysisHtml`) : PEA vs CTO, pays (préfixe de bourse), secteur (snapshot TradingView, mémo `wolfMpSectors`), durée de
-  détention, avec % gagnantes, espérance, facteur de profit, payoff, durées. Épargne LDDS / Livret A (`D.epargne.entries`, soldes saisis à
+  détention, avec % gagnantes, espérance, facteur de profit, payoff, durées. Épargne LDDS / Livret A / épargne de précaution (`D.epargne.entries`, champ `precaution` ajouté le 2026-11-12, soldes saisis à
   la main, 5e carte, floutée si verrouillé). Tête de loup `data/wolf-tete.png` au centre du camembert Wolf (`wolfHeadPlugin`).
   **Vérification des performances (11/11)** : moteur juste ; le PEA a des liquidités NÉGATIVES (≈ −487 € en février-mars 2026) =
   liquidités de départ manquantes, ce qui gonfle sa performance d'environ 2 points ; à corriger avec le vrai solde donné par l'utilisateur.
@@ -659,6 +659,13 @@ Les anciennes pages Sheet (Wolf Portfolio, Perso) sont conservées telles quelle
 - Cash PEA vérifié (11/11) : 8 352,22 € = solde réel donné par l'utilisateur, au centime. Le cash négatif de février à mai vient du
   départ au 01/01/2026 (2,16 € déduits) : il manque des liquidités de départ ET autant de sortie plus tard (ou un versement est daté
   trop tard) ; relevé du 31/12/2025 demandé à l'utilisateur. Rien n'a été modifié.
+- **SCPI (2026-11-12)** : 6e carte « 🏢 SCPI » (fenêtre `scpiModalHtml`/`wireScpi`, CSS `.sc-*`), données dans le MÊME fichier
+  `portefeuilles.json`, clé `D.scpi = {items:[{id, nom, societe?, commission? (% frais de sortie → valeur de retrait), achats:[{id,date,
+  parts,prix,frais?}], prix:[{id,date d'effet,prix,note?}] (revalorisations), revenus:[{id,mois:'AAAA-MM',eur net}]}], trash:[]}`.
+  Valeur = parts × dernier prix de part en vigueur ; performance globale = (valeur + revenus − investi) ÷ investi ; TRI = `E.xirr` ;
+  rendement 12 mois sur l'investi et sur la valeur ; tableau par année + barres empilées des revenus mensuels. « Revenus du mois » =
+  un champ par SCPI, tout enregistré d'un coup ; un mois déjà saisi est corrigé (ancien montant dans `trash`). Tout retrait → `trash`
+  + « ↶ Annuler ». Floutée/inaccessible sans le code Perso. Le patrimoine de la carte Épargne inclut les SCPI.
 - **Corbeille** : une opération supprimée part dans `D.trash` (même fichier) avec sa copie Wolf ; « ↶ Annuler » juste après,
   ou « ↶ Restaurer » depuis la corbeille sous le journal (`restore(group)`).
 - **Copie MENSUELLE** (serveur v=11, `Ensure-MonthlySnapshot`) : au premier accès de chaque mois (démarrage, lecture ou
