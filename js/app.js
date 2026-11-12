@@ -14681,6 +14681,7 @@ async function loadCerveauData(){
   mergeCaseVariantAnalyses();
   await rehydrateCerveauDiskHandle();
   renderCerveau();
+  scheduleImageFiles('cerveau', () => cerveauData, persistCerveauData);
 }
 
 // ⚠️⚠️⚠️ DONNÉES CRITIQUES — NE JAMAIS SUPPRIMER/ÉCRASER cerveauData EN DEHORS D'UNE
@@ -14737,6 +14738,114 @@ function persistCerveauData(){
     updateCerveauSaveStatusLabel();
     writeCerveauDiskBackup(); // couche indépendante, best-effort, voir plus bas
   }catch(e){ /* ignore */ }
+  scheduleImageFiles('cerveau', () => cerveauData, persistCerveauData);   // images -> fichiers sur le PC (voir plus bas)
+}
+
+/* ======================= IMAGES RANGÉES EN FICHIERS SUR LE PC (2026-11-12) =======================
+   Demande de l'utilisateur : une image ajoutée dans l'appli doit y rester même si l'original (Téléchargements…) est
+   supprimé, et ne plus dépendre du navigateur. Le Cerveau numérique (IndexedDB) et le Wolf Labo (localStorage) gardaient
+   leurs images en « data URL » dans le navigateur ; les liens internet n'étaient que des liens.
+   Ici, après chaque enregistrement (et au chargement), chaque image encore en data URL — ou ajoutée par lien internet
+   dans un champ image — est copiée en FICHIER par le serveur local, exactement comme les images de l'Atelier
+   (data/mes-portefeuilles/atelier-media/, jamais supprimées, recopiées dans Documents\Wolf Analysis - sauvegardes),
+   puis la donnée garde seulement l'adresse RELATIVE du fichier (jamais le port : il peut changer).
+   Sécurité : rien n'est remplacé tant que le fichier n'est pas confirmé écrit par le serveur ; en cas d'échec l'image
+   reste telle quelle (data URL ou lien). L'état précédent reste dans les sauvegardes du Cerveau (backupThenWrite).
+   Une même image n'est jamais envoyée deux fois : empreinte SHA-256 -> nom du fichier (localStorage wolfMediaHashes,
+   simple confort : au pire une copie en double, jamais une perte). Le lien d'origine d'une image internet est gardé
+   à côté (champ <clé>Origine) quand la structure le permet. */
+const WOLF_MEDIA_PREFIX = '/api/atelier/media?f=';
+const WOLF_MEDIA_HASH_KEY = 'wolfMediaHashes';
+const wolfMediaDone = new Map();     // valeur d'origine -> adresse du fichier (cette session)
+const wolfMediaFailed = new Set();   // refusées par le serveur (format, taille, lien mort) : laissées telles quelles
+let wolfMediaOff = false;            // serveur absent ou ancien : on n'insiste pas pendant cette session
+const wolfMediaJobs = {}, wolfMediaRunning = {};
+const isDataImg = s => typeof s === 'string' && /^data:image\/(png|jpe?g|webp|gif);base64,/i.test(s);
+const isExtImg = s => typeof s === 'string' && /^https?:\/\//i.test(s);
+function wolfMediaHashes(){ try { return JSON.parse(localStorage.getItem(WOLF_MEDIA_HASH_KEY) || '{}') || {}; } catch(e){ return {}; } }
+function wolfMediaRemember(hash, file){ try { const m = wolfMediaHashes(); m[hash] = file; localStorage.setItem(WOLF_MEDIA_HASH_KEY, JSON.stringify(m)); } catch(e){} }
+// Toutes les images d'un état : data URL n'importe où ; lien internet seulement dans un champ image (image, src, images[]).
+function collectImageRefs(root){
+  const out = [], seen = new Set();
+  (function walk(o, parentKey){
+    if (!o || typeof o !== 'object' || seen.has(o)) return; seen.add(o);
+    if (Array.isArray(o)){
+      o.forEach((v, i) => { if (typeof v === 'string'){ if (isDataImg(v) || (parentKey === 'images' && isExtImg(v))) out.push({ h: o, k: i, v }); } else walk(v, parentKey); });
+      return;
+    }
+    Object.keys(o).forEach(k => { const v = o[k]; if (typeof v === 'string'){ if (isDataImg(v) || ((k === 'image' || k === 'src') && isExtImg(v))) out.push({ h: o, k, v }); } else walk(v, k); });
+  })(root, null);
+  return out;
+}
+// Envoie une image (blob) au serveur, sauf si la même (même empreinte) y est déjà.
+async function wolfMediaUpload(blob){
+  let hash = null;
+  try { const d = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()); hash = [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join(''); } catch(e){}
+  const known = hash && wolfMediaHashes()[hash];
+  if (known){
+    const ok = await fetch(WOLF_MEDIA_PREFIX + known, { cache: 'no-store' }).then(x => { try { x.body && x.body.cancel(); } catch(e){} return x.ok; }).catch(() => false);
+    if (ok) return known;
+  }
+  const type = blob.type === 'image/jpg' ? 'image/jpeg' : blob.type;
+  const r = await fetch('/api/atelier/media', { method: 'POST', headers: { 'Content-Type': type, 'X-Wolf-IA': '1' }, body: blob });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.ok || !/^[a-z0-9-]{8,60}\.(png|jpg|webp|gif)$/.test(j.file || '')){ const e = new Error(j.error || 'refusé'); e.status = r.status; throw e; }
+  if (hash) wolfMediaRemember(hash, j.file);
+  return j.file;
+}
+async function wolfMediaStore(v){
+  if (wolfMediaDone.has(v)) return wolfMediaDone.get(v);
+  let file = null;
+  if (isDataImg(v)){
+    file = await wolfMediaUpload(await (await fetch(v)).blob());
+  } else {
+    // 1) téléchargée par le NAVIGATEUR (même accès que l'affichage ; Wikimedia refuse le serveur, vu comme un robot)
+    let blob = null;
+    try { const x = await fetch(v, { mode: 'cors', referrerPolicy: 'no-referrer', cache: 'force-cache' }); if (x.ok){ const b = await x.blob(); if (/^image\/(png|jpe?g|webp|gif)$/i.test(b.type)) blob = b; } } catch(e){}
+    if (blob) file = await wolfMediaUpload(blob);
+    else {
+      // 2) secours : le serveur la télécharge lui-même (sites sans autorisation CORS)
+      const r = await fetch('/api/atelier/fetch', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Wolf-IA': '1' }, body: JSON.stringify({ url: v }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok || !/^[a-z0-9-]{8,60}\.(png|jpg|webp|gif)$/.test(j.file || '')){ const e = new Error(j.error || 'refusé'); e.status = r.status; throw e; }
+      file = j.file;
+    }
+  }
+  wolfMediaDone.set(v, WOLF_MEDIA_PREFIX + file);
+  return WOLF_MEDIA_PREFIX + file;
+}
+// Planifie le rangement des images d'un module (getRoot = son état, persist = sa fonction d'enregistrement).
+function scheduleImageFiles(name, getRoot, persist){
+  if (wolfMediaOff || location.protocol === 'file:' || location.protocol === 'https:') return;
+  clearTimeout(wolfMediaJobs[name]);
+  wolfMediaJobs[name] = setTimeout(() => runImageFiles(name, getRoot, persist), 1500);
+}
+async function runImageFiles(name, getRoot, persist){
+  if (wolfMediaRunning[name]){ scheduleImageFiles(name, getRoot, persist); return; }
+  const todo = [...new Set(collectImageRefs(getRoot()).map(r => r.v))].filter(v => !wolfMediaFailed.has(v) && !wolfMediaDone.has(v));
+  wolfMediaRunning[name] = true;
+  try {
+    for (const v of todo){
+      try {
+        if (isExtImg(v)) await new Promise(r => setTimeout(r, 400));   // sites d'images (Wikimedia…) qui freinent les rafales
+        try { await wolfMediaStore(v); }
+        catch(e){ if (e.status === 502 || e.status === 429){ await new Promise(r => setTimeout(r, 2500)); await wolfMediaStore(v); } else throw e; }
+      }
+      catch(e){
+        // serveur injoignable ou trop ancien (pas de route) : on arrête pour cette session, rien n'est touché
+        if (!e.status || e.status === 404 || e.status === 405 || (e.status === 403 && isDataImg(v))){ wolfMediaOff = true; break; }
+        wolfMediaFailed.add(v);   // refusée cette fois (lien mort, format svg…) : laissée telle quelle, retentée à la prochaine ouverture
+      }
+    }
+    // remplacement sur l'état ACTUEL (il a pu changer pendant les envois) : seules les valeurs encore identiques sont remplacées
+    let changed = 0;
+    collectImageRefs(getRoot()).forEach(r => {
+      const u = wolfMediaDone.get(r.v); if (!u) return;
+      if (typeof r.k === 'string' && isExtImg(r.v) && !((r.k + 'Origine') in r.h)) r.h[r.k + 'Origine'] = r.v;
+      r.h[r.k] = u; changed++;
+    });
+    if (changed){ console.info('[images] ' + changed + ' image(s) de « ' + name + ' » rangée(s) en fichiers sur le PC'); persist(); }
+  } finally { wolfMediaRunning[name] = false; }
 }
 
 // Toutes les sauvegardes disponibles (générations datées + le filet posé au
@@ -20341,6 +20450,7 @@ function loadWolfLaboExperimentsLocal(){
 }
 function persistWolfLaboExperiments(){
   try{ localStorage.setItem(WOLF_LABO_EXPERIMENTS_LS_KEY, JSON.stringify(wolfLaboExperiments)); }catch(e){ /* quota / navigateur privé */ }
+  scheduleImageFiles('wolfLabo', () => wolfLaboExperiments, persistWolfLaboExperiments);   // images -> fichiers sur le PC
 }
 async function loadWolfLaboExperimentsBaseline(){
   loadWolfLaboExperimentsLocal();
@@ -20354,6 +20464,7 @@ async function loadWolfLaboExperimentsBaseline(){
   wolfLaboExperiments = wolfLaboExperiments.map(migrateWolfLaboExperiment);
   wolfLaboExperiments.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || ''));
   renderWolfLaboExperiments();
+  scheduleImageFiles('wolfLabo', () => wolfLaboExperiments, persistWolfLaboExperiments);
 }
 
 // Capture le graphique Wolf Labo à une résolution physique DOUBLE de son affichage —

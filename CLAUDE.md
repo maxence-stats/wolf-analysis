@@ -1425,6 +1425,19 @@ datées (texte + images uploadées/collées + croquis à main levée).
     (`openAnalyseFromFiche()`) et tag « 📊 Analyse développée » dans l'en-tête de
     l'onglet Analyse (`#openAnalyseTag`, pour l'entreprise actuellement affichée).
 
+### Images du Cerveau numérique et du Wolf Labo rangées en FICHIERS (2026-11-12)
+Demande de l'utilisateur : une image ajoutée doit rester même si l'original (Téléchargements) est supprimé, sans dépendre du
+navigateur. Module « IMAGES RANGÉES EN FICHIERS » dans app.js (`scheduleImageFiles`, `runImageFiles`, `wolfMediaStore`,
+`wolfMediaUpload`, `collectImageRefs`), appelé après `persistCerveauData()` / `persistWolfLaboExperiments()` et au chargement :
+toute image en data URL (n'importe où dans l'état) et tout lien internet dans un champ image (`image`, `src`, `images[]`) est copié
+par le serveur dans `data/mes-portefeuilles/atelier-media/` (mêmes routes que l'Atelier, jamais supprimé, copie Documents), puis la
+donnée garde l'adresse RELATIVE `/api/atelier/media?f=…` (jamais le port). Lien d'origine gardé dans `<clé>Origine` (objets).
+Liens internet téléchargés par le NAVIGATEUR (fetch CORS) puis envoyés : le serveur, vu comme un robot, est refusé par Wikimedia
+(429 « robot policy », constaté) — `/api/atelier/fetch` ne sert qu'en secours. Pas de doublon : empreinte SHA-256 → fichier
+(localStorage `wolfMediaHashes`). Rien n'est remplacé avant confirmation du serveur ; échec = image laissée telle quelle (SVG refusé
+par le serveur : reste un lien). Testé sur instance jetable : 3 images du socle + 50 logos sur 52 rangés, 0 fichier en plus au
+rechargement. Conséquence : l'« Exporter » JSON du Cerveau contient des adresses de fichiers, plus les images elles-mêmes.
+
 ### Export PDF (fait, fonctionnel)
 Bouton « 🖨 Exporter PDF » sur 5 cibles : Idées de développement, Watchlist,
 composition Wolf Portfolio, fiche Analyse développée, chaîne de valeur du Cerveau
