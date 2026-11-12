@@ -3308,3 +3308,24 @@
 .pt-pct{font-family:var(--font-display);font-size:14.5px;text-align:right}
 .pt-val{font-size:12.5px;color:var(--text-dim);text-align:right;white-space:nowrap}
 @media (max-width:640px){.pt-row{grid-template-columns:22px 30px minmax(0,1fr) 58px}.pt-gauge,.pt-val{display:none}}
+
+/* ===== Atelier : tableau comparatif (entreprises en lignes, ratios en colonnes, cases à remplir) — 2026-11-12 ===== */
+.aw-table.aw-cmp th{text-align:center;white-space:normal;vertical-align:bottom;min-width:74px;line-height:1.25}
+.aw-table.aw-cmp th small{display:block;font-size:9.5px;color:var(--text-faint);text-transform:none;letter-spacing:0}
+.aw-table.aw-cmp th.co,.aw-table.aw-cmp td.co{text-align:left;position:sticky;left:0;background:#171C22;z-index:1}
+.aw-table.aw-cmp td.co{display:flex;align-items:center;gap:8px;white-space:nowrap;font-weight:600;color:var(--text);min-width:150px}
+.aw-table.aw-cmp tr.me td.co{color:var(--gold-2)}
+.aw-table.aw-cmp .aw-tlogo{width:22px;height:22px;border-radius:50%;object-fit:cover;flex:0 0 22px;background:#fff}
+.aw-table.aw-cmp .aw-tlogo.t{display:grid;place-items:center;background:var(--panel-2);color:var(--text-dim);font-size:9px;font-weight:700}
+.aw-table.aw-cmp td{text-align:center;padding:3px 4px}
+.aw-table.aw-cmp td.best{background:rgba(79,209,165,0.14)}
+.aw-table.aw-cmp td.worst .aw-cin{color:var(--red)}
+.aw-table.aw-cmp td.best .aw-cin{color:var(--green);font-weight:700}
+.aw-cin{width:100%;min-width:62px;box-sizing:border-box;background:transparent;border:1px solid transparent;border-radius:6px;color:var(--text);font:600 12.5px var(--font-body);text-align:center;padding:5px 4px}
+.aw-cin:hover{border-color:var(--hair)}
+.aw-cin:focus{outline:none;border-color:var(--gold);background:var(--bg)}
+.aw-cin::placeholder{color:var(--text-faint);font-style:italic;font-weight:500}
+.aw-table.aw-cmp.big .aw-cin{font-size:15px;padding:8px 6px}
+.aw-table.aw-cmp.big .aw-tlogo{width:28px;height:28px;flex-basis:28px}
+.aw-table.aw-cmp.big td.co{font-size:14.5px;min-width:200px}
+.aw-table.aw-cmp span.auto{color:var(--text-faint);font-style:italic}

@@ -750,6 +750,13 @@ NKT figurent aussi dans « Pose & installation » (elles posent leurs câbles so
 Un seul niveau. ↑↓ parmi les frères ; mère mise à la corbeille = ses sous-segments s'affichent comme sections normales (rien de
 masqué) et se rattachent de nouveau si elle est restaurée. Parcours, « Déplacer vers » et modèles (`sub: true`) en tiennent compte.
 Carte Entreprise : images (fichier, Ctrl+V, adresse) — la première remplit l'espace libre de l'aperçu, toutes en vue agrandie.
+**Comparatif REFAIT (2026-11-12, demande de l'utilisateur)** : entreprises EN LIGNES (colonne de gauche, logos), ratios EN
+COLONNES ; cases VIDES à remplir directement dans le tableau (carte et vue agrandie), les chiffres TradingView pré-remplis étaient
+« complètement faux » pour lui. Valeurs = texte saisi dans `c.vals[nom normalisé][clé]` (rangées par NOM, plus par position) ;
+anciennes corrections `c.over` reprises une fois (`cmpMigrate`). Coller un tableau (Word / Google Docs / Excel, tabulations) dans
+une case remplit à partir de celle-ci (`cmpPaste`). Ratios libres `c.custom [{k, l, u, dir}]` (« ＋ Ratio libre » dans l'éditeur).
+TradingView seulement sur option `c.auto` (cases grises « à vérifier », désactivé par défaut). Meilleure / moins bonne valeur par
+COLONNE. Les flèches du clavier ne changent plus de carte quand on tape dans une case (vue agrandie).
 Le texte ci-dessous décrit l'ancienne carte mentale (historique).
 
 Nouvel onglet principal (`#pageAtelier`, `js/atelier.js`, CSS `.at-*` en fin de `style.css`), À CÔTÉ du Cerveau numérique (qui

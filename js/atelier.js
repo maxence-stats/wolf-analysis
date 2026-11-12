@@ -864,25 +864,89 @@ function compCols(c){
   if (c.withConc !== false && v) Object.values(v.cards).forEach(x => { if (x.type === 'concurrent' && x.nom && !cols.some(n => norm(n) === norm(x.nom))) cols.push(x.nom); });
   return cols;
 }
+/* Tableau comparatif (refait le 2026-11-12 à la demande de l'utilisateur) : entreprises EN LIGNES (colonne de gauche), ratios EN
+   COLONNES, cases VIDES remplies à la main (les chiffres TradingView pré-remplis étaient faux pour lui). Valeurs saisies dans
+   c.vals[nom normalisé][clé] (texte tel que tapé, rangé par NOM et plus par position : retirer une entreprise ne décale rien).
+   Ratios : ceux de TVF + ratios libres c.custom [{k:'x…', l, u, dir:'high'|'low'|''}]. c.auto = proposer TradingView dans les
+   cases vides (désactivé par défaut, affiché en gris « à vérifier »). Coller un tableau (Word, Google Docs, Excel) dans une case
+   remplit les cases à partir de celle-ci (lignes = entreprises, colonnes = ratios). Les anciennes corrections c.over (rangées par
+   position) sont reprises une fois dans c.vals. */
+function cmpMetric(c, k){
+  if (TVF[k]) return { l: TVF[k].l, u: TVF[k].u, d: TVF[k].d, low: !!TVF[k].low, dir: TVF[k].low ? 'low' : 'high' };
+  const x = (c.custom || []).find(m => m.k === k); if (!x) return null;
+  return { l: x.l || 'Ratio', u: x.u || '', d: 2, low: x.dir === 'low', dir: x.dir || '' };
+}
+function cmpMetrics(c){ return (c.metrics || []).filter(k => cmpMetric(c, k)); }
+function cmpMigrate(c, cols){
+  if (c.vals) return;
+  c.vals = {};
+  Object.keys(c.over || {}).forEach(k => (c.over[k] || []).forEach((x, i) => { if (x != null && x !== '' && cols[i]){ const n = norm(cols[i]); c.vals[n] = c.vals[n] || {}; c.vals[n][k] = String(x).replace('.', ','); } }));
+}
+const cmpRaw = (c, name, k) => { const r = c.vals && c.vals[norm(name)]; return r && r[k] != null && r[k] !== '' ? String(r[k]) : ''; };
+// Valeur numérique d'une case : saisie à la main, sinon (seulement si c.auto) TradingView.
 function compValue(c, colName, key, ci){
-  const ov = c.over && c.over[key] && c.over[key][ci];
-  if (ov != null && ov !== '') return num(ov);
-  const d = doc(), self = ci === 0 && (c.cols || [])[0] === '@self';
+  const raw = cmpRaw(c, colName, key); if (raw) return num(raw);
+  if (!c.auto || !TVF[key]) return null;
+  return compAuto(c, colName, key, ci);
+}
+function compAuto(c, colName, key, ci){
+  const self = ci === 0 && (c.cols || [])[0] === '@self';
   if (c.period !== 'fy'){ const t = ttmOf(self ? null : colName); if (t && (t[key] != null || TTM_ONLY.includes(key))) return t[key]; }
   const s = getSeries(self ? null : colName, key); return s.values.length ? s.values[s.values.length - 1] : null;
 }
+const unitHint = u => u === '%' ? ' (%)' : u === 'x' ? ' (x)' : u === 'cur' ? ' (par action)' : u === 'Mcur' ? ' (M)' : u && u !== 'M' ? ' (' + u + ')' : '';
 function compTableHtml(c, big){
-  const cols = compCols(c), metrics = (c.metrics || []).filter(k => TVF[k]);
-  if (!cols.length || !metrics.length) return '<p class="at-faint">Ajoute des entreprises et des indicateurs (⋯ › Modifier).</p>';
-  const head = '<tr><th></th>' + cols.map((n, i) => { const co = findCompany(n); return '<th class="' + (i === 0 && (c.cols || [])[0] === '@self' ? 'me' : '') + '">' + (big && co && co.logo ? '<img src="' + esc(co.logo) + '" alt="" class="aw-tlogo">' : '') + esc(n.length > 16 && !big ? n.slice(0, 15) + '…' : n) + '</th>'; }).join('') + '</tr>';
-  const body = metrics.map(k => {
-    const f = TVF[k], vals = cols.map((n, i) => compValue(c, n, k, i)), ok = vals.filter(x => x != null);
-    const best = ok.length > 1 ? (f.low ? Math.min(...ok) : Math.max(...ok)) : null, worst = ok.length > 2 ? (f.low ? Math.max(...ok) : Math.min(...ok)) : null;
-    const mx = Math.max(...ok.map(Math.abs), 0) || 1;
-    return '<tr><td class="lb">' + esc(k === 'croissanceCA' && c.period !== 'fy' ? 'Croissance du CA (12 mois)' : f.l) + '</td>' + vals.map((x, i) => '<td><span class="' + (x != null && x === best ? 'best' : x != null && x === worst ? 'worst' : '') + '">' + fmtVal(x, f.u, deviseOf(i === 0 && (c.cols || [])[0] === '@self' ? null : cols[i]), f.d) + '</span>' +
-      (big && x != null ? '<i class="aw-cbar" style="width:' + Math.max(4, Math.abs(x) / mx * 100).toFixed(0) + '%"></i>' : '') + '</td>').join('') + '</tr>';
+  const cols = compCols(c), metrics = cmpMetrics(c), ro = isRo();
+  if (!cols.length || !metrics.length) return '<p class="at-faint">Ajoute des entreprises et des ratios (⋯ › Modifier).</p>';
+  cmpMigrate(c, cols);
+  // meilleure / moins bonne valeur de chaque colonne (seulement quand le sens est connu)
+  const stat = {};
+  metrics.forEach(k => { const m = cmpMetric(c, k), ok = cols.map((n, i) => compValue(c, n, k, i)).filter(x => x != null);
+    stat[k] = !m.dir || ok.length < 2 ? {} : { best: m.low ? Math.min(...ok) : Math.max(...ok), worst: ok.length > 2 ? (m.low ? Math.max(...ok) : Math.min(...ok)) : null }; });
+  const head = '<tr><th class="co">Entreprise</th>' + metrics.map(k => { const m = cmpMetric(c, k); return '<th title="' + esc(m.l) + '">' + esc((k === 'croissanceCA' ? 'Croissance du CA' : m.l)) + '<small>' + esc(unitHint(m.u)) + '</small></th>'; }).join('') + '</tr>';
+  const rows = cols.map((n, i) => {
+    const co = findCompany(n), fz = frozenOf(n), logo = (fz && fz.logo) || (co ? co.logo : ''), me = i === 0 && (c.cols || [])[0] === '@self';
+    return '<tr class="' + (me ? 'me' : '') + '"><td class="co">' + (logo ? '<img src="' + esc(logo) + '" alt="" class="aw-tlogo">' : '<span class="aw-tlogo t">' + esc(n.slice(0, 2).toUpperCase()) + '</span>') + '<span>' + esc(n) + '</span></td>' +
+      metrics.map((k, j) => {
+        const m = cmpMetric(c, k), raw = cmpRaw(c, n, k), v = compValue(c, n, k, i), auto = !raw && v != null;
+        const cl = v == null ? '' : v === stat[k].best ? 'best' : v === stat[k].worst ? 'worst' : '';
+        const shown = raw ? (num(raw) != null ? fmtVal(num(raw), m.u, deviseOf(me ? null : n), m.d) : raw) : auto ? fmtVal(v, m.u, deviseOf(me ? null : n), m.d) : '';
+        if (ro) return '<td><span class="' + cl + (auto ? ' auto' : '') + '">' + esc(shown || '—') + '</span></td>';
+        return '<td class="' + cl + '"><input class="aw-cin' + (auto ? ' auto' : '') + '" data-cmp="' + esc(k) + '|' + esc(norm(n)) + '" data-r="' + i + '" data-c="' + j + '" value="' + esc(raw) + '" placeholder="' + esc(auto ? fr(v, m.d) : '') + '" title="' + esc(n + ' · ' + m.l + (auto ? ' · proposé par TradingView, à vérifier' : '')) + '"></td>';
+      }).join('') + '</tr>';
   }).join('');
-  return '<div class="aw-tscroll"><table class="aw-table' + (big ? ' big' : '') + '"><thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
+  return '<div class="aw-tscroll"><table class="aw-table aw-cmp' + (big ? ' big' : '') + '"><thead>' + head + '</thead><tbody>' + rows + '</tbody></table></div>';
+}
+// Saisie dans une case (carte ou vue agrandie). Retourne true si quelque chose a changé.
+function cmpSet(c, k, n, value){
+  c.vals = c.vals || {}; const r = c.vals[n] = c.vals[n] || {}, t = String(value || '').trim();
+  if ((r[k] || '') === t) return false;
+  if (t) r[k] = t; else delete r[k];
+  return true;
+}
+// Coller un tableau : lignes = entreprises, colonnes = ratios, à partir de la case visée.
+function cmpPaste(c, input, text){
+  const lines = String(text || '').replace(/\r/g, '').split('\n').filter((l, i, a) => l !== '' || i < a.length - 1);
+  if (lines.length < 2 && !lines[0].includes('\t')) return false;
+  const cols = compCols(c), metrics = cmpMetrics(c), r0 = +input.dataset.r, c0 = +input.dataset.c;
+  lines.forEach((l, i) => l.split('\t').forEach((cell, j) => { const n = cols[r0 + i], k = metrics[c0 + j]; if (n && k) cmpSet(c, k, norm(n), cell.replace(/ /g, ' ')); }));
+  return true;
+}
+function cmpWire(host, getCard, after){
+  const focusKey = () => { const a = document.activeElement; return a && a.dataset && a.dataset.cmp ? a.dataset.cmp : null; };
+  host.addEventListener('change', e => {
+    const inp = e.target.closest && e.target.closest('.aw-cin'); if (!inp || isRo()) return;
+    const c = getCard(inp); if (!c) return;
+    const [k, n] = inp.dataset.cmp.split('|');
+    if (!cmpSet(c, k, n, inp.value)) return;
+    touch(); const f = focusKey(); after(c); if (f){ const x = document.querySelector('.aw-cin[data-cmp="' + CSS.escape(f) + '"]'); if (x) x.focus(); }
+  });
+  host.addEventListener('paste', e => {
+    const inp = e.target.closest && e.target.closest('.aw-cin'); if (!inp || isRo()) return;
+    const c = getCard(inp); if (!c) return;
+    if (!cmpPaste(c, inp, (e.clipboardData || window.clipboardData).getData('text/plain'))) return;
+    e.preventDefault(); touch(); after(c);
+  });
 }
 // Chiffre d'une carte Entreprise : valeur saisie à la main, sinon 12 derniers mois TradingView, sinon dernier exercice.
 const CONC_KEYS = ['ca', 'croissanceCA', 'margeOp', 'margeNette', 'roic', 'per', 'pFcf', 'rendementDiv', 'detteOCF'];
@@ -1278,6 +1342,7 @@ function renderBody(){
 }
 function wireBody(host){
   const v = ver();
+  if (!host._cmpWired){ host._cmpWired = true; cmpWire(host, inp => { const el = inp.closest('[data-cid]'); return el && ver().cards[el.dataset.cid]; }, c => refreshCard(c)); }
   host.onclick = e => {
     const b = e.target.closest('button,[data-s-title]'); if (!b) return;
     const sEl = b.closest('[data-sid]'), sid = sEl && sEl.dataset.sid, sec = sid && v.sections.find(s => s.id === sid);
@@ -1304,7 +1369,7 @@ function wireBody(host){
   host.ondblclick = e => { const cEl = e.target.closest('[data-cid]'); if (cEl && !e.target.closest('button,a')) openBig(cEl.dataset.cid, cEl); };
   if (isRo()) return;
   // glisser-déposer : sur une autre carte = s'insère avant elle ; dans le vide d'une section = à la fin
-  host.ondragstart = e => { const cEl = e.target.closest('[data-cid]'); if (!cEl || e.target.closest('[data-c-resize]')) return; ui.drag = cEl.dataset.cid; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', ui.drag); } catch(err){} setTimeout(() => cEl.classList.add('dragging'), 0); };
+  host.ondragstart = e => { if (e.target.closest && e.target.closest('input,textarea,select')){ e.preventDefault(); return; } const cEl = e.target.closest('[data-cid]'); if (!cEl || e.target.closest('[data-c-resize]')) return; ui.drag = cEl.dataset.cid; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', ui.drag); } catch(err){} setTimeout(() => cEl.classList.add('dragging'), 0); };
   host.ondragend = () => { ui.drag = null; host.querySelectorAll('.dragging,.drop-before,.drop-end').forEach(x => x.classList.remove('dragging', 'drop-before', 'drop-end')); };
   host.ondragover = e => {
     if (!ui.drag) return;
@@ -1491,7 +1556,7 @@ function bigBody(c){
         '<div class="aw-tscroll"><table class="aw-table big"><thead><tr><th></th>' + s.labels.map(y => '<th>' + esc(y) + '</th>').join('') + '</tr></thead><tbody>' + s.sets.map(x => '<tr><td class="lb"><span class="aw-dot" style="background:' + x.color + '"></span> ' + esc(x.name) + '</td>' + x.values.map(y => '<td>' + fmtVal(y, x.u, x.devise) + '</td>').join('') + '</tr>' +
           '<tr class="aw-yoy-row"><td class="lb">↳ évolution</td>' + yoyList(x.values).map(g => '<td class="' + (g == null ? '' : g >= 0 ? 'pos' : 'neg') + '">' + (g == null ? '—' : fmtPct(g)) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>';
     }
-    case 'comparatif': return compTableHtml(c, true) + '<p class="aw-note">Vert : la meilleure valeur de la ligne · rouge : la moins bonne. Chiffres TradingView ' + (c.period === 'fy' ? 'du dernier exercice annuel' : 'des 12 derniers mois') + (ver().tvData ? ' relevés le ' + frDate(ver().tvData.at) : '') + ', sauf valeurs saisies à la main.</p>';
+    case 'comparatif': return compTableHtml(c, true) + '<p class="aw-note">' + (isRo() ? '' : 'Clique dans une case pour la remplir ; tu peux aussi coller un tableau entier (Word, Google Docs, Excel) dans une case. ') + 'Vert : la meilleure valeur de la colonne · rouge : la moins bonne.' + (c.auto ? ' Cases grises : chiffres TradingView proposés, à vérifier.' : '') + '</p>';
     case 'bourse': return bourseHtml(c, true);
     case 'overlay': return overlayHtml(c, true);
     case 'geo': {
@@ -1517,7 +1582,7 @@ function openBig(cid, fromEl){
   ui.big = cid;
   let ov = $('awBig');
   const fresh = !ov;
-  if (fresh){ ov = document.createElement('div'); ov.id = 'awBig'; ov.className = 'aw-big'; document.body.appendChild(ov); }
+  if (fresh){ ov = document.createElement('div'); ov.id = 'awBig'; ov.className = 'aw-big'; document.body.appendChild(ov); cmpWire(ov, () => ver().cards[ui.big], c => { refreshCard(c); openBig(c.id); }); }
   destroyCharts(bigCharts);
   const t = TYPES[c.type], sec = secOf(v, cid), order = bigOrder(cid), i = order.indexOf(cid);
   ov.innerHTML = '<div class="aw-big-bg" data-big-close></div>' + (order.length > 1 ? '<button type="button" class="aw-big-nav l" data-big-go="-1" aria-label="Carte précédente">' + ICO.left + '</button><button type="button" class="aw-big-nav r" data-big-go="1" aria-label="Carte suivante">' + ICO.right + '</button>' : '') +
@@ -1587,12 +1652,14 @@ function editorFields(c, d, v){
             '<button type="button" class="at-btn sm" data-ser-add>＋ Série</button></div>') + srcSel;
     }
     case 'comparatif': {
-      const cols = compCols(c);
-      return common + '<div class="aw-ed-rows"><b class="aw-ed-h">Entreprises</b>' + (c.cols || []).map((n, k) => '<div class="aw-ed-row"><input class="at-in" list="awCos" data-col="' + k + '" value="' + esc(n === '@self' ? cols[k] + ' (ce dossier)' : n) + '"' + (n === '@self' ? ' disabled' : '') + '><button type="button" class="at-x" data-col-del="' + k + '">✕</button></div>').join('') + '<button type="button" class="at-btn sm" data-col-add>＋ Entreprise</button><datalist id="awCos">' + companyOptions() + '</datalist></div>' +
+      const cols = compCols(c), cus = c.custom || [];
+      return common + '<p class="at-faint">Les entreprises sont en lignes, les ratios en colonnes. Remplis les cases directement dans le tableau (ou colle un tableau entier dans une case).</p>' +
+        '<div class="aw-ed-rows"><b class="aw-ed-h">Entreprises</b>' + (c.cols || []).map((n, k) => '<div class="aw-ed-row"><input class="at-in" list="awCos" data-col="' + k + '" value="' + esc(n === '@self' ? cols[k] + ' (ce dossier)' : n) + '"' + (n === '@self' ? ' disabled' : '') + '><button type="button" class="at-x" data-col-del="' + k + '">✕</button></div>').join('') + '<button type="button" class="at-btn sm" data-col-add>＋ Entreprise</button><datalist id="awCos">' + companyOptions() + '</datalist></div>' +
         '<label class="aw-ed-check"><input type="checkbox" data-withconc' + (c.withConc !== false ? ' checked' : '') + '> Ajouter tout seul les cartes « Entreprise » du dossier</label>' +
-        '<b class="aw-ed-h">Indicateurs</b><div class="aw-ed-checks">' + Object.keys(TVF).map(k => '<label><input type="checkbox" data-metric="' + k + '"' + ((c.metrics || []).includes(k) ? ' checked' : '') + '> ' + esc(TVF[k].l) + '</label>').join('') + '</div>' +
-        '<label>Période des chiffres<select class="at-sel" data-f="period"><option value="ttm"' + (c.period !== 'fy' ? ' selected' : '') + '>12 derniers mois (4 trimestres glissants)</option><option value="fy"' + (c.period === 'fy' ? ' selected' : '') + '>Dernier exercice annuel</option></select></label>' +
-        '<b class="aw-ed-h">Corriger une valeur (vide = TradingView)</b><div class="aw-tscroll"><table class="aw-table ed"><thead><tr><th></th>' + cols.map(n => '<th>' + esc(n.slice(0, 12)) + '</th>').join('') + '</tr></thead><tbody>' + (c.metrics || []).filter(k => TVF[k]).map(k => '<tr><td class="lb">' + esc(TVF[k].l) + '</td>' + cols.map((n, i) => { const ov = c.over && c.over[k] && c.over[k][i]; const auto = compValue(Object.assign({}, c, { over: {} }), n, k, i); return '<td><input class="at-in num" data-over="' + k + '|' + i + '" value="' + (ov != null && ov !== '' ? esc(String(ov).replace('.', ',')) : '') + '" placeholder="' + (auto == null ? '—' : esc(fr(auto, TVF[k].d))) + '"></td>'; }).join('') + '</tr>').join('') + '</tbody></table></div>';
+        '<b class="aw-ed-h">Ratios (colonnes, dans l\'ordre où tu les coches)</b><div class="aw-ed-checks">' + Object.keys(TVF).map(k => '<label><input type="checkbox" data-metric="' + k + '"' + ((c.metrics || []).includes(k) ? ' checked' : '') + '> ' + esc(TVF[k].l) + '</label>').join('') + '</div>' +
+        '<b class="aw-ed-h">Ratios libres</b><div class="aw-ed-rows">' + cus.map((m, k) => '<div class="aw-ed-row"><input class="at-in" data-cus-l="' + k + '" value="' + esc(m.l || '') + '" placeholder="ex. ROE, Marge EBITDA, Dette / EBITDA"><select class="at-sel" data-cus-u="' + k + '">' + [['', 'nombre'], ['%', '%'], ['x', 'x (multiple)'], ['cur', 'devise / action'], ['Mcur', 'millions']].map(o => '<option value="' + o[0] + '"' + ((m.u || '') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select><select class="at-sel" data-cus-d="' + k + '">' + [['high', 'plus haut = mieux'], ['low', 'plus bas = mieux'], ['', 'neutre']].map(o => '<option value="' + o[0] + '"' + ((m.dir || '') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select><button type="button" class="at-x" data-cus-del="' + k + '">✕</button></div>').join('') + '<button type="button" class="at-btn sm" data-cus-add>＋ Ratio libre</button></div>' +
+        '<label class="aw-ed-check"><input type="checkbox" data-cmpauto' + (c.auto ? ' checked' : '') + '> Proposer les chiffres TradingView dans les cases vides (en gris, à vérifier)</label>' +
+        (c.auto ? '<label>Période des chiffres proposés<select class="at-sel" data-f="period"><option value="ttm"' + (c.period !== 'fy' ? ' selected' : '') + '>12 derniers mois</option><option value="fy"' + (c.period === 'fy' ? ' selected' : '') + '>Dernier exercice annuel</option></select></label>' : '');
     }
     case 'vchain': {
       const lines = s => (s.cos || []).map(co => co.nom + ' | ' + (co.sym || (co.nc ? '-' : '')) + (co.role ? ' | ' + co.role : '')).join('\n');
@@ -1673,6 +1740,7 @@ function wireEditor(p, c){
       st.cos = t.value.split('\n').map(l => l.split('|').map(x => x.trim())).filter(a => a[0]).map(a => { const raw = a[1] || '', nc = raw === '-', sym = nc ? '' : raw.toUpperCase(), o = old.find(x => norm(x.nom) === norm(a[0]) && (x.sym || '') === sym && !!x.nc === nc);
         return Object.assign({}, o || {}, { nom: a[0], sym, nc: nc || undefined, role: a.slice(2).join(' | ') }); });
       changed(false); clearTimeout(vcTimer); vcTimer = setTimeout(() => vcResolveLogos(c), 1500); }
+    else if (ds.cusL !== undefined){ c.custom[+ds.cusL].l = t.value; changed(false); }
     else if (ds.over !== undefined){ const [k, i] = ds.over.split('|'); c.over = c.over || {}; c.over[k] = c.over[k] || []; c.over[k][+i] = t.value.trim() === '' ? null : num(t.value); changed(false); }
   });
   p.addEventListener('change', e => {
@@ -1682,6 +1750,9 @@ function wireEditor(p, c){
     else if (ds.key !== undefined){ c.keys = c.keys || (c.type === 'overlay' ? ['fcfParAction', 'dividende'] : []); if (t.checked && !c.keys.includes(ds.key)) c.keys.push(ds.key); if (!t.checked) c.keys = c.keys.filter(k => k !== ds.key); changed(false); }
     else if (ds.metric !== undefined){ c.metrics = c.metrics || []; if (t.checked && !c.metrics.includes(ds.metric)) c.metrics.push(ds.metric); if (!t.checked) c.metrics = c.metrics.filter(k => k !== ds.metric); changed(true); }
     else if (ds.withconc !== undefined){ c.withConc = t.checked; changed(true); }
+    else if (ds.cmpauto !== undefined){ c.auto = t.checked; changed(true); }
+    else if (ds.cusU !== undefined){ c.custom[+ds.cusU].u = t.value; changed(false); }
+    else if (ds.cusD !== undefined){ c.custom[+ds.cusD].dir = t.value; changed(false); }
     else if (ds.ovprice !== undefined){ c.price = t.checked; changed(false); }
     else if (ds.ovnorm !== undefined){ c.norm = t.checked; changed(false); }
     else if (ds.yoyck !== undefined){ c.yoy = t.checked; changed(false); }
@@ -1701,6 +1772,8 @@ function wireEditor(p, c){
     if (ds.rowDel !== undefined){ c.rows.splice(+ds.rowDel, 1); changed(true); return; }
     if (ds.serAdd !== undefined){ c.series = c.series || []; c.series.push({ name: '', values: [], color: SERIES_COLORS[c.series.length % SERIES_COLORS.length] }); changed(true); return; }
     if (ds.serDel !== undefined){ c.series.splice(+ds.serDel, 1); changed(true); return; }
+    if (ds.cusAdd !== undefined){ c.custom = c.custom || []; const k = 'x' + Date.now().toString(36); c.custom.push({ k, l: '', u: '', dir: 'high' }); c.metrics = (c.metrics || []).concat([k]); changed(true); return; }
+    if (ds.cusDel !== undefined){ const m = c.custom.splice(+ds.cusDel, 1)[0]; if (m) c.metrics = (c.metrics || []).filter(k => k !== m.k); changed(true); return; }
     if (ds.colAdd !== undefined){ c.cols = c.cols || []; c.cols.push(''); changed(true); return; }
     if (ds.colDel !== undefined){ c.cols.splice(+ds.colDel, 1); Object.values(c.over || {}).forEach(a => a.splice(+ds.colDel, 1)); changed(true); return; }
     if (ds.rmimg !== undefined){ c.imgs.splice(+ds.rmimg, 1); changed(true); return; }
@@ -1911,7 +1984,7 @@ document.addEventListener('keydown', e => {
   const pg = page(); if (!pg || !pg.classList.contains('active')) return;
   if (ui.big){
     if (e.key === 'Escape'){ e.preventDefault(); closeBig(); return; }
-    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft'){ e.preventDefault(); const o = bigOrder(ui.big), j = (o.indexOf(ui.big) + (e.key === 'ArrowRight' ? 1 : -1) + o.length) % o.length; openBig(o[j]); return; }
+    if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && !(e.target.closest && e.target.closest('input,textarea,select,[contenteditable]'))){ e.preventDefault(); const o = bigOrder(ui.big), j = (o.indexOf(ui.big) + (e.key === 'ArrowRight' ? 1 : -1) + o.length) % o.length; openBig(o[j]); return; }
     return;
   }
   if (e.key === 'Escape'){
