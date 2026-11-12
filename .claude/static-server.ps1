@@ -10,7 +10,9 @@ param(
   [string]$ExtBackupDir = "",
   # Dossier des donnees « Mes portefeuilles » (PEA, CTO, Wolf Portfolio) et des multiples saisis. Instance de
   # TEST : passer un dossier jetable, le vrai data\mes-portefeuilles n'est alors jamais touche.
-  [string]$StoreDir = ""
+  [string]$StoreDir = "",
+  # Wolf Studio (2026-11-12) : banque d'images de loups (lecture seule). Instance de test : dossier jetable.
+  [string]$WolfBank = ""
 )
 $root = (Resolve-Path "$PSScriptRoot\..").Path
 # Port change 2026-09-08 : 8189 est a son tour passe dans les plages de ports exclues
@@ -70,7 +72,7 @@ else { $extBackup = "" }
 # « Mes portefeuilles » : un fichier JSON par nom autorise, memes protections que le Portefeuille IA
 # (revision, ecriture atomique, copies datees, copie hors projet, aucune operation effacee sans declaration).
 if ($StoreDir -ne ""){ $storeDirPath = [System.IO.Path]::GetFullPath($StoreDir) } else { $storeDirPath = Join-Path $root "data\mes-portefeuilles" }
-$storeNames = @("portefeuilles", "multiples", "objectifs", "atelier", "prix")
+$storeNames = @("portefeuilles", "multiples", "objectifs", "atelier", "prix", "studio")
 # Publication en ligne (2026-11-10) : copies en LECTURE SEULE servies par le site public (GitHub Pages) quand il n'y a pas de
 # serveur local. Une instance de test ecrit dans son propre dossier et ne lance JAMAIS git.
 if ($testInstance){ $publicDir = Join-Path $storeDirPath "public-test" } else { $publicDir = Join-Path $root "data\public" }
@@ -83,6 +85,10 @@ $maxBodyAtelier = 12MB
 $maxMedia = 25MB
 if ($StoreDir -ne ""){ $storeExt = "" } elseif (-not $testInstance){ $storeExt = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "Wolf Analysis - sauvegardes\mes-portefeuilles" } else { $storeExt = "" }
 $maxBody = 2MB
+# Wolf Studio (2026-11-12) : banque de loups de l'utilisateur, LUE seulement (jamais modifiee) ; versions allegees en cache.
+if ($WolfBank -ne ""){ $wolfBank = [System.IO.Path]::GetFullPath($WolfBank) } else { $wolfBank = Join-Path ([Environment]::GetFolderPath("Desktop")) "Wolf Academy\IMAGE DE MARQUE ET TAMPLATE\BANQUE DIMAGES" }
+$studioCache = Join-Path $storeDirPath "studio-cache"
+try { Add-Type -AssemblyName System.Drawing } catch { }
 $rootWithSep = $root.TrimEnd('\') + '\'
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
@@ -638,6 +644,15 @@ function Handle-StoreSave($req, $res){
     if ($undeclared.Count -gt 0){ Send-Json $res 400 @{ ok = $false; error = "dossier(s) supprime(s) non declare(s)" }; return }
     if ($missing.Count -gt 0){ $removedAny = $true }
   }
+  # Wolf Studio : aucune miniature enregistree (items.<id>) ne disparait sans etre declaree.
+  if ($cur -and $n -eq "studio" -and $cur.items){
+    $declared = @($b.deleted | ForEach-Object { [string]$_ })
+    $newIds = @(); if ($b.items){ $newIds = @($b.items.PSObject.Properties | ForEach-Object { $_.Name }) }
+    $missing = @($cur.items.PSObject.Properties | ForEach-Object { $_.Name } | Where-Object { $newIds -notcontains $_ })
+    $undeclared = @($missing | Where-Object { $declared -notcontains $_ })
+    if ($undeclared.Count -gt 0){ Send-Json $res 400 @{ ok = $false; error = "miniature(s) supprimee(s) non declaree(s)" }; return }
+    if ($missing.Count -gt 0){ $removedAny = $true }
+  }
   New-Item -ItemType Directory -Force -Path $storeDirPath | Out-Null
   Ensure-MonthlySnapshot $f $n @($storeDirPath, $storeExt)
   if ($cur){
@@ -741,6 +756,59 @@ function Handle-TvHistory($req, $res){
   }
 }
 
+# ---------------- Wolf Studio (2026-11-12) : banque de loups (lecture seule) ----------------
+function Get-WolfBankFiles(){
+  if (-not (Test-Path $wolfBank -PathType Container)){ return @() }
+  $rootB = $wolfBank.TrimEnd('\') + '\'
+  return @(Get-ChildItem $wolfBank -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -match '^\.(png|jpe?g|webp)$' } | Sort-Object FullName | Select-Object -First 3000 | ForEach-Object { $_.FullName.Substring($rootB.Length).Replace('\', '/') })
+}
+function Handle-StudioWolves($req, $res){
+  $list = Get-WolfBankFiles
+  Send-Json $res 200 @{ ok = $true; root = $wolfBank; exists = (Test-Path $wolfBank -PathType Container); files = @($list) }
+}
+function Handle-StudioWolf($req, $res){
+  # nom decode en UTF-8 a partir de l'URL brute (QueryString abime les accents : « aout », « Hermes »...)
+  $rel = ""; $mq = [regex]::Match([string]$req.Url.Query, '[?&]f=([^&]*)'); if ($mq.Success){ $rel = [System.Uri]::UnescapeDataString($mq.Groups[1].Value.Replace('+', ' ')) }
+  $size = [string]$req.QueryString["s"]
+  if (-not $rel -or $rel.Length -gt 400 -or $rel -match '\.\.'){ Send-Json $res 400 @{ ok = $false; error = "nom invalide" }; return }
+  $rootB = $wolfBank.TrimEnd('\') + '\'
+  $p = [System.IO.Path]::GetFullPath((Join-Path $wolfBank ($rel.Replace('/', '\'))))
+  if (-not $p.StartsWith($rootB, [System.StringComparison]::OrdinalIgnoreCase) -or $p -notmatch '\.(png|jpe?g|webp)$' -or -not (Test-Path $p -PathType Leaf)){ $res.StatusCode = 404; return }
+  $target = 1280; if ($size -eq "t"){ $target = 384 }
+  $fi = Get-Item $p
+  $md5 = [System.Security.Cryptography.MD5]::Create()
+  $key = ([BitConverter]::ToString($md5.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($p + "|" + $fi.LastWriteTimeUtc.Ticks + "|" + $target)))).Replace("-", "").ToLower()
+  $cacheFile = Join-Path $studioCache ($key + ".jpg")
+  $bytes = $null; $ct = "image/jpeg"
+  if (Test-Path $cacheFile -PathType Leaf){ $bytes = [System.IO.File]::ReadAllBytes($cacheFile) }
+  else {
+    try {
+      $img = [System.Drawing.Image]::FromFile($p)
+      try {
+        $w = [Math]::Min($target, $img.Width); $h = [int][Math]::Round($img.Height * $w / $img.Width)
+        $bmp = New-Object System.Drawing.Bitmap $w, $h
+        $g = [System.Drawing.Graphics]::FromImage($bmp)
+        $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+        $g.DrawImage($img, 0, 0, $w, $h); $g.Dispose()
+        $enc = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq "image/jpeg" }
+        $ep = New-Object System.Drawing.Imaging.EncoderParameters 1
+        $ep.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter ([System.Drawing.Imaging.Encoder]::Quality), ([long]86)
+        $ms = New-Object System.IO.MemoryStream
+        $bmp.Save($ms, $enc, $ep); $bmp.Dispose()
+        $bytes = $ms.ToArray()
+        try { New-Item -ItemType Directory -Force -Path $studioCache | Out-Null; [System.IO.File]::WriteAllBytes($cacheFile, $bytes) } catch { }
+      } finally { $img.Dispose() }
+    } catch {
+      $bytes = [System.IO.File]::ReadAllBytes($p)
+      $ext = $fi.Extension.ToLower(); if ($ext -eq ".png"){ $ct = "image/png" } elseif ($ext -eq ".webp"){ $ct = "image/webp" }
+    }
+  }
+  $res.ContentType = $ct
+  $res.Headers.Add("Cache-Control", "private, max-age=86400")
+  $res.ContentLength64 = $bytes.Length
+  $res.OutputStream.Write($bytes, 0, $bytes.Length)
+}
+
 # Fichiers qui ne doivent jamais etre servis (base FMP de 12 Go, depot git, secrets).
 function Test-Denied($rel){
   $r = "/" + ($rel -replace '\\', '/').TrimStart('/')
@@ -760,7 +828,7 @@ while ($listener.IsListening) {
     $path = [System.Uri]::UnescapeDataString($req.Url.AbsolutePath)
     if ($path -eq "/api/ia/ping") {
       New-Item -ItemType Directory -Force -Path $iaDirPath | Out-Null
-      Send-Json $res 200 @{ ok = $true; writable = $true; v = 19; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
+      Send-Json $res 200 @{ ok = $true; writable = $true; v = 20; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
     } elseif ($path -eq "/api/ia/save") {
       Handle-IaSave $req $res
     } elseif ($path -eq "/api/ia/refresh") {
@@ -791,6 +859,10 @@ while ($listener.IsListening) {
       Handle-AtelierFetch $req $res
     } elseif ($path -eq "/api/atelier/media") {
       Handle-AtelierMedia $req $res
+    } elseif ($path -eq "/api/studio/wolves") {
+      Handle-StudioWolves $req $res
+    } elseif ($path -eq "/api/studio/wolf") {
+      Handle-StudioWolf $req $res
     } elseif ($path -eq "/api/tv/history") {
       Handle-TvHistory $req $res
     } else {

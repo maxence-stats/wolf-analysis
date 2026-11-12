@@ -3352,3 +3352,91 @@
 .aw-table.aw-mc .pos{color:var(--green);font-weight:600}.aw-table.aw-mc .neg{color:var(--red);font-weight:600}
 .aw-mc-dot{display:inline-block;width:10px;height:10px;border-radius:3px;flex:0 0 10px}
 .aw-table.aw-mc.big .aw-tlogo{width:26px;height:26px;flex-basis:26px}
+
+/* ======================= WOLF STUDIO (2026-11-12) : miniatures YouTube + short Wolf Portfolio (js/studio.js) ======================= */
+.sd-wrap{display:flex;flex-direction:column;gap:18px;min-width:0}
+.sd-head{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.sd-head h2{font-family:var(--font-display);font-size:24px;margin:0}
+.sd-tabs{display:flex;gap:6px;background:var(--panel);padding:4px;border-radius:999px;border:var(--card-border)}
+.sd-tabs button{border:0;background:transparent;color:var(--text-dim);font:600 14px var(--font-body);padding:8px 16px;border-radius:999px;cursor:pointer}
+.sd-tabs button.on{background:var(--gold);color:#111}
+.sd-status{margin-left:auto;font-size:13px;color:var(--text-dim)}
+.sd-status.err{color:var(--red)} .sd-status.wait{color:var(--gold)}
+.sd-tpls{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px}
+.sd-tpls button{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-start;gap:2px;background:var(--card-bg);border:var(--card-border);color:var(--text);font:700 13px var(--font-body);padding:9px 13px;border-radius:12px;cursor:pointer;text-align:left}
+.sd-tpls button small{font-weight:500;font-size:11px;color:var(--text-dim)}
+.sd-tpls button.on{outline:2px solid var(--gold)}
+.sd-editor{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:22px;align-items:start}
+@media (max-width:1100px){.sd-editor{grid-template-columns:minmax(0,1fr)}}
+#sdBig{width:100%;aspect-ratio:16/9;display:block;border-radius:12px;box-shadow:0 14px 40px rgba(0,0,0,.35);transition:opacity .2s}
+#sdBig.busy{opacity:.75}
+.sd-warn{color:var(--red);font-size:13px;margin:6px 0 0;min-height:1em}
+.sd-under{display:flex;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-top:10px}
+.sd-feed{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--text-dim)}
+.sd-feed canvas{border-radius:8px;display:block;max-width:100%}
+.sd-feed b{color:var(--text)}
+.sd-actions{display:flex;flex-direction:column;gap:9px;margin-left:auto;min-width:240px}
+.sd-btns{display:flex;gap:8px;flex-wrap:wrap}
+.sd-btns button,.sd-sctrl button,.sd-devs button,.sd-wtabs button,.sd-vars button,.sd-presets button{border:1px solid var(--hair);background:var(--panel-2);color:var(--text);font:600 13px var(--font-body);padding:8px 13px;border-radius:999px;cursor:pointer}
+.sd-wrap .sd-main{background:linear-gradient(135deg,var(--gold),var(--gold-2));color:#111;border-color:transparent}
+.sd-wrap .sd-rec{background:#C62828;color:#fff;border-color:transparent}
+.sd-panel,.sd-card{background:var(--card-bg);border:var(--card-border);border-radius:16px;padding:16px 18px;display:flex;flex-direction:column;gap:13px;min-width:0}
+.sd-panel h3,.sd-card h3,.sd-lib h3{font-family:var(--font-display);font-size:18px;margin:0}
+.sd-sub{color:var(--text-dim);font-size:12.5px;margin:0}
+.sd-f{display:flex;flex-direction:column;gap:5px;font:700 11.5px var(--font-body);letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim)}
+.sd-f input,.sd-f select,.sd-search,.sd-devs select,.sd-scenes textarea,.sd-scenes input[type=number]{font:600 14px var(--font-body);color:var(--text);background:var(--bg);border:1px solid var(--hair);border-radius:10px;padding:8px 10px;width:100%;text-transform:none;letter-spacing:0}
+.sd-y{display:inline-block;width:10px;height:10px;background:#EEFF41;border:1px solid #222;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.sd-grp{display:flex;flex-direction:column;gap:7px}
+.sd-grp>span{font:700 11.5px var(--font-body);letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim)}
+.sd-vars{display:flex;gap:6px;flex-wrap:wrap}
+.sd-wrap .sd-vars button.on,.sd-wrap .sd-wtabs button.on{background:var(--gold);color:#111;border-color:transparent}
+.sd-chips{display:flex;flex-wrap:wrap;gap:6px}
+.sd-chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel-2);border:1px solid var(--hair);border-radius:999px;padding:4px 6px 4px 4px;font-size:13px}
+.sd-chip img,.sd-chip i{width:24px;height:24px;border-radius:6px;background:#fff;object-fit:cover;display:inline-grid;place-items:center;font-style:normal;color:#111;font-weight:800;font-size:12px}
+.sd-chip button{border:0;background:transparent;color:var(--text-dim);cursor:pointer;font-size:13px;padding:0 3px}
+.sd-sugg{display:flex;flex-direction:column;gap:3px}
+.sd-sugg button{display:flex;align-items:center;gap:8px;text-align:left;border:0;background:var(--panel-2);color:var(--text);border-radius:8px;padding:6px 8px;cursor:pointer;font-size:13px}
+.sd-sugg img,.sd-sugg i{width:22px;height:22px;border-radius:5px;background:#fff}
+.sd-sugg span{margin-left:auto;color:var(--text-dim);font-size:11.5px}
+.sd-presets{display:flex;gap:5px;flex-wrap:wrap}
+.sd-wrap .sd-presets button{font-size:11.5px;padding:4px 9px}
+.sd-wtabs{display:flex;gap:5px;flex-wrap:wrap}
+.sd-poses{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:6px;max-height:300px;overflow:auto;padding-right:4px}
+.sd-poses button{padding:0;border:2px solid transparent;border-radius:8px;overflow:hidden;cursor:pointer;background:var(--panel-2)}
+.sd-poses button img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block}
+.sd-poses button.on{border-color:var(--gold)}
+.sd-upl{display:block;border:1px dashed var(--hair);border-radius:10px;padding:10px;text-align:center;cursor:pointer;color:var(--text-dim);font-size:13px}
+.sd-tog{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--text-dim)}
+.sd-lib{display:flex;flex-direction:column;gap:10px}
+.sd-libgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.sd-libit{position:relative;background:var(--card-bg);border:var(--card-border);border-radius:12px;overflow:hidden}
+.sd-libit.on{outline:2px solid var(--gold)}
+.sd-libit>button:first-child{all:unset;cursor:pointer;display:flex;flex-direction:column;gap:3px;padding-bottom:9px;width:100%}
+.sd-libit img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block;background:#000}
+.sd-libit b{font-size:13.5px;padding:0 10px}
+.sd-libit span{font-size:11.5px;color:var(--text-dim);padding:0 10px}
+.sd-del{position:absolute;top:6px;right:6px;border:0;border-radius:8px;background:rgba(0,0,0,.65);color:#fff;cursor:pointer;padding:4px 8px;font-size:12px}
+.sd-trash{font-size:13px;color:var(--text-dim)}
+.sd-trash div{display:flex;gap:10px;align-items:center;padding:4px 0}
+.sd-trash button{border:1px solid var(--hair);background:var(--panel-2);color:var(--text);border-radius:999px;padding:3px 10px;cursor:pointer;font-size:12px}
+.sd-short{display:grid;grid-template-columns:minmax(0,420px) minmax(0,1fr);gap:24px;align-items:start}
+@media (max-width:1000px){.sd-short{grid-template-columns:minmax(0,1fr)}}
+.sd-phonebox{display:flex;flex-direction:column;gap:10px}
+.sd-phone{background:#0b0b0c;border-radius:34px;padding:10px;box-shadow:0 20px 50px rgba(0,0,0,.4);max-width:420px;width:100%}
+.sd-phone canvas{display:block;width:100%;aspect-ratio:9/16;border-radius:26px}
+.sd-sctrl{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sd-time{margin-left:auto;font-size:13px;color:var(--text-dim);font-variant-numeric:tabular-nums}
+.sd-sside{display:flex;flex-direction:column;gap:16px;min-width:0}
+.sd-prompt{background:var(--gold);color:#111;border-radius:16px;padding:16px 20px}
+.sd-prompt small{display:block;font:800 11px var(--font-body);letter-spacing:1.3px;text-transform:uppercase;opacity:.75;margin-bottom:5px}
+.sd-prompt p{margin:0;font:700 22px/1.4 var(--font-body);min-height:3em}
+.sd-devs{display:grid;grid-template-columns:auto 1fr 1fr;gap:8px;align-items:center}
+@media (max-width:700px){.sd-devs{grid-template-columns:1fr}}
+.sd-scenes{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.sd-scenes li{border:1px solid var(--hair);border-radius:12px;padding:9px 11px;display:flex;flex-direction:column;gap:7px}
+.sd-scenes li.on{border-color:var(--gold);background:rgba(217,164,65,.08)}
+.sd-srow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px}
+.sd-srow span{color:var(--text-dim);flex:1 1 140px;min-width:0}
+.sd-srow input[type=number]{width:64px}
+.sd-srow button{border:1px solid var(--hair);background:var(--panel-2);color:var(--text);border-radius:8px;padding:3px 8px;cursor:pointer}
+.sd-scenes textarea{resize:vertical;font-weight:500}

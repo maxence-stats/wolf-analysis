@@ -848,6 +848,30 @@ reste intact, décision de l'utilisateur). Répertoire visuel de toutes les anal
   Données exposées pour ça : `PRIX_UI.pubItems()`, `ATELIER_UI.tvRowsFor`. Serveur v=18 : snapshot + champs résultats. TradingView donne `earnings_release_next_date`, `earnings_per_share_forecast_next_fq`,
   `revenue_forecast_next_fq`, et après publication `eps_surprise_percent_fq` (verdict « Battu / Manqué » possible).
 
+### Onglet « 🎬 Studio » — miniatures YouTube + short Wolf Portfolio (fait, 2026-11-12)
+`#pageStudio`, `js/studio.js`, CSS `.sd-*` en fin de style.css. Validé sur maquettes : miniatures
+https://claude.ai/artifact/B4bfYADeVQL6G83Q4kJ6WX (17 modèles, 45 mises en page), short https://claude.ai/artifact/Gg5cj3sSavP5FRYf14QgSL.
+- **Miniatures (1280×720)** : style des miniatures de l'utilisateur = encadrés JAUNE `#EEFF41` texte noir, titres Anton blancs à contour
+  noir, logos en tuiles blanches, loup à droite. Textes SANS ACCENTS (`up()`), 5 mots max, coin bas droit libre (durée YouTube, case
+  « Zone de la durée »), aperçus à 360 px et 168 px. Chiffres CALCULÉS (cours TradingView `/api/tv/history` hebdo depuis 2016 : baisse
+  depuis le plus haut, duel, « si tu avais investi » ; rendements `dividends_yield_current` ; Wolf via `MP_ENGINE` : composition, valeur,
+  gain, performance mois / année / depuis le début vs CAC / S&P) mais champs « calculé, modifiable » (vide = calcul). Tier list = `tierListStore`.
+  Logos : recherche TradingView `/api/tv/search?all=1` (toute action ou ETF) + logos IA (`data/ai-logos/`) + « € ». PNG téléchargé ;
+  « 💾 Enregistrer » = bibliothèque (`items`, aperçu JPEG 320 px), corbeille + restauration.
+- **Loups** = banque de l'utilisateur `Bureau\Wolf Academy\IMAGE DE MARQUE ET TAMPLATE\BANQUE DIMAGES` (633 images), LUE seulement par le
+  serveur : `GET /api/studio/wolves` (liste), `GET /api/studio/wolf?f=<chemin relatif>&s=t|f` (versions allégées 384 / 1280 px en cache
+  `data/mes-portefeuilles/studio-cache/`, nom décodé en UTF-8 depuis l'URL brute : `QueryString` abîme les accents). 28 poses nommées
+  (`POSES` dans studio.js, choisies avec l'utilisateur : pointe, loupe, jumelles, stop, boxe…). « Mes images » = upload `/api/atelier/media`.
+  « Taille du loup » réduit le loup (l'utilisateur préfère le loup coupé à une bande noire : réglage manuel seulement).
+- **Short** (1080×1920) : 7 scènes (accroche, Wolf vs indices, depuis le début, opération de la semaine, top & flop, composition, fin),
+  cochables, ordonnables, durée et texte du prompteur par scène ; webcam en bulle / écran partagé / sans ; thèmes Beige / Nuit / Or ;
+  semaine en cours ou précédente. « ⏺ Enregistrer » : 3-2-1 puis `canvas.captureStream(30)` + micro (`getUserMedia`) → `MediaRecorder`
+  (MP4 si le navigateur sait, sinon WebM) → fichier téléchargé. Ne JAMAIS appeler `view()` pendant l'enregistrement (le canvas filmé
+  serait remplacé). Pas de ffmpeg sur le PC (vérifié) : la conversion WebM → MP4 éventuelle reste à faire.
+- **Données = FICHIER** `data/mes-portefeuilles/studio.json` (store `studio`, serveur v=20) : `{items:{id:{tpl,state,title,preview,…}},
+  custom:[images ajoutées], short:{réglages}, trash:[]}` ; le serveur refuse toute disparition d'`items.<id>` non déclarée dans `deleted`.
+  Panneau « 🛟 Sauvegardes » : store « studio » ajouté. Testé sur instance jetable (`-StoreDir`, copie de portefeuilles.json) le 2026-11-12.
+
 ### Onglet Portefeuille IA (fait, 2026-09-19)
 Sous-onglet de « 💼 Portefeuille » : 4 portefeuilles simulés (ChatGPT, Claude, Gemini, Grok, logos
 dans `data/ai-logos/`), 10 000 € chacun, l'utilisateur y enregistre à la main les achats/ventes que
