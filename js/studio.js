@@ -350,7 +350,7 @@ async function load(){
     const r = await fetch('/api/store/load?name=studio', { cache: 'no-store' }); const j = await r.json();
     if (!j.ok) throw new Error(j.error || 'lecture impossible');
     D = j.data || { version: 1, revision: 0, items: {}, custom: [], short: {}, trash: [] };
-    D.items = D.items || {}; D.custom = D.custom || []; D.short = D.short || {}; D.trash = D.trash || [];
+    D.items = D.items || {}; D.custom = D.custom || []; D.fav = Array.isArray(D.fav) ? D.fav : []; D.short = D.short || {}; D.trash = D.trash || [];
   } catch(e){ D = null; ui.err = e.message; }
 }
 function markDirty(){ if (!D) return; dirty = true; saveErr = null; status(); clearTimeout(saveTimer); saveTimer = setTimeout(save, 800); }
@@ -468,16 +468,18 @@ function panel(){
    <div class="sd-grp"><span>Mise en page</span><div class="sd-vars">${t.v.map((v, i) => `<button type="button" data-sd-v="${i}" class="${s.vi === i ? 'on' : ''}">${v[0]} · ${esc(v[1])}</button>`).join('')}</div></div>
    ${t.f.map(f => fieldHtml(t, s, f)).join('')}
    <div class="sd-grp"><span>Loup</span>
-    <div class="sd-wtabs"><button type="button" data-sd-wt="fav" class="${ui.wolfTab === 'fav' ? 'on' : ''}">Mes poses</button><button type="button" data-sd-wt="bank" class="${ui.wolfTab === 'bank' ? 'on' : ''}">Toute la banque</button><button type="button" data-sd-wt="mine" class="${ui.wolfTab === 'mine' ? 'on' : ''}">Mes images</button></div>
+    <div class="sd-wtabs"><button type="button" data-sd-wt="fav" class="${ui.wolfTab === 'fav' ? 'on' : ''}">Mes poses${D && D.fav.length ? ' · ★ ' + D.fav.length : ''}</button><button type="button" data-sd-wt="bank" class="${ui.wolfTab === 'bank' ? 'on' : ''}">Toute la banque</button><button type="button" data-sd-wt="mine" class="${ui.wolfTab === 'mine' ? 'on' : ''}">Mes images</button></div>
     ${ui.wolfTab === 'bank' ? '<input class="sd-search" id="sdBankQ" placeholder="Filtrer la banque (nom de fichier)…" value="' + esc(ui.bankQ) + '">' : ''}
     ${ui.wolfTab === 'mine' ? '<label class="sd-upl">＋ Ajouter une image (fichier, ou Ctrl+V ici)<input type="file" id="sdUpload" accept="image/png,image/jpeg,image/webp" hidden></label>' : ''}
-    <div class="sd-poses" id="sdPoses">${ui.wolfTab === 'fav' ? fav.map(k => poseBtn(k, k.replace('_', ' '))).join('') : ui.wolfTab === 'mine' ? (D && D.custom.length ? D.custom.map(c => poseBtn('media:' + c.f, c.name || 'image')).join('') : '<p class="sd-sub">Aucune image ajoutée.</p>') : '<p class="sd-sub">Chargement…</p>'}</div>
+    <div class="sd-poses" id="sdPoses">${ui.wolfTab === 'fav' ? ((D && D.fav.length ? '<p class="sd-sub sd-full">★ Mes favoris</p>' + D.fav.map(r => poseBtn(r, String(r).split('/').pop())).join('') + '<p class="sd-sub sd-full">Poses de base</p>' : '') + fav.map(k => poseBtn(k, k.replace('_', ' '), false)).join('')) : ui.wolfTab === 'mine' ? (D && D.custom.length ? D.custom.map(c => poseBtn('media:' + c.f, c.name || 'image')).join('') : '<p class="sd-sub">Aucune image ajoutée.</p>') : '<p class="sd-sub">Chargement…</p>'}</div>
     <label class="sd-f">Taille du loup<select data-sd-k="wz">${[['', 'Normale'], ['.92', '92 %'], ['.86', '86 %'], ['.8', '80 %']].map(([v, l]) => `<option value="${v}" ${String(s.wz) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     <label class="sd-f">Position du loup (si l’image est plus haute que la miniature)<select data-sd-k="wy">${[['', 'Haut de l’image (tête entière)'], ['.25', 'Un peu plus bas'], ['.5', 'Centré'], ['1', 'Bas de l’image']].map(([v, l]) => `<option value="${v}" ${String(s.wy == null ? '' : s.wy) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
    </div>`;
   if (ui.wolfTab === 'bank') bankGrid();
 }
-const poseBtn = (ref, label) => `<button type="button" data-sd-pose="${esc(ref)}" class="${ui.st.pose === ref ? 'on' : ''}" title="${esc(label)}"><img loading="lazy" src="${esc(wolfUrl(ref, true))}" alt="${esc(label)}"></button>`;
+// Favoris de la banque : chemins gardés dans studio.json (D.fav), affichés dans « Mes poses ».
+const isFav = ref => !!(D && D.fav && D.fav.includes(ref));
+const poseBtn = (ref, label, star = true) => `<span class="sd-pw"><button type="button" data-sd-pose="${esc(ref)}" class="${ui.st.pose === ref ? 'on' : ''}" title="${esc(label)}"><img loading="lazy" src="${esc(wolfUrl(ref, true))}" alt="${esc(label)}"></button>${star && D ? `<button type="button" class="sd-star ${isFav(ref) ? 'on' : ''}" data-sd-fav="${esc(ref)}" title="${isFav(ref) ? 'Retirer des favoris' : 'Ajouter aux favoris'}" aria-label="${isFav(ref) ? 'Retirer des favoris' : 'Ajouter aux favoris'}">${isFav(ref) ? '★' : '☆'}</button>` : ''}</span>`;
 async function bankGrid(){
   const box = $('sdPoses'); if (!box) return; const list = await loadBank(); const q = ui.bankQ.trim().toLowerCase();
   const f = list.filter(n => !q || n.toLowerCase().includes(q)).slice(0, 240);
@@ -534,6 +536,9 @@ document.addEventListener('click', e => {
   if (ds.sdTpl != null){ ui.cur = +ds.sdTpl; ui.st = newState(ui.cur); ui.itemId = null; thumbView(); const top = $('sdBody'); if (top) top.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
   if (ds.sdV != null){ ui.st.vi = +ds.sdV; panel(); draw(); return; }
   if (ds.sdWt){ ui.wolfTab = ds.sdWt; panel(); return; }
+  if (ds.sdFav != null){ if (!D){ alertMsg('Favoris indisponibles sans le serveur local.'); return; } const r = ds.sdFav, i = D.fav.indexOf(r); if (i >= 0) D.fav.splice(i, 1); else D.fav.push(r); markDirty();
+    const on = D.fav.includes(r); b.classList.toggle('on', on); b.textContent = on ? '★' : '☆'; b.title = on ? 'Retirer des favoris' : 'Ajouter aux favoris';
+    const wt = page.querySelector('[data-sd-wt="fav"]'); if (wt) wt.textContent = 'Mes poses' + (D.fav.length ? ' · ★ ' + D.fav.length : ''); if (ui.wolfTab === 'fav') panel(); return; }
   if (ds.sdPose){ ui.st.pose = ds.sdPose; page.querySelectorAll('[data-sd-pose]').forEach(z => z.classList.toggle('on', z === b)); draw(); return; }
   if (ds.sdRm){ const [k, i] = ds.sdRm.split('|'); ui.st[k].splice(+i, 1); panel(); draw(); return; }
   if (ds.sdMv){ const [k, i, d] = ds.sdMv.split('|'), a = ui.st[k], j = +i + +d; if (j < 0 || j >= a.length) return; [a[i], a[j]] = [a[j], a[i]]; panel(); draw(); return; }
@@ -579,7 +584,7 @@ const SHORT = (() => {
     { k: 'end', t: 'Fin', d: 'Renvoi vers la vidéo du samedi', dur: 3, say: d => `L'analyse complète, c'est samedi sur la chaîne. Abonne-toi pour la semaine ${d.week + 1}.` }
   ];
   let C = THEMES.beige, cfg = null, DATA = null, dataErr = null, t0 = 0, tt = 0, playing = false, raf = 0, LAY = 'bulle';
-  let cam = null, camVideo = null, rec = null, recChunks = [], recording = false, countdown = 0;
+  let cam = null, camVideo = null, rec = null, recChunks = [], recording = false, countdown = 0, recPaused = false, resuming = false, pubOv = { yt: null, fb: null };
   let sx;   // contexte du canvas du short
   const defCfg = () => ({ per: 'w0', layout: 'bulle', theme: 'beige', scenes: SCN.map(s => ({ k: s.k, on: true, dur: s.dur })), texts: {} });
   function getCfg(){ if (!cfg){ cfg = Object.assign(defCfg(), D && D.short && D.short.scenes ? JSON.parse(JSON.stringify(D.short)) : {}); SCN.forEach(s => { if (!cfg.scenes.some(z => z.k === s.k)) cfg.scenes.push({ k: s.k, on: true, dur: s.dur }); }); } return cfg; }
@@ -693,20 +698,21 @@ const SHORT = (() => {
     const a = active(); let acc = 0; const gp = 8, W = (1080 - 120 - gp * (a.length - 1)) / Math.max(1, a.length);
     a.forEach((s, i) => { const X = 60 + i * (W + gp); sx.fillStyle = C.track; R2(X, 40, W, 10, 5); sx.fill(); const f = clamp((tt - acc) / (+s.dur || 3)); if (f > 0){ sx.fillStyle = C.gold; R2(X, 40, Math.max(10, W * f), 10, 5); sx.fill(); } acc += +s.dur || 3; });
     if (countdown > 0){ sx.fillStyle = 'rgba(0,0,0,.55)'; sx.fillRect(0, 0, 1080, 1920); T2(String(countdown), 540, 1040, 360, '#fff'); }
+    else if (recPaused){ sx.fillStyle = 'rgba(0,0,0,.55)'; sx.fillRect(0, 0, 1080, 1920); T2('PAUSE', 540, 980, 200, '#fff'); T2('Espace pour reprendre', 540, 1090, 54, '#fff', 'center', BF, 700); }   // pas filmé : l'enregistreur est en pause
     if ($('sdSafe') && $('sdSafe').checked && !recording){ sx.fillStyle = 'rgba(255,40,40,.22)'; sx.fillRect(0, 1580, 1080, 340); sx.fillRect(930, 860, 150, 720); T2('Cache par YouTube', 540, 1700, 34, '#fff', 'center', BF, 800); }
   }
   let last = 0;
   function loop(now){ const dtm = (now - last) / 1000; last = now; if (playing && countdown <= 0){ tt += dtm; if (tt >= total()){ if (recording){ stopRec(); tt = total() - 0.001; playing = false; } else tt = 0; } } frame(); uiTick(); raf = requestAnimationFrame(loop); }
   let lastK = null;
-  function uiTick(){ const el = $('sdShortTime'); if (el) el.textContent = fr(tt, 1) + ' s / ' + Math.round(total()) + ' s' + (recording ? ' · ⏺ ENREGISTREMENT' : '');
+  function uiTick(){ const el = $('sdShortTime'); if (el) el.textContent = fr(tt, 1) + ' s / ' + Math.round(total()) + ' s' + (recording ? (recPaused ? ' · ⏸ EN PAUSE (Espace pour reprendre)' : ' · ⏺ ENREGISTREMENT') : '');
     const cur = at(tt), pt = $('sdPrompt'); if (cur && pt && cur.s.k !== lastK){ lastK = cur.s.k; const c = getCfg(); pt.textContent = (c.texts[cur.s.k] != null && c.texts[cur.s.k] !== '' ? c.texts[cur.s.k] : (DATA ? scn(cur.s.k).say(DATA) : '')); document.querySelectorAll('#sdScenes li').forEach(li => li.classList.toggle('on', li.dataset.k === cur.s.k)); } }
   function view(){
     const b = $('sdBody'); if (!b) return; const c = getCfg();
     b.innerHTML = `<div class="sd-short">
       <div class="sd-phonebox"><div class="sd-phone"><canvas id="sdShortCv" width="1080" height="1920" aria-label="Aperçu du short"></canvas></div>
         <div class="sd-sctrl"><button type="button" class="sd-main" data-sd-s="play">${playing ? '⏸ Pause' : '▶ Lecture'}</button><button type="button" data-sd-s="restart">↺ Rejouer</button><span id="sdShortTime" class="sd-time"></span></div>
-        <div class="sd-sctrl"><button type="button" class="sd-rec" id="sdRecBtn" data-sd-s="rec">${recording ? '⏹ Arrêter l’enregistrement' : '⏺ Enregistrer le short'}</button></div>
-        <p class="sd-sub">L'enregistrement : compte à rebours 3-2-1, l'animation défile avec ta webcam, ton micro est capté, puis le fichier vidéo se télécharge.</p></div>
+        <div class="sd-sctrl"><button type="button" class="sd-rec" id="sdRecBtn" data-sd-s="rec">${recording ? '⏹ Arrêter l’enregistrement' : '⏺ Enregistrer le short'}</button><button type="button" id="sdPauseBtn" data-sd-s="pause" ${recording ? '' : 'hidden'}>${recPaused ? '▶ Reprendre' : '⏸ Pause'}</button></div>
+        <p class="sd-sub">L'enregistrement : compte à rebours 3-2-1, l'animation défile avec ta webcam, ton micro est capté, puis le fichier vidéo se télécharge. <b>Touche Espace = pause</b> (rien n'est filmé pendant la pause) ; Espace de nouveau = 3-2-1 puis ça reprend là où tu t'étais arrêté.</p></div>
       <div class="sd-sside">
         <div class="sd-prompt"><small>Prompteur · texte de la scène en cours</small><p id="sdPrompt"></p></div>
         <div class="sd-card"><h3>Réglages</h3>
@@ -720,6 +726,10 @@ const SHORT = (() => {
           <ol id="sdScenes" class="sd-scenes">${c.scenes.map((z, i) => { const S0 = scn(z.k); return `<li data-k="${z.k}"><div class="sd-srow"><input type="checkbox" data-sd-on="${i}" ${z.on ? 'checked' : ''} aria-label="Garder ${esc(S0.t)}"><b>${esc(S0.t)}</b><span>${esc(S0.d)}</span>
             <input type="number" min="1.5" max="10" step="0.5" value="${z.dur}" data-sd-dur="${i}" aria-label="Durée en secondes"> s<button type="button" data-sd-up="${i}" aria-label="Monter">↑</button><button type="button" data-sd-down="${i}" aria-label="Descendre">↓</button><button type="button" data-sd-go="${i}">Voir</button></div>
             <textarea data-sd-txt="${z.k}" rows="2" placeholder="${esc(DATA ? S0.say(DATA) : '')}">${esc(c.texts[z.k] || '')}</textarea></li>`; }).join('')}</ol></div>
+        <div class="sd-card"><h3>Texte de publication</h3><p class="sd-sub">Généré avec les chiffres de la semaine, modifiable avant de copier.</p>
+          ${['yt', 'fb'].map(k => `<div class="sd-pub"><div class="sd-pubh"><b>${k === 'yt' ? '▶ YouTube Shorts (titre + description)' : 'f Facebook'}</b><button type="button" data-sd-copy="${k}">📋 Copier</button></div>
+            <textarea id="sdPub_${k}" data-sd-pub="${k}" rows="${k === 'yt' ? 12 : 9}">${esc(pubText(k))}</textarea></div>`).join('')}
+          <div class="sd-sctrl"><button type="button" data-sd-s="pubreset">↻ Régénérer les textes</button><span id="sdPubMsg" class="sd-time"></span></div></div>
         ${dataErr ? '<p class="sd-warn">⚠ ' + esc(dataErr) + '</p>' : ''}
       </div></div>`;
     lastK = null; devices();
@@ -754,9 +764,64 @@ const SHORT = (() => {
       recording = false; rec = null; view(); };
     tt = 0; playing = false; for (countdown = 3; countdown > 0; countdown--){ await new Promise(r => setTimeout(r, 1000)); }
     countdown = 0; recording = true; rec.start(250); playing = true; last = performance.now();
-    const rb = $('sdRecBtn'); if (rb) rb.textContent = '⏹ Arrêter l’enregistrement';   // jamais view() ici : le canvas filmé serait remplacé
+    const rb = $('sdRecBtn'); if (rb) rb.textContent = '⏹ Arrêter l’enregistrement'; const pz = $('sdPauseBtn'); if (pz){ pz.hidden = false; pz.textContent = '⏸ Pause'; }   // jamais view() ici : le canvas filmé serait remplacé
   }
-  function stopRec(){ if (rec && rec.state !== 'inactive') rec.stop(); playing = false; }
+  function stopRec(){ if (rec && rec.state !== 'inactive') rec.stop(); playing = false; recPaused = false; resuming = false; }
+  // Espace pendant l'enregistrement : pause du fichier ET de l'animation ; reprise après un 3-2-1 (l'enregistreur reste en pause pendant le décompte).
+  async function togglePause(){
+    if (!recording){ if (countdown > 0) return; playing = !playing; last = performance.now(); const pb = document.querySelector('[data-sd-s="play"]'); if (pb) pb.textContent = playing ? '⏸ Pause' : '▶ Lecture'; return; }
+    if (!rec || resuming) return;
+    const btn = () => { const pb = $('sdPauseBtn'); if (pb) pb.textContent = recPaused ? '▶ Reprendre' : '⏸ Pause'; };
+    if (!recPaused){ if (rec.state === 'recording') rec.pause(); playing = false; recPaused = true; btn(); return; }
+    resuming = true;
+    for (countdown = 3; countdown > 0; countdown--){ await new Promise(r => setTimeout(r, 1000)); if (!recording){ countdown = 0; resuming = false; return; } }
+    countdown = 0; recPaused = false; frame();   // image propre AVANT de relancer l'enregistreur
+    if (rec && rec.state === 'paused') rec.resume(); playing = true; last = performance.now(); resuming = false; btn();
+  }
+  // ---- texte de publication (YouTube / Facebook) ----
+  const tag = n => '#' + String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '').toLowerCase();
+  const deN = n => /^[aeiouyhâéèêîïôûAEIOUYHÂÉÈÊÎÏÔÛ]/.test(n) ? 'd’' + n : 'de ' + n;
+  function pubText(k){
+    if (pubOv[k] != null) return pubOv[k];
+    const d = DATA; if (!d) return dataErr ? '' : 'Chargement des chiffres de la semaine…';
+    const p = v => sgn(v, 1), names = [d.op && d.op.nom].concat(d.top.map(t => t.name)).filter(Boolean);
+    const firm = [...new Set(names.map(tag))].filter(t => t.length > 2).slice(0, 3);
+    const opLine = d.op ? (d.op.type === 'SELL' ? `Vente ${deN(d.op.nom)}${isNum(d.op.perf) ? ' (' + p(d.op.perf) + ' en ' + d.op.days + ' jours)' : ''}` : `Achat ${deN(d.op.nom)}`) : 'Aucune opération cette semaine';
+    const ec = d.wolf - d.cac, pts = `${fr(Math.abs(ec), 1)} point${Math.abs(ec) >= 2 ? 's' : ''}`, verdict = ec >= 0 ? pts + ' devant le CAC 40' : pts + ' derrière le CAC 40';
+    if (k === 'yt') return `Wolf Portfolio, semaine ${d.week} : ${p(d.wolf)} (${verdict}) #shorts
+
+Le bilan de la semaine ${d.week} de mon portefeuille public, le Wolf Portfolio.
+
+📊 Cette semaine
+• Wolf Portfolio : ${p(d.wolf)}
+• CAC 40 : ${p(d.cac)}
+• S&P 500 (en euros) : ${p(d.spx)}
+• Depuis le lancement : ${p(d.since.wolf)}
+
+🔁 ${opLine}${d.top[0] ? `
+🥇 En tête : ${d.top[0].name} (${p(d.top[0].v)})` : ''}${d.flop[0] ? `
+🔻 Lanterne rouge : ${d.flop[0].name} (${p(d.flop[0].v)})` : ''}
+
+🎥 L'analyse complète, c'est samedi sur la chaîne. Abonne-toi pour ne pas la rater.
+⚠️ Contenu éducatif, pas un conseil en investissement. Les performances passées ne préjugent pas des performances futures.
+
+#shorts #bourse #investissement #wolfportfolio #cac40 #sp500 #actions #portefeuille #pea #wolfacademyinvest ${firm.join(' ')}`.trim();
+    return `🐺 Semaine ${d.week} pour le Wolf Portfolio : ${p(d.wolf)} !
+
+Pendant ce temps, le CAC 40 fait ${p(d.cac)} et le S&P 500 ${p(d.spx)} en euros. Depuis le lancement, le portefeuille affiche ${p(d.since.wolf)}.
+
+👉 ${opLine}.${d.top[0] ? `
+🥇 ${d.top[0].name} mène la danse (${p(d.top[0].v)}).` : ''}
+
+Et toi, ta semaine en bourse, c'était comment ? Dis-le en commentaire 👇
+L'analyse complète arrive samedi sur YouTube.
+
+⚠️ Pas un conseil en investissement.
+#bourse #investissement #wolfportfolio ${firm.slice(0, 2).join(' ')}`.trim();
+  }
+  async function copyPub(k){ const ta = $('sdPub_' + k), msg = $('sdPubMsg'); if (!ta) return;
+    try { await navigator.clipboard.writeText(ta.value); } catch(e){ ta.select(); document.execCommand('copy'); }
+    if (msg){ msg.textContent = (k === 'yt' ? 'Texte YouTube' : 'Texte Facebook') + ' copié ✔'; setTimeout(() => { if (msg.isConnected) msg.textContent = ''; }, 2500); } }
   return {
     view,
     stop(){ playing = false; if (recording) stopRec(); stopCam(); cancelAnimationFrame(raf); raf = 0; },
@@ -765,19 +830,30 @@ const SHORT = (() => {
       if (ds.sdS === 'restart'){ tt = 0; playing = true; last = performance.now(); return true; }
       if (ds.sdS === 'cam'){ cam ? (stopCam(), view()) : startCam(); return true; }
       if (ds.sdS === 'rec'){ recording ? stopRec() : (countdown > 0 ? null : startRec()); return true; }
+      if (ds.sdS === 'pause'){ togglePause(); return true; }
+      if (ds.sdS === 'pubreset'){ pubOv = { yt: null, fb: null }; ['yt', 'fb'].forEach(k => { const ta = $('sdPub_' + k); if (ta) ta.value = pubText(k); }); return true; }
+      if (ds.sdCopy){ copyPub(ds.sdCopy); return true; }
       const c = getCfg();
       if ((ds.sdUp != null || ds.sdDown != null) && !recording){ const i = +(ds.sdUp != null ? ds.sdUp : ds.sdDown), j = i + (ds.sdUp != null ? -1 : 1); if (j < 0 || j >= c.scenes.length) return true; [c.scenes[i], c.scenes[j]] = [c.scenes[j], c.scenes[i]]; persist(); view(); return true; }
       if (ds.sdGo != null){ const z = c.scenes[+ds.sdGo]; let acc = 0; for (const s of active()){ if (s === z) break; acc += +s.dur || 3; } tt = acc + 0.01; return true; }
       return false; },
+    space: togglePause,
     input(e){ const t = e.target, c = getCfg();
+      if (t.dataset.sdPub){ pubOv[t.dataset.sdPub] = t.value; return; }
       if (t.dataset.sdTxt){ c.texts[t.dataset.sdTxt] = t.value; persist(); lastK = null; return; }
       if (t.dataset.sdDur != null){ const v = Math.max(1.5, Math.min(10, +t.value || 3)); c.scenes[+t.dataset.sdDur].dur = v; persist(); return; } },
     change(e){ const t = e.target, c = getCfg();
-      if (t.dataset && t.dataset.sdSc){ c[t.dataset.sdSc] = t.value; persist(); if (t.dataset.sdSc === 'per' && !recording){ DATA = null; dataErr = null; tt = 0; view(); } return; }
+      if (t.dataset && t.dataset.sdSc){ c[t.dataset.sdSc] = t.value; persist(); if (t.dataset.sdSc === 'per' && !recording){ pubOv = { yt: null, fb: null }; DATA = null; dataErr = null; tt = 0; view(); } return; }
       if (t.dataset && t.dataset.sdOn != null){ c.scenes[+t.dataset.sdOn].on = t.checked; if (!active().length){ c.scenes[+t.dataset.sdOn].on = true; t.checked = true; } persist(); tt = Math.min(tt, Math.max(0, total() - 0.01)); return; }
       if (t.id === 'sdCamSel' || t.id === 'sdMicSel'){ if (cam) startCam(); } }
   };
 })();
+
+/* ---------- touche Espace (short) : pause / reprise ---------- */
+const spaceOk = e => { if (e.code !== 'Space' || e.repeat || e.ctrlKey || e.altKey || e.metaKey) return false; const page = $(PAGE_ID); if (!page || !page.classList.contains('active') || ui.tab !== 'short') return false;
+  const t = e.target; return !(t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))); };
+document.addEventListener('keydown', e => { if (!spaceOk(e)) return; e.preventDefault(); SHORT.space(); });
+document.addEventListener('keyup', e => { if (e.code === 'Space' && spaceOk(e)) e.preventDefault(); });   // un bouton qui a le focus ne doit pas être « cliqué » en plus
 
 /* ---------- ouverture de la page ---------- */
 let loaded = false;

@@ -3414,6 +3414,16 @@
 .sd-poses button{padding:0;border:2px solid transparent;border-radius:8px;overflow:hidden;cursor:pointer;background:var(--panel-2)}
 .sd-poses button img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block}
 .sd-poses button.on{border-color:var(--gold)}
+.sd-pw{position:relative;display:block;min-width:0}
+.sd-pw>button[data-sd-pose]{width:100%}
+.sd-poses .sd-star{position:absolute;top:3px;right:3px;width:24px;height:24px;border-radius:50%;border:none;background:rgba(0,0,0,.6);color:#fff;font:700 14px/24px var(--font-body);padding:0;opacity:0;transition:opacity .15s}
+.sd-pw:hover .sd-star,.sd-poses .sd-star.on,.sd-poses .sd-star:focus-visible{opacity:1}
+.sd-poses .sd-star.on{color:var(--gold)}
+.sd-poses .sd-full{grid-column:1/-1;margin:2px 0 0}
+.sd-pub{display:flex;flex-direction:column;gap:6px}
+.sd-pubh{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sd-pubh button{border:1px solid var(--hair);background:var(--panel-2);color:var(--text);font:600 12px var(--font-body);padding:6px 11px;border-radius:999px;cursor:pointer}
+.sd-pub textarea{width:100%;box-sizing:border-box;resize:vertical;background:var(--panel);color:var(--text);border:1px solid var(--hair);border-radius:10px;padding:10px 12px;font:500 13px/1.5 var(--font-body)}
 .sd-upl{display:block;border:1px dashed var(--hair);border-radius:10px;padding:10px;text-align:center;cursor:pointer;color:var(--text-dim);font-size:13px}
 .sd-tog{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--text-dim)}
 .sd-lib{display:flex;flex-direction:column;gap:10px}
