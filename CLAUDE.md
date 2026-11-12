@@ -666,6 +666,12 @@ Les anciennes pages Sheet (Wolf Portfolio, Perso) sont conservées telles quelle
   rendement 12 mois sur l'investi et sur la valeur ; tableau par année + barres empilées des revenus mensuels. « Revenus du mois » =
   un champ par SCPI, tout enregistré d'un coup ; un mois déjà saisi est corrigé (ancien montant dans `trash`). Tout retrait → `trash`
   + « ↶ Annuler ». Floutée/inaccessible sans le code Perso. Le patrimoine de la carte Épargne inclut les SCPI.
+- **« Mon patrimoine » (2026-11-12)** : en tête, 2 cartes seulement : 🐺 Wolf Portfolio (en évidence) et 🏛 Mon patrimoine
+  (`ui.acc = 'patri'`, vue par défaut). Dans le patrimoine, barre `.mp-subacc` : Vue d'ensemble / PEA / CTO / PEA + CTO / Épargne
+  (fenêtre) / SCPI (fenêtre). Vue d'ensemble (`patriData`, `patrimoineHtml`, `drawPatriChart`, CSS `.pt-*`) : total, Bourse
+  (PEA + CTO avec liquidités), Épargne (dernier relevé), Immobilier (SCPI), revenus passifs 12 mois (DIV PEA/CTO + revenus SCPI),
+  barre de répartition, anneau double (intérieur = classes, extérieur = enveloppes), tableau « Par classe / Par enveloppe / Ligne par
+  ligne » (chaque titre PEA + CTO réunis). Hors Wolf Portfolio. Verrouillé = rien d'affiché (montants des cartes floutés).
 - **Corbeille** : une opération supprimée part dans `D.trash` (même fichier) avec sa copie Wolf ; « ↶ Annuler » juste après,
   ou « ↶ Restaurer » depuis la corbeille sous le journal (`restore(group)`).
 - **Copie MENSUELLE** (serveur v=11, `Ensure-MonthlySnapshot`) : au premier accès de chaque mois (démarrage, lecture ou

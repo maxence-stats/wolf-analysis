@@ -298,7 +298,7 @@ let D = null, serverOk = false, storeFile = '', loadErr = null;
 let RO = false, publishedAt = null, rawHist = {};
 let S = {};
 let histErr = {}, histLoading = false, histAt = null;
-let ui = { acc: 'pea', period: { k: 'all' }, modal: null, delConfirm: null, msg: null, showAllOps: false, includeOpen: false, saving: false };
+let ui = { acc: 'patri', period: { k: 'all' }, modal: null, delConfirm: null, msg: null, showAllOps: false, includeOpen: false, saving: false };
 let charts = {};
 let searchTimer = null;
 let cache = null;   // calculs du rendu en cours
@@ -457,10 +457,14 @@ function render(){
   ['pea', 'cto', 'perso', 'wolf'].forEach(k => { cache[k] = compute(k); });
   const c = cache[ui.acc];
   let body;
+  const patri = ui.acc === 'patri';
   const lockBar = locked ? `<div class="mp-card mp-lock"><div class="mp-lock-ico">🔒</div><div><b>Chiffres fictifs et montants floutés</b><p>Les vrais montants du PEA et du CTO s'affichent avec ton code.</p></div>
       <input type="password" inputmode="numeric" maxlength="8" id="mpLockInput" placeholder="Code"><button class="refresh-btn" id="mpLockBtn">Déverrouiller</button></div>`
     : ui.acc !== 'wolf' ? `<div class="mp-relock"><button class="mp-ghost" id="mpRelockBtn" title="Revenir aux chiffres fictifs floutés (avant une vidéo, par exemple)">🔒 Verrouiller</button></div>` : '';
-  if (!c){
+  if (patri){
+    body = lockBar + (locked ? `<div class="mp-card mp-empty">🔒 Ton patrimoine (bourse, épargne, SCPI) s'affiche avec ton code.</div>`
+      : !histAt ? `<div class="mp-card mp-empty">⏳ Lecture des cours TradingView…</div>` : patrimoineHtml());
+  } else if (!c){
     body = toolbarHtml() + `<div class="mp-card mp-empty">Aucune opération sur ce compte pour l'instant. Commence par « + Versement » ou « + Achat ».</div>`;
   } else if (!histAt){
     body = `<div class="mp-card mp-empty">⏳ Lecture des cours TradingView…</div>`;
@@ -480,7 +484,8 @@ function render(){
   wireEpargne();
   wireScpi();
   const scBg = document.getElementById('mpScBg'); if (scBg){ scBg.scrollTop = scScroll; drawScpiChart(); }
-  if (c && histAt && typeof Chart !== 'undefined'){ drawPerfChart(c); drawDonut(c, locked); }
+  if (!patri && c && histAt && typeof Chart !== 'undefined'){ drawPerfChart(c); drawDonut(c, locked); }
+  if (patri && !locked && histAt && typeof Chart !== 'undefined') drawPatriChart();
   if (ui.modal) wireModal();
 }
 function titleHtml(){
@@ -492,15 +497,112 @@ function titleHtml(){
       <button class="mp-ghost" data-mp-refresh title="Relire les cours TradingView">↻ Cours</button></div></div>
     ${ui.msg ? `<div class="mp-banner ${ui.msg.err ? 'err' : 'ok'}"><span>${esc(ui.msg.text)}</span><span>${ui.msg.undo ? `<button class="mp-ghost" data-mp-restore="${esc(ui.msg.undo)}">↶ Annuler</button>` : ''}<button class="mp-x" data-mp-msgx>✕</button></span></div>` : ''}`;
 }
-function accountCardsHtml(){
-  return `<div class="mp-accounts ${RO ? '' : 'mp-accounts6'}">${ACCOUNTS.map(a => {
-    const c = cache[a.k], lockedA = a.k !== 'wolf' && !persoOk();
-    const v = c ? c.now.value : null, p = c && c.perf ? c.perf.twr * 100 : null;
-    return `<button class="mp-acc ${ui.acc === a.k ? 'active' : ''} ${a.k === 'perso' ? 'mp-acc-sum' : ''}" data-mp-acc="${a.k}">
+const PATRI_GROUP = ['patri', 'pea', 'cto', 'perso'];
+function accCardHtml(a){
+  const c = cache[a.k], lockedA = a.k !== 'wolf' && !persoOk();
+  const v = c ? c.now.value : null, p = c && c.perf ? c.perf.twr * 100 : null;
+  return `<button class="mp-acc ${ui.acc === a.k ? 'active' : ''} ${a.k === 'wolf' ? 'mp-acc-wolf' : ''}" data-mp-acc="${a.k}">
       <span class="mp-acc-top"><span class="mp-acc-ico">${a.icon}</span><span><b>${a.label}</b><small>${a.sub}</small></span></span>
       <span class="mp-acc-val${lockedA ? ' mp-blur' : ''}">${histLoading && !histAt ? '…' : eur(v, 0)}${c && c.missing.length && !lockedA ? ' <span class="mp-acc-warn" title="Cours manquants : valeur incomplète">⚠</span>' : ''}</span>
       <span class="mp-acc-perf ${cls(p)}">${lockedA ? '🔒 chiffres fictifs' : pct(p) + ' ' + (periodRange().label || 'depuis le début')}</span></button>`;
-  }).join('')}${RO ? '' : epargneCardHtml() + scpiCardHtml()}</div>`;
+}
+/* En tête : le Wolf Portfolio (public) bien en évidence, et « Mon patrimoine » qui regroupe tout le reste.
+   Dans le patrimoine, une barre donne accès au détail : vue d'ensemble, PEA, CTO, PEA + CTO, épargne, SCPI. */
+function accountCardsHtml(){
+  if (RO) return `<div class="mp-accounts">${accCardHtml(ACCOUNTS.find(a => a.k === 'wolf'))}</div>`;
+  const locked = !persoOk(), P = locked || !histAt ? null : patriData();
+  const inGroup = PATRI_GROUP.includes(ui.acc);
+  const fake = '12 345 €';
+  const patriCard = `<button class="mp-acc mp-acc-patri ${inGroup ? 'active' : ''}" data-mp-acc="patri">
+      <span class="mp-acc-top"><span class="mp-acc-ico">🏛</span><span><b>Mon patrimoine</b><small>PEA · CTO · épargne · SCPI</small></span></span>
+      <span class="mp-acc-val${locked ? ' mp-blur' : ''}">${locked ? '123 456 €' : P ? eur(P.total, 0) : '…'}</span>
+      <span class="mp-acc-perf">${locked ? '🔒' : P ? P.cats.filter(x => x.val > 0).map(x => esc(x.label) + ' ' + num(x.val / (P.total || 1) * 100, 0) + ' %').join(' · ') : ''}</span></button>`;
+  const sub = inGroup ? `<div class="mp-subacc">
+      ${[['patri', '🏛', 'Vue d\'ensemble'], ['pea', '🏦', 'PEA'], ['cto', '🌍', 'CTO'], ['perso', 'Σ', 'PEA + CTO']].map(([k, ic, l]) => {
+        const v = k === 'patri' ? (P && P.total) : cache[k] ? cache[k].now.value : null;
+        return `<button class="${ui.acc === k ? 'active' : ''}" data-mp-acc="${k}"><span>${ic}</span>${l}<b class="${locked ? 'mp-blur' : ''}">${locked ? fake : !histAt ? '…' : eur(v, 0)}</b></button>`; }).join('')}
+      <button data-mp-epargne><span>💶</span>Épargne<b class="${locked ? 'mp-blur' : ''}">${locked ? fake : eur(epTot(epargneLast()), 0)}</b></button>
+      <button data-mp-scpi><span>🏢</span>SCPI<b class="${locked ? 'mp-blur' : ''}">${locked ? fake : eur(scpiTotal() || 0, 0)}</b></button></div>` : '';
+  return `<div class="mp-accounts mp-accounts2">${accCardHtml(ACCOUNTS.find(a => a.k === 'wolf'))}${patriCard}</div>${sub}`;
+}
+
+/* ======================= MON PATRIMOINE : tout ce que je possède (hors Wolf Portfolio, portefeuille public) =======================
+   Bourse = PEA + CTO (valeur du jour, liquidités comprises) ; Épargne = dernier relevé LDDS / Livret A / précaution ;
+   Immobilier = SCPI (parts × dernier prix de part). Trois lectures : par classe d'actifs, par enveloppe, ligne par ligne. */
+const PATRI_CATS = [
+  { k: 'bourse', label: 'Bourse', color: '#D9A441', icon: '📈' },
+  { k: 'epargne', label: 'Épargne', color: '#4A9FE0', icon: '💶' },
+  { k: 'immo', label: 'Immobilier', color: '#B9774E', icon: '🏢' }
+];
+function shade(hex, i, n){   // nuances d'une même couleur pour les enveloppes d'une catégorie
+  const t = n <= 1 ? 0 : (i / (n - 1)) * 0.55 - 0.2, h = hex.replace('#', '');
+  const ch = k => { const v = parseInt(h.substr(k, 2), 16); return Math.round(t >= 0 ? v + (255 - v) * t * 0.6 : v * (1 + t)); };
+  return 'rgb(' + ch(0) + ',' + ch(2) + ',' + ch(4) + ')';
+}
+function patriData(){
+  const today = E.isoToday(), y1 = addDays(today, -365);
+  const ep = epargneLast() || {}, rel = ep.date ? 'relevé du ' + fmtD(ep.date) : '';
+  const env = [
+    { cat: 'bourse', label: 'PEA', icon: '🏦', val: cache.pea ? cache.pea.now.value : 0, sub: cache.pea ? 'dont ' + eur(cache.pea.now.cash, 0) + ' de liquidités' : '' },
+    { cat: 'bourse', label: 'CTO', icon: '🌍', val: cache.cto ? cache.cto.now.value : 0, sub: cache.cto ? 'dont ' + eur(cache.cto.now.cash, 0) + ' de liquidités' : '' },
+    { cat: 'epargne', label: 'LDDS', icon: '💶', val: ep.ldds || 0, sub: rel },
+    { cat: 'epargne', label: 'Livret A', icon: '💶', val: ep.livretA || 0, sub: rel },
+    { cat: 'epargne', label: 'Épargne de précaution', icon: '🛟', val: ep.precaution || 0, sub: rel }
+  ].concat(scItems().map(it => { const st = scStats(it, today); return { cat: 'immo', label: it.nom, icon: '🏢', val: st.valeur, sub: 'SCPI · ' + num(st.parts, 4) + ' parts à ' + eur(st.prix, 2) }; }))
+   .filter(x => x.val > 0.5);
+  const total = env.reduce((t, x) => t + x.val, 0);
+  const cats = PATRI_CATS.map(c => Object.assign({}, c, { val: env.filter(x => x.cat === c.k).reduce((t, x) => t + x.val, 0) }));
+  PATRI_CATS.forEach(c => { const l = env.filter(x => x.cat === c.k); l.forEach((x, i) => { x.color = shade(c.color, i, l.length); }); });
+  // ligne par ligne : chaque titre détenu (PEA + CTO réunis), les liquidités, chaque livret, chaque SCPI
+  const lines = [];
+  if (cache.perso){
+    positionRows(cache.perso).filter(r => r.val > 0.5).forEach(r => lines.push({ cat: 'bourse', label: symName(r.sym), sym: r.sym, val: r.val, sub: r.acc || '' }));
+    if (cache.perso.now.cash > 0.5) lines.push({ cat: 'bourse', label: 'Liquidités PEA + CTO', icon: '€', val: cache.perso.now.cash, sub: '' });
+  }
+  env.filter(x => x.cat !== 'bourse').forEach(x => lines.push({ cat: x.cat, label: x.label, icon: x.icon, val: x.val, sub: x.sub }));
+  lines.sort((a, b) => b.val - a.val);
+  const divs = ['pea', 'cto'].flatMap(k => D.accounts[k].ops).filter(o => o.type === 'DIV' && o.date > y1 && o.date <= today).reduce((t, o) => t + (o.eur || 0), 0);
+  const loyers = scItems().reduce((t, it) => t + scStats(it, today).rev12, 0);
+  return { env, cats, lines, total, divs, loyers, missing: cache.perso ? cache.perso.missing : [] };
+}
+function patrimoineHtml(){
+  const P = patriData(), T = P.total || 1, view = ui.patriView || 'env';
+  if (!P.total) return `<div class="mp-card mp-empty">Rien à afficher pour l'instant : saisis tes opérations PEA / CTO, ton épargne (💶) et tes SCPI (🏢).</div>`;
+  const pc = v => num(v / T * 100, 1) + ' %';
+  const catOf = k => PATRI_CATS.find(c => c.k === k) || {};
+  const kpi = (l, v, sub, color) => `<div class="pt-kpi" ${color ? `style="--c:${color}"` : ''}><span>${l}</span><b>${v}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
+  const kpis = `<div class="pt-kpis">
+      ${kpi('Patrimoine total', eur(P.total, 0), 'hors Wolf Portfolio')}
+      ${P.cats.map(c => kpi(c.label, eur(c.val, 0), pc(c.val) + ' du total', c.color)).join('')}
+      ${kpi('Revenus passifs 12 mois', eur(P.divs + P.loyers, 0), 'dividendes ' + eur(P.divs, 0) + ' · SCPI ' + eur(P.loyers, 0), '#4FD1A5')}</div>`;
+  const bar = `<div class="pt-bar">${P.cats.filter(c => c.val > 0).map(c => `<div style="flex:${c.val};background:${c.color}" title="${esc(c.label)} ${pc(c.val)}"><span>${esc(c.label)} ${pc(c.val)}</span></div>`).join('')}</div>`;
+  const seg = [['cat', 'Par classe d\'actifs'], ['env', 'Par enveloppe'], ['lines', 'Ligne par ligne']].map(([k, l]) => `<button class="${view === k ? 'active' : ''}" data-pt-view="${k}">${l}</button>`).join('');
+  const rows = view === 'cat' ? P.cats.filter(c => c.val > 0).map(c => ({ label: c.label, color: c.color, val: c.val, icon: c.icon, sub: P.env.filter(x => x.cat === c.k).map(x => x.label + ' ' + pc(x.val)).join(' · ') }))
+    : view === 'env' ? P.env.slice().sort((a, b) => b.val - a.val)
+    : P.lines;
+  const table = rows.map((r, i) => `<div class="pt-row">
+      <span class="pt-rank">${i + 1}</span>
+      ${r.sym ? logoHtml(r.sym, 30) : `<span class="mp-logo mp-logo-txt pt-ico">${r.icon || '€'}</span>`}
+      <div class="pt-name"><b>${esc(r.label)}</b><small>${view === 'lines' ? `<i class="pt-cat" style="--c:${catOf(r.cat).color}">${esc(catOf(r.cat).label)}</i> ` : ''}${esc(r.sub || '')}</small></div>
+      <div class="pt-gauge"><i style="width:${Math.max(0.5, r.val / T * 100)}%;background:${r.color || catOf(r.cat).color}"></i></div>
+      <b class="pt-pct">${pc(r.val)}</b><span class="pt-val">${eur(r.val, 0)}</span></div>`).join('');
+  return (P.missing.length ? `<div class="mp-banner err">⚠ Cours introuvables pour ${P.missing.map(x => esc(symName(x))).join(', ')} : la partie bourse est incomplète.</div>` : '')
+    + `<div class="mp-card pt-head"><h3 class="mp-h">🏛 Mon patrimoine <small>au ${fmtD(E.isoToday())}</small></h3>${kpis}${bar}</div>
+    <div class="mp-grid pt-grid"><div class="mp-card"><h3 class="mp-h">Répartition</h3>
+        <div class="pt-donut"><canvas id="mpPatriDonut"></canvas><div class="mp-donut-center"><small>Total</small><b>${eur(P.total, 0)}</b></div></div>
+        <div class="pt-legend">${P.env.map(x => `<span><i style="background:${x.color}"></i>${esc(x.label)} <b>${pc(x.val)}</b></span>`).join('')}</div>
+        <p class="mp-hint">Anneau intérieur : classes d'actifs (bourse, épargne, immobilier). Anneau extérieur : chaque enveloppe.</p></div>
+      <div class="mp-card mp-span2"><div class="mp-h-row"><h3 class="mp-h">Composition</h3><div class="mp-seg pt-seg">${seg}</div></div>
+        <div class="pt-table">${table}</div></div></div>`;
+}
+function drawPatriChart(){
+  const cv = document.getElementById('mpPatriDonut'); if (!cv) return;
+  const P = patriData(), cats = P.cats.filter(c => c.val > 0);
+  const outer = { data: P.env.map(x => x.val), backgroundColor: P.env.map(x => x.color), borderColor: '#151A1F', borderWidth: 2, _labels: P.env.map(x => x.label) };
+  const inner = { data: cats.map(c => c.val), backgroundColor: cats.map(c => c.color), borderColor: '#151A1F', borderWidth: 2, _labels: cats.map(c => c.label) };
+  charts.patri = new Chart(cv.getContext('2d'), { type: 'doughnut', data: { labels: P.env.map(x => x.label), datasets: [outer, inner] },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '45%', plugins: { legend: { display: false },
+      tooltip: { callbacks: { label: x => ' ' + x.dataset._labels[x.dataIndex] + ' : ' + eur(x.parsed, 0) + ' (' + num(x.parsed / (P.total || 1) * 100, 1) + ' %)' } } } } });
 }
 function toolbarHtml(){
   const years = [...new Set(Object.values(D.accounts).flatMap(a => a.ops.map(o => o.date.slice(0, 4))))].sort().reverse();
@@ -1450,6 +1552,7 @@ function wire(){
   // 📤 : ouvre l'onglet Publications prérempli (Wolf Portfolio seulement)
   page.querySelectorAll('[data-mp-pub]').forEach(b => b.addEventListener('click', () => { if (window.WOLF_PUB) WOLF_PUB.open(b.dataset.pubType === 'DIV' ? 'div' : 'tx', { op: b.dataset.mpPub }); }));
   page.querySelectorAll('[data-mp-pubm]').forEach(b => b.addEventListener('click', () => { if (window.WOLF_PUB) WOLF_PUB.open('recap', { per: b.dataset.mpPubm }); }));
+  page.querySelectorAll('[data-pt-view]').forEach(b => b.addEventListener('click', () => { ui.patriView = b.dataset.ptView; render(); }));
   page.querySelectorAll('[data-mp-scpi]').forEach(b => b.addEventListener('click', () => { ui.scpi = true; render(); }));
   page.querySelectorAll('[data-mp-epargne]').forEach(b => b.addEventListener('click', () => { ui.epargne = true; render(); }));
   page.querySelectorAll('[data-mp-zoom]').forEach(b => b.addEventListener('click', () => openZoom(b.dataset.mpZoom)));

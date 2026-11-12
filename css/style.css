@@ -3246,3 +3246,48 @@
 @media (max-width:800px){.sc-f4{grid-template-columns:1fr 1fr}}
 .sc-span2{grid-column:span 2}
 .sc-addbtn{align-self:flex-start}
+
+/* ================= MES PORTEFEUILLES : Wolf Portfolio + « Mon patrimoine » (2026-11-12) ================= */
+.mp-accounts.mp-accounts2{grid-template-columns:minmax(0,1fr) minmax(0,1.6fr)}
+@media (max-width:760px){.mp-accounts.mp-accounts2{grid-template-columns:1fr}}
+.mp-acc-wolf .mp-acc-ico{background:rgba(217,164,65,0.16)}
+.mp-acc-patri .mp-acc-perf{color:#C9CED6}
+.mp-subacc{display:flex;flex-wrap:wrap;gap:8px;margin:-2px 0 2px;padding:8px;border-radius:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05)}
+.mp-subacc button{all:unset;cursor:pointer;display:flex;align-items:center;gap:7px;padding:7px 12px;border-radius:10px;font-size:13px;font-weight:600;color:var(--text-dim);background:var(--panel)}
+.mp-subacc button:hover{color:var(--text);background:var(--panel-2)}
+.mp-subacc button.active{color:#1A1305;background:linear-gradient(135deg,var(--gold),var(--gold-2))}
+.mp-subacc button b{font-family:var(--font-display);font-size:13px;color:var(--text);margin-left:2px}
+.mp-subacc button.active b{color:#1A1305}
+.pt-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:6px 0 14px}
+@media (max-width:1100px){.pt-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.pt-kpi{background:var(--panel-2);border-radius:12px;padding:10px 12px;border-top:3px solid var(--c,transparent);min-width:0}
+.pt-kpi span{display:block;font-size:11.5px;color:var(--text-dim)}
+.pt-kpi b{display:block;font-family:var(--font-display);font-size:21px;margin:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pt-kpi small{font-size:11px;color:var(--text-dim)}
+.pt-bar{display:flex;height:30px;border-radius:10px;overflow:hidden;gap:2px}
+.pt-bar>div{display:flex;align-items:center;padding:0 10px;min-width:0}
+.pt-bar span{font-size:12px;font-weight:700;color:#14110A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pt-grid{align-items:start;grid-template-columns:minmax(0,1fr) minmax(0,1.45fr)}
+@media (max-width:1100px){.pt-grid{grid-template-columns:1fr}}
+.pt-donut{position:relative;height:300px;margin:6px 0 10px}
+.pt-donut .mp-donut-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+.pt-donut .mp-donut-center small{font-size:11px;color:var(--text-dim)}
+.pt-donut .mp-donut-center b{font-family:var(--font-display);font-size:18px}
+.pt-legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:#C9CED6}
+.pt-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.pt-legend b{color:var(--text);margin-left:3px}
+.pt-seg{flex-wrap:wrap}
+.pt-table{display:flex;flex-direction:column;max-height:560px;overflow:auto}
+.pt-row{display:grid;grid-template-columns:22px 32px minmax(0,1.4fr) minmax(80px,1fr) 64px 92px;gap:10px;align-items:center;padding:8px 4px;border-top:1px solid rgba(255,255,255,0.05)}
+.pt-row:first-child{border-top:0}
+.pt-rank{font-size:11px;color:var(--text-faint);text-align:right}
+.pt-ico{width:30px;height:30px;font-size:15px}
+.pt-name{min-width:0}
+.pt-name b{display:block;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pt-name small{display:block;font-size:11.5px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pt-cat{font-style:normal;font-weight:700;color:var(--c);margin-right:4px}
+.pt-gauge{height:8px;border-radius:5px;background:rgba(255,255,255,0.06);overflow:hidden}
+.pt-gauge i{display:block;height:100%;border-radius:5px}
+.pt-pct{font-family:var(--font-display);font-size:14.5px;text-align:right}
+.pt-val{font-size:12.5px;color:var(--text-dim);text-align:right;white-space:nowrap}
+@media (max-width:640px){.pt-row{grid-template-columns:22px 30px minmax(0,1fr) 58px}.pt-gauge,.pt-val{display:none}}
