@@ -3329,3 +3329,9 @@
 .aw-table.aw-cmp.big .aw-tlogo{width:28px;height:28px;flex-basis:28px}
 .aw-table.aw-cmp.big td.co{font-size:14.5px;min-width:200px}
 .aw-table.aw-cmp span.auto{color:var(--text-faint);font-style:italic}
+
+/* Atelier, panneau « Modifier » (2026-11-12) : un long texte débordait par-dessus les champs suivants (les blocs de la colonne
+   flexible se faisaient écraser). Chaque bloc garde sa taille, et la zone de texte défile à l'intérieur au-delà de 60 % de
+   l'écran, avec une poignée en bas à droite pour l'agrandir. */
+.aw-ed-body>*{flex-shrink:0}
+.aw-ed-body .aw-rich{max-height:60vh;overflow-y:auto;resize:vertical;scrollbar-width:thin}
