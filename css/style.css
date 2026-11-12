@@ -3459,3 +3459,12 @@
 .sd-srow input[type=number]{width:64px}
 .sd-srow button{border:1px solid var(--hair);background:var(--panel-2);color:var(--text);border-radius:8px;padding:3px 8px;cursor:pointer}
 .sd-scenes textarea{resize:vertical;font-weight:500}
+
+/* Studio · modèles de shorts (2026-11-12) */
+.sd-fmts{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px}
+.sd-fmts button{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;background:var(--panel-2);border:1px solid var(--hair);color:var(--text);border-radius:12px;padding:10px 12px;cursor:pointer;font:700 14px var(--font-body)}
+.sd-fmts button small{font-weight:500;font-size:12px;color:var(--text-dim)}
+.sd-fmts button.on{border-color:var(--gold);background:rgba(217,164,65,.12)}
+.sd-phonebox kbd{font:700 11px var(--font-body);background:var(--panel-2);border:1px solid var(--hair);border-radius:5px;padding:1px 5px}
+.sd-phone canvas{cursor:pointer}
+.sd-f textarea{font:600 14px var(--font-body);color:var(--text);background:var(--bg);border:1px solid var(--hair);border-radius:10px;padding:8px 10px;width:100%;box-sizing:border-box;resize:vertical}

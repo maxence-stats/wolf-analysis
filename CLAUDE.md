@@ -871,6 +871,19 @@ https://claude.ai/artifact/B4bfYADeVQL6G83Q4kJ6WX (17 modèles, 45 mises en page
 - **Données = FICHIER** `data/mes-portefeuilles/studio.json` (store `studio`, serveur v=20) : `{items:{id:{tpl,state,title,preview,…}},
   custom:[images ajoutées], short:{réglages}, trash:[]}` ; le serveur refuse toute disparition d'`items.<id>` non déclarée dans `deleted`.
   Panneau « 🛟 Sauvegardes » : store « studio » ajouté. Testé sur instance jetable (`-StoreDir`, copie de portefeuilles.json) le 2026-11-12.
+- **Suite du 2026-11-12** : loups cadrés par le HAUT (banque en 3:2, plus haute que le 16:9 : oreilles entières), réglage « Position du
+  loup » ; galerie des modèles SOUS l'éditeur (aperçus) ; favoris de la banque (`D.fav` dans studio.json, ☆ au survol).
+  **2e banque (serveur v=21)** : `Bureau\Wolf Academy\BANQUE VISUELS CHATGPT` (602 images) servie avec le préfixe `VISUELS/` ; un PNG
+  à canal alpha est mis en cache en PNG (transparence gardée). Stickers = loups détourés (9 expressions + 23 emojis, table `STK`).
+  PowerShell ne distingue pas `$WolfBank` de `$wolfBank` : tester un paramètre avec `$PSBoundParameters.ContainsKey`.
+- **Shorts = 6 modèles** (`FMT` dans le module SHORT) : Récap de la semaine (l'ancien, réglages à la racine de `D.short`), Écran partagé
+  (`getDisplayMedia`, écran en haut + webcam dessous, zoom ×1,5-3 sur une zone), Je t'explique (points révélés un par un), Action qui
+  chute (plus haut / chute / pourquoi / opportunité ?), Valorisation (les 3 scénarios SAISIS dans Prix par secteur, posés un par un sur
+  une échelle face au cours), Mon achat / ma vente (opération du Wolf, jamais PEA/CTO). Réglages par modèle dans `D.short.fx[modèle]`.
+  **Avance à la main** (case par modèle) : chaque étape joue son animation puis RESTE affichée ; → / PageDown / clic sur l'aperçu =
+  suivante, ← = précédente. **Espace = FIGER l'écran (animations), l'enregistrement continue** (webcam et voix) — demande explicite :
+  ce n'est PAS une pause de l'enregistrement. Rien de ce qui est hors du canvas n'est filmé. Texte de publication YouTube / Facebook
+  avec hashtags généré par modèle. `STUDIO_UI._short._seek(i, p)` rend une étape figée (tests).
 
 ### Onglet Portefeuille IA (fait, 2026-09-19)
 Sous-onglet de « 💼 Portefeuille » : 4 portefeuilles simulés (ChatGPT, Claude, Gemini, Grok, logos

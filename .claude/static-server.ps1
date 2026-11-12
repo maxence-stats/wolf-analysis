@@ -87,6 +87,9 @@ if ($StoreDir -ne ""){ $storeExt = "" } elseif (-not $testInstance){ $storeExt =
 $maxBody = 2MB
 # Wolf Studio (2026-11-12) : banque de loups de l'utilisateur, LUE seulement (jamais modifiee) ; versions allegees en cache.
 if ($WolfBank -ne ""){ $wolfBank = [System.IO.Path]::GetFullPath($WolfBank) } else { $wolfBank = Join-Path ([Environment]::GetFolderPath("Desktop")) "Wolf Academy\IMAGE DE MARQUE ET TAMPLATE\BANQUE DIMAGES" }
+# Deuxieme banque (2026-11-12) : visuels ChatGPT (loups detoures, emojis, stickers), servis avec le prefixe "VISUELS/".
+$wolfVisuels = Join-Path ([Environment]::GetFolderPath("Desktop")) "Wolf Academy\BANQUE VISUELS CHATGPT"
+if ($PSBoundParameters.ContainsKey("WolfBank")){ $wolfVisuels = Join-Path $wolfBank "__visuels_absents__" }
 $studioCache = Join-Path $storeDirPath "studio-cache"
 try { Add-Type -AssemblyName System.Drawing } catch { }
 $rootWithSep = $root.TrimEnd('\') + '\'
@@ -758,9 +761,14 @@ function Handle-TvHistory($req, $res){
 
 # ---------------- Wolf Studio (2026-11-12) : banque de loups (lecture seule) ----------------
 function Get-WolfBankFiles(){
-  if (-not (Test-Path $wolfBank -PathType Container)){ return @() }
-  $rootB = $wolfBank.TrimEnd('\') + '\'
-  return @(Get-ChildItem $wolfBank -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -match '^\.(png|jpe?g|webp)$' } | Sort-Object FullName | Select-Object -First 3000 | ForEach-Object { $_.FullName.Substring($rootB.Length).Replace('\', '/') })
+  $out = @()
+  foreach ($pair in @(@($wolfBank, ""), @($wolfVisuels, "VISUELS/"))){
+    $dir = $pair[0]; $pre = $pair[1]
+    if (-not (Test-Path $dir -PathType Container)){ continue }
+    $rootB = $dir.TrimEnd('\') + '\'
+    $out += @(Get-ChildItem $dir -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -match '^\.(png|jpe?g|webp)$' } | Sort-Object FullName | Select-Object -First 3000 | ForEach-Object { $pre + $_.FullName.Substring($rootB.Length).Replace('\', '/') })
+  }
+  return $out
 }
 function Handle-StudioWolves($req, $res){
   $list = Get-WolfBankFiles
@@ -771,16 +779,19 @@ function Handle-StudioWolf($req, $res){
   $rel = ""; $mq = [regex]::Match([string]$req.Url.Query, '[?&]f=([^&]*)'); if ($mq.Success){ $rel = [System.Uri]::UnescapeDataString($mq.Groups[1].Value.Replace('+', ' ')) }
   $size = [string]$req.QueryString["s"]
   if (-not $rel -or $rel.Length -gt 400 -or $rel -match '\.\.'){ Send-Json $res 400 @{ ok = $false; error = "nom invalide" }; return }
-  $rootB = $wolfBank.TrimEnd('\') + '\'
-  $p = [System.IO.Path]::GetFullPath((Join-Path $wolfBank ($rel.Replace('/', '\'))))
+  $baseB = $wolfBank
+  if ($rel.StartsWith("VISUELS/")){ $baseB = $wolfVisuels; $rel = $rel.Substring(8) }
+  $rootB = $baseB.TrimEnd('\') + '\'
+  $p = [System.IO.Path]::GetFullPath((Join-Path $baseB ($rel.Replace('/', '\'))))
   if (-not $p.StartsWith($rootB, [System.StringComparison]::OrdinalIgnoreCase) -or $p -notmatch '\.(png|jpe?g|webp)$' -or -not (Test-Path $p -PathType Leaf)){ $res.StatusCode = 404; return }
   $target = 1280; if ($size -eq "t"){ $target = 384 }
   $fi = Get-Item $p
   $md5 = [System.Security.Cryptography.MD5]::Create()
   $key = ([BitConverter]::ToString($md5.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($p + "|" + $fi.LastWriteTimeUtc.Ticks + "|" + $target)))).Replace("-", "").ToLower()
-  $cacheFile = Join-Path $studioCache ($key + ".jpg")
+  $cacheFile = Join-Path $studioCache ($key + ".jpg"); $cachePng = Join-Path $studioCache ($key + ".png")
   $bytes = $null; $ct = "image/jpeg"
-  if (Test-Path $cacheFile -PathType Leaf){ $bytes = [System.IO.File]::ReadAllBytes($cacheFile) }
+  if (Test-Path $cachePng -PathType Leaf){ $bytes = [System.IO.File]::ReadAllBytes($cachePng); $ct = "image/png" }
+  elseif (Test-Path $cacheFile -PathType Leaf){ $bytes = [System.IO.File]::ReadAllBytes($cacheFile) }
   else {
     try {
       $img = [System.Drawing.Image]::FromFile($p)
@@ -790,11 +801,16 @@ function Handle-StudioWolf($req, $res){
         $g = [System.Drawing.Graphics]::FromImage($bmp)
         $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
         $g.DrawImage($img, 0, 0, $w, $h); $g.Dispose()
-        $enc = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq "image/jpeg" }
-        $ep = New-Object System.Drawing.Imaging.EncoderParameters 1
-        $ep.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter ([System.Drawing.Imaging.Encoder]::Quality), ([long]86)
+        $alpha = [System.Drawing.Image]::IsAlphaPixelFormat($img.PixelFormat)
         $ms = New-Object System.IO.MemoryStream
-        $bmp.Save($ms, $enc, $ep); $bmp.Dispose()
+        if ($alpha){
+          $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose(); $ct = "image/png"; $cacheFile = $cachePng
+        } else {
+          $enc = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq "image/jpeg" }
+          $ep = New-Object System.Drawing.Imaging.EncoderParameters 1
+          $ep.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter ([System.Drawing.Imaging.Encoder]::Quality), ([long]86)
+          $bmp.Save($ms, $enc, $ep); $bmp.Dispose()
+        }
         $bytes = $ms.ToArray()
         try { New-Item -ItemType Directory -Force -Path $studioCache | Out-Null; [System.IO.File]::WriteAllBytes($cacheFile, $bytes) } catch { }
       } finally { $img.Dispose() }
@@ -828,7 +844,7 @@ while ($listener.IsListening) {
     $path = [System.Uri]::UnescapeDataString($req.Url.AbsolutePath)
     if ($path -eq "/api/ia/ping") {
       New-Item -ItemType Directory -Force -Path $iaDirPath | Out-Null
-      Send-Json $res 200 @{ ok = $true; writable = $true; v = 20; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
+      Send-Json $res 200 @{ ok = $true; writable = $true; v = 21; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
     } elseif ($path -eq "/api/ia/save") {
       Handle-IaSave $req $res
     } elseif ($path -eq "/api/ia/refresh") {
