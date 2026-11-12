@@ -526,10 +526,11 @@ function accountCardsHtml(){
 }
 
 /* ======================= MON PATRIMOINE : tout ce que je possède (hors Wolf Portfolio, portefeuille public) =======================
-   Bourse = PEA + CTO (valeur du jour, liquidités comprises) ; Épargne = dernier relevé LDDS / Livret A / précaution ;
+   Actions = titres du PEA et du CTO ; Liquidités = cash non investi du PEA et du CTO ; Épargne = dernier relevé LDDS / Livret A / précaution ;
    Immobilier = SCPI (parts × dernier prix de part). Trois lectures : par classe d'actifs, par enveloppe, ligne par ligne. */
 const PATRI_CATS = [
-  { k: 'bourse', label: 'Bourse', color: '#D9A441', icon: '📈' },
+  { k: 'bourse', label: 'Actions', color: '#D9A441', icon: '📈' },
+  { k: 'cash', label: 'Liquidités', color: '#9FB0C0', icon: '€' },   // cash non investi du PEA et du CTO
   { k: 'epargne', label: 'Épargne', color: '#4A9FE0', icon: '💶' },
   { k: 'immo', label: 'Immobilier', color: '#B9774E', icon: '🏢' }
 ];
@@ -542,8 +543,11 @@ function patriData(){
   const today = E.isoToday(), y1 = addDays(today, -365);
   const ep = epargneLast() || {}, rel = ep.date ? 'relevé du ' + fmtD(ep.date) : '';
   const env = [
-    { cat: 'bourse', label: 'PEA', icon: '🏦', val: cache.pea ? cache.pea.now.value : 0, sub: cache.pea ? 'dont ' + eur(cache.pea.now.cash, 0) + ' de liquidités' : '' },
-    { cat: 'bourse', label: 'CTO', icon: '🌍', val: cache.cto ? cache.cto.now.value : 0, sub: cache.cto ? 'dont ' + eur(cache.cto.now.cash, 0) + ' de liquidités' : '' },
+    // le cash non investi d'une enveloppe boursière compte comme LIQUIDITÉS dans la synthèse, pas comme des actions
+    { cat: 'bourse', label: 'PEA · actions', icon: '🏦', val: cache.pea ? cache.pea.now.value - cache.pea.now.cash : 0, sub: 'titres détenus dans le PEA' },
+    { cat: 'bourse', label: 'CTO · actions', icon: '🌍', val: cache.cto ? cache.cto.now.value - cache.cto.now.cash : 0, sub: 'titres détenus dans le CTO' },
+    { cat: 'cash', label: 'PEA · liquidités', icon: '🏦', val: cache.pea ? cache.pea.now.cash : 0, sub: 'cash non investi du PEA' },
+    { cat: 'cash', label: 'CTO · liquidités', icon: '🌍', val: cache.cto ? cache.cto.now.cash : 0, sub: 'cash non investi du CTO' },
     { cat: 'epargne', label: 'LDDS', icon: '💶', val: ep.ldds || 0, sub: rel },
     { cat: 'epargne', label: 'Livret A', icon: '💶', val: ep.livretA || 0, sub: rel },
     { cat: 'epargne', label: 'Épargne de précaution', icon: '🛟', val: ep.precaution || 0, sub: rel }
@@ -556,7 +560,6 @@ function patriData(){
   const lines = [];
   if (cache.perso){
     positionRows(cache.perso).filter(r => r.val > 0.5).forEach(r => lines.push({ cat: 'bourse', label: symName(r.sym), sym: r.sym, val: r.val, sub: r.acc || '' }));
-    if (cache.perso.now.cash > 0.5) lines.push({ cat: 'bourse', label: 'Liquidités PEA + CTO', icon: '€', val: cache.perso.now.cash, sub: '' });
   }
   env.filter(x => x.cat !== 'bourse').forEach(x => lines.push({ cat: x.cat, label: x.label, icon: x.icon, val: x.val, sub: x.sub }));
   lines.sort((a, b) => b.val - a.val);
@@ -587,7 +590,7 @@ function patrimoineHtml(){
   // --- à retenir
   const cash = cache.perso ? cache.perso.now.cash : 0;
   const dispo = cash + P.env.filter(x => x.cat === 'epargne').reduce((t, x) => t + x.val, 0);
-  const actions = P.cats.find(c => c.k === 'bourse').val - cash;
+  const actions = P.cats.find(c => c.k === 'bourse').val;
   const top = P.lines.filter(l => l.sym)[0];
   const facts = [
     { ico: '💧', l: 'Disponible rapidement', v: eur(dispo, 0), s: pc(dispo, 0) + ' · livrets et liquidités' },

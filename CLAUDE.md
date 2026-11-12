@@ -669,8 +669,8 @@ Les anciennes pages Sheet (Wolf Portfolio, Perso) sont conservées telles quelle
 - **« Mon patrimoine » (2026-11-12)** : en tête, 2 cartes seulement : 🐺 Wolf Portfolio (en évidence) et 🏛 Mon patrimoine
   (`ui.acc = 'patri'`, vue par défaut). Dans le patrimoine, barre `.mp-subacc` : Vue d'ensemble / PEA / CTO / PEA + CTO / Épargne
   (fenêtre) / SCPI (fenêtre). Vue d'ensemble (`patriData`, `patrimoineHtml`, CSS `.pt-*`), REFAITE le même jour (« moche ») :
-  carte héros = « Patrimoine net » en très grand + 3 classes (Bourse = PEA + CTO avec liquidités, Épargne = dernier relevé,
-  Immobilier = SCPI) à gauche, MOSAÏQUE à droite (une colonne par classe, largeur = poids ; une tuile par enveloppe, hauteur = poids ;
+  carte héros = « Patrimoine net » en très grand + 4 classes (Actions = titres PEA + CTO, Liquidités = cash NON investi du PEA et du
+  CTO — demande de l'utilisateur : le cash des enveloppes compte comme du cash dans la synthèse —, Épargne = dernier relevé, Immobilier = SCPI) à gauche, MOSAÏQUE à droite (une colonne par classe, largeur = poids ; une tuile par enveloppe, hauteur = poids ;
   tuile réduite à « nom + % » ou à un trait si trop petite) ; 4 chiffres « à retenir » (disponible rapidement = liquidités + livrets,
   investi en actions, plus grosse ligne, revenus passifs par mois) ; tableau Composition « Par classe / Par enveloppe / Ligne par ligne »
   (gardé : l'utilisateur l'aime). Barre empilée, 5 tuiles à bordure colorée et double anneau RETIRÉS (jugés moches). Pas de courbe
