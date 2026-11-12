@@ -37,6 +37,7 @@ const TYPES = {
   citation:   { l: 'Citation',     c: '#D9A441', size: 's', cat: 'Rédaction',  d: 'Une idée ou une conclusion mise en avant' },
   kpi:        { l: 'Indicateur',   c: '#D9A441', size: 's', cat: 'Chiffres',   d: 'Un chiffre, son évolution, mini-historique' },
   bourse:     { l: 'Cours de bourse', c: '#4A9FE0', size: 'h', cat: 'Chiffres', d: 'Le cours TradingView, figé au jour de l\'analyse' },
+  multicours: { l: 'Cours comparés', c: '#4A9FE0', size: 'h', cat: 'Chiffres', d: 'Plusieurs cours superposés (base 100), écart au plus haut et au plus bas : la baisse est-elle générale ?' },
   overlay:    { l: 'Graphique superposé', c: '#4A9FE0', size: 'h', cat: 'Chiffres', d: 'Cours + FCF par action, dividende, BPA… sur un même graphique' },
   donut:      { l: 'Camembert',    c: '#4A9FE0', size: 's', cat: 'Chiffres',   d: 'Répartition : les parts se calculent seules' },
   geo:        { l: 'Carte du monde', c: '#4FD1A5', size: 'h', cat: 'Chiffres', d: 'Chiffre d\'affaires par pays ou par grande région' },
@@ -614,6 +615,7 @@ function addCard(secId, type, o){
   if (type === 'geo' && !c.rows) c.rows = [{ zone: 'Europe', v: null }, { zone: 'Amérique du Nord', v: null }, { zone: 'Asie-Pacifique', v: null }, { zone: 'Reste du monde', v: null }];
   if (type === 'these' && !c.phase) c.phase = Object.values(ver().cards).some(x => x.type === 'these' && x.phase !== 'finale' && x.id !== c.id) ? 'finale' : 'depart';
   if (type === 'bourse' && !ver().tvData && !RO) setTimeout(captureTv, 50);
+  if (type === 'multicours'){ if (!c.cols) c.cols = ['@self'].concat(sec.cards.map(id => v.cards[id]).filter(x => x && x.type === 'concurrent' && x.nom).map(x => x.nom).slice(0, 5)); if (c.withConc == null) c.withConc = false; if (!c.range) c.range = '1a'; }
   if (type === 'vchain' && !c.steps){ const k = vcChainFor(doc().nom || doc().titre); if (k){ Object.assign(c, vcFromChain(k, doc().titre)); setTimeout(() => vcResolveLogos(c), 50); } else c.steps = []; }
   if (type === 'overlay'){ if (!c.keys) c.keys = ['fcfParAction', 'dividende']; if (!c.range) c.range = '10a'; if (!ver().tvData && !RO) setTimeout(captureTv, 50); }
   v.cards[c.id] = c; sec.cards.push(c.id); sec.collapsed = false;
@@ -750,6 +752,7 @@ function cardTitle(c){
   if (c.type === 'these') return c.phase === 'finale' ? 'Thèse finale' : 'Thèse de départ';
   if (c.type === 'thesecmp') return 'Thèse : avant / après';
   if (c.type === 'bourse') return 'Cours de bourse';
+  if (c.type === 'multicours') return 'Cours comparés';
   if (c.type === 'overlay') return 'Cours et fondamentaux';
   if (c.type === 'kpi'){ const d = doc(); return c.bind ? bindLabel(d, c.bind) : (c.label || ''); }
   if (c.type === 'concurrent') return c.nom || '';
@@ -845,6 +848,7 @@ function cardHtml(c){
     }
     case 'comparatif': body = compTableHtml(c, false); foot = srcFoot; break;
     case 'bourse': body = bourseHtml(c, false); break;
+    case 'multicours': body = mcHtml(c, false); break;
     case 'overlay': body = overlayHtml(c, false); break;
     case 'geo': body = geoHtml(c, false); foot = srcFoot; break;
     case 'profil': body = profilHtml(c, false); break;
@@ -1137,6 +1141,114 @@ function bourseHtml(c, big){
   }
   return h;
 }
+/* ---------- Carte « Cours comparés » (2026-11-12) : plusieurs cours superposés sur une échelle commune ----------
+   Demande de l'utilisateur : voir d'un coup d'œil si une baisse est générale (tout le secteur) ou propre à l'entreprise.
+   Base 100 au début de la période (chaque cours dans sa devise : seule l'évolution compte) ou « écart au plus haut »
+   (chaque point = recul par rapport au plus haut atteint depuis le début de la période). Sous le graphique : performance
+   sur la période, écart au plus haut et au plus bas de la période, et une phrase de lecture (baisse générale ou isolée).
+   Cours TradingView hebdomadaires ajustés, FIGÉS dans la carte (c.px = {at, s:{nomNormalisé:{sym,dates,closes,ccy}}}),
+   « ↻ Actualiser » pour les relire. Entreprises = c.cols (comme le comparatif ; '@self' = le dossier). */
+const MC_RANGES = [['6m', 0.5, '6 mois'], ['1a', 1, '1 an'], ['3a', 3, '3 ans'], ['5a', 5, '5 ans'], ['10a', 10, '10 ans'], ['max', 99, 'Max']];
+const MC_COLORS = ['#D9A441', '#4A9FE0', '#4FD1A5', '#B8A1F0', '#F08A4B', '#5CC8D7', '#E5636B', '#8FA3B8'];
+const mcBusy = new Set(), mcTried = new Set(), mcAutoT = {};
+// Cours manquants (carte neuve, entreprise ajoutée) : relus tout seuls, une fois par liste d'entreprises, après 1,5 s (pas à chaque lettre tapée).
+function mcAuto(c){
+  clearTimeout(mcAutoT[c.id]);
+  mcAutoT[c.id] = setTimeout(() => { const sig = c.id + '|' + compCols(c).map(norm).join(','); if (mcTried.has(sig) || mcBusy.has(c.id)) return; mcTried.add(sig); mcFetch(c); }, 1500);
+}
+function mcSeries(c){
+  const v = ver(), t = v.tvData, names = compCols(c), self = (c.cols || [])[0] === '@self';
+  return names.map((n, i) => {
+    const me = self && i === 0, k = norm(n);
+    const s = (c.px && c.px.s && c.px.s[k]) || (me && t && t.prices && t.prices.closes.length ? { sym: t.sym, dates: t.prices.dates, closes: t.prices.closes, ccy: t.prices.ccy } : null);
+    return { n, k, me, s, color: MC_COLORS[i % MC_COLORS.length] };
+  });
+}
+function mcData(c){
+  const yrs = (MC_RANGES.find(r => r[0] === (c.range || '1a')) || MC_RANGES[1])[1];
+  const from = new Date(Date.now() - yrs * 365.25 * 864e5).toISOString().slice(0, 10);
+  const wk = d => typeof isoWeekKey === 'function' ? isoWeekKey(d) : d.slice(0, 7);
+  const list = mcSeries(c).filter(x => x.s && x.s.closes && x.s.closes.length);
+  const weeks = new Map();
+  list.forEach(x => x.s.dates.forEach((d, i) => { if (d >= from){ const w = wk(d); if (!weeks.has(w) || weeks.get(w) < d) weeks.set(w, d); } }));
+  const keys = [...weeks.keys()].sort((a, b) => weeks.get(a) < weeks.get(b) ? -1 : 1);
+  const labels = keys.map(w => weeks.get(w));
+  const sets = list.map(x => {
+    const byWeek = new Map(); x.s.dates.forEach((d, i) => { if (d >= from && x.s.closes[i] != null) byWeek.set(wk(d), x.s.closes[i]); });
+    const raw = keys.map(w => byWeek.has(w) ? byWeek.get(w) : null), ok = raw.filter(v => v != null);
+    if (!ok.length) return null;
+    const first = ok[0], last = ok[ok.length - 1], max = Math.max(...ok), min = Math.min(...ok);
+    let run = -Infinity; const dd = raw.map(v => { if (v == null) return null; run = Math.max(run, v); return (v / run - 1) * 100; });
+    return Object.assign({}, x, { raw, base: raw.map(v => v == null ? null : v / first * 100), dd, first, last, max, min,
+      maxDate: labels[raw.indexOf(max)], minDate: labels[raw.indexOf(min)], perf: (last / first - 1) * 100, fromHigh: (last / max - 1) * 100, fromLow: (last / min - 1) * 100 });
+  }).filter(Boolean);
+  return { labels, sets, missing: mcSeries(c).filter(x => !x.s).map(x => x.n), yrs };
+}
+// Phrase de lecture : la baisse est-elle générale ?
+function mcVerdict(sets){
+  if (sets.length < 2) return '';
+  const down = sets.filter(s => s.fromHigh <= -10), me = sets.find(s => s.me) || sets[0];
+  const pct = s => fr(s.fromHigh, 0) + ' %';
+  if (down.length >= Math.ceil(sets.length * 2 / 3)) return '<b class="neg">Baisse générale</b> : ' + down.length + ' sur ' + sets.length + ' sont à plus de 10 % sous leur plus haut de la période.';
+  if (me.fromHigh <= -10 && down.length <= Math.max(1, Math.floor(sets.length / 3))) return '<b class="neg">Baisse propre à ' + esc(me.n) + '</b> (' + pct(me) + ' sous son plus haut) : ' + (down.length - 1 > 0 ? 'seul' + (down.length - 1 > 1 ? 's ' + (down.length - 1) + ' autres reculent' : ' 1 autre recule') + ' autant.' : 'les autres résistent.');
+  if (down.length) return '<b>Baisse partielle</b> : ' + down.map(s => esc(s.n) + ' (' + pct(s) + ')').join(', ') + ' à plus de 10 % sous leur plus haut, pas les autres.';
+  return '<b class="pos">Pas de baisse marquée</b> : aucun n\'est à plus de 10 % sous son plus haut de la période.';
+}
+function mcHtml(c, big){
+  const D = mcData(c), view = c.view === 'dd' ? 'dd' : 'base';
+  if (D.missing.length && !isRo()) mcAuto(c);
+  const seg = '<span class="aw-range">' + MC_RANGES.map(r => '<button type="button" data-range="' + r[0] + '" class="' + ((c.range || '1a') === r[0] ? 'on' : '') + '">' + r[2] + '</button>').join('') + '</span>';
+  const vseg = '<span class="aw-range"><button type="button" data-mcview="base" class="' + (view === 'base' ? 'on' : '') + '" title="Tous les cours partent de 100 au début de la période">Base 100</button><button type="button" data-mcview="dd" class="' + (view === 'dd' ? 'on' : '') + '" title="Recul par rapport au plus haut atteint depuis le début de la période">Écart au plus haut</button></span>';
+  const head = '<div class="aw-bourse-h aw-mc-h">' + vseg + seg + (isRo() ? '' : '<button type="button" class="at-btn sm" data-mcref title="Relire les cours sur TradingView">↻</button>') + '</div>';
+  if (!D.sets.length) return head + '<p class="at-faint">' + (mcBusy.has(c.id) ? 'Lecture des cours TradingView…' : compCols(c).length ? 'Pas encore de cours : « ↻ » pour les relire sur TradingView.' : 'Ajoute des entreprises (⋯ › Modifier).') + '</p>';
+  const logo = n => { const co = findCompany(n), fz = frozenOf(n), l = (fz && fz.logo) || (co ? co.logo : ''); return l ? '<img src="' + esc(l) + '" alt="" class="aw-tlogo">' : '<span class="aw-tlogo t">' + esc(n.slice(0, 2).toUpperCase()) + '</span>'; };
+  const sg = v => '<span class="' + (v >= 0 ? 'pos' : 'neg') + '">' + (v >= 0 ? '+' : '') + fr(v, 1) + ' %</span>';
+  const fd = d => d ? d.slice(8, 10) + '/' + d.slice(5, 7) + '/' + d.slice(2, 4) : '';
+  const rows = D.sets.map(s => '<tr class="' + (s.me ? 'me' : '') + '"><td class="co"><i class="aw-mc-dot" style="background:' + s.color + '"></i>' + logo(s.n) + '<span>' + esc(s.n) + '</span></td><td>' + sg(s.perf) + '</td><td>' + sg(s.fromHigh) + (big ? '<small>plus haut le ' + fd(s.maxDate) + '</small>' : '') + '</td><td>' + sg(s.fromLow) + (big ? '<small>plus bas le ' + fd(s.minDate) + '</small>' : '') + '</td>' + (big ? '<td>' + fr(s.last, 2) + ' ' + esc(curSym(s.s.ccy)) + '</td>' : '') + '</tr>').join('');
+  const lbl = (MC_RANGES.find(r => r[0] === (c.range || '1a')) || MC_RANGES[1])[2];
+  return head + '<div class="aw-chart' + (big ? ' xl' : '') + '"><canvas data-chart="mc-' + c.id + '"></canvas></div>' +
+    '<p class="aw-mc-verdict">' + mcVerdict(D.sets) + '</p>' +
+    '<div class="aw-tscroll"><table class="aw-table aw-mc' + (big ? ' big' : '') + '"><thead><tr><th class="co">Sur ' + esc(lbl) + '</th><th>Évolution</th><th>Depuis le plus haut</th><th>Depuis le plus bas</th>' + (big ? '<th>Dernier cours</th>' : '') + '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    (D.missing.length ? '<p class="at-faint">Cours introuvable pour : ' + D.missing.map(esc).join(', ') + '.</p>' : '') +
+    (big ? '<p class="aw-note">TradingView, clôtures hebdomadaires ajustées' + (c.px && c.px.at ? ', relevées le ' + frDate(c.px.at) : '') + '. Base 100 : chaque cours dans sa propre devise, seule l\'évolution compte. Plus haut / plus bas : ceux de la période affichée.</p>' : '');
+}
+function mcChartConfig(c, big){
+  const D = mcData(c), dd = c.view === 'dd';
+  return { type: 'line', data: { labels: D.labels.map(d => d.slice(8, 10) + '/' + d.slice(5, 7) + '/' + d.slice(2, 4)),
+      datasets: D.sets.map(s => ({ label: s.n, data: dd ? s.dd : s.base, borderColor: s.color, backgroundColor: s.color, borderWidth: s.me ? (big ? 3.4 : 2.8) : (big ? 2.2 : 1.7), pointRadius: 0, pointHoverRadius: 4, tension: 0.15, spanGaps: true, order: s.me ? 0 : 1 })) },
+    options: { responsive: true, maintainAspectRatio: false, animation: { duration: 500 }, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: { itemSort: (a, b) => b.parsed.y - a.parsed.y, callbacks: { label: x => ' ' + x.dataset.label + ' : ' + (x.parsed.y == null ? '—' : dd ? fr(x.parsed.y, 1) + ' %' : fr(x.parsed.y, 1)) } } },
+      scales: { x: { grid: { display: false }, ticks: { color: '#8B93A0', maxTicksLimit: big ? 10 : 6, maxRotation: 0 } },
+        y: { grid: { color: 'rgba(255,255,255,0.06)' }, ticks: { color: '#8B93A0', callback: v => dd ? v + ' %' : v }, max: dd ? 0 : undefined } } } };
+}
+// Relit les cours TradingView des entreprises de la carte (une seule requête) et les fige dans la carte.
+async function mcFetch(c, force){
+  if (isRo() || mcBusy.has(c.id)) return;
+  const v = ver(), d = doc(), t = v.tvData, names = compCols(c), self = (c.cols || [])[0] === '@self';
+  const px = c.px && !force ? c.px : { at: null, s: {} };
+  const need = names.map((n, i) => ({ n, i })).filter(x => force || !(px.s[norm(x.n)]));
+  if (!need.length) return;
+  mcBusy.add(c.id); refreshCard(c);
+  try {
+    const syms = {};
+    for (const x of need){
+      // symbole déjà connu : carte Entreprise du dossier, puis carte Chaîne de valeur (symboles vérifiés), sinon recherche TradingView
+      const vcSym = () => { for (const k of Object.values(v.cards)) if (k.type === 'vchain') for (const st of (k.steps || [])) for (const co of (st.cos || [])) if (co.sym && norm(co.nom) === norm(x.n)) return co.sym; return ''; };
+      const me = self && x.i === 0, hint = me ? (t && t.sym) || d.tv : ((Object.values(v.cards).find(k => k.type === 'concurrent' && norm(k.nom) === norm(x.n) && k.sym) || {}).sym || vcSym());
+      const s = await tvSymbolFor(me ? (d.nom || d.titre) : x.n, hint); if (s) syms[x.n] = s;
+    }
+    const list = [...new Set(Object.values(syms))];
+    if (list.length){
+      const r = await fetch('/api/tv/history?symbols=' + encodeURIComponent(list.join(',')) + '&from=2006-01-01&adj=1', { cache: 'no-store' }); const j = await r.json();
+      const iso = ts => new Date(ts * 1000).toISOString().slice(0, 10);
+      Object.entries(syms).forEach(([n, s]) => { const h = j.ok && j.data && j.data[s]; if (!h || !h.bars || h.bars.length < 5) return;
+        const w = typeof resampleWeekly === 'function' ? resampleWeekly(h.bars.map(b => iso(b[0])), h.bars.map(b => b[1])) : { dates: h.bars.map(b => iso(b[0])), closes: h.bars.map(b => b[1]) };
+        px.s[norm(n)] = { sym: s, dates: w.dates, closes: w.closes.map(x => Math.round(x * 1e4) / 1e4), ccy: h.ccy || '' }; });
+    }
+    px.at = new Date().toISOString(); c.px = px; touch();
+  } catch(e){ ui.toast = { text: '⚠ Cours TradingView indisponibles : ' + (e.message || 'erreur') }; showToast(); }
+  mcBusy.delete(c.id); refreshCard(c); if (ui.big === c.id) openBig(c.id);
+}
 // ---------- Graphique superposé : cours (gauche) + chiffres par action (droite), ou tout en base 100 ----------
 const OV_COLORS = ['#4A9FE0', '#4FD1A5', '#B8A1F0', '#F08A4B', '#5CC8D7', '#E5636B', '#8FA3B8'];   // jamais d'or : réservé au cours
 const OV_KEYS = ['fcfParAction', 'dividende', 'eps', 'ca', 'margeNette', 'fcf', 'resultatNet', 'per', 'pFcf'];
@@ -1279,6 +1391,7 @@ function drawCharts(root, list, big){
       const c = v.cards[id.slice(5)]; if (!c) return;
       list.push(new Chart(cv, chartConfig({ type: 'barres', mode: 'tv', keys: ['ca', 'eps'] }, { __other: c.nom }, big))); return;
     }
+    if (id.startsWith('mc-')){ const c = v.cards[id.slice(3)]; if (c) try { list.push(new Chart(cv, mcChartConfig(c, big))); } catch(e){} return; }
     if (id.startsWith('kpi-')){
       const c = v.cards[id.slice(4)], r = c && kpiData(c); if (!r || !r.series) return;
       list.push(new Chart(cv, { type: 'line', data: { labels: r.series.labels, datasets: [{ data: r.series.values.map(x => r.u === 'Mcur' ? x / 1000 : x), borderColor: '#D9A441', backgroundColor: 'rgba(217,164,65,0.12)', fill: true, borderWidth: 2.6, tension: 0.25, pointRadius: 3.5, pointBackgroundColor: '#D9A441' }] },
@@ -1366,6 +1479,8 @@ function wireBody(host){
     if (ds.years && c){ c.years = Number(ds.years); if (!isRo()) touch(); refreshCard(c); return; }
     if (ds.yoy !== undefined && c){ c.yoy = !c.yoy; if (!isRo()) touch(); refreshCard(c); return; }
     if (ds.vcView && c){ c.view = ds.vcView; if (!isRo()) touch(); refreshCard(c); return; }
+    if (ds.mcview && c){ c.view = ds.mcview; if (!isRo()) touch(); refreshCard(c); return; }
+    if (ds.mcref !== undefined && c){ mcFetch(c, true); return; }
     if (ds.sTog !== undefined && sec){ sec.collapsed = !sec.collapsed; if (!RO) touch(); renderBody(); return; }
     if (ds.sTitle !== undefined && sec && !isRo()){ inlineRename(b, sec.titre, t => { sec.titre = t; touch(); renderBody(); }); return; }
     if (isRo()) return;
@@ -1568,6 +1683,7 @@ function bigBody(c){
     }
     case 'comparatif': return compTableHtml(c, true) + '<p class="aw-note">' + (isRo() ? '' : 'Clique dans une case pour la remplir ; tu peux aussi coller un tableau entier (Word, Google Docs, Excel) dans une case. ') + 'Vert : la meilleure valeur de la colonne · rouge : la moins bonne.' + (c.auto ? ' Cases grises : chiffres TradingView proposés, à vérifier.' : '') + '</p>';
     case 'bourse': return bourseHtml(c, true);
+    case 'multicours': return mcHtml(c, true);
     case 'overlay': return overlayHtml(c, true);
     case 'geo': {
       const rows = (c.rows || []).filter(r => num(r.v) > 0), tot = rows.reduce((t, r) => t + num(r.v), 0);
@@ -1612,6 +1728,8 @@ function openBig(cid, fromEl){
     if (e.target.closest('[data-big-edit]')){ const id = ui.big; closeBig(); ui.edit = id; renderEditor(); return; }
     const op = e.target.closest('[data-open]'); if (op){ closeBig(); openDoc(op.dataset.open); return; }
     const yo = e.target.closest('[data-yoy]'); if (yo){ const c = ver().cards[ui.big]; if (c){ c.yoy = !c.yoy; if (!isRo()) touch(); refreshCard(c); openBig(c.id); } return; }
+    const mv = e.target.closest('[data-mcview]'); if (mv){ const c = ver().cards[ui.big]; if (c){ c.view = mv.dataset.mcview; if (!isRo()) touch(); refreshCard(c); openBig(c.id); } return; }
+    const mr = e.target.closest('[data-mcref]'); if (mr){ const c = ver().cards[ui.big]; if (c) mcFetch(c, true); return; }
     const vv = e.target.closest('[data-vc-view]'); if (vv){ const c = ver().cards[ui.big]; if (c){ c.bigView = vv.dataset.vcView; if (!isRo()) touch(); openBig(c.id); } return; }
     const vk = e.target.closest('[data-vc-conc]'); if (vk && !isRo()){ const c = ver().cards[ui.big]; if (c) vcConcCards(c, +vk.dataset.vcConc); return; }
     const yb = e.target.closest('[data-years]'); if (yb){ const c = ver().cards[ui.big]; if (c){ c.years = Number(yb.dataset.years); if (!isRo()) touch(); refreshCard(c); openBig(c.id); } return; }
@@ -1688,6 +1806,13 @@ function editorFields(c, d, v){
       '<b class="aw-ed-h">Image (usine, produit, siège…)</b>' + imgs + '<label>Logo (adresse d\'image, facultatif)<input class="at-in" data-f="logo" value="' + esc(c.logo || '') + '"></label><p class="at-faint">Le logo et les chiffres (12 derniers mois) viennent tout seuls de TradingView.</p>' +
       '<b class="aw-ed-h">Corriger un chiffre (vide = TradingView)</b><div class="aw-ed-grid">' + CONC_KEYS.map(k => { const auto = concVal(Object.assign({}, c, { over: {} }), k), ov = c.over && c.over[k];
         return '<label>' + esc(TVF[k].l) + (TVF[k].u === '%' ? ' (%)' : TVF[k].u === 'x' ? ' (x)' : '') + '<input class="at-in num" data-cover="' + k + '" value="' + (ov != null && ov !== '' ? esc(String(ov).replace('.', ',')) : '') + '" placeholder="' + (auto == null ? '—' : esc(fr(auto, TVF[k].d))) + '"></label>'; }).join('') + '</div>';
+    case 'multicours': {
+      const cols = compCols(c);
+      return common + '<div class="aw-ed-rows"><b class="aw-ed-h">Entreprises superposées</b>' + (c.cols || []).map((n, k) => '<div class="aw-ed-row"><input class="at-in" list="awCos" data-col="' + k + '" value="' + esc(n === '@self' ? cols[k] + ' (ce dossier)' : n) + '"' + (n === '@self' ? ' disabled' : '') + '><button type="button" class="at-x" data-col-del="' + k + '">✕</button></div>').join('') + '<button type="button" class="at-btn sm" data-col-add>＋ Entreprise</button><datalist id="awCos">' + companyOptions() + '</datalist></div>' +
+        '<label class="aw-ed-check"><input type="checkbox" data-withconc' + (c.withConc === true ? ' checked' : '') + '> Ajouter aussi toutes les cartes « Entreprise » du dossier</label>' +
+        '<label>Période<select class="at-sel" data-f="range">' + MC_RANGES.map(r => '<option value="' + r[0] + '"' + ((c.range || '1a') === r[0] ? ' selected' : '') + '>' + r[2] + '</option>').join('') + '</select></label>' +
+        '<p class="at-faint">Les cours viennent de TradingView et restent figés dans la carte ; « ↻ » sur la carte pour les relire (une entreprise ajoutée ici est relue toute seule).</p>';
+    }
     case 'bourse': return common + '<label>Période affichée<select class="at-sel" data-f="range">' + RANGES.map(r => '<option value="' + r[0] + '"' + ((c.range || '5a') === r[0] ? ' selected' : '') + '>' + r[2] + '</option>').join('') + '</select></label><p class="at-faint">Le cours vient de TradingView et reste figé à la date du relevé du dossier (« ↻ Actualiser » en haut pour le relire).</p>';
     case 'overlay': return common + '<label class="aw-ed-check"><input type="checkbox" data-ovprice' + (c.price !== false ? ' checked' : '') + '> Afficher le cours</label><label class="aw-ed-check"><input type="checkbox" data-ovnorm' + (c.norm ? ' checked' : '') + '> Tout en base 100 (comparer les croissances)</label>' +
       '<b class="aw-ed-h">Chiffres superposés (historique TradingView, fin d\'exercice)</b><div class="aw-ed-checks">' + OV_KEYS.map(k => '<label><input type="checkbox" data-key="' + k + '"' + ((c.keys || ['fcfParAction', 'dividende']).includes(k) ? ' checked' : '') + '> ' + esc(TVF[k].l) + '</label>').join('') + '</div>' +
@@ -1866,6 +1991,7 @@ function libPreview(k){
     case 'vchain': return '<span class="cmp"><i class="g"></i><i></i><i></i><i></i></span>';
     case 'source': return '<span class="pg"></span>';
     case 'bourse': return '<svg viewBox="0 0 100 50" width="80" height="40"><polyline points="0,38 10,30 20,34 30,22 40,26 50,14 60,20 70,12 80,18 90,6 100,10" fill="none" stroke="#D9A441" stroke-width="2.5"/></svg>';
+    case 'multicours': return '<svg viewBox="0 0 100 50" width="80" height="40"><polyline points="0,30 15,26 30,28 45,18 60,22 75,12 100,14" fill="none" stroke="#D9A441" stroke-width="3"/><polyline points="0,32 15,30 30,34 45,30 60,36 75,32 100,38" fill="none" stroke="#4A9FE0" stroke-width="2"/><polyline points="0,28 15,22 30,24 45,26 60,20 75,24 100,22" fill="none" stroke="#4FD1A5" stroke-width="2"/></svg>';
     case 'overlay': return '<svg viewBox="0 0 100 50" width="80" height="40"><polyline points="0,38 10,30 20,34 30,22 40,26 50,14 60,20 70,12 80,18 90,6 100,10" fill="none" stroke="#D9A441" stroke-width="2"/><polyline points="0,44 25,40 50,33 75,26 100,20" fill="none" stroke="#4A9FE0" stroke-width="2.5"/><polyline points="0,47 25,45 50,42 75,40 100,37" fill="none" stroke="#F0C877" stroke-width="2.5"/></svg>';
     case 'geo': return '<svg viewBox="0 0 100 50" width="84" height="42"><ellipse cx="22" cy="20" rx="14" ry="10" fill="#4A9FE0"/><ellipse cx="52" cy="16" rx="9" ry="7" fill="#D9A441"/><ellipse cx="56" cy="34" rx="8" ry="10" fill="#8FA3B8"/><ellipse cx="80" cy="22" rx="14" ry="9" fill="#F0C877"/></svg>';
     case 'profil': return '<span class="logo" style="border-radius:50%;background:#F08A4B">JD</span>';

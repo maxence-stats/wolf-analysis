@@ -3338,3 +3338,17 @@
 /* Atelier, Comparatif : valeurs du tableau dans le panneau « Modifier » (2026-11-12) */
 .aw-cmp-ed{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
 .aw-cmp-ed>b{font-family:var(--font-display);font-size:14px;color:var(--text)}
+/* ===== Atelier : carte « Cours comparés » (2026-11-12) ===== */
+.aw-mc-h{flex-wrap:wrap;gap:6px}
+.aw-mc-verdict{margin:6px 0 4px;font-size:12.5px;color:#C9CED6}
+.aw-mc-verdict .neg{color:var(--red)}.aw-mc-verdict .pos{color:var(--green)}
+.aw-table.aw-mc th{text-align:right}
+.aw-table.aw-mc th.co,.aw-table.aw-mc td.co{text-align:left}
+.aw-table.aw-mc td.co{display:flex;align-items:center;gap:7px;font-weight:600;color:var(--text);white-space:nowrap}
+.aw-table.aw-mc tr.me td.co{color:var(--gold-2)}
+.aw-table.aw-mc .aw-tlogo{width:20px;height:20px;border-radius:50%;object-fit:cover;flex:0 0 20px;background:#fff}
+.aw-table.aw-mc .aw-tlogo.t{display:grid;place-items:center;background:var(--panel-2);color:var(--text-dim);font-size:9px;font-weight:700}
+.aw-table.aw-mc td small{display:block;font-size:10.5px;color:var(--text-faint)}
+.aw-table.aw-mc .pos{color:var(--green);font-weight:600}.aw-table.aw-mc .neg{color:var(--red);font-weight:600}
+.aw-mc-dot{display:inline-block;width:10px;height:10px;border-radius:3px;flex:0 0 10px}
+.aw-table.aw-mc.big .aw-tlogo{width:26px;height:26px;flex-basis:26px}

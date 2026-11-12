@@ -759,6 +759,13 @@ TradingView seulement sur option `c.auto` (cases grises « à vérifier », dés
 COLONNE. Les flèches du clavier ne changent plus de carte quand on tape dans une case (vue agrandie).
 Panneau « Modifier » : bloc « Valeurs du tableau » (`cmpEditorValues`, une fiche par entreprise, un champ par ratio, `data-cmpv`,
 collage d'un tableau accepté) — l'utilisateur ne trouvait pas où modifier les chiffres.
+**Carte « Cours comparés » (`multicours`, 2026-11-12)** : plusieurs cours superposés (`c.cols` comme le comparatif, '@self' = le
+dossier ; à la création : le dossier + les cartes Entreprise de la même section, 5 au plus, `withConc` false). Vue « Base 100 » (chaque
+cours dans sa devise) ou « Écart au plus haut » (recul vs plus haut glissant depuis le début de la période), périodes 6 mois → Max
+(`MC_RANGES`). Tableau : évolution, depuis le plus haut, depuis le plus bas (dates en vue agrandie) + phrase « baisse générale /
+propre à … / partielle / pas de baisse » (seuil −10 %, `mcVerdict`). Cours TradingView hebdo ajustés FIGÉS dans la carte (`c.px`),
+relus par « ↻ » ou tout seuls pour une entreprise ajoutée (`mcAuto`, une fois par liste). Symbole : carte Entreprise, puis carte
+Chaîne de valeur (symboles vérifiés : la recherche TradingView donnait GETTEX:NKT au lieu d'OMXCOP:NKT), puis recherche.
 Le texte ci-dessous décrit l'ancienne carte mentale (historique).
 
 Nouvel onglet principal (`#pageAtelier`, `js/atelier.js`, CSS `.at-*` en fin de `style.css`), À CÔTÉ du Cerveau numérique (qui
