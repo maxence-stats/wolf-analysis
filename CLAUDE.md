@@ -879,7 +879,7 @@ https://claude.ai/artifact/B4bfYADeVQL6G83Q4kJ6WX (17 modèles, 45 mises en page
 - **Shorts = 6 modèles** (`FMT` dans le module SHORT) : Récap de la semaine (l'ancien, réglages à la racine de `D.short`), Écran partagé
   (`getDisplayMedia`, écran en haut + webcam dessous, zoom ×1,5-3 sur une zone), Je t'explique (points révélés un par un), Action qui
   chute (plus haut / chute / pourquoi / opportunité ?), Valorisation (les 3 scénarios SAISIS dans Prix par secteur, posés un par un sur
-  une échelle face au cours), Mon achat / ma vente (opération du Wolf, jamais PEA/CTO). Réglages par modèle dans `D.short.fx[modèle]`.
+  une échelle face au cours, puis étape « Sur le graphique » : cours TradingView hebdo + 3 lignes de scénarios + zone d'achat < 80 % du réaliste, période `p.gyrs`), Mon achat / ma vente (opération du Wolf, jamais PEA/CTO). Réglages par modèle dans `D.short.fx[modèle]`.
   **Avance à la main** (case par modèle) : chaque étape joue son animation puis RESTE affichée ; → / PageDown / clic sur l'aperçu =
   suivante, ← = précédente. **Espace = FIGER l'écran (animations), l'enregistrement continue** (webcam et voix) — demande explicite :
   ce n'est PAS une pause de l'enregistrement. Rien de ce qui est hors du canvas n'est filmé. Texte de publication YouTube / Facebook

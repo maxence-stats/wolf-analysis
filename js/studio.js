@@ -608,12 +608,13 @@ const SHORT = (() => {
         { k: 'graph', t: 'Le graphique', d: 'La courbe se dessine', dur: 3.2, say: d => `Plus haut à ${money(d.max, d.ccy)}, aujourd'hui ${money(d.last, d.ccy)}.` },
         { k: 'raisons', t: 'Pourquoi ?', d: 'Tes raisons, une par une', dur: 3, say: (d, p) => lines(p.raisons).join(' · ') },
         { k: 'question', t: 'La question', d: 'Opportunité ou piège ?', dur: 2.4, say: (d, p) => p.verdict }, FIN] },
-    valo: { name: '🎯 Valorisation', desc: 'Tes 3 scénarios de « Prix par secteur » face au cours', manual: true, p: { nom: '', sticker: '', fin: '' },
+    valo: { name: '🎯 Valorisation', desc: 'Tes 3 scénarios de « Prix par secteur » face au cours', manual: true, p: { nom: '', sticker: '', gyrs: '3', fin: '' },
       scenes: [{ k: 'intro', t: 'Le cours', d: 'Logo + cours actuel', dur: 2.4, say: d => `${d.nom} cote aujourd'hui ${money(d.cours, d.ccy)}. Quel est son prix juste ?` },
         { k: 'pess', t: 'Pessimiste', d: 'Premier scénario', dur: 1.8, say: d => `Scénario pessimiste : ${money(d.sc.pess, d.ccy)}, soit ${sgn(pot(d, 'pess'))}.` },
         { k: 'real', t: 'Réaliste', d: 'Deuxième scénario', dur: 1.8, say: d => `Scénario réaliste : ${money(d.sc.real, d.ccy)}, soit ${sgn(pot(d, 'real'))}.` },
         { k: 'opt', t: 'Optimiste', d: 'Troisième scénario', dur: 1.8, say: d => `Scénario optimiste : ${money(d.sc.opt, d.ccy)}, soit ${sgn(pot(d, 'opt'))}.` },
-        { k: 'verdict', t: 'Mon verdict', d: 'Prix juste + zone d’achat', dur: 2.6, say: d => `Mon prix juste : ${money(d.sc.real, d.ccy)}. Zone d'achat sous ${money(d.sc.real * 0.8, d.ccy)}.` }, FIN] },
+        { k: 'verdict', t: 'Mon verdict', d: 'Prix juste + zone d’achat', dur: 2.6, say: d => `Mon prix juste : ${money(d.sc.real, d.ccy)}. Zone d'achat sous ${money(d.sc.real * 0.8, d.ccy)}.` },
+        { k: 'graph', t: 'Sur le graphique', d: 'Cours + tes 3 scénarios en lignes, puis la zone d’achat', dur: 5, say: d => d.S ? `Sur le graphique : le cours ${d.trend >= 0 ? 'monte' : 'baisse'} de ${fr(Math.abs(d.trend), 0)} % en ${d.gy} an${d.gy > 1 ? 's' : ''}. Pessimiste, réaliste, optimiste : on voit tout de suite où on se situe.` : 'Graphique indisponible (pas de symbole TradingView pour cette fiche).', ok: d => !!(d && d.S) }, FIN] },
     trans: { name: '🔁 Mon achat / ma vente', desc: 'Une opération du Wolf Portfolio, chiffres réels', manual: true, p: { op: '', raisons: 'Objectif de cours atteint\nJe préfère renforcer une autre ligne', sticker: 'fier', fin: '' },
       scenes: [{ k: 'hook', t: 'Accroche', d: 'J’ai vendu / j’ai acheté', dur: 2.2, say: d => `${d.type === 'SELL' ? "J'ai vendu" : "J'ai acheté"} ${d.name}.` },
         { k: 'achat', t: "L'achat", d: 'Date et prix d’achat', dur: 2, say: d => `Acheté le ${dl(d.buyDate)} à ${money(d.buyPx, 'EUR')}.` },
@@ -638,7 +639,8 @@ const SHORT = (() => {
   // réglages du modèle en cours (le récap hebdo garde sa place historique à la racine)
   function fc(){ const c = getCfg(), f = c.fmt; if (f === 'hebdo') return c;
     if (!c.fx[f]) c.fx[f] = defFx(f); const o = c.fx[f]; o.p = Object.assign(JSON.parse(JSON.stringify(FMT[f].p)), o.p || {}); o.texts = o.texts || {};
-    FMT[f].scenes.forEach(s => { if (!o.scenes.some(z => z.k === s.k)) o.scenes.push({ k: s.k, on: true, dur: s.dur }); }); return o; }
+    FMT[f].scenes.forEach((s, i) => { if (o.scenes.some(z => z.k === s.k)) return;   // étape ajoutée depuis : insérée à sa place (avant l'étape qui la suit dans le modèle)
+      const nx = FMT[f].scenes.slice(i + 1).map(z => o.scenes.findIndex(y => y.k === z.k)).find(j => j >= 0); o.scenes.splice(nx == null ? o.scenes.length : nx, 0, { k: s.k, on: true, dur: s.dur }); }); return o; }
   const F = () => FMT[getCfg().fmt];
   function persist(){ if (D){ D.short = JSON.parse(JSON.stringify(cfg)); markDirty(); } }
   const scn = k => F().scenes.find(s => s.k === k);
@@ -648,7 +650,7 @@ const SHORT = (() => {
 
   /* --- données --- */
   async function loadData(){
-    const f = getCfg().fmt, o = fc(); DATA = null; dataErr = null; const sig = f + JSON.stringify(f === 'hebdo' ? getCfg().per : [o.p.co, o.p.yrs, o.p.nom, o.p.op]); dataFor = sig;
+    const f = getCfg().fmt, o = fc(); DATA = null; dataErr = null; const sig = f + JSON.stringify(f === 'hebdo' ? getCfg().per : [o.p.co, o.p.yrs, o.p.nom, o.p.op, o.p.gyrs]); dataFor = sig;
     let d = null;
     try { d = await LOAD[f](o.p); } catch(e){ if (dataFor === sig) dataErr = e.message || String(e); return; }
     if (dataFor !== sig) return;
@@ -701,7 +703,11 @@ const SHORT = (() => {
       if (item.sym){ await ensureLogo(item); }
       if (item.logoid) await img(tvLogo(item.logoid)); else if (item.logoUrl) await img(item.logoUrl);
       if (!isNum(it.cours)) throw new Error('pas de cours pour ' + it.nom);
-      return { nom: it.nom, item, cours: it.cours, ccy: it.devise || 'EUR', sc: it.sc, metric: it.metric };
+      let S = null, gy = 0;
+      if (item.sym){ try { await history(item.sym); const yrs = p.gyrs === 'max' ? 99 : +p.gyrs || 3; S = hs(item, yrs).slice(); gy = Math.max(1, Math.round(Math.min(yrs, availY(item))));
+        const r = S.length ? S[S.length - 1] / it.cours : 1; if (r > 60 && r < 160) S = S.map(v => v / 100); else if (r < 0.5 || r > 2) S = null;   // unité incohérente : pas de graphique faux
+        if (S && S.length < 3) S = null; } catch(e){ S = null; } }
+      return { nom: it.nom, item, cours: it.cours, ccy: it.devise || 'EUR', sc: it.sc, metric: it.metric, S, gy, trend: S ? (S[S.length - 1] / S[0] - 1) * 100 : 0 };
     },
     async trans(p){
       const w = await wolf(), E = w.E, sorted = E.sortOps(w.ops);
@@ -839,6 +845,28 @@ const SHORT = (() => {
         sx.save(); sx.globalAlpha *= ease(segp(p, 0.45, 0.7)); if (pp.verdict) hl2(pp.verdict, cx, Yf(0.83), 60 * k); sx.restore(); } }
     if (f === 'valo'){
       const it = d.item;
+      if (s.k === 'graph' && d.S){   // le cours, puis chaque scénario devient une ligne horizontale, puis la zone d'achat
+        logo2(it, 120, Yf(0.06), 52 * k); T2(up(d.nom), 190, Yf(0.06) + 20 * k, fit2(up(d.nom), 60 * k, 820), C.ink, 'left'); hl2('Sur le graphique', cx, Yf(0.155), 60 * k);
+        const S = d.S, n = S.length, order = ['pess', 'real', 'opt'], lab = { pess: 'PESSIMISTE', real: 'REALISTE', opt: 'OPTIMISTE' }, cc = { pess: C.red, real: C.line3, opt: C.green };
+        const buy = isNum(d.sc.real) ? d.sc.real * 0.8 : null, vals = S.concat(order.map(z => d.sc[z]).filter(isNum)).concat(isNum(buy) ? [buy] : []);
+        const mn = Math.min(...vals) * 0.94, mx = Math.max(...vals) * 1.05, X0 = 60, W = 700, top = Yf(0.22), bot = Yf(0.9), px = i => X0 + W * i / (n - 1), py = v => bot - (bot - top) * (v - mn) / (mx - mn);
+        sx.fillStyle = C.card; R2(30, top - 30, 1020, bot - top + 60, 26); sx.fill();
+        const zoneA = ease(segp(p, 0.8, 0.95));   // zone d'achat : sous 80 % du prix juste réaliste
+        if (isNum(buy) && zoneA > 0){ sx.save(); sx.globalAlpha *= 0.22 * zoneA; sx.fillStyle = C.green; sx.fillRect(X0, py(buy), W, bot - py(buy)); sx.restore();
+          sx.save(); sx.globalAlpha *= zoneA; T2('ZONE D’ACHAT < ' + money(buy, d.ccy), X0 + 16, Math.min(bot - 14, py(buy) + 40 * k), 30 * k, C.green, 'left', BF, 800); sx.restore(); }
+        const a = ease(segp(p, 0, 0.3)), m = Math.max(1, Math.floor(a * (n - 1)));
+        sx.strokeStyle = C.ink; sx.lineWidth = 6; sx.lineJoin = 'round'; sx.beginPath(); for (let i = 0; i <= m; i++) i ? sx.lineTo(px(i), py(S[i])) : sx.moveTo(px(i), py(S[i])); sx.stroke();
+        if (a > 0.98){ sx.fillStyle = C.ink; sx.beginPath(); sx.arc(px(n - 1), py(S[n - 1]), 12, 0, 7); sx.fill(); }
+        const tags = [{ z: 'cours', v: d.cours, a: a > 0.98 ? 1 : 0 }].concat(order.filter(z => isNum(d.sc[z])).map((z, i) => ({ z, v: d.sc[z], a: ease(segp(p, 0.3 + i * 0.16, 0.42 + i * 0.16)) })));
+        tags.forEach(t0 => { if (t0.z === 'cours' || t0.a <= 0) return; const yy = py(t0.v); sx.save(); sx.globalAlpha *= t0.a; sx.setLineDash([16, 12]); sx.strokeStyle = cc[t0.z]; sx.lineWidth = 5; sx.beginPath(); sx.moveTo(X0, yy); sx.lineTo(X0 + W * t0.a, yy); sx.stroke(); sx.setLineDash([]); sx.restore(); });
+        const shown = tags.filter(t0 => t0.a > 0).map(t0 => Object.assign({ y: py(t0.v) }, t0)).sort((a2, b2) => a2.y - b2.y);
+        for (let i = 1; i < shown.length; i++) if (shown[i].y - shown[i - 1].y < 74 * k) shown[i].y = shown[i - 1].y + 74 * k;
+        shown.forEach(t0 => { const cl = t0.z === 'cours' ? C.ink : cc[t0.z]; sx.save(); sx.globalAlpha *= t0.a; sx.fillStyle = cl; R2(X0 + W + 14, t0.y - 32 * k, 270, 64 * k, 32 * k); sx.fill();
+          T2(t0.z === 'cours' ? 'COURS' : lab[t0.z], X0 + W + 30, t0.y - 4 * k, 22 * k, t0.z === 'cours' ? C.bg : '#fff', 'left', BF, 800);
+          T2(money(t0.v, d.ccy), X0 + W + 30, t0.y + 24 * k, 28 * k, t0.z === 'cours' ? C.bg : '#fff', 'left', BF, 800);
+          if (t0.z !== 'cours' && isNum(pot(d, t0.z))) T2(sgn(pot(d, t0.z)), X0 + W + 272, t0.y + 24 * k, 24 * k, '#fff', 'right', BF, 800); sx.restore(); });
+        T2('cours sur ' + d.gy + ' an' + (d.gy > 1 ? 's' : '') + ' · TradingView · scénarios de ma simulation', cx, bot + 70 * k, 26 * k, C.dim, 'center', BF, 700);
+      }
       if (s.k === 'intro'){ const b = back(segp(p, 0, 0.3)); sx.save(); sx.translate(cx, Yf(0.17)); sx.scale(b, b); logo2(it, 0, 0, 120 * k, true); sx.restore();
         T2(up(d.nom), cx, Yf(0.36), fit2(up(d.nom), 96 * k, 960), C.ink); T2('COURS ACTUEL', cx, Yf(0.46), 44 * k, C.dim, 'center', BF, 800);
         const v = d.cours * ease(segp(p, 0.2, 0.6)), t0 = money(v, d.ccy); T2(t0, cx, Yf(0.6), fit2(t0, 200 * k, 960), C.ink);
@@ -937,7 +965,8 @@ const SHORT = (() => {
     if (f === 'chute') return coPick('Action') + `<label class="sd-f">Plus haut cherché sur<select data-sd-p="yrs">${[['1', '1 an'], ['2', '2 ans'], ['3', '3 ans'], ['5', '5 ans'], ['10', '10 ans'], ['max', 'Tout l’historique']].map(([v, l]) => `<option value="${v}" ${String(p.yrs) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`
       + stkSel('sticker', 'Loup du choc') + area('raisons', 'Pourquoi ça chute (une raison par ligne)') + txtIn('question', 'La question') + txtIn('verdict', 'Ton verdict (apparaît sous la question)') + stkSel('sticker2', 'Loup de la question') + txtIn('fin', 'Encadré de fin', 'Pour la suite');
     if (f === 'valo') return `<label class="sd-f">Entreprise (fiches de « Prix par secteur »)<select data-sd-p="nom">${(valoList || []).map(x => `<option value="${esc(x.nom)}" ${p.nom === x.nom ? 'selected' : ''}>${esc(x.nom)}${isNum(x.sc.real) ? '' : ' (pas de scénario réaliste)'}</option>`).join('') || '<option>Chargement…</option>'}</select></label>
-      <p class="sd-sub">Les 3 prix viennent de TA simulation dans « Prix par secteur » (rien n’est estimé ici). Annonce-les un par un avec → : chacun se place sur l’échelle à côté du cours actuel.</p>` + stkSel('sticker', 'Loup (vide = choisi selon le verdict)') + txtIn('fin', 'Encadré de fin', 'Pour la suite');
+      <p class="sd-sub">Les 3 prix viennent de TA simulation dans « Prix par secteur » (rien n’est estimé ici). Annonce-les un par un avec → : chacun se place sur l’échelle à côté du cours actuel, puis l’étape « Sur le graphique » les trace sur le cours.</p>
+      <label class="sd-f">Période du graphique<select data-sd-p="gyrs">${[['1', '1 an'], ['2', '2 ans'], ['3', '3 ans'], ['5', '5 ans'], ['10', '10 ans'], ['max', 'Tout l’historique']].map(([v, l]) => `<option value="${v}" ${String(p.gyrs) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>` + stkSel('sticker', 'Loup (vide = choisi selon le verdict)') + txtIn('fin', 'Encadré de fin', 'Pour la suite');
     if (f === 'trans') return `<label class="sd-f">Opération du Wolf Portfolio<select data-sd-p="op">${(opsList || []).map(o => `<option value="${esc(o.id)}" ${p.op === o.id ? 'selected' : ''}>${esc(o.label)}</option>`).join('') || '<option>Chargement…</option>'}</select></label>
       <p class="sd-sub">Dates, prix et performance (dividendes compris) calculés depuis ton journal. Wolf Portfolio seulement, jamais le PEA ni le CTO.</p>` + stkSel('sticker', 'Loup de l’accroche') + area('raisons', 'Pourquoi (une raison par ligne)') + txtIn('fin', 'Encadré de fin', 'Pour la suite');
     return '';
@@ -1050,7 +1079,7 @@ const SHORT = (() => {
     try { await navigator.clipboard.writeText(ta.value); } catch(e){ ta.select(); document.execCommand('copy'); }
     if (msg){ msg.textContent = (k === 'yt' ? 'Texte YouTube' : 'Texte Facebook') + ' copié ✔'; setTimeout(() => { if (msg.isConnected) msg.textContent = ''; }, 2500); } }
 
-  const DATA_KEYS = ['co', 'yrs', 'nom', 'op'];
+  const DATA_KEYS = ['co', 'yrs', 'nom', 'op', 'gyrs'];
   return {
     view,
     _seek(i, q){ const a = active(), s = a[Math.min(i, a.length - 1)]; let acc = 0; for (const z of a){ if (z === s) break; acc += +z.dur || 3; } tt = acc + (+s.dur || 3) * Math.min(q, 0.999); playing = false; frame(); return $('sdShortCv').toDataURL('image/jpeg', 0.6); },
