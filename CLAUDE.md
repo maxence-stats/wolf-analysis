@@ -668,10 +668,13 @@ Les anciennes pages Sheet (Wolf Portfolio, Perso) sont conservées telles quelle
   + « ↶ Annuler ». Floutée/inaccessible sans le code Perso. Le patrimoine de la carte Épargne inclut les SCPI.
 - **« Mon patrimoine » (2026-11-12)** : en tête, 2 cartes seulement : 🐺 Wolf Portfolio (en évidence) et 🏛 Mon patrimoine
   (`ui.acc = 'patri'`, vue par défaut). Dans le patrimoine, barre `.mp-subacc` : Vue d'ensemble / PEA / CTO / PEA + CTO / Épargne
-  (fenêtre) / SCPI (fenêtre). Vue d'ensemble (`patriData`, `patrimoineHtml`, `drawPatriChart`, CSS `.pt-*`) : total, Bourse
-  (PEA + CTO avec liquidités), Épargne (dernier relevé), Immobilier (SCPI), revenus passifs 12 mois (DIV PEA/CTO + revenus SCPI),
-  barre de répartition, anneau double (intérieur = classes, extérieur = enveloppes), tableau « Par classe / Par enveloppe / Ligne par
-  ligne » (chaque titre PEA + CTO réunis). Hors Wolf Portfolio. Verrouillé = rien d'affiché (montants des cartes floutés).
+  (fenêtre) / SCPI (fenêtre). Vue d'ensemble (`patriData`, `patrimoineHtml`, CSS `.pt-*`), REFAITE le même jour (« moche ») :
+  carte héros = « Patrimoine net » en très grand + 3 classes (Bourse = PEA + CTO avec liquidités, Épargne = dernier relevé,
+  Immobilier = SCPI) à gauche, MOSAÏQUE à droite (une colonne par classe, largeur = poids ; une tuile par enveloppe, hauteur = poids ;
+  tuile réduite à « nom + % » ou à un trait si trop petite) ; 4 chiffres « à retenir » (disponible rapidement = liquidités + livrets,
+  investi en actions, plus grosse ligne, revenus passifs par mois) ; tableau Composition « Par classe / Par enveloppe / Ligne par ligne »
+  (gardé : l'utilisateur l'aime). Barre empilée, 5 tuiles à bordure colorée et double anneau RETIRÉS (jugés moches). Pas de courbe
+  d'évolution : l'épargne n'a pas d'historique (un seul relevé). Hors Wolf Portfolio. Verrouillé = rien d'affiché.
 - **Corbeille** : une opération supprimée part dans `D.trash` (même fichier) avec sa copie Wolf ; « ↶ Annuler » juste après,
   ou « ↶ Restaurer » depuis la corbeille sous le journal (`restore(group)`).
 - **Copie MENSUELLE** (serveur v=11, `Ensure-MonthlySnapshot`) : au premier accès de chaque mois (démarrage, lecture ou

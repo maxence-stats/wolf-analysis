@@ -485,7 +485,6 @@ function render(){
   wireScpi();
   const scBg = document.getElementById('mpScBg'); if (scBg){ scBg.scrollTop = scScroll; drawScpiChart(); }
   if (!patri && c && histAt && typeof Chart !== 'undefined'){ drawPerfChart(c); drawDonut(c, locked); }
-  if (patri && !locked && histAt && typeof Chart !== 'undefined') drawPatriChart();
   if (ui.modal) wireModal();
 }
 function titleHtml(){
@@ -568,16 +567,37 @@ function patriData(){
 function patrimoineHtml(){
   const P = patriData(), T = P.total || 1, view = ui.patriView || 'env';
   if (!P.total) return `<div class="mp-card mp-empty">Rien à afficher pour l'instant : saisis tes opérations PEA / CTO, ton épargne (💶) et tes SCPI (🏢).</div>`;
-  const pc = v => num(v / T * 100, 1) + ' %';
+  const pc = (v, d = 1) => num(v / T * 100, d) + ' %';
   const catOf = k => PATRI_CATS.find(c => c.k === k) || {};
-  const kpi = (l, v, sub, color) => `<div class="pt-kpi" ${color ? `style="--c:${color}"` : ''}><span>${l}</span><b>${v}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
-  const kpis = `<div class="pt-kpis">
-      ${kpi('Patrimoine total', eur(P.total, 0), 'hors Wolf Portfolio')}
-      ${P.cats.map(c => kpi(c.label, eur(c.val, 0), pc(c.val) + ' du total', c.color)).join('')}
-      ${kpi('Revenus passifs 12 mois', eur(P.divs + P.loyers, 0), 'dividendes ' + eur(P.divs, 0) + ' · SCPI ' + eur(P.loyers, 0), '#4FD1A5')}</div>`;
-  const bar = `<div class="pt-bar">${P.cats.filter(c => c.val > 0).map(c => `<div style="flex:${c.val};background:${c.color}" title="${esc(c.label)} ${pc(c.val)}"><span>${esc(c.label)} ${pc(c.val)}</span></div>`).join('')}</div>`;
+  const cats = P.cats.filter(c => c.val > 0);
+  // --- en-tête : le total en grand, puis les 3 classes d'actifs
+  const classes = cats.map(c => `<div class="pt-class">
+      <span class="pt-dot" style="background:${c.color}"></span><span class="pt-class-name">${esc(c.label)}</span>
+      <span class="pt-class-bar"><i style="width:${c.val / T * 100}%;background:${c.color}"></i></span>
+      <b>${pc(c.val, 0)}</b><span class="pt-class-val">${eur(c.val, 0)}</span></div>`).join('');
+  const passif = P.divs + P.loyers;
+  // --- mosaïque : une colonne par classe (largeur = son poids), une tuile par enveloppe (hauteur = son poids)
+  const mosaic = cats.map(c => {
+    const env = P.env.filter(x => x.cat === c.k).sort((a, b) => b.val - a.val);
+    // taille d'affichage selon la place réelle de la tuile : xs = trait coloré, s = nom + % sur une ligne, sinon tuile complète
+    return `<div class="pt-col" style="flex:${c.val}">${env.map(x => { const w = x.val / T * 100, frac = x.val / c.val, size = w < 1.5 ? 'xs' : frac < 0.32 ? 's' : '';
+      return `<div class="pt-tile${size ? ' pt-tile-' + size : ''}" style="flex:${x.val};--c:${x.color}" title="${esc(x.label)} · ${pc(x.val)} · ${eur(x.val, 0)}">
+        ${size === 'xs' ? '' : size === 's' ? `<span class="pt-tile-name">${esc(x.label)}</span><b>${pc(x.val, 1)}</b>` : `<span class="pt-tile-ico">${x.icon}</span><span class="pt-tile-name">${esc(x.label)}</span><b>${pc(x.val, w >= 10 ? 0 : 1)}</b><small>${eur(x.val, 0)}</small>`}</div>`; }).join('')}</div>`;
+  }).join('');
+  // --- à retenir
+  const cash = cache.perso ? cache.perso.now.cash : 0;
+  const dispo = cash + P.env.filter(x => x.cat === 'epargne').reduce((t, x) => t + x.val, 0);
+  const actions = P.cats.find(c => c.k === 'bourse').val - cash;
+  const top = P.lines.filter(l => l.sym)[0];
+  const facts = [
+    { ico: '💧', l: 'Disponible rapidement', v: eur(dispo, 0), s: pc(dispo, 0) + ' · livrets et liquidités' },
+    { ico: '📈', l: 'Investi en actions', v: eur(actions, 0), s: pc(actions, 0) + ' du patrimoine' },
+    { ico: top ? null : '—', sym: top && top.sym, l: 'Plus grosse ligne', v: top ? esc(top.label) : '—', s: top ? pc(top.val) + ' · ' + eur(top.val, 0) : '' },
+    { ico: '🌱', l: 'Revenus passifs', v: eur(passif / 12, 0) + ' / mois', s: eur(passif, 0) + ' sur 12 mois · dividendes ' + eur(P.divs, 0) + ', SCPI ' + eur(P.loyers, 0) }
+  ].map(f => `<div class="pt-fact">${f.sym ? logoHtml(f.sym, 34) : `<span class="pt-fact-ico">${f.ico}</span>`}<div><span>${f.l}</span><b>${f.v}</b><small>${f.s}</small></div></div>`).join('');
+  // --- composition (inchangée)
   const seg = [['cat', 'Par classe d\'actifs'], ['env', 'Par enveloppe'], ['lines', 'Ligne par ligne']].map(([k, l]) => `<button class="${view === k ? 'active' : ''}" data-pt-view="${k}">${l}</button>`).join('');
-  const rows = view === 'cat' ? P.cats.filter(c => c.val > 0).map(c => ({ label: c.label, color: c.color, val: c.val, icon: c.icon, sub: P.env.filter(x => x.cat === c.k).map(x => x.label + ' ' + pc(x.val)).join(' · ') }))
+  const rows = view === 'cat' ? cats.map(c => ({ label: c.label, color: c.color, val: c.val, icon: c.icon, sub: P.env.filter(x => x.cat === c.k).map(x => x.label + ' ' + pc(x.val)).join(' · ') }))
     : view === 'env' ? P.env.slice().sort((a, b) => b.val - a.val)
     : P.lines;
   const table = rows.map((r, i) => `<div class="pt-row">
@@ -587,22 +607,13 @@ function patrimoineHtml(){
       <div class="pt-gauge"><i style="width:${Math.max(0.5, r.val / T * 100)}%;background:${r.color || catOf(r.cat).color}"></i></div>
       <b class="pt-pct">${pc(r.val)}</b><span class="pt-val">${eur(r.val, 0)}</span></div>`).join('');
   return (P.missing.length ? `<div class="mp-banner err">⚠ Cours introuvables pour ${P.missing.map(x => esc(symName(x))).join(', ')} : la partie bourse est incomplète.</div>` : '')
-    + `<div class="mp-card pt-head"><h3 class="mp-h">🏛 Mon patrimoine <small>au ${fmtD(E.isoToday())}</small></h3>${kpis}${bar}</div>
-    <div class="mp-grid pt-grid"><div class="mp-card"><h3 class="mp-h">Répartition</h3>
-        <div class="pt-donut"><canvas id="mpPatriDonut"></canvas><div class="mp-donut-center"><small>Total</small><b>${eur(P.total, 0)}</b></div></div>
-        <div class="pt-legend">${P.env.map(x => `<span><i style="background:${x.color}"></i>${esc(x.label)} <b>${pc(x.val)}</b></span>`).join('')}</div>
-        <p class="mp-hint">Anneau intérieur : classes d'actifs (bourse, épargne, immobilier). Anneau extérieur : chaque enveloppe.</p></div>
-      <div class="mp-card mp-span2"><div class="mp-h-row"><h3 class="mp-h">Composition</h3><div class="mp-seg pt-seg">${seg}</div></div>
-        <div class="pt-table">${table}</div></div></div>`;
-}
-function drawPatriChart(){
-  const cv = document.getElementById('mpPatriDonut'); if (!cv) return;
-  const P = patriData(), cats = P.cats.filter(c => c.val > 0);
-  const outer = { data: P.env.map(x => x.val), backgroundColor: P.env.map(x => x.color), borderColor: '#151A1F', borderWidth: 2, _labels: P.env.map(x => x.label) };
-  const inner = { data: cats.map(c => c.val), backgroundColor: cats.map(c => c.color), borderColor: '#151A1F', borderWidth: 2, _labels: cats.map(c => c.label) };
-  charts.patri = new Chart(cv.getContext('2d'), { type: 'doughnut', data: { labels: P.env.map(x => x.label), datasets: [outer, inner] },
-    options: { responsive: true, maintainAspectRatio: false, cutout: '45%', plugins: { legend: { display: false },
-      tooltip: { callbacks: { label: x => ' ' + x.dataset._labels[x.dataIndex] + ' : ' + eur(x.parsed, 0) + ' (' + num(x.parsed / (P.total || 1) * 100, 1) + ' %)' } } } } });
+    + `<div class="mp-card pt-hero">
+        <div class="pt-hero-left"><span class="pt-eyebrow">Patrimoine net</span><div class="pt-total">${eur(P.total, 0)}</div>
+          <span class="pt-asof">au ${fmtD(E.isoToday())} · hors Wolf Portfolio</span><div class="pt-classes">${classes}</div></div>
+        <div class="pt-mosaic">${mosaic}</div></div>
+      <div class="pt-facts">${facts}</div>
+      <div class="mp-card"><div class="mp-h-row"><h3 class="mp-h">Composition</h3><div class="mp-seg pt-seg">${seg}</div></div>
+        <div class="pt-table">${table}</div></div>`;
 }
 function toolbarHtml(){
   const years = [...new Set(Object.values(D.accounts).flatMap(a => a.ops.map(o => o.date.slice(0, 4))))].sort().reverse();
