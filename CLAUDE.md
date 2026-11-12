@@ -757,6 +757,8 @@ anciennes corrections `c.over` reprises une fois (`cmpMigrate`). Coller un table
 une case remplit à partir de celle-ci (`cmpPaste`). Ratios libres `c.custom [{k, l, u, dir}]` (« ＋ Ratio libre » dans l'éditeur).
 TradingView seulement sur option `c.auto` (cases grises « à vérifier », désactivé par défaut). Meilleure / moins bonne valeur par
 COLONNE. Les flèches du clavier ne changent plus de carte quand on tape dans une case (vue agrandie).
+Panneau « Modifier » : bloc « Valeurs du tableau » (`cmpEditorValues`, une fiche par entreprise, un champ par ratio, `data-cmpv`,
+collage d'un tableau accepté) — l'utilisateur ne trouvait pas où modifier les chiffres.
 Le texte ci-dessous décrit l'ancienne carte mentale (historique).
 
 Nouvel onglet principal (`#pageAtelier`, `js/atelier.js`, CSS `.at-*` en fin de `style.css`), À CÔTÉ du Cerveau numérique (qui

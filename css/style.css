@@ -3335,3 +3335,6 @@
    l'écran, avec une poignée en bas à droite pour l'agrandir. */
 .aw-ed-body>*{flex-shrink:0}
 .aw-ed-body .aw-rich{max-height:60vh;overflow-y:auto;resize:vertical;scrollbar-width:thin}
+/* Atelier, Comparatif : valeurs du tableau dans le panneau « Modifier » (2026-11-12) */
+.aw-cmp-ed{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.aw-cmp-ed>b{font-family:var(--font-display);font-size:14px;color:var(--text)}

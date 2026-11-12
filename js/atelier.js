@@ -918,6 +918,16 @@ function compTableHtml(c, big){
   return '<div class="aw-tscroll"><table class="aw-table aw-cmp' + (big ? ' big' : '') + '"><thead>' + head + '</thead><tbody>' + rows + '</tbody></table></div>';
 }
 // Saisie dans une case (carte ou vue agrandie). Retourne true si quelque chose a changé.
+// Panneau « Modifier » : les valeurs du tableau, une fiche par entreprise (lisible dans un panneau étroit), un champ par ratio.
+function cmpEditorValues(c, cols){
+  const metrics = cmpMetrics(c); if (!cols.length || !metrics.length) return '';
+  cmpMigrate(c, cols);
+  return '<b class="aw-ed-h">Valeurs du tableau</b><p class="at-faint">Tape un nombre (14,2) ou un texte court (« non publié »). Une case vide reste vide. Tu peux aussi coller un tableau entier dans une case.</p>' +
+    cols.map((n, i) => '<div class="aw-cmp-ed"><b>' + esc(n) + ((c.cols || [])[0] === '@self' && i === 0 ? ' <span class="at-faint">(ce dossier)</span>' : '') + '</b><div class="aw-ed-grid">' +
+      metrics.map((k, j) => { const m = cmpMetric(c, k), auto = !cmpRaw(c, n, k) && c.auto ? compAuto(c, n, k, i) : null;
+        return '<label>' + esc(m.l) + esc(unitHint(m.u)) + '<input class="at-in aw-cin-ed" data-cmpv="' + esc(k) + '|' + esc(norm(n)) + '" data-r="' + i + '" data-c="' + j + '" value="' + esc(cmpRaw(c, n, k)) + '" placeholder="' + esc(auto != null ? fr(auto, m.d) : '') + '"></label>'; }).join('') +
+      '</div></div>').join('');
+}
 function cmpSet(c, k, n, value){
   c.vals = c.vals || {}; const r = c.vals[n] = c.vals[n] || {}, t = String(value || '').trim();
   if ((r[k] || '') === t) return false;
@@ -1658,6 +1668,7 @@ function editorFields(c, d, v){
         '<label class="aw-ed-check"><input type="checkbox" data-withconc' + (c.withConc !== false ? ' checked' : '') + '> Ajouter tout seul les cartes « Entreprise » du dossier</label>' +
         '<b class="aw-ed-h">Ratios (colonnes, dans l\'ordre où tu les coches)</b><div class="aw-ed-checks">' + Object.keys(TVF).map(k => '<label><input type="checkbox" data-metric="' + k + '"' + ((c.metrics || []).includes(k) ? ' checked' : '') + '> ' + esc(TVF[k].l) + '</label>').join('') + '</div>' +
         '<b class="aw-ed-h">Ratios libres</b><div class="aw-ed-rows">' + cus.map((m, k) => '<div class="aw-ed-row"><input class="at-in" data-cus-l="' + k + '" value="' + esc(m.l || '') + '" placeholder="ex. ROE, Marge EBITDA, Dette / EBITDA"><select class="at-sel" data-cus-u="' + k + '">' + [['', 'nombre'], ['%', '%'], ['x', 'x (multiple)'], ['cur', 'devise / action'], ['Mcur', 'millions']].map(o => '<option value="' + o[0] + '"' + ((m.u || '') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select><select class="at-sel" data-cus-d="' + k + '">' + [['high', 'plus haut = mieux'], ['low', 'plus bas = mieux'], ['', 'neutre']].map(o => '<option value="' + o[0] + '"' + ((m.dir || '') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select><button type="button" class="at-x" data-cus-del="' + k + '">✕</button></div>').join('') + '<button type="button" class="at-btn sm" data-cus-add>＋ Ratio libre</button></div>' +
+        cmpEditorValues(c, cols) +
         '<label class="aw-ed-check"><input type="checkbox" data-cmpauto' + (c.auto ? ' checked' : '') + '> Proposer les chiffres TradingView dans les cases vides (en gris, à vérifier)</label>' +
         (c.auto ? '<label>Période des chiffres proposés<select class="at-sel" data-f="period"><option value="ttm"' + (c.period !== 'fy' ? ' selected' : '') + '>12 derniers mois</option><option value="fy"' + (c.period === 'fy' ? ' selected' : '') + '>Dernier exercice annuel</option></select></label>' : '');
     }
@@ -1741,6 +1752,7 @@ function wireEditor(p, c){
         return Object.assign({}, o || {}, { nom: a[0], sym, nc: nc || undefined, role: a.slice(2).join(' | ') }); });
       changed(false); clearTimeout(vcTimer); vcTimer = setTimeout(() => vcResolveLogos(c), 1500); }
     else if (ds.cusL !== undefined){ c.custom[+ds.cusL].l = t.value; changed(false); }
+    else if (ds.cmpv !== undefined){ const [k, n] = ds.cmpv.split('|'); if (cmpSet(c, k, n, t.value)) changed(false); }
     else if (ds.over !== undefined){ const [k, i] = ds.over.split('|'); c.over = c.over || {}; c.over[k] = c.over[k] || []; c.over[k][+i] = t.value.trim() === '' ? null : num(t.value); changed(false); }
   });
   p.addEventListener('change', e => {
@@ -1785,6 +1797,8 @@ function wireEditor(p, c){
     if (ds.addurl !== undefined){ const inp = p.querySelector('[data-imgurl]'); return addImageUrl(c, inp ? inp.value.trim() : ''); }
   });
   p.addEventListener('paste', e => {
+    const ci = e.target.closest && e.target.closest('.aw-cin-ed');
+    if (ci && c.type === 'comparatif' && cmpPaste(c, ci, (e.clipboardData || window.clipboardData).getData('text/plain'))){ e.preventDefault(); touch(); refreshCard(c); renderEditor(); return; }
     const files = [...((e.clipboardData && e.clipboardData.files) || [])].filter(x => x.type.startsWith('image/'));
     if (files.length && ['texte', 'image', 'profil', 'concurrent'].includes(c.type)){ e.preventDefault(); addFiles(c, files, 'img'); return; }
     if (e.target.closest && e.target.closest('[data-rich]')){ e.preventDefault(); document.execCommand('insertText', false, (e.clipboardData || window.clipboardData).getData('text/plain')); }
