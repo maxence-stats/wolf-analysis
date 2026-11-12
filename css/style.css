@@ -3362,10 +3362,19 @@
 .sd-tabs button.on{background:var(--gold);color:#111}
 .sd-status{margin-left:auto;font-size:13px;color:var(--text-dim)}
 .sd-status.err{color:var(--red)} .sd-status.wait{color:var(--gold)}
-.sd-tpls{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px}
-.sd-tpls button{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-start;gap:2px;background:var(--card-bg);border:var(--card-border);color:var(--text);font:700 13px var(--font-body);padding:9px 13px;border-radius:12px;cursor:pointer;text-align:left}
-.sd-tpls button small{font-weight:500;font-size:11px;color:var(--text-dim)}
-.sd-tpls button.on{outline:2px solid var(--gold)}
+.sd-gal{margin-top:26px}
+.sd-gal h3{margin:0 0 12px;font:700 18px var(--font-display)}
+.sd-gal h3 small{font:500 13px var(--font-body);color:var(--text-dim);margin-left:8px}
+.sd-tplgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+.sd-tplgrid button{display:flex;flex-direction:column;align-items:stretch;gap:4px;background:var(--card-bg);border:var(--card-border);color:var(--text);font:700 14px var(--font-body);padding:8px 8px 11px;border-radius:14px;cursor:pointer;text-align:left;transition:transform .15s,box-shadow .15s}
+.sd-tplgrid button:hover{transform:translateY(-2px);box-shadow:var(--shadow-card-hover)}
+.sd-tplgrid button canvas{width:100%;aspect-ratio:16/9;display:block;border-radius:9px;background:#050608;margin-bottom:4px}
+.sd-tplgrid button b{padding:0 4px}
+.sd-tplgrid button small{font-weight:500;font-size:12px;color:var(--text-dim);padding:0 4px}
+.sd-tplgrid button.on{outline:2px solid var(--gold)}
+.sd-phead{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.sd-chg{background:var(--panel-2);border:1px solid var(--hair);color:var(--text);font:600 12px var(--font-body);padding:6px 10px;border-radius:9px;cursor:pointer;white-space:nowrap}
+.sd-chg:hover{border-color:var(--gold)}
 .sd-editor{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:22px;align-items:start}
 @media (max-width:1100px){.sd-editor{grid-template-columns:minmax(0,1fr)}}
 #sdBig{width:100%;aspect-ratio:16/9;display:block;border-radius:12px;box-shadow:0 14px 40px rgba(0,0,0,.35);transition:opacity .2s}

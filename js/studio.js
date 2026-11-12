@@ -69,7 +69,7 @@ function snap(sym){
 const HIST = {};
 function history(sym){
   if (!HIST[sym]) HIST[sym] = (async () => {
-    const r = await fetch('/api/tv/history?symbols=' + encodeURIComponent(sym) + '&from=2016-01-01&adj=1', { cache: 'no-store' });
+    const r = await fetch('/api/tv/history?symbols=' + encodeURIComponent(sym) + '&from=2000-01-01&adj=1', { cache: 'no-store' });
     const j = await r.json(); const h = j.ok && j.data && j.data[sym];
     if (!h || !h.bars || !h.bars.length) throw new Error('cours indisponibles pour ' + sym);
     const w = []; let last = null;   // une clôture par semaine (la dernière)
@@ -79,6 +79,10 @@ function history(sym){
   return HIST[sym];
 }
 const histNow = sym => (sym && HIST[sym] && HIST[sym]._v) || [];
+const availY = it => Math.max(0, (histNow(it && it.sym).length - 1) / 52);
+// Duel : même période pour les deux actions (bornée par l'historique le plus court, sinon comparaison injuste).
+function duelY(s){ const a = availY(s.a && s.a[0]), b = availY(s.b && s.b[0]), m = Math.min(a || 99, b || 99); return Math.min(+s.yrs || 10, m); }
+const yTxt = y => { const r = Math.round(y); return r <= 1 ? '1 an' : r + ' ans'; };
 function hs(it, yrs){ const c = histNow(it && it.sym); return c.slice(-Math.round(yrs * 52) - 1); }
 function drop(it, yrs){ const s = hs(it, yrs); if (s.length < 2) return { v: null, lab: '' }; const mx = Math.max(...s), l = s[s.length - 1];
   return l < mx * 0.97 ? { v: (l / mx - 1) * 100, lab: 'depuis son plus haut' } : { v: (l / s[0] - 1) * 100, lab: 'en ' + yrs + ' an' + (yrs > 1 ? 's' : '') }; }
@@ -182,7 +186,9 @@ function bg(st){
   const im = imgNow(wolfUrl(st.pose));
   if (im){ const z = +st.wz || 1, k = Math.max(1280 / im.width, 720 / im.height) * z, w = im.width * k, h = im.height * k;
     if (z < 1){ x.save(); x.filter = 'blur(10px) brightness(.75)'; x.drawImage(im, 0, 0, im.width * 0.3, im.height, -20, -20, 1320, 760); x.restore(); }
-    x.drawImage(im, 1280 - w, 720 - h, w, h); }
+    // Images de la banque en 3:2 : plus hautes que le cadre 16:9. On garde le HAUT (oreilles, tête) par défaut ; « Position du loup » descend le cadrage.
+    const wy = st.wy === '' || st.wy == null ? 0 : +st.wy, top = h > 720 ? -(h - 720) * wy : 720 - h;
+    x.drawImage(im, 1280 - w, top, w, h); }
   const g = x.createLinearGradient(0, 0, 700, 0); g.addColorStop(0, 'rgba(0,0,0,.6)'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, 700, 720);
 }
 
@@ -219,33 +225,37 @@ const T = [
         (ks.length ? ks : (L === 'F' ? [null] : [])).slice(0, mx).forEach((k, j) => { k ? tile(k, X + 8, 240 + j * 88, 76) : qtile(X + 8, 240 + j * 88, 76); }); });
       mixed([[s.l1, 0], [s.l2, 1]], 40, 640, 110); }]] },
  { id: 'portefeuille', name: 'Mon portefeuille', vid: 'Portefeuille (mensuel)', pose: 'pensif', need: [NEED.wolf], note: 'Composition réelle du Wolf Portfolio.',
-  auto: { v: (s, c) => c.wolf ? fr(c.wolf.value) + ' €' : '—', g: (s, c) => c.wolf ? (c.wolf.gain >= 0 ? '+' : '−') + fr(Math.abs(c.wolf.gain)) + ' €' : '—' },
-  f: [['l1', 'Encadré jaune', 'y'], ['l2', 'Ligne blanche', 't'], ['v', 'Valeur', 'ov'], ['g', 'Gain', 'ov']], d: { l1: 'Mon portefeuille', l2: 'Je vends laquelle ?', v: '', g: '' },
+  auto: { v: (s, c) => c.wolf ? fr(c.wolf.value) + ' €' : '—', g: (s, c) => c.wolf ? (c.wolf.gain >= 0 ? '+' : '−') + fr(Math.abs(c.wolf.gain)) + ' €' : '—', cashP: (s, c) => c.wolf ? fr(c.wolf.cashW, c.wolf.cashW < 10 ? 1 : 0) + ' %' : '—' },
+  f: [['l1', 'Encadré jaune', 'y'], ['l2', 'Ligne blanche', 't'], ['v', 'Valeur', 'ov'], ['g', 'Gain', 'ov'], ['cash', 'Liquidités (camembert)', 'sel', [['logo', 'Logo € seul'], ['pct', 'Logo € + pourcentage'], ['none', 'Rien (part grise seule)']]], ['cashP', 'Liquidités (%)', 'ov']], d: { l1: 'Mon portefeuille', l2: 'Je vends laquelle ?', v: '', g: '', cash: 'logo', cashP: '' },
   v: [['A', 'Mosaïque (taille = poids)', (s, c) => { ybox(s.l1, 40, 100, 92); txt(s.l2, 40, 200, 78); const W = c.wolf; if (!W) return;
       treemap(W.items.slice(0, 9).map(i => [i, i.w]).concat(W.cashW > 1 ? [[K_('EUR'), W.cashW]] : []).sort((a, b) => b[1] - a[1]), 40, 232, 580, 456).forEach(([e, X, Yy, w, h]) => {
         x.fillStyle = e[0].k === 'EUR' ? '#16181c' : 'rgba(255,255,255,.08)'; rr(X + 3, Yy + 3, w - 6, h - 6, 12); x.fill(); x.strokeStyle = 'rgba(238,255,65,.55)'; x.lineWidth = 2; x.stroke();
-        const t = Math.min(130, w * 0.62, h * 0.5), fz = Math.min(46, h * 0.2, w * 0.24); tile(e[0], X + w / 2 - t / 2, Yy + h / 2 - t * 0.66, t); txt(fr(e[1], e[1] < 10 ? 1 : 0) + ' %', X + w / 2, Yy + h / 2 + t * 0.34 + fz + 4, fz, { align: 'center', max: w - 12 }); }); }],
+        const t = Math.min(130, w * 0.62, h * 0.5), fz = Math.min(46, h * 0.2, w * 0.24); tile(e[0], X + w / 2 - t / 2, Yy + h / 2 - t * 0.66, t); txt(e[0].k === 'EUR' ? OV(s, 'cashP', fr(e[1], e[1] < 10 ? 1 : 0) + ' %') : fr(e[1], e[1] < 10 ? 1 : 0) + ' %', X + w / 2, Yy + h / 2 + t * 0.34 + fz + 4, fz, { align: 'center', max: w - 12 }); }); }],
      ['B', 'Top 5 en barres', (s, c) => { ybox(s.l1, 40, 100, 92); txt(OV(s, 'v', T[4].auto.v(s, c)), 40, 215, 100); pct(OV(s, 'g', T[4].auto.g(s, c)), 40, 280, 54); const W = c.wolf; if (!W) return; const mx = Math.max(...W.items.slice(0, 5).map(i => i.w), 1);
       W.items.slice(0, 5).forEach((it, i) => { const yy = 320 + i * 76; tile(it, 40, yy, 64); const bw = 380 * it.w / mx; x.fillStyle = Y; rr(120, yy + 14, bw, 36, 8); x.fill(); x.strokeStyle = '#000'; x.lineWidth = 3; x.stroke(); txt(fr(it.w, 1) + ' %', 134 + bw, yy + 48, 40, { max: 150 }); }); }],
      ['C', 'Grand camembert, logos dedans', (s, c) => { ybox(s.l1, 40, 96, 88); txt(s.l2, 40, 180, 70); const W = c.wolf; if (!W) return; const cx = 305, cy = 455, R = 240, r = 128; let a = -Math.PI / 2;
       const cols = ['#F2B33D', '#4A86C5', '#2EBD6B', '#B06BD0', '#E07A3A', '#3AA7B8', '#E5262E', '#8F7A5A', '#6E7F96', '#C46FA0'];
       const parts = W.items.map(i => [i, i.w]).concat(W.cashW > 0.5 ? [[K_('EUR'), W.cashW]] : []);
       parts.forEach(([it, v], i) => { const sw = 2 * Math.PI * v / 100; x.beginPath(); x.arc(cx, cy, R, a, a + sw); x.arc(cx, cy, r, a + sw, a, true); x.closePath(); x.fillStyle = it.k === 'EUR' ? '#2A2E35' : cols[i % cols.length]; x.fill(); x.strokeStyle = '#050608'; x.lineWidth = 4; x.stroke();
-        const m = a + sw / 2, rm = (R + r) / 2; if (it.k === 'EUR') txt('€ ' + fr(v) + ' %', cx + Math.cos(m) * rm, cy + Math.sin(m) * rm + 16, 46, { align: 'center', max: 150 }); else if (v >= 5) tile(it, cx + Math.cos(m) * rm - 25, cy + Math.sin(m) * rm - 25, 50); a += sw; });
+        const m = a + sw / 2, rm = (R + r) / 2; if (it.k === 'EUR'){ const mode = s.cash || 'logo';   // petit logo € fait maison, rien qui déborde de l'anneau
+          const rt = mode === 'pct' ? rm + 22 : rm, ts = mode === 'pct' ? 44 : 50;
+          if (mode !== 'none' && v >= 3) tile(it, cx + Math.cos(m) * rt - ts / 2, cy + Math.sin(m) * rt - ts / 2, ts);
+          if (mode === 'pct' && v >= 3) txt(OV(s, 'cashP', fr(v, v < 10 ? 1 : 0) + ' %'), cx + Math.cos(m) * (rm - 34), cy + Math.sin(m) * (rm - 34) + 10, 28, { align: 'center', max: 70 }); }
+        else if (v >= 5) tile(it, cx + Math.cos(m) * rm - 25, cy + Math.sin(m) * rm - 25, 50); a += sw; });
       txt(OV(s, 'v', T[4].auto.v(s, c)), cx, cy + 10, 50, { align: 'center', max: 220 }); pct(OV(s, 'g', T[4].auto.g(s, c)), cx, cy + 56, 36, { align: 'center', max: 200 }); }]] },
- { id: 'duel', name: 'Duel', vid: 'Analyse express · Duel', pose: 'boxe', need: [NEED.hist], auto: { pa: s => sgn(perf(s.a[0], s.yrs)), pb: s => sgn(perf(s.b[0], s.yrs)) },
-  f: [['a', 'Action A', 'L', 1], ['b', 'Action B', 'L', 1], ['yrs', 'Période', 'sel', [3, 5, 10]], ['pa', 'Chiffre A', 'ov'], ['pb', 'Chiffre B', 'ov']], d: { a: [S_('EURONEXT:MC', 'LVMH', 'lvmh')], b: [S_('EURONEXT:RMS', 'Hermès', 'hermes')], yrs: 10, pa: '', pb: '' },
-  v: [['A', 'Le ring : barres qui montent', s => { const va = perf(s.a[0], s.yrs) || 0, vb = perf(s.b[0], s.yrs) || 0, pa = OV(s, 'pa', sgn(va)), pb = OV(s, 'pb', sgn(vb)), mx = Math.max(Math.abs(va), Math.abs(vb), 1);
-      txt(nameOf(s.a[0]) + ' ou ' + nameOf(s.b[0]) + ' ?', 40, 100, 86, { max: 580 }); [[s.a[0], va, pa, 40], [s.b[0], vb, pb, 350]].forEach(([k, v, p, X]) => { tile(k, X + 25, 130, 170); const h = Math.max(30, 250 * Math.abs(v) / mx), base = 700;
+ { id: 'duel', name: 'Duel', vid: 'Analyse express · Duel', pose: 'boxe', need: [NEED.hist], auto: { na: s => nameOf(s.a[0]), nb: s => nameOf(s.b[0]), pa: s => sgn(perf(s.a[0], duelY(s))), pb: s => sgn(perf(s.b[0], duelY(s))) },
+  f: [['a', 'Action A', 'L', 1], ['b', 'Action B', 'L', 1], ['na', 'Nom affiché A (raccourci)', 'ov'], ['nb', 'Nom affiché B (raccourci)', 'ov'], ['yrs', 'Période', 'sel', [1, 2, 3, 5, 7, 10, 15, 20, 25, [99, 'Max (historique commun)']]], ['pa', 'Chiffre A', 'ov'], ['pb', 'Chiffre B', 'ov']], d: { a: [S_('EURONEXT:MC', 'LVMH', 'lvmh')], b: [S_('EURONEXT:RMS', 'Hermès', 'hermes')], yrs: 10, na: '', nb: '', pa: '', pb: '' },
+  v: [['A', 'Le ring : barres qui montent', s => { const Y2 = duelY(s), va = perf(s.a[0], Y2) || 0, vb = perf(s.b[0], Y2) || 0, pa = OV(s, 'pa', sgn(va)), pb = OV(s, 'pb', sgn(vb)), mx = Math.max(Math.abs(va), Math.abs(vb), 1);
+      txt(OV(s, 'na', nameOf(s.a[0])) + ' ou ' + OV(s, 'nb', nameOf(s.b[0])) + ' ?', 40, 100, 86, { max: 580 }); [[s.a[0], va, pa, 40], [s.b[0], vb, pb, 350]].forEach(([k, v, p, X]) => { tile(k, X + 25, 130, 170); const h = Math.max(30, 250 * Math.abs(v) / mx), base = 700;
         x.fillStyle = v >= 0 ? '#3DFF7A' : '#FF3B3B'; rr(X + 45, base - h, 130, h, 10); x.fill(); x.lineWidth = 4; x.strokeStyle = '#000'; x.stroke(); txt(p, X + 110, base - h - 14, 62, { align: 'center', max: 220 }); });
-      ybox('VS', 305, 240, 66, { align: 'center' }); txt('en ' + s.yrs + ' ans', 305, 345, 36, { align: 'center' }); }],
-     ['B', 'Les deux courbes', s => { const A = hs(s.a[0], s.yrs), B2 = hs(s.b[0], s.yrs); ybox('Qui gagne ?', 40, 130, 110); if (A.length < 2 || B2.length < 2) return;
+      ybox('VS', 305, 240, 66, { align: 'center' }); txt('en ' + yTxt(Y2), 305, 345, 36, { align: 'center' }); }],
+     ['B', 'Les deux courbes', s => { const Y2 = duelY(s), A = hs(s.a[0], Y2), B2 = hs(s.b[0], Y2); ybox('Qui gagne ?', 40, 130, 110); if (A.length < 2 || B2.length < 2) return;
       const n = Math.min(A.length, B2.length), a = A.slice(-n).map(v => v / A[A.length - n] * 100), b = B2.slice(-n).map(v => v / B2[B2.length - n] * 100);
       const all = a.concat(b), mn = Math.min(...all), mx = Math.max(...all), X0 = 40, W = 520, Y0 = 180, H = 430, px = i => X0 + W * i / (n - 1), py = v => Y0 + H - H * (v - mn) / (mx - mn);
       [[b, '#fff'], [a, Y]].forEach(([d, c]) => { x.strokeStyle = '#000'; x.lineWidth = 14; x.lineJoin = 'round'; x.beginPath(); d.forEach((v, i) => i ? x.lineTo(px(i), py(v)) : x.moveTo(px(i), py(v))); x.stroke(); x.strokeStyle = c; x.lineWidth = 7; x.stroke(); });
       let ya = py(a[n - 1]) - 42, yb = py(b[n - 1]) - 42; if (Math.abs(ya - yb) < 92){ if (ya < yb) yb = ya + 92; else ya = yb + 92; } tile(s.a[0], 572, ya, 84); tile(s.b[0], 572, yb, 84);
-      x.strokeStyle = Y; x.lineWidth = 4; x.strokeRect(568, ya - 4, 92, 92); txt('en ' + s.yrs + ' ans · base 100', 40, 680, 40); }],
-     ['C', 'Multiplicateurs', s => { const ma = mult(s.a[0], s.yrs) || 1, mb = mult(s.b[0], s.yrs) || 1, win = ma >= mb; txt('En ' + s.yrs + ' ans', 40, 100, 80);
+      x.strokeStyle = Y; x.lineWidth = 4; x.strokeRect(568, ya - 4, 92, 92); txt('en ' + yTxt(Y2) + ' · base 100', 40, 680, 40); }],
+     ['C', 'Multiplicateurs', s => { const Y2 = duelY(s), ma = mult(s.a[0], Y2) || 1, mb = mult(s.b[0], Y2) || 1, win = ma >= mb; txt('En ' + yTxt(Y2), 40, 100, 80);
       [[s.a[0], ma, 160, win], [s.b[0], mb, 400, !win]].forEach(([k, m, Yy, w]) => { tile(k, 40, Yy, 190); const t = 'x' + fr(m, 1); if (w) ybox(t, 260, Yy + 140, 150, { max: 340 }); else txt(t, 260, Yy + 140, 150, { max: 340 }); }); txt('Lequel ?', 40, 690, 70); }]] },
  { id: 'achete', name: 'Le loup achète', vid: 'Portefeuille · Opérations', pose: 'eventail',
   f: [['l1', 'Ligne blanche', 't'], ['l2', 'Encadré jaune', 'y'], ['logo', 'Vendu (barré)', 'L', 1], ['logos', 'Achetés', 'L', 3]], d: { l1: 'Le loup', l2: 'Achète', logo: [S_('EURONEXT:AI', 'Air Liquide', 'liquide')], logos: [S_('NYSE:SPGI', 'S&P Global', 's-and-p-global'), S_('NYSE:RMD', 'ResMed', 'resmed'), S_('MIL:RACE', 'Ferrari', 'ferrari')] },
@@ -372,7 +382,7 @@ window.addEventListener('beforeunload', e => { if (dirty && D && !conflict){ sav
 
 /* ======================= INTERFACE ======================= */
 const ui = { tab: 'thumb', cur: 0, st: null, itemId: null, wolfTab: 'fav', bankQ: '', sugg: {}, err: null, busy: false };
-const newState = i => Object.assign({ pose: T[i].pose, vi: 0, wz: '' }, JSON.parse(JSON.stringify(T[i].d)));
+const newState = i => Object.assign({ pose: T[i].pose, vi: 0, wz: '', wy: '' }, JSON.parse(JSON.stringify(T[i].d)));
 let drawSeq = 0;
 async function draw(){
   const t = T[ui.cur], s = ui.st, cv = $('sdBig'); if (!cv || !t) return;
@@ -403,8 +413,7 @@ function shell(){
 function thumbView(){
   const b = $('sdBody'); if (!b) return;
   if (!ui.st) ui.st = newState(ui.cur);
-  b.innerHTML = `<div class="sd-tpls">${T.map((t, i) => `<button type="button" data-sd-tpl="${i}" class="${i === ui.cur ? 'on' : ''}">${esc(t.name)}<small>${esc(t.vid)}</small></button>`).join('')}</div>
-   <div class="sd-editor">
+  b.innerHTML = `<div class="sd-editor">
     <div class="sd-left">
       <canvas id="sdBig" width="1280" height="720" aria-label="Aperçu de la miniature"></canvas>
       <p id="sdWarn" class="sd-warn"></p>
@@ -420,8 +429,26 @@ function thumbView(){
     </div>
     <div class="sd-panel" id="sdPanel"></div>
    </div>
+   <div class="sd-gal" id="sdGal"><h3>Tous les modèles <small>clique sur un modèle pour l'ouvrir</small></h3>
+    <div class="sd-tplgrid">${T.map((t, i) => `<button type="button" data-sd-tpl="${i}" class="${i === ui.cur ? 'on' : ''}"><canvas data-sd-th="${i}" width="320" height="180"></canvas><b>${esc(t.name)}</b><small>${esc(t.vid)} · ${t.v.length} mise${t.v.length > 1 ? 's' : ''} en page</small></button>`).join('')}</div></div>
    <div class="sd-lib"><h3>Ma bibliothèque de miniatures</h3><div id="sdLib"></div></div>`;
-  panel(); lib(); draw();
+  panel(); lib(); draw(); galThumbs();
+}
+// Aperçus de la galerie : chaque modèle dessiné une fois (réglages par défaut), gardé en mémoire.
+const THUMBS = {}; let galRun = 0;
+async function galThumbs(){
+  const run = ++galRun;
+  const put = i => { const c = document.querySelector(`[data-sd-th="${i}"]`); if (c && THUMBS[i]) c.getContext('2d').drawImage(THUMBS[i], 0, 0, 320, 180); };
+  T.forEach((t, i) => put(i));
+  for (let i = 0; i < T.length; i++){
+    if (THUMBS[i]) continue;
+    const st = newState(i); let ctx = {};
+    try { ctx = await prep(T[i], st); } catch(e){}
+    if (run !== galRun) return;
+    const big = document.createElement('canvas'); big.width = 1280; big.height = 720; render(big, T[i], st, ctx);
+    const sm = document.createElement('canvas'); sm.width = 320; sm.height = 180; const sx = sm.getContext('2d'); sx.imageSmoothingQuality = 'high'; sx.drawImage(big, 0, 0, 320, 180);
+    THUMBS[i] = sm; put(i);
+  }
 }
 function fieldHtml(t, s, [k, l, ty, n]){
   if (ty === 't' || ty === 'y') return `<label class="sd-f">${ty === 'y' ? '<span><i class="sd-y"></i>' + esc(l) + '</span>' : esc(l)}<input id="sdf_${k}" data-sd-k="${k}" value="${esc(s[k])}"></label>`;
@@ -437,7 +464,7 @@ function fieldHtml(t, s, [k, l, ty, n]){
 function panel(){
   const p = $('sdPanel'); if (!p) return; const t = T[ui.cur], s = ui.st;
   const fav = Object.keys(POSES);
-  p.innerHTML = `<h3>${esc(t.name)}</h3><p class="sd-sub">Vidéos : ${esc(t.vid)}${t.note ? ' · ' + esc(t.note) : ''}</p>
+  p.innerHTML = `<div class="sd-phead"><h3>${esc(t.name)}</h3><button type="button" class="sd-chg" data-sd-act="gal">▦ Changer de modèle</button></div><p class="sd-sub">Vidéos : ${esc(t.vid)}${t.note ? ' · ' + esc(t.note) : ''}</p>
    <div class="sd-grp"><span>Mise en page</span><div class="sd-vars">${t.v.map((v, i) => `<button type="button" data-sd-v="${i}" class="${s.vi === i ? 'on' : ''}">${v[0]} · ${esc(v[1])}</button>`).join('')}</div></div>
    ${t.f.map(f => fieldHtml(t, s, f)).join('')}
    <div class="sd-grp"><span>Loup</span>
@@ -446,6 +473,7 @@ function panel(){
     ${ui.wolfTab === 'mine' ? '<label class="sd-upl">＋ Ajouter une image (fichier, ou Ctrl+V ici)<input type="file" id="sdUpload" accept="image/png,image/jpeg,image/webp" hidden></label>' : ''}
     <div class="sd-poses" id="sdPoses">${ui.wolfTab === 'fav' ? fav.map(k => poseBtn(k, k.replace('_', ' '))).join('') : ui.wolfTab === 'mine' ? (D && D.custom.length ? D.custom.map(c => poseBtn('media:' + c.f, c.name || 'image')).join('') : '<p class="sd-sub">Aucune image ajoutée.</p>') : '<p class="sd-sub">Chargement…</p>'}</div>
     <label class="sd-f">Taille du loup<select data-sd-k="wz">${[['', 'Normale'], ['.92', '92 %'], ['.86', '86 %'], ['.8', '80 %']].map(([v, l]) => `<option value="${v}" ${String(s.wz) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    <label class="sd-f">Position du loup (si l’image est plus haute que la miniature)<select data-sd-k="wy">${[['', 'Haut de l’image (tête entière)'], ['.25', 'Un peu plus bas'], ['.5', 'Centré'], ['1', 'Bas de l’image']].map(([v, l]) => `<option value="${v}" ${String(s.wy == null ? '' : s.wy) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
    </div>`;
   if (ui.wolfTab === 'bank') bankGrid();
 }
@@ -503,7 +531,7 @@ document.addEventListener('click', e => {
   const page = $(PAGE_ID); if (!page || !page.contains(e.target)) return;
   const b = e.target.closest('button'); if (!b) return; const ds = b.dataset;
   if (ds.sdTab){ if (ui.tab === 'short' && ds.sdTab !== 'short') SHORT.stop(); ui.tab = ds.sdTab; shell(); return; }
-  if (ds.sdTpl != null){ ui.cur = +ds.sdTpl; ui.st = newState(ui.cur); ui.itemId = null; thumbView(); return; }
+  if (ds.sdTpl != null){ ui.cur = +ds.sdTpl; ui.st = newState(ui.cur); ui.itemId = null; thumbView(); const top = $('sdBody'); if (top) top.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
   if (ds.sdV != null){ ui.st.vi = +ds.sdV; panel(); draw(); return; }
   if (ds.sdWt){ ui.wolfTab = ds.sdWt; panel(); return; }
   if (ds.sdPose){ ui.st.pose = ds.sdPose; page.querySelectorAll('[data-sd-pose]').forEach(z => z.classList.toggle('on', z === b)); draw(); return; }
@@ -514,6 +542,7 @@ document.addEventListener('click', e => {
   if (ds.sdAct === 'save'){ saveItem(false); return; }
   if (ds.sdAct === 'saveas'){ saveItem(true); return; }
   if (ds.sdAct === 'png'){ downloadPng(); return; }
+  if (ds.sdAct === 'gal'){ const g = $('sdGal'); if (g) g.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
   if (ds.sdOpen){ const it = D.items[ds.sdOpen]; const i = T.findIndex(t => t.id === it.tpl); if (i < 0) return; ui.cur = i; ui.st = Object.assign(newState(i), JSON.parse(JSON.stringify(it.state))); ui.itemId = ds.sdOpen; thumbView(); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
   if (ds.sdDel){ if (b.dataset.armed !== '1'){ b.dataset.armed = '1'; b.textContent = 'Sûr ?'; setTimeout(() => { if (b.isConnected){ b.dataset.armed = ''; b.textContent = '🗑'; } }, 3000); return; }
     const it = D.items[ds.sdDel]; D.trash.push(Object.assign({ id: ds.sdDel, deletedAt: new Date().toISOString() }, it)); delete D.items[ds.sdDel]; pendingDeleted.push(ds.sdDel); if (ui.itemId === ds.sdDel) ui.itemId = null; markDirty(); lib(); return; }
