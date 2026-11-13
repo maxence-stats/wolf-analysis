@@ -6793,6 +6793,8 @@ function renderCompany(nom){
   // destroyCharts() ne s'exécute plus loin dans cette fonction).
   destroyCharts();
   loadStockChart(latest.ticker, nom);
+  // Refonte v3 : graphiques « Cours & régression » et « Valorisation » (js/analyse-v3.js), données TradingView.
+  if (window.ANALYSE_V3) window.ANALYSE_V3.render(nom);
 
   renderHistoricalCharts(nom, hist, years, latest);
 
@@ -6978,7 +6980,7 @@ function renderHistoricalCharts(nom, hist, years, latest){
 
   destroyHistoricalCharts();
   HISTORICAL_CHART_KEYS.forEach(key => {
-    chartInstances[key] = makeChart(key, HISTORICAL_CHART_CANVAS_ID[key], buildHistoricalChartConfig(key, displayHist, displayYears));
+    chartInstances[key] = makeChart(key, HISTORICAL_CHART_CANVAS_ID[key], thinHistoricalConfig(buildHistoricalChartConfig(key, displayHist, displayYears)));
   });
 
   const pfcfMedian10 = (fmpCharts || tv) ? medianOfLastYears(chartHist, 'pFcf', 10) : latest.medianePFCF;
@@ -6991,6 +6993,20 @@ function renderHistoricalCharts(nom, hist, years, latest){
 // coup, voir ensureDocumentsRealData) : détruire "stock" en cours de route le ferait
 // disparaître sans jamais être recréé, personne ne sait qu'il faut le refaire depuis
 // ici. Destruction scopée aux seules clés HISTORICAL_CHART_KEYS.
+// Refonte v3 (2026-11-13) : traits FINS (« pas patte de mouche »), points discrets, valeur de l'année au survol
+// sur toutes les séries à la fois. Appliqué aux seuls graphiques de l'onglet Analyse (pas à la Comparaison).
+function thinHistoricalConfig(cfg){
+  (cfg.data.datasets || []).forEach(d => {
+    const isLine = (d.type || cfg.type) === 'line';
+    if (isLine){ d.borderWidth = 1.5; d.pointRadius = 1.8; d.pointHoverRadius = 4; d.pointBorderWidth = 0; }
+    else { d.borderRadius = 3; d.maxBarThickness = 22; }
+  });
+  cfg.options = cfg.options || {};
+  cfg.options.interaction = { mode:'index', intersect:false };
+  cfg.options.plugins = cfg.options.plugins || {};
+  cfg.options.plugins.tooltip = Object.assign({ backgroundColor:'rgba(13,16,19,0.95)', borderColor:'#262E36', borderWidth:1, padding:9 }, cfg.options.plugins.tooltip || {});
+  return cfg;
+}
 function destroyHistoricalCharts(){
   HISTORICAL_CHART_KEYS.forEach(key => {
     if (chartInstances[key]){ chartInstances[key].destroy(); delete chartInstances[key]; }

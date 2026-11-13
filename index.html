@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Anton&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<link rel="stylesheet" href="css/style.css?v=20261113c">
+<link rel="stylesheet" href="css/style.css?v=20261113e">
 </head>
 <body>
 <div class="wrap">
@@ -143,7 +143,8 @@
       </div>
     </div>
 
-    <div class="gauge-card">
+    <!-- Jauge remplacée par le graphique « Valorisation » (refonte v3) : masquée, gardée pour les exports PDF / panier -->
+    <div class="gauge-card" style="display:none;">
       <div class="gauge-top">
         <div class="gauge-title">Positionnement sur l'échelle de valorisation</div>
         <div class="gauge-verdict" id="verdictBadge">—</div>
@@ -167,6 +168,20 @@
       <div class="ratio-card"><div class="k">FCF PEG</div><div class="v" id="rFcfpeg">—</div><div class="sub">prix / FCF rapporté à la croissance</div></div>
       <div class="ratio-card"><div class="k">Médiane P/FCF</div><div class="v" id="rMedFcf">—</div><div class="sub">multiple médian historique</div></div>
       <div class="ratio-card"><div class="k">P/FCF actuel</div><div class="v" id="rPfcfActuel">—</div><div class="sub">multiple payé aujourd'hui</div></div>
+    </div>
+
+    <!-- Refonte v3 (maquette validée 2026-11-13) : deux graphiques séparés, voir js/analyse-v3.js -->
+    <div class="av3-charts" id="av3Charts">
+      <div class="av3-card">
+        <div class="av3-head"><h2 class="av3-title">Cours &amp; régression linéaire</h2><span id="av3RegBadge"></span><span class="av3-tools" id="av3RegTools"></span></div>
+        <div class="av3-holder"><canvas id="av3RegCanvas" role="img" aria-label="Cours hebdomadaire avec droite de régression et bandes à un et deux écarts-types"></canvas><div class="av3-empty" id="av3RegEmpty">Chargement du cours TradingView…</div></div>
+        <div class="av3-legend"><span><i style="background:#F2C43D"></i>Cours</span><span><i style="background:#E9EBEE"></i>Régression</span><span><i class="dash" style="border-color:#4A9FE0"></i>±1σ</span><span><i class="dash" style="border-color:#E5636B"></i>±2σ</span><span class="av3-note">Régression calculée sur la période affichée · clôtures hebdo TradingView</span></div>
+      </div>
+      <div class="av3-card">
+        <div class="av3-head"><h2 class="av3-title">Valorisation</h2><span id="av3ValoBadge"></span><span class="av3-tools" id="av3ValoTools"></span></div>
+        <div class="av3-holder"><canvas id="av3ValoCanvas" role="img" aria-label="Cours face aux scénarios pessimiste, réaliste et optimiste"></canvas><div class="av3-empty" id="av3ValoEmpty">Chargement du cours TradingView…</div></div>
+        <div class="av3-legend"><span class="av3-note" id="av3ValoNote"></span></div>
+      </div>
     </div>
 
     <div class="section-label" id="analyseValoSectionLabel" style="display:none;">Valorisation enregistrée</div>
@@ -1837,11 +1852,12 @@
   </div>
 </div>
 
-<script src="js/app.js?v=20261112c"></script>
+<script src="js/app.js?v=20261113a"></script>
 <script src="js/portefeuille-ia.js?v=20260920g"></script>
 <script src="js/mes-portefeuilles.js?v=20261112i"></script>
 <script src="js/valo-multiples.js?v=20261111b"></script>
 <script src="js/liste-prix.js?v=20261111h"></script>
+<script src="js/analyse-v3.js?v=20261113c"></script>
 <script src="js/atelier.js?v=20261112d"></script>
 <script src="js/publier.js?v=20261111c"></script>
 <script src="js/sauvegardes.js?v=20261112a"></script>

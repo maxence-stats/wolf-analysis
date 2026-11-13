@@ -452,6 +452,13 @@ en intensité si retour utilisateur, mais **ne pas revenir à des opacités ~0.0
 ## Fonctionnalités — état actuel
 
 ### Onglet Analyse (fait, fonctionnel)
+- **Refonte v3 (2026-11-13, maquette « Analyse v3 » de https://claude.ai/artifact/PFPaha6LoET5dQJABiD8j9)** : `js/analyse-v3.js`
+  (`ANALYSE_V3.render(nom)`, appelé par `renderCompany`), CSS `.av3-*` en fin de style.css. Sous les ratios, deux graphiques séparés :
+  « Cours & régression linéaire » (clôtures hebdo TradingView `loadTvWeeklyPrices` + cours en direct, régression calculée sur la
+  période affichée, ±1σ ±2σ, position en σ, moy. 200/30 sem. en option, 1a→Max, 10a par défaut) et « Valorisation » (scénarios SAISIS
+  dans Prix par secteur via `PRIX_UI.pubItems()`, repli sur le prix juste de la fiche avec un avertissement ; dégradé rouge→jaune→vert ;
+  verdict ±15 % comme le short Valorisation). La jauge est MASQUÉE (remplacée, code gardé pour exports). Graphiques historiques :
+  traits fins + survol multi-séries (`thinHistoricalConfig`), 3 par ligne. Réglages : localStorage `wolfAnalyseV3` (confort).
 - Header entreprise (logo, nom, ticker, secteur/sous-secteur, prix actuel)
 - Jauge de valorisation + verdict (Survalorisée / Équitable / Zone d'achat)
 - 8 ratios clés (prix juste, prix cible, écart, rendement dividende, rendement estimé

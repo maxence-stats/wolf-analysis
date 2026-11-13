@@ -3499,3 +3499,44 @@
 .pg-it img,.pg-it i{width:100%;aspect-ratio:16/9;border-radius:8px;object-fit:cover;background:#0B0D10;display:block}
 .pg-it b{font:700 13px var(--font-body)}.pg-it span{font-size:12px;color:var(--text-dim)}
 .pg-it .sd-del{position:absolute;top:12px;right:12px}
+
+/* ==========================================================================
+   ONGLET ANALYSE — REFONTE v3 (2026-11-13, maquette « Analyse v3 ») : graphiques « Cours & régression »
+   et « Valorisation » (js/analyse-v3.js). DA sombre, titres Anton, traits fins.
+   ========================================================================== */
+.av3-charts{display:grid;grid-template-columns:1fr;gap:16px;margin:18px 0 6px;}
+.av3-card{background:var(--card-bg);border:var(--card-border);border-radius:22px;padding:18px 20px 12px;display:flex;flex-direction:column;gap:10px;min-width:0;box-shadow:var(--shadow-card);}
+.av3-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.av3-title{margin:0;font:400 26px/1.1 Anton,'Space Grotesk',sans-serif;text-transform:uppercase;letter-spacing:.3px;color:var(--text);}
+.av3-badge{display:inline-block;font:800 13px var(--font-body);border-radius:8px;padding:4px 10px;}
+.av3-badge.pos{background:#13261E;color:#4FD1A5;}
+.av3-badge.neg{background:#2A1517;color:#F08A90;}
+.av3-badge.mid{background:#1F1B10;color:#F2C43D;}
+.av3-tools{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+.av3-chip{font:700 12px var(--font-body);border:1px solid var(--hair);background:transparent;color:var(--text);border-radius:999px;padding:5px 11px;cursor:pointer;}
+.av3-chip:hover{border-color:var(--gold);}
+.av3-chip.on{background:var(--gold);border-color:var(--gold);color:#111;font-weight:800;}
+.av3-chip.on-w{background:#E9EBEE;border-color:#E9EBEE;color:#111;font-weight:800;}
+.av3-sep{width:1px;height:18px;background:var(--hair);margin:0 2px;}
+.av3-zoom-btn{font-size:14px;line-height:1;border:1px solid var(--hair);background:transparent;color:var(--text-dim);border-radius:999px;width:30px;height:28px;cursor:pointer;}
+.av3-zoom-btn:hover{color:var(--gold);border-color:var(--gold);}
+.av3-holder{position:relative;height:340px;}
+.av3-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--text-dim);font-size:13px;padding:20px;}
+.av3-legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--text-dim);}
+.av3-legend span{display:inline-flex;align-items:center;gap:6px;}
+.av3-legend i{display:inline-block;width:16px;height:2px;border-radius:2px;}
+.av3-legend i.dash{height:0;border-top:2px dashed;background:none;}
+.av3-legend .av3-note{margin-left:auto;color:var(--text-faint);}
+.av3-legend #av3ValoNote{margin-left:0;}
+.av3-legend a{color:var(--gold);}
+.av3-zoom{position:fixed;inset:0;z-index:1001;background:rgba(5,7,9,0.72);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;}
+.av3-zoom-panel{width:min(1400px,96vw);height:94vh;background:var(--card-bg);border:var(--card-border);border-radius:22px;padding:20px 22px 12px;display:flex;flex-direction:column;gap:12px;box-sizing:border-box;}
+.av3-zoom-holder{position:relative;flex:1;min-height:0;}
+.av3-zoom-foot{display:flex;align-items:center;justify-content:flex-end;gap:8px;font-size:12px;color:var(--text-dim);}
+/* 3 graphiques par ligne au plus, cartes historiques un peu plus hautes pour lire les années */
+#pageAnalyse .chart-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;}
+#pageAnalyse .chart-card{border-radius:20px;}
+#pageAnalyse .chart-holder{height:240px;}
+@media (max-width:1100px){ #pageAnalyse .chart-grid{grid-template-columns:repeat(2,minmax(0,1fr));} }
+@media (max-width:720px){ #pageAnalyse .chart-grid{grid-template-columns:1fr;} .av3-holder{height:280px;} .av3-tools{margin-left:0;} .av3-title{font-size:22px;} }
+.av3-zoom-panel .av3-head{flex-wrap:nowrap;}.av3-zoom-panel .av3-tools{flex-wrap:wrap;justify-content:flex-end;}
