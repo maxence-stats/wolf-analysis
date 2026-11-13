@@ -202,7 +202,7 @@
     <div class="chart-grid">
       <div class="chart-card wide" id="stockCard">
         <div class="chart-card-head">
-          <div><h3 id="stockCardTitle">Cours de bourse (hebdomadaire)</h3><p id="stockCardSubtitle">Clôture hebdomadaire et moyenne mobile 200 semaines</p></div>
+          <div><h3 id="stockCardTitle">Cours de bourse (hebdomadaire)</h3><p id="stockCardSubtitle">Clôtures hebdomadaires TradingView</p></div>
           <div class="chart-card-actions" id="stockChartJsActions">
             <button class="zoom-btn" onclick="openZoom('stock',&quot;Cours de bourse&quot;)" aria-label="Agrandir">⤢</button>
           </div>
@@ -222,9 +222,8 @@
         </div>
         <div class="range-buttons stock-indicator-toggles" id="stockIndicatorToggles">
           <button data-indicator="price" class="active">Prix</button>
-          <button data-indicator="regression" class="active">Régression linéaire</button>
-          <button data-indicator="sma200" class="active">SMA 200</button>
-          <button data-indicator="sma30" class="active">SMA 30</button>
+          <button data-indicator="sma200">SMA 200</button>
+          <button data-indicator="sma30">SMA 30</button>
           <button data-indicator="prixJusteCible">Prix juste / cible</button>
         </div>
         <!-- Chandeliers FMP : menus déroulants façon Wolf Labo (1 bouton par réglage
@@ -360,9 +359,9 @@
 
       <div class="chart-card">
         <div class="chart-card-head">
-          <div><h3>Marge opérationnelle &amp; ROIC</h3><p>Rentabilité d'exploitation et retour sur capital investi</p></div>
+          <div><h3>Marges brute, EBITDA &amp; nette</h3><p>Rentabilité année par année (TradingView)</p><div class="mediane-badges-row" id="badgeRoicNow"></div></div>
           <div class="chart-card-actions">
-            <button class="zoom-btn" onclick="openZoom('marges',&quot;Marge opérationnelle &amp; ROIC&quot;)" aria-label="Agrandir">⤢</button>
+            <button class="zoom-btn" onclick="openZoom('marges',&quot;Marges brute, EBITDA &amp; nette&quot;)" aria-label="Agrandir">⤢</button>
           </div>
         </div>
         <div class="chart-holder"><canvas id="chartMarges"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['marges'], &quot;Marge opérationnelle &amp; ROIC&quot;, this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
@@ -393,28 +392,28 @@
 
       <div class="chart-card">
         <div class="chart-card-head">
-          <div><h3>Operating Cash Flow par action</h3><p>Cash généré par l'activité, avant investissements</p></div>
+          <div><h3>Bénéfice par action (BPA)</h3><p>Résultat net par action, dilué</p></div>
           <div class="chart-card-actions">
-            <button class="zoom-btn" onclick="openZoom('ocf',&quot;Operating Cash Flow par action&quot;)" aria-label="Agrandir">⤢</button>
+            <button class="zoom-btn" onclick="openZoom('ocf',&quot;Bénéfice par action (BPA)&quot;)" aria-label="Agrandir">⤢</button>
           </div>
         </div>
         <div class="mediane-badges-row" id="medianeBadgesOcfAction"></div>
-        <div class="chart-holder"><canvas id="chartOCF"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['ocf'], 'Operating Cash Flow par action', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
+        <div class="chart-holder"><canvas id="chartOCF"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['ocf'], 'Bénéfice par action (BPA)', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
       </div>
 
       <div class="chart-card">
         <div class="chart-card-head">
-          <div><h3>Multiples P/FCF vs P/OCF</h3><p>Prix payé par le marché rapporté aux deux cash flows</p></div>
+          <div><h3>Multiples P/FCF vs PER</h3><p>Prix payé par le marché rapporté au cash flow libre et au bénéfice</p></div>
           <div class="chart-card-actions">
-            <button class="zoom-btn" onclick="openZoom('pfcfpocf',&quot;Multiples P/FCF vs P/OCF&quot;)" aria-label="Agrandir">⤢</button>
+            <button class="zoom-btn" onclick="openZoom('pfcfpocf',&quot;Multiples P/FCF vs PER&quot;)" aria-label="Agrandir">⤢</button>
           </div>
         </div>
         <div class="mediane-badges-row" id="medianeBadgesPfcfPocf"></div>
         <div class="range-buttons" id="pfcfPocfToggles">
           <button data-series="pfcf" class="active">P/FCF</button>
-          <button data-series="pocf" class="active">P/OCF</button>
+          <button data-series="pocf" class="active">PER</button>
         </div>
-        <div class="chart-holder"><canvas id="chartPFCFPOCF"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['pfcfpocf'], 'Multiples P/FCF vs P/OCF', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
+        <div class="chart-holder"><canvas id="chartPFCFPOCF"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['pfcfpocf'], 'Multiples P/FCF vs PER', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
       </div>
 
       <div class="chart-card">
@@ -430,22 +429,22 @@
 
       <div class="chart-card">
         <div class="chart-card-head">
-          <div><h3>Dette / OCF</h3><p>Multiple de dette nette rapporté au cash flow opérationnel</p></div>
+          <div><h3>Dette / EBITDA</h3><p>Dette totale rapportée à l'EBITDA de l'année</p></div>
           <div class="chart-card-actions">
-            <button class="zoom-btn" onclick="openZoom('dette',&quot;Dette / OCF&quot;)" aria-label="Agrandir">⤢</button>
+            <button class="zoom-btn" onclick="openZoom('dette',&quot;Dette / EBITDA&quot;)" aria-label="Agrandir">⤢</button>
           </div>
         </div>
-        <div class="chart-holder"><canvas id="chartDette"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['dette'], 'Dette / OCF', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
+        <div class="chart-holder"><canvas id="chartDette"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['dette'], 'Dette / EBITDA', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
       </div>
 
       <div class="chart-card">
         <div class="chart-card-head">
-          <div><h3>Trésorerie &amp; investissements</h3><p>Cash disponible face au cash investi (capex/croissance)</p></div>
+          <div><h3>EBITDA &amp; résultat net</h3><p>Ce que l’entreprise gagne avant et après tout, en milliards</p></div>
           <div class="chart-card-actions">
-            <button class="zoom-btn" onclick="openZoom('cash',&quot;Trésorerie &amp; investissements&quot;)" aria-label="Agrandir">⤢</button>
+            <button class="zoom-btn" onclick="openZoom('cash',&quot;EBITDA &amp; résultat net&quot;)" aria-label="Agrandir">⤢</button>
           </div>
         </div>
-        <div class="chart-holder"><canvas id="chartCash"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['cash'], &quot;Trésorerie &amp; investissements&quot;, this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
+        <div class="chart-holder"><canvas id="chartCash"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(chartInstances['cash'], &quot;EBITDA &amp; résultat net&quot;, this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
       </div>
     </div>
 
@@ -1692,7 +1691,6 @@
     </div>
     <div class="range-buttons stock-indicator-toggles" id="zoomStockIndicatorRow" style="display:none;">
       <button data-indicator="price">Prix</button>
-      <button data-indicator="regression">Régression linéaire</button>
       <button data-indicator="sma200">SMA 200</button>
       <button data-indicator="sma30">SMA 30</button>
       <button data-indicator="prixJusteCible">Prix juste / cible</button>
@@ -1852,12 +1850,12 @@
   </div>
 </div>
 
-<script src="js/app.js?v=20261113a"></script>
+<script src="js/app.js?v=20261113d"></script>
 <script src="js/portefeuille-ia.js?v=20260920g"></script>
 <script src="js/mes-portefeuilles.js?v=20261112i"></script>
 <script src="js/valo-multiples.js?v=20261111b"></script>
 <script src="js/liste-prix.js?v=20261111h"></script>
-<script src="js/analyse-v3.js?v=20261113c"></script>
+<script src="js/analyse-v3.js?v=20261113d"></script>
 <script src="js/atelier.js?v=20261112d"></script>
 <script src="js/publier.js?v=20261111c"></script>
 <script src="js/sauvegardes.js?v=20261112a"></script>

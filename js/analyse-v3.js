@@ -13,8 +13,8 @@
 (function(){
 'use strict';
 const C = { price:'#F2C43D', white:'#E9EBEE', blue:'#4A9FE0', red:'#E5636B', yellow:'#F2C43D', green:'#3DC88C',
-  sma200:'#F0A35E', sma30:'#8B7FE8', grid:'#20272E', dim:'#8B93A0', bg:'#0D1013' };
-const ui = { regRange: 10, valoRange: 2, bands: true, sma200: false, sma30: false };
+  sma200:'#F0A35E', sma100:'#8B7FE8', sma50:'#4FD1A5', grid:'#20272E', dim:'#8B93A0', bg:'#0D1013' };
+const ui = { regRange: 10, valoRange: 2, bands: true, sma200: false, sma100: false, sma50: false };
 try{ Object.assign(ui, JSON.parse(localStorage.getItem('wolfAnalyseV3') || '{}')); }catch(e){}
 const saveUi = () => { try{ localStorage.setItem('wolfAnalyseV3', JSON.stringify(ui)); }catch(e){} };
 const cache = {};          // nom -> { at, data:{dates, closes, ccy, sym} | null }
@@ -113,15 +113,18 @@ function regConfig(ctx, big){
   const ds = [];
   if (r && ui.bands){
     const band = k => r.line.map(v => v + k * r.sd);
-    ds.push(line('+2σ', band(2), C.red, { borderDash: [5, 4], fill: '+1', backgroundColor: 'rgba(139,127,232,0.07)' }));
-    ds.push(line('−2σ', band(-2), C.red, { borderDash: [5, 4] }));
-    ds.push(line('+1σ', band(1), C.blue, { borderDash: [5, 4] }));
-    ds.push(line('−1σ', band(-1), C.blue, { borderDash: [5, 4] }));
+    const w = big ? 2.2 : 1.6;
+    ds.push(line('+2σ', band(2), C.red, { borderDash: [6, 5], borderWidth: w, fill: '+1', backgroundColor: 'rgba(139,127,232,0.07)' }));
+    ds.push(line('−2σ', band(-2), C.red, { borderDash: [6, 5], borderWidth: w }));
+    ds.push(line('+1σ', band(1), C.blue, { borderDash: [6, 5], borderWidth: w }));
+    ds.push(line('−1σ', band(-1), C.blue, { borderDash: [6, 5], borderWidth: w }));
   }
-  if (r) ds.push(line('Régression', r.line, C.white, { borderWidth: 1.1 }));
-  if (ui.sma200) ds.push(line('Moy. 200 sem.', s.sma200, C.sma200, { borderWidth: 1.2 }));
-  if (ui.sma30) ds.push(line('Moy. 30 sem.', s.sma30, C.sma30, { borderWidth: 1 }));
-  ds.push(line('Cours', s.closes, C.price, { borderWidth: big ? 1.8 : 1.5, pointRadius: s.closes.map((_, i) => i === s.closes.length - 1 ? 4 : 0) }));
+  const k = big ? 1.5 : 1;
+  if (r) ds.push(line('Régression', r.line, C.white, { borderWidth: 1.6 * k }));
+  if (ui.sma200) ds.push(line('MM 200 sem.', s.sma200, C.sma200, { borderWidth: 1.8 * k }));
+  if (ui.sma100) ds.push(line('MM 100 sem.', s.sma100, C.sma100, { borderWidth: 1.8 * k }));
+  if (ui.sma50) ds.push(line('MM 50 sem.', s.sma50, C.sma50, { borderWidth: 1.8 * k }));
+  ds.push(line('Cours', s.closes, C.price, { borderWidth: 2.2 * k, pointRadius: s.closes.map((_, i) => i === s.closes.length - 1 ? 5 : 0) }));
   return { type: 'line', data: { labels: s.dates, datasets: ds },
     options: { responsive: true, maintainAspectRatio: false, animation: false,
       interaction: { mode: 'index', intersect: false },
@@ -138,11 +141,11 @@ function valoConfig(ctx, big){
   const vals = [s.closes, [sc.pess, sc.real, sc.opt].filter(v => v != null)].flat();
   const lo = Math.min(...vals), hi = Math.max(...vals), pad = (hi - lo) * 0.08 || hi * 0.05;
   const ds = [];
-  const iPess = sc.pess != null ? ds.push(line('Pessimiste', flat(sc.pess), C.red, { borderDash: [8, 6], borderWidth: 1.3, pointHoverRadius: 0 })) - 1 : -1;
-  if (sc.real != null) ds.push(line(ctx.scSource === 'fiche' ? 'Prix juste' : 'Réaliste', flat(sc.real), C.yellow, { borderDash: [8, 6], borderWidth: 1.3, pointHoverRadius: 0 }));
-  if (sc.opt != null) ds.push(line('Optimiste', flat(sc.opt), C.green, { borderDash: [8, 6], borderWidth: 1.3, pointHoverRadius: 0,
+  const iPess = sc.pess != null ? ds.push(line('Pessimiste', flat(sc.pess), C.red, { borderDash: [8, 6], borderWidth: big ? 2.6 : 1.8, pointHoverRadius: 0 })) - 1 : -1;
+  if (sc.real != null) ds.push(line(ctx.scSource === 'fiche' ? 'Prix juste' : 'Réaliste', flat(sc.real), C.yellow, { borderDash: [8, 6], borderWidth: big ? 2.6 : 1.8, pointHoverRadius: 0 }));
+  if (sc.opt != null) ds.push(line('Optimiste', flat(sc.opt), C.green, { borderDash: [8, 6], borderWidth: big ? 2.6 : 1.8, pointHoverRadius: 0,
     fill: iPess >= 0 ? iPess : false, backgroundColor: gradientFill }));
-  ds.push(line('Cours', s.closes, '#FFFFFF', { borderWidth: big ? 1.8 : 1.5, pointRadius: s.closes.map((_, i) => i === n - 1 ? 4 : 0) }));
+  ds.push(line('Cours', s.closes, '#FFFFFF', { borderWidth: big ? 3.2 : 2.2, pointRadius: s.closes.map((_, i) => i === n - 1 ? 4 : 0) }));
   return { type: 'line', data: { labels: s.dates, datasets: ds },
     options: { responsive: true, maintainAspectRatio: false, animation: false,
       interaction: { mode: 'index', intersect: false },
@@ -198,8 +201,7 @@ function headsHtml(ctx){
   document.getElementById('av3RegBadge').innerHTML = zl ? `<span class="av3-badge ${zl.cls}">${(r.z >= 0 ? '+' : '−') + nf(Math.abs(r.z), 1)} σ : ${zl.t}</span>` : '';
   document.getElementById('av3RegTools').innerHTML =
     `<button type="button" class="av3-chip${ui.bands ? ' on-w' : ''}" data-tog="bands">${ui.bands ? '✓ ' : ''}±1σ ±2σ</button>` +
-    `<button type="button" class="av3-chip${ui.sma200 ? ' on-w' : ''}" data-tog="sma200">${ui.sma200 ? '✓ ' : ''}Moy. 200 sem.</button>` +
-    `<button type="button" class="av3-chip${ui.sma30 ? ' on-w' : ''}" data-tog="sma30">${ui.sma30 ? '✓ ' : ''}Moy. 30 sem.</button>` +
+    [200, 100, 50].map(n => `<button type="button" class="av3-chip${ui['sma' + n] ? ' on-w' : ''}" data-tog="sma${n}" title="Moyenne mobile ${n} semaines">${ui['sma' + n] ? '✓ ' : ''}MM${n}</button>`).join('') +
     '<span class="av3-sep"></span>' + seg('reg', [[1, '1a'], [3, '3a'], [5, '5a'], [10, '10a'], [20, '20a'], ['max', 'Max']], ui.regRange) +
     '<button type="button" class="av3-zoom-btn" data-zoom="reg" aria-label="Agrandir le graphique cours et régression">⤢</button>';
   const v = verdict(ctx.live, ctx.sc.real, ctx.scSource);
@@ -250,7 +252,7 @@ async function render(nom){
   let full = null;
   if (px && px.closes && px.closes.length > 20){
     const s = seriesWithLive(px, latest);
-    full = { dates: s.dates, closes: s.closes, sma200: sma(s.closes, 200), sma30: sma(s.closes, 30) };
+    full = { dates: s.dates, closes: s.closes, sma200: sma(s.closes, 200), sma100: sma(s.closes, 100), sma50: sma(s.closes, 50) };
   }
   lastCtx = { nom, sym, full, loading: false, sc: scen.sc, scSource: scen.src, scAt: scen.at, live: full ? full.closes[full.closes.length - 1] : latest.prixActuel, liveAt: latest.tvLiveAt };
   drawAll();

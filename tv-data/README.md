@@ -32,9 +32,15 @@ Les banques/assureurs (Crédit Agricole, BNP, Société Générale, AXA) n'ont p
 
 Sources des morceaux qui ne viennent pas du connecteur TradingView :
 - dividende par action historique : Yahoo Finance (`fetch_dividends.py`) ;
-- clôtures de fin d'année PASSÉES : archive de cours déjà sur le PC (`data/prices-*.json`, fait définitif) — sauf Prysmian (TradingView) ;
-- ROIC / marge opérationnelle / trésorerie / dette-OCF HISTORIQUES : TradingView n'en fournit pas la série ; l'appli les complète année par
-  année depuis l'archive FMP déjà sur le PC (`mergeTvWithFmpHistory`, `js/app.js`). Valeurs ACTUELLES : TradingView.
+- dividende par action : TradingView (`dps_common_stock_prim_issue_fy_h`, par exercice) ; Yahoo seulement pour une année absente.
+
+**Plus rien ne vient de FMP (règle du 2026-11-13).** `fetch_tv_extra.py` (websocket + scanner publics TradingView) ajoute à chaque
+`raw/<nom>.json` : `annual` = clôtures de fin d'année ajustées des splits (remplace l'archive FMP, qui donnait par ex. pour SAP le
+cours en dollars de l'ADR) et `extra` = CA, EBITDA, marge brute, résultat net, dette totale, dividende (20 exercices). D'où les
+séries `margeBrute`, `margeEbitda`, `margeNette`, `ebitda`, `resultatNet`, `detteTotale`, `detteEbitda`.
+TradingView ne publie PAS en accès public l'historique de la marge opérationnelle, du ROIC, de la trésorerie ni de l'OCF (champs
+`*_fy_h` vides, vérifié) : seules leurs valeurs ACTUELLES existent. L'onglet Analyse montre donc à la place : marges brute / EBITDA /
+nette, BPA, P/FCF vs PER, dette / EBITDA, EBITDA & résultat net.
 
 ## Mise à jour hebdomadaire (à demander à Claude : « mets à jour TradingView »)
 
@@ -42,7 +48,7 @@ Sources des morceaux qui ne viennent pas du connecteur TradingView :
 2. `python fetch_dividends.py` (dividendes, ~1 min).
 3. Tous les trimestres (après publication de résultats) : `get_financial_history` (`period=fy`, `date_from=2000-01-01`) pour les
    entreprises concernées → `rawlib.add(...)`.
-4. `python build_tv_analyse.py` → recharger l'appli (raccourci Bureau).
+4. `python fetch_tv_extra.py` (une fois par trimestre, ~5 min), puis `python build_tv_analyse.py` → recharger l'appli (raccourci Bureau).
 
 ## Entreprise hors liste (recherche à la volée)
 

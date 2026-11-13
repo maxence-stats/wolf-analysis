@@ -56,28 +56,24 @@ def LOGO_PATH(fmp_symbol):
     return ('data/logos/' + f) if f and os.path.exists(os.path.join(ROOT, 'data', 'logos', f)) else ''
 
 
-def local_year_closes(fmp_symbol):
-    """Clôtures de fin d'année déjà présentes sur le PC (archive de cours data/prices-<symbole>.json, ajustée des
-    splits). Utilisée seulement pour les années PASSÉES, quand la clôture annuelle TradingView n'a pas été
-    rapatriée : une clôture de fin d'année passée est un fait définitif, identique d'une source à l'autre."""
-    path = os.path.join(ROOT, 'data', 'prices-%s.json' % fmp_symbol)
-    if not fmp_symbol or not os.path.exists(path):
-        raise FileNotFoundError("pas d archive de cours pour %s" % fmp_symbol)
-    rows = json.load(open(path, encoding='utf-8'))
-    last = {}
-    for r in rows:
-        last[int(r['t'][:4])] = r['c']          # tri croissant : la dernière valeur de l'année l'emporte
-    y0, y1 = min(last), max(last)
-    return {'firstYear': y0, 'c': [last.get(y) for y in range(y0, y1 + 1)]}
-
-
 def build_company(nom, uni, raw, divs):
     fy = raw['fy']
     labels = fy['labels']
     snap = raw.get('snapshot') or SNAPSHOTS.get(uni['tv'])
     if snap is None:
         raise KeyError('pas de snapshot TradingView pour %s' % uni['tv'])
-    annual = raw.get('annual') or local_year_closes(uni.get('fmp'))
+    # Clôtures de fin d'année : TradingView UNIQUEMENT (fetch_tv_extra.py) — plus jamais l'archive FMP (règle du 2026-11-13).
+    annual = raw.get('annual')
+    if not annual:
+        raise KeyError("pas de clôtures annuelles TradingView pour %s : lancer fetch_tv_extra.py" % uni['tv'])
+    extra = raw.get('extra') or {}
+
+    def ex(key, year):
+        arr, fy_last = extra.get(key), extra.get('fyLast')
+        if not arr or not fy_last:
+            return None
+        i = fy_last - year
+        return arr[i] if 0 <= i < len(arr) else None
     first_close_year = annual['firstYear']
     closes = annual['c']
 
@@ -105,8 +101,18 @@ def build_company(nom, uni, raw, divs):
             'actions': safe_div(shares, 1e6), 'fcfParAction': fcf_ps,
             'pFcf': (price / fcf_ps) if (price and fcf_ps and fcf_ps > 0) else None,
             'per': (price / eps) if (price and eps and eps > 0) else None,
-            'dividende': div_by_year.get(y),
+            # dividende par action de l'EXERCICE (TradingView) ; Yahoo seulement si TradingView n'a pas l'année
+            'dividende': ex('dps', y) if ex('dps', y) is not None else div_by_year.get(y),
         }
+        # séries TradingView (scanner public) : marges, EBITDA, dette — ratios calculés dans la même devise
+        rv, eb, gp, nix, debt = ex('revenue', y), ex('ebitda', y), ex('grossProfit', y), ex('netIncome', y), ex('totalDebt', y)
+        years[y].update({
+            'margeBrute': (gp / rv * 100.0) if (gp is not None and rv) else None,
+            'margeEbitda': (eb / rv * 100.0) if (eb is not None and rv) else None,
+            'margeNette': (nix / rv * 100.0) if (nix is not None and rv) else None,
+            'ebitda': safe_div(eb, 1e6), 'resultatNet': safe_div(nix, 1e6), 'detteTotale': safe_div(debt, 1e6),
+            'detteEbitda': (debt / eb) if (debt is not None and eb and eb > 0) else None,
+        })
 
     ys = sorted(years)
     # P/FCF médian sur 10 exercices glissants, CAGR sur 5/10/20 ans

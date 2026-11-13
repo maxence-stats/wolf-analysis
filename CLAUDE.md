@@ -459,6 +459,13 @@ en intensité si retour utilisateur, mais **ne pas revenir à des opacités ~0.0
   dans Prix par secteur via `PRIX_UI.pubItems()`, repli sur le prix juste de la fiche avec un avertissement ; dégradé rouge→jaune→vert ;
   verdict ±15 % comme le short Valorisation). La jauge est MASQUÉE (remplacée, code gardé pour exports). Graphiques historiques :
   traits fins + survol multi-séries (`thinHistoricalConfig`), 3 par ligne. Réglages : localStorage `wolfAnalyseV3` (confort).
+- **Plus aucun FMP dans l'onglet Analyse (2026-11-13)** : cours de bourse = clôtures hebdo TradingView seules (chandeliers FMP +
+  Yahoo et replis Sheet/Yahoo/Stooq retirés, `loadStockChartCandle` inactif), sans régression par défaut (bouton retiré, la
+  régression est dans « Cours & régression » qui a MM200 / MM100 / MM50) ; historique sans `mergeTvWithFmpHistory` ; recherche
+  limitée aux fiches TradingView + recherche TradingView (plus la base FMP élargie). Cartes changées faute d'historique public
+  TradingView : « Marges brute, EBITDA & nette » (+ ROIC et marge op. ACTUELS en badges), « BPA », « P/FCF vs PER »,
+  « Dette / EBITDA », « EBITDA & résultat net ». Traits 2,25 px / barres larges, et nettement plus épais en grand (`renderZoomChart`).
+  Reste FMP ailleurs : Documents financiers, Revenus, Classement, Comparaison, Portefeuille IA, Wolf Labo (à traiter).
 - Header entreprise (logo, nom, ticker, secteur/sous-secteur, prix actuel)
 - Jauge de valorisation + verdict (Survalorisée / Équitable / Zone d'achat)
 - 8 ratios clés (prix juste, prix cible, écart, rendement dividende, rendement estimé

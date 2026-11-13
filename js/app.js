@@ -548,7 +548,8 @@ const TV_ROW_FIELDS = ['annee','lienImage','ticker','secteur','sousSecteur','pri
   'dividende','rendementDiv','cagrDiv5','cagrDiv10','cagrDiv20','payoutRatio','fcfpeg','fcfParAction','cagrFcf5','cagrFcf10',
   'cagrFcf20','pFcf','medianePFCF','medianePFCF20','pOcf','cagrOcf5','cagrOcf10','cagrOcf20','medianePOcf','medianePOcf20','per',
   'eps','cagrEps5','cagrEps10','cagrEps20','ocfParAction','ca','cagrCA5','cagrCA10','cagrCA20','margeOp','roic','detteOCF',
-  'detteNetteAction','cash','cashInvesti','actions','cagrActions','devise'];
+  'detteNetteAction','cash','cashInvesti','actions','cagrActions','devise',
+  'margeBrute','margeEbitda','margeNette','ebitda','resultatNet','detteTotale','detteEbitda'];
 let tvAnalyseMeta = null; // { generatedAt, source } du dernier fichier chargé
 
 function handleTvAnalyseData(data){
@@ -6560,7 +6561,8 @@ function initSearch(){
     // Étendu à toute la base FMP élargie (voir ensureSyntheticCompanyData) — plus
     // seulement les 72 du Sheet, demande explicite (DocuSign/Volkswagen introuvables ici
     // alors que déjà exportés/utilisables ailleurs sur le site).
-    const allNames = [...mergeFmpUniverseNames(Object.keys(companies))];
+    // 2026-11-13 : plus la base FMP élargie (fiches calculées avec FMP) ; toute autre action passe par la recherche TradingView ci-dessous.
+    const allNames = Object.keys(companies).filter(n => isTvCompany(n));
     const matches = allNames.filter(n => n.toLowerCase().includes(q)).slice(0, 8);
     if (matches.length === 0){
       box.innerHTML = '<div class="search-suggestion" style="color:var(--text-faint);cursor:default;">Aucun résultat</div>';
@@ -6677,13 +6679,21 @@ function renderPfcfPocfChart(){
   const series = k => hist.map(r => r[k]);
   const datasets = [];
   if (pfcfPocfVisible.pfcf) datasets.push({ label:'P/FCF (x)', data:series('pFcf'), backgroundColor:THEME.gold, borderRadius:4, barPercentage:0.5 });
-  if (pfcfPocfVisible.pocf) datasets.push({ label:'P/OCF (x)', data:series('pOcf'), backgroundColor:THEME.blue, borderRadius:4, barPercentage:0.5 });
+  if (pfcfPocfVisible.pocf) datasets.push({ label:'PER (x)', data:series('per'), backgroundColor:THEME.blue, borderRadius:4, barPercentage:0.5 });
   if (chartInstances.pfcfpocf) chartInstances.pfcfpocf.destroy();
   chartInstances.pfcfpocf = makeChart('pfcfpocf', 'chartPFCFPOCF', {
     type:'bar',
     data:{ labels:years, datasets },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true}}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'x'} } } }
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true}}}, scales:{ x: baseAxis, y:{ grid:baseGrid, max: pfcfPerCap(datasets), ticks:{color:THEME.dim, callback:v=>v+'x'} } } }
   });
+}
+// Une année à FCF quasi nul donne un P/FCF de plusieurs centaines qui écrase tout le graphique : échelle plafonnée
+// à 4 × la médiane des valeurs (la barre dépasse simplement du cadre, sa valeur reste lisible au survol).
+function pfcfPerCap(datasets){
+  const vals = datasets.flatMap(d => d.data).filter(v => v != null && v > 0).sort((a, b) => a - b);
+  if (vals.length < 3) return undefined;
+  const med = vals[Math.floor(vals.length / 2)], top = vals[vals.length - 1];
+  return top > med * 4 ? Math.ceil(med * 4 / 5) * 5 : undefined;
 }
 function togglePfcfPocfSeries(key){
   pfcfPocfVisible[key] = !pfcfPocfVisible[key];
@@ -6779,7 +6789,10 @@ function renderCompany(nom){
   document.getElementById('medianeBadgesFcfAction').innerHTML =
     medianeBadgeHtml('Médiane 10a', medianOfLastYears(hist, 'fcfParAction', 10), ' €') + medianeBadgeHtml('Médiane 20a', medianOfLastYears(hist, 'fcfParAction', 20), ' €');
   document.getElementById('medianeBadgesOcfAction').innerHTML =
-    medianeBadgeHtml('Médiane 10a', medianOfLastYears(hist, 'ocfParAction', 10), ' €') + medianeBadgeHtml('Médiane 20a', medianOfLastYears(hist, 'ocfParAction', 20), ' €');
+    cagrBadgeSpan('CAGR BPA 5a', latest.cagrEps5 != null ? latest.cagrEps5 : cagrPct(hist, 'eps', 5)) + cagrBadgeSpan('CAGR BPA 10a', latest.cagrEps10 != null ? latest.cagrEps10 : cagrPct(hist, 'eps', 10));
+  // ROIC et marge opérationnelle : valeurs ACTUELLES TradingView seulement (pas d'historique public)
+  const roicEl = document.getElementById('badgeRoicNow');
+  if (roicEl) roicEl.innerHTML = medianeBadgeHtml('ROIC actuel', latest.roic, ' %') + medianeBadgeHtml('Marge op. actuelle', latest.margeOp, ' %');
 
   renderValorisation(nom);
   renderAnalyseValoSummary(nom);
@@ -6803,8 +6816,8 @@ function renderCompany(nom){
   // de couleur or=FCF / bleu=OCF, cohérent avec le reste du site.
   renderPfcfPocfChart();
   document.getElementById('medianeBadgesPfcfPocf').innerHTML =
-    medianeBadgeHtml('Médiane P/FCF 10a', latest.medianePFCF) + medianeBadgeHtml('Médiane P/FCF 20a', latest.medianePFCF20) +
-    medianeBadgeHtml('Médiane P/OCF 10a', latest.medianePOcf) + medianeBadgeHtml('Médiane P/OCF 20a', latest.medianePOcf20);
+    medianeBadgeHtml('Médiane P/FCF 10a', medianOfLastYears(hist, 'pFcf', 10)) + medianeBadgeHtml('Médiane P/FCF 20a', medianOfLastYears(hist, 'pFcf', 20)) +
+    medianeBadgeHtml('Médiane PER 10a', medianOfLastYears(hist, 'per', 10)) + medianeBadgeHtml('Médiane PER 20a', medianOfLastYears(hist, 'per', 20));
 
   renderAnalyseScoreCard(nom);
   renderCompetitorsCard(nom);
@@ -6973,8 +6986,9 @@ function renderHistoricalCharts(nom, hist, years, latest){
   const real = documentsRealData[nom];
   const fmpCharts = real && real.chartsHistory;
   const tv = isTvCompany(nom);
-  const chartHist = tv ? mergeTvWithFmpHistory(hist, fmpCharts) : (fmpCharts ? chartsHistoryToRows(fmpCharts) : hist);
-  const chartYears = tv ? chartHist.map(r => r.annee) : (fmpCharts ? fmpCharts.years : years);
+  // Fiche TradingView : historique 100 % TradingView (plus aucun complément FMP, règle du 2026-11-13).
+  const chartHist = tv ? hist : (fmpCharts ? chartsHistoryToRows(fmpCharts) : hist);
+  const chartYears = tv ? years : (fmpCharts ? fmpCharts.years : years);
   const displayHist = sliceHistoricalRange(chartHist, historicalChartsRange);
   const displayYears = sliceHistoricalRange(chartYears, historicalChartsRange);
 
@@ -6998,8 +7012,9 @@ function renderHistoricalCharts(nom, hist, years, latest){
 function thinHistoricalConfig(cfg){
   (cfg.data.datasets || []).forEach(d => {
     const isLine = (d.type || cfg.type) === 'line';
-    if (isLine){ d.borderWidth = 1.5; d.pointRadius = 1.8; d.pointHoverRadius = 4; d.pointBorderWidth = 0; }
-    else { d.borderRadius = 3; d.maxBarThickness = 22; }
+    // 2026-11-13 (retour : « un tout petit peu trop fin », usage vidéo) : traits 2,25 px, barres larges.
+    if (isLine){ d.borderWidth = 2.25; d.pointRadius = 2.5; d.pointHoverRadius = 5; d.pointBorderWidth = 0; }
+    else { d.borderRadius = 3; d.barPercentage = 0.72; d.categoryPercentage = 0.86; d.maxBarThickness = 40; }
   });
   cfg.options = cfg.options || {};
   cfg.options.interaction = { mode:'index', intersect:false };
@@ -7016,6 +7031,36 @@ const HISTORICAL_CHART_KEYS = ['div','ca','marges','fcf','pfcf','ocf','actions',
 const HISTORICAL_CHART_CANVAS_ID = { div:'chartDiv', ca:'chartCA', marges:'chartMarges', fcf:'chartFCF', pfcf:'chartPFCF', ocf:'chartOCF', actions:'chartActions', dette:'chartDette', cash:'chartCash' };
 function buildHistoricalChartConfig(key, hist, years, detteMetric){
   const series = k => hist.map(r => r[k]);
+  // Séries TradingView (tv-data/fetch_tv_extra.py) : TradingView ne publie pas l'historique de la marge opérationnelle,
+  // du ROIC, de la trésorerie ni de l'OCF ; ces cartes montrent leurs équivalents TradingView (2026-11-13).
+  const tvHist = hist.some(r => r.margeEbitda != null || r.detteEbitda != null || r.ebitda != null);
+  if (tvHist && key === 'marges') return {
+    type:'line',
+    data:{ labels:years, datasets:[
+      { label:'Marge brute (%)', data:series('margeBrute'), borderColor:THEME.blue, backgroundColor:THEME.blue, tension:0.3, spanGaps:true },
+      { label:'Marge EBITDA (%)', data:series('margeEbitda'), borderColor:THEME.gold, backgroundColor:THEME.gold, tension:0.3, spanGaps:true },
+      { label:'Marge nette (%)', data:series('margeNette'), borderColor:'#E9EBEE', backgroundColor:'#E9EBEE', tension:0.3, spanGaps:true }
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true}}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'%'} } } }
+  };
+  if (tvHist && key === 'ocf') return {
+    type:'bar',
+    data:{ labels:years, datasets:[{ label:'BPA (bénéfice par action)', data:series('eps'), backgroundColor:THEME.gold, borderRadius:4, barPercentage:0.6 }]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim} } } }
+  };
+  if (tvHist && key === 'dette') return {
+    type:'bar',
+    data:{ labels:years, datasets:[{ label:'Dette totale / EBITDA (x)', data:series('detteEbitda').map(v => v == null ? null : +v.toFixed(2)), backgroundColor:THEME.blue, borderRadius:4, barPercentage:0.6 }]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+'x'} } } }
+  };
+  if (tvHist && key === 'cash') return {
+    type:'bar',
+    data:{ labels:years, datasets:[
+      { label:'EBITDA (Md)', data:series('ebitda').map(v => v == null ? null : +(v/1000).toFixed(2)), backgroundColor:THEME.gold, borderRadius:4, barPercentage:0.55 },
+      { label:'Résultat net (Md)', data:series('resultatNet').map(v => v == null ? null : +(v/1000).toFixed(2)), backgroundColor:THEME.blue, borderRadius:4, barPercentage:0.55 }
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{boxWidth:8, usePointStyle:true}}}, scales:{ x: baseAxis, y:{ grid:baseGrid, ticks:{color:THEME.dim, callback:v=>v+' Md'} } } }
+  };
   if (key === 'div') return {
     type:'bar',
     data:{ labels:years, datasets:[
@@ -7164,7 +7209,7 @@ let stockRequestId = 0;
 // vingt, quatre-vingt et cent périodes") — désactivées par défaut (contrairement à
 // sma200/sma30 déjà en place) pour ne pas surcharger d'un coup un graphique que
 // l'utilisateur utilise déjà, activables depuis le menu Indicateurs techniques.
-let stockIndicators = { price:true, regression:true, sma200:true, sma30:true, sma20:false, sma50:false, sma80:false, sma100:false, prixJusteCible:false };
+let stockIndicators = { price:true, regression:false, sma200:false, sma30:false, sma20:false, sma50:false, sma80:false, sma100:false, prixJusteCible:false };
 // Overlay universel (retour utilisateur : combiner n'importe quelle métrique
 // historique sur le graphique boursier, sans limite de nombre) + mode d'échelle,
 // choisi par l'utilisateur à chaque fois plutôt qu'un mode par défaut imposé.
@@ -7214,6 +7259,7 @@ const STOCK_OVERLAY_METRICS = {
 // ANTÉRIEURES à ce que couvre déjà le Sheet, jamais n'écrase une valeur Sheet existante.
 function comparaisonHistFor(nom){
   const sheetHist = companies[nom] || [];
+  if (isTvCompany(nom)) return sheetHist;   // TradingView seul, jamais complété par FMP
   const ch = documentsRealData[nom] && documentsRealData[nom].chartsHistory;
   if (!ch || !ch.years) return sheetHist;
   const fmpHist = ch.years.map((y, i) => {
@@ -9143,8 +9189,8 @@ function stockCandleShowChartJsControls(show){
   if (cart) cart.style.display = show ? '' : 'none';
   const title = document.getElementById('stockCardTitle');
   const sub = document.getElementById('stockCardSubtitle');
-  if (title) title.textContent = show ? 'Cours de bourse (hebdomadaire)' : 'Cours de bourse (chandeliers quotidiens, FMP)';
-  if (sub) sub.textContent = show ? 'Clôture hebdomadaire et moyenne mobile 200 semaines' : 'Chandeliers OHLC quotidiens — SMA 200/30 semaines, canal de régression, prix juste/cible';
+  if (title) title.textContent = 'Cours de bourse (hebdomadaire)';
+  if (sub) sub.textContent = 'Clôtures hebdomadaires TradingView';
 }
 
 function renderStockChartCandleView(){
@@ -9524,15 +9570,8 @@ async function loadStockChart(ticker, nom){
   // Nouvelle source par défaut : chandeliers FMP (voir bloc ci-dessus) — retombe
   // silencieusement sur l'ancien système (Sheet dédié -> Yahoo -> Stooq) si
   // l'entreprise n'a pas encore été exportée en local.
-  if (nom){
-    const libOk = await ensureLightweightCharts();
-    if (myId !== stockRequestId) return;
-    if (libOk){
-      const usedCandle = await loadStockChartCandle(nom, ticker);
-      if (myId !== stockRequestId) return;
-      if (usedCandle) return;
-    }
-  }
+  // 2026-11-13 : les chandeliers FMP (+ complément Yahoo) ne sont plus utilisés — cours TradingView uniquement
+  // (loadStockChartCandle reste dans le code, inactif).
   stockUsesCandleFmp = false;
   stockCandleShowChartJsControls(true);
   const canvas0 = document.getElementById('chartStock');
@@ -9554,6 +9593,13 @@ async function loadStockChart(ticker, nom){
       renderStockChart();
       return;
     }
+  }
+  // Pas de repli Google Sheet / Yahoo / Stooq : TradingView uniquement (règle de l'utilisateur).
+  if (nom){
+    stockFull = null;
+    statusEl.textContent = 'Cours TradingView indisponible pour cette entreprise (serveur local arrêté ou symbole introuvable) : relance le raccourci Wolf Analysis.';
+    statusEl.style.display = 'block';
+    return;
   }
   if (nom){
     const sheetSeries = fetchPriceHistorySeries(nom);
@@ -10819,7 +10865,15 @@ function renderZoomChart(){
   const baseConfig = chartConfigs[zoomKey];
   if (!baseConfig) return;
   const nYears = (!ZOOM_HISTORICAL_KEYS.includes(zoomHistoricalBaseKey(zoomKey)) || zoomRange === 'max') ? null : parseInt(zoomRange, 10);
-  window.__zoomChart = newChartWithOrphanCleanup(canvasEl, sliceChartConfigByYears(baseConfig, nYears));
+  const zcfg = sliceChartConfigByYears(baseConfig, nYears);
+  // En grand (vidéo) : traits et barres nettement plus épais (datasets déjà copiés par sliceChartConfigByYears).
+  if (ZOOM_HISTORICAL_KEYS.includes(zoomHistoricalBaseKey(zoomKey))){
+    zcfg.data.datasets.forEach(d => {
+      if ((d.type || zcfg.type) === 'line'){ d.borderWidth = 3.5; d.pointRadius = 4; d.pointHoverRadius = 7; }
+      else { d.barPercentage = 0.8; d.categoryPercentage = 0.88; d.maxBarThickness = 90; d.borderRadius = 5; }
+    });
+  }
+  window.__zoomChart = newChartWithOrphanCleanup(canvasEl, zcfg);
 }
 
 function openZoom(key, title){
