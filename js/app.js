@@ -282,14 +282,24 @@ async function loadAllDataFromAppsScript(){
       : "Le fichier des données TradingView (data/tv-analyse.json) est introuvable. Ferme l'appli puis relance le raccourci « Wolf Analysis ».");
     return;
   }
-  if (macroDataState) loadMacroSheet();   // « Mettre à jour » relit aussi la macro si elle a déjà été ouverte
+  if (macroDataState) loadMacroSectorData();   // « Mettre à jour » relit aussi la macro si elle a déjà été ouverte
 }
 
 let macroDataState = null;   // null = jamais demandée · 'loading' · 'ok' · 'err'
 function ensureMacroData(){
   if (macroDataState) return;
-  loadMacroSheet();
   loadCreditIndicators();
+  loadMacroSectorData();
+}
+// ETF sectoriels et taux : TradingView via le serveur local (js/macro-tv.js, 2026-11-13) ; le Google Sheet ne sert plus
+// que de repli (site en ligne sans serveur, ou TradingView injoignable).
+async function loadMacroSectorData(){
+  if (window.MACRO_TV && MACRO_TV.isLocal()){
+    macroDataState = 'loading';
+    const ok = await MACRO_TV.load();
+    if (ok){ macroDataState = 'ok'; loadMacroFundamentalsFromApi(); return; }
+  }
+  loadMacroSheet();
   loadSectorEtfData();
 }
 async function loadMacroSheet(retried){
@@ -2177,7 +2187,8 @@ function buildMacroRankingChartConfig(rowLabel){
     .sort((a, b) => b.value - a.value);
   return {
     type:'bar',
-    data:{ labels: items.map(it => it.label), datasets:[{ data: items.map(it => it.value), backgroundColor: items.map(it => macroPowerColorHex(it.value)), borderRadius:4 }] },
+    // flèche = places gagnées / perdues en une semaine (données TradingView, js/macro-tv.js)
+    data:{ labels: items.map(it => it.label + ((rowLabel || macroRankingRow) === 'Classement' && window.macroRankArrow && macroRankArrow(it.label) ? '  ' + macroRankArrow(it.label) : '')), datasets:[{ data: items.map(it => it.value), backgroundColor: items.map(it => macroPowerColorHex(it.value)), borderRadius:4 }] },
     options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label: ctx => (ctx.parsed.x >= 0 ? '+' : '') + ctx.parsed.x.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + '%' } } },
       scales:{

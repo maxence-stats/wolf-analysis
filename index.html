@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Anton&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<link rel="stylesheet" href="css/style.css?v=20261113f">
+<link rel="stylesheet" href="css/style.css?v=20261113g">
 </head>
 <body>
 <div class="wrap">
@@ -1194,11 +1194,14 @@
 
     <div id="pageMacroSecteur" class="page">
       <div class="macro-export-all-row"><button class="macro-export-all-btn" onclick="exportMacroFullPageAsPdf()">⭳ Exporter toute la page en PDF</button></div>
+      <!-- Refonte v3 (maquette « Macro A v3 » validée le 2026-11-13) : verdict du loup, données TradingView (js/macro-tv.js) -->
+      <div class="mx-status" id="mxStatus" style="display:none;"></div>
+      <div class="mx-verdict" id="mxVerdict"><div class="mx-v-main"><div class="mx-v-txt"><span class="mx-v-eyebrow">LE VERDICT DU LOUP</span><span class="mx-v-title">Chargement…</span></div></div></div>
       <div class="section-label">Secteur — cycle &amp; rotation</div>
       <div class="macro-charts-row">
         <div class="chart-card macro-cycle-card">
           <div class="chart-card-head">
-            <div><h3>Cycle de Marché — Offensif vs Défensif</h3><p class="chart-subtitle">(Technologie + Finance + Industrie) / (Santé + Conso. de base + Services publics) — EMA 20 &amp; écarts-types — historique disponible sur la feuille (~3 ans)</p></div>
+            <div><h3>Cycle de Marché — Offensif vs Défensif</h3><p class="chart-subtitle">(Technologie + Finance + Industrie) / (Santé + Conso. de base + Services publics) — EMA 20 &amp; écarts-types — ETF sectoriels TradingView, historique depuis 1999</p></div>
             <div class="chart-card-actions">
               <span class="macro-cycle-badge" id="macroCycleBadge"></span>
               <button class="zoom-btn" onclick="openMacroCycleZoom()" aria-label="Agrandir">⤢</button>
@@ -1218,7 +1221,7 @@
 
         <div class="chart-card">
           <div class="chart-card-head">
-            <div><h3>Rotation Sectorielle GICS vs S&amp;P 500</h3><p class="chart-subtitle">Base 1.00 — historique disponible sur la feuille (~3 ans). Isoler un secteur bascule sur son historique ETF long (Yahoo).</p></div>
+            <div><h3>Rotation Sectorielle GICS vs S&amp;P 500</h3><p class="chart-subtitle">Base 1,00 — ETF sectoriels TradingView, 3 ans. Isoler un secteur bascule sur son historique ETF long (depuis 1999).</p></div>
             <div class="chart-card-actions"><button class="zoom-btn" onclick="openMacroRotationZoom()" aria-label="Agrandir">⤢</button></div>
           </div>
           <!-- Isoler un secteur (demande explicite) : bascule le graphique sur le ratio
@@ -1292,7 +1295,7 @@
 
         <div class="chart-card">
           <div class="chart-card-head">
-            <div><h3>Classement sectoriel</h3><p class="chart-subtitle">Score pondéré 1/2/3 mois (0,5 / 0,3 / 0,2), déjà calculé sur la feuille</p></div>
+            <div><h3>Classement sectoriel</h3><p class="chart-subtitle">Score pondéré 1/2/3 mois (0,5 / 0,3 / 0,2) · flèche = places gagnées ou perdues en une semaine</p></div>
             <div class="chart-card-actions"><button class="zoom-btn" onclick="openMacroRankingZoom()" aria-label="Agrandir">⤢</button></div>
           </div>
           <div class="range-buttons" id="macroRankingRowButtons">
@@ -1304,6 +1307,19 @@
             <button onclick="exportMacroChartAsImage('ranking','classement-sectoriel','png')">PNG</button>
             <button onclick="exportMacroChartAsImage('ranking','classement-sectoriel','jpg')">JPG</button>
           </div>
+        </div>
+      </div>
+
+      <div class="section-label">Nouveau : lire les flux</div>
+      <div class="mx-flows">
+        <div class="mx-card">
+          <div class="mx-card-head"><h3 class="mx-h3">Rotation des flux</h3><span class="mx-sub">→ force vs S&amp;P 500 · ↑ vitesse</span><span class="mx-tools" id="mxRrgTools"></span></div>
+          <div class="mx-rrg-holder"><canvas id="mxRrgCanvas" role="img" aria-label="Rotation des flux : quatre zones, En tête, S'essouffle, À la traîne, Se redresse, un point par secteur avec sa trajectoire"></canvas></div>
+          <p class="mx-p">Chaque secteur laisse une traînée sur ses dernières semaines. Il tourne en général dans le sens des aiguilles d'une montre : se redresse → en tête → s'essouffle → à la traîne.</p>
+        </div>
+        <div class="mx-col">
+          <div class="mx-card"><h3 class="mx-h3">Les flux de la semaine</h3><div id="mxFlux"><p class="mx-p">Chargement…</p></div></div>
+          <div class="mx-card"><h3 class="mx-h3">Taux à 10 ans</h3><div id="mxRates"><p class="mx-p">Chargement…</p></div></div>
         </div>
       </div>
 
@@ -1863,12 +1879,13 @@
   </div>
 </div>
 
-<script src="js/app.js?v=20261113g"></script>
+<script src="js/app.js?v=20261113h"></script>
 <script src="js/portefeuille-ia.js?v=20260920g"></script>
 <script src="js/mes-portefeuilles.js?v=20261112i"></script>
 <script src="js/valo-multiples.js?v=20261111b"></script>
 <script src="js/liste-prix.js?v=20261111h"></script>
 <script src="js/analyse-v3.js?v=20261113d"></script>
+<script src="js/macro-tv.js?v=20261113c"></script>
 <script src="js/atelier.js?v=20261112d"></script>
 <script src="js/publier.js?v=20261111c"></script>
 <script src="js/sauvegardes.js?v=20261112a"></script>

@@ -1834,6 +1834,23 @@ trouvées et corrigées ensemble :
   entreprise suivie (donc bien une suggestion choisie, pas juste une frappe en cours).
 
 ### Onglet Macroéconomie (fait, 4/4 sections)
+**Refonte v3 de « Secteur » (2026-11-13, maquette « Macro A v3 » de https://claude.ai/artifact/PFPaha6LoET5dQJABiD8j9)** :
+`js/macro-tv.js` (`MACRO_TV.load()`, appelé par `loadMacroSectorData()` depuis `ensureMacroData()` et « Mettre à jour »), CSS `.mx-*`.
+- **ETF sectoriels et taux = TradingView** (`/api/tv/history`, AMEX:XLK…XLC + AMEX:SPY depuis 1998, TVC:US10Y / US02Y / FR10Y /
+  DE10Y) au lieu du Google Sheet ; le Sheet (et l'ancien Yahoo via Apps Script) ne sert plus que de REPLI (site en ligne sans serveur,
+  ou TradingView injoignable : bandeau `#mxStatus`). Remplit les variables d'app.js (`sectorEtfData`, `macroRotationData`,
+  `macroCycleData`, `macroPowerData`) : les 4 graphiques, le tableau et « Taux vs Actions/Secteurs » restent ceux d'app.js.
+- Calculs repris du Sheet (vérifié : perf. 3 ans des 11 ETF identiques au centième) : rotation = (ETF/ETF₀)/(SPY/SPY₀) hebdo sur
+  3 ans ; cycle = Σ base 100 (XLK+XLF+XLI) / Σ base 100 (XLV+XLP+XLU), base = début des 3 dernières années, EMA 20 sem., écart-type
+  glissant 20 sem. (historique depuis 1999 maintenant) ; tableau = perf. 1/2/3/6 mois, 1/2/3 ans (clôtures quotidiennes, mois
+  calendaires), Classement 0,5/0,3/0,2. Les lignes « Power 1 ans / 3 mois » du Sheet (formule inconnue, non retrouvée) deviennent
+  « Force vs S&P 1 an / 3 mois » = perf. du secteur − perf. du SPY (points). Les perf. 1 mois diffèrent un peu du Sheet (référence de date).
+- Ajouts : verdict du loup (`#mxVerdict`, z = (ratio − EMA)/σ : ≤ −2 « Il se met à l'abri », ≤ −1 « Il devient prudent », < 1 « Il
+  observe », < 2 « Il passe à l'attaque », sinon « Il chasse en meute » ; loup aux jumelles de la banque via `/api/studio/wolf`) ;
+  flèches ▲▼ de la semaine sur le Classement (`window.macroRankArrow`) ; « Rotation des flux » (x = 100 × rs / moyenne de rs sur
+  4/13/26/52 sem., y = 100 × x / x d'il y a L/4 sem., traînée de 5 sem., 4 zones, « ▶ rejouer ») ; « Les flux de la semaine »
+  (changements de place + bascule du ratio vs sa moyenne) ; « Taux à 10 ans » (US 10 ans, variation 1 mois, 10a−2a, taux réel =
+  10 ans − CPI FRED, OAT − Bund).
 3 sources sur le même Sheet publié, gids dédiés, chargées en parallèle du reste
 (`loadMacroCycleData()`/`loadMacroRotationData()`/`loadMacroPowerData()`, tous les
 trois via `loadSheetDual()` — factory générique CSV+gviz+responseHandler dédié,

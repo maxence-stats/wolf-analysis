@@ -3583,3 +3583,43 @@
 .vv-btn:hover{border-color:var(--gold);}
 .vv-btn.gold{border:0;background:linear-gradient(180deg,#F0C877,#D9A441);color:#111;font-weight:800;}
 @media (max-width:720px){ .vv-title{font-size:34px;} .vv-methods{margin-left:0;} .vv-fan-holder{height:300px;} .vv-h2{font-size:24px;} }
+
+/* ==========================================================================
+   MACRO → SECTEUR — REFONTE v3 (2026-11-13, maquette « Macro A v3 ») : verdict du loup, rotation des flux,
+   flux de la semaine, taux à 10 ans (js/macro-tv.js, données TradingView). Les 4 graphiques d'origine sont gardés.
+   ========================================================================== */
+.mx-status{margin:6px 0 10px;padding:10px 14px;border-radius:12px;background:#1F1B10;color:#F2C43D;font-size:13px;font-weight:700;}
+.mx-verdict{display:grid;grid-template-columns:1fr minmax(0,320px);gap:0;background:var(--card-bg);border:var(--card-border);border-radius:26px;overflow:hidden;margin:6px 0 18px;min-height:150px;}
+.mx-v-main{display:flex;align-items:center;gap:28px;flex-wrap:wrap;padding:22px 26px;}
+.mx-v-txt{display:flex;flex-direction:column;gap:6px;}
+.mx-v-eyebrow{font-size:12px;font-weight:800;color:var(--gold);letter-spacing:.08em;}
+.mx-v-title{font:400 44px/1 Anton,'Space Grotesk',sans-serif;text-transform:uppercase;color:var(--text);}
+.mx-v-badge{align-self:flex-start;font:800 13px var(--font-body);border-radius:8px;padding:4px 10px;}
+.mx-v-badge.neg{background:#2A1517;color:#F08A90;} .mx-v-badge.pos{background:#13261E;color:#4FD1A5;} .mx-v-badge.mid{background:#1F1B10;color:#F2C43D;}
+.mx-v-tiles{display:flex;gap:12px;flex-wrap:wrap;margin-left:auto;}
+.mx-v-tiles>div{background:rgba(255,255,255,0.04);border-radius:16px;padding:12px 16px;min-width:130px;}
+.mx-k{font-size:11px;font-weight:800;color:var(--text-dim);letter-spacing:.04em;}
+.mx-n{font:400 30px/1.1 Anton,'Space Grotesk',sans-serif;color:var(--text);}
+.mx-n.neg{color:#F08A90;} .mx-n.pos{color:#4FD1A5;}
+.mx-v-wolf{position:relative;min-height:150px;}
+.mx-v-wolf img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top;-webkit-mask-image:linear-gradient(90deg,transparent,#000 35%);mask-image:linear-gradient(90deg,transparent,#000 35%);}
+#pageMacroSecteur .macro-charts-row .chart-holder{height:380px !important;}
+.mx-flows{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:16px;margin-bottom:18px;}
+.mx-col{display:flex;flex-direction:column;gap:16px;}
+.mx-card{background:var(--card-bg);border:var(--card-border);border-radius:22px;padding:18px 20px;display:flex;flex-direction:column;gap:10px;min-width:0;}
+.mx-card-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
+.mx-h3{margin:0;font:400 24px/1.1 Anton,'Space Grotesk',sans-serif;text-transform:uppercase;color:var(--text);}
+.mx-sub{font-size:12px;color:var(--text-dim);}
+.mx-tools{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;}
+.mx-rrg-holder{position:relative;height:440px;}
+.mx-p{margin:0;font-size:13px;color:var(--text-dim);line-height:1.5;}
+.mx-flux-row{display:flex;align-items:center;gap:10px;font-size:14px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);}
+.mx-mv{font:800 13px var(--font-body);border-radius:8px;padding:3px 8px;min-width:34px;text-align:center;}
+.mx-mv.pos{background:#13261E;color:#4FD1A5;} .mx-mv.neg{background:#2A1517;color:#F08A90;}
+.mx-rate-top{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;}
+.mx-rate-big{font:400 42px/1 Anton,'Space Grotesk',sans-serif;color:var(--text);}
+.mx-rate-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;}
+.mx-rate-grid>div{background:rgba(255,255,255,0.04);border-radius:12px;padding:10px 12px;}
+.mx-rate-grid b{font-size:16px;}
+@media (max-width:1100px){ .mx-flows{grid-template-columns:1fr;} .mx-verdict{grid-template-columns:1fr;} .mx-v-wolf{display:none;} }
+@media (max-width:720px){ .mx-v-title{font-size:32px;} .mx-rrg-holder{height:340px;} .mx-v-tiles{margin-left:0;} }
