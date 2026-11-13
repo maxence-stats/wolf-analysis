@@ -891,7 +891,14 @@ https://claude.ai/artifact/B4bfYADeVQL6G83Q4kJ6WX (17 modèles, 45 mises en page
   détenue en vert / rouge, prix RÉELLEMENT payés `op.px`), performance sous le graphique, page « Le bilan » facultative. Sans cours :
   anciennes pages. `history()` garde les dates (`histD`). Miniature **« Analyse hebdo »** (`hebdoW`, 1re de la galerie) : loup au
   casque DORÉ si le Wolf monte cette semaine, ROUGE s'il baisse (`poseOf`, réglage « Ambiance »), semaine, performance vs CAC 40,
-  logos = opérations de la semaine (`wolfFacts().week/wk/weekOps`).
+  logos = opérations de la semaine (`wolfFacts().week/wk/weekOps`). Jusqu'à 6 entreprises (mise en page C en grille).
+- **6 nouveaux shorts (2026-11-13)**, tracés dans `DRAW2` : Résultats trimestriels (snapshot TradingView FRAIS : `earnings_release_date`,
+  `earnings_per_share_fq` / `_forecast_fq`, `revenue_fq` / `_forecast_fq`, chaque chiffre corrigeable à la main `p.epsA…` via `resV`,
+  tampon Battu / Manqué / Conforme à ±1 %, réaction du cours depuis la publication), Duel (base 100, couronne), Dividende (rendement,
+  `dps_common_stock_prim_issue_fy_h` en barres, hausse annuelle, années sans baisse, revenu pour X €), Si tu avais investi, Mon
+  portefeuille en 30 s (Wolf seul, aucun montant en €), Garde ou poubelle (`p.items` ≤ 8 : verdict garde / poubelle / surveille /
+  renforce, raison, nom modifiable ; tampon, la carte tombe dans la poubelle, récap, « Si je ne devais en garder qu'une » + couronne).
+  `pp.nomA` = nom affiché raccourci. Recherche d'entreprise par champ (`coPick(label, clé)`, clé `add` = ajouter à la liste).
 
 ### Onglet Portefeuille IA (fait, 2026-09-19)
 Sous-onglet de « 💼 Portefeuille » : 4 portefeuilles simulés (ChatGPT, Claude, Gemini, Grok, logos

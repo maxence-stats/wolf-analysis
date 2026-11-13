@@ -3468,3 +3468,10 @@
 .sd-phonebox kbd{font:700 11px var(--font-body);background:var(--panel-2);border:1px solid var(--hair);border-radius:5px;padding:1px 5px}
 .sd-phone canvas{cursor:pointer}
 .sd-f textarea{font:600 14px var(--font-body);color:var(--text);background:var(--bg);border:1px solid var(--hair);border-radius:10px;padding:8px 10px;width:100%;box-sizing:border-box;resize:vertical}
+.sd-items{display:flex;flex-direction:column;gap:6px}
+.sd-item{display:grid;grid-template-columns:28px minmax(0,1fr) auto minmax(0,1.2fr) auto auto;gap:6px;align-items:center;background:var(--panel-2);border:1px solid var(--hair);border-radius:10px;padding:6px 8px}
+.sd-item img,.sd-item i{width:28px;height:28px;border-radius:50%;background:#fff;object-fit:contain}
+.sd-item b{font:700 13px var(--font-body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sd-item select,.sd-item input{font:600 13px var(--font-body);color:var(--text);background:var(--bg);border:1px solid var(--hair);border-radius:8px;padding:6px 8px;min-width:0}
+.sd-item button{border:1px solid var(--hair);background:var(--bg);color:var(--text);border-radius:8px;padding:5px 8px;cursor:pointer}
+@media (max-width:700px){.sd-item{grid-template-columns:28px minmax(0,1fr) auto auto;}.sd-item input{grid-column:1/-1}}

@@ -74,7 +74,7 @@ function history(sym){
     if (!h || !h.bars || !h.bars.length) throw new Error('cours indisponibles pour ' + sym);
     const w = [], wd = []; let last = null;   // une clôture par semaine (la dernière) + sa date (secondes)
     h.bars.forEach(([t, c]) => { const d = new Date(t * 1000), k = d.getUTCFullYear() + '-' + Math.floor((d - Date.UTC(d.getUTCFullYear(), 0, 1)) / 6048e5); if (k !== last){ w.push(c); wd.push(t); last = k; } else { w[w.length - 1] = c; wd[wd.length - 1] = t; } });
-    HIST[sym]._d = wd; HIST[sym]._v = w; return w;
+    HIST[sym]._d = wd; HIST[sym]._ccy = h.ccy || null; HIST[sym]._v = w; return w;
   })().catch(e => { delete HIST[sym]; throw e; });
   return HIST[sym];
 }
@@ -328,22 +328,24 @@ const T = [
  { id: 'hebdoW', name: 'Analyse hebdo', vid: 'Analyse hebdo (samedi)', pose: 'casque', need: [NEED.wolf], note: 'Loup au casque : version DORÉE si le Wolf monte cette semaine, ROUGE s’il baisse (réglage « Ambiance »). Chiffres de la semaine en cours.',
   auto: { sem: (s, c) => c.wolf ? 'Semaine ' + c.wolf.wk : 'Semaine', p: (s, c) => c.wolf && c.wolf.week ? sgn(c.wolf.week.wolf, 1) : '—', cac: (s, c) => c.wolf && c.wolf.week ? 'CAC 40 : ' + sgn(c.wolf.week.cac, 1) : '' },
   poseOf: (s, c) => { if (s.pose !== 'casque' && s.pose !== 'casque_rouge') return s.pose; if (s.amb === 'or') return 'casque'; if (s.amb === 'rouge') return 'casque_rouge'; const v = c.wolf && c.wolf.week ? c.wolf.week.wolf : 0; return v >= 0 ? 'casque' : 'casque_rouge'; },
-  f: [['l1', 'Titre', 't'], ['sem', 'Encadré jaune (semaine)', 'ov'], ['p', 'Performance de la semaine', 'ov'], ['cac', 'Ligne de l’indice', 'ov'], ['q', 'Question (mise en page C)', 'y'], ['logos', 'Entreprises (vide = opérations de la semaine)', 'L', 4], ['amb', 'Ambiance du loup', 'sel', [['auto', 'Selon la semaine (or / rouge)'], ['or', 'Toujours dorée'], ['rouge', 'Toujours rouge']]]],
+  f: [['l1', 'Titre', 't'], ['sem', 'Encadré jaune (semaine)', 'ov'], ['p', 'Performance de la semaine', 'ov'], ['cac', 'Ligne de l’indice', 'ov'], ['q', 'Question (mise en page C)', 'y'], ['logos', 'Entreprises (vide = opérations de la semaine)', 'L', 6], ['amb', 'Ambiance du loup', 'sel', [['auto', 'Selon la semaine (or / rouge)'], ['or', 'Toujours dorée'], ['rouge', 'Toujours rouge']]]],
   d: { l1: 'Analyse hebdo', sem: '', p: '', cac: '', q: "J'achète ?", logos: [], amb: 'auto' },
   v: [['A', 'Semaine + performance', (s, c) => { const H = T.find(z => z.id === 'hebdoW'), L = hebdoLogos(s, c);
         txt(s.l1, 40, 105, 92); ybox(OV(s, 'sem', H.auto.sem(s, c)), 40, 205, 76); pct(OV(s, 'p', H.auto.p(s, c)), 40, 420, 200, { max: 580 }); txt(OV(s, 'cac', H.auto.cac(s, c)), 40, 495, 46, { color: '#C9CED6', max: 580 });
-        L.slice(0, 4).forEach((k, i) => tile(k, 40 + i * 145, 540, 130)); }],
+        const nA = Math.min(L.length, 6), tA = nA > 4 ? 92 : 130, gA = nA > 4 ? 100 : 145; L.slice(0, 6).forEach((k, i) => tile(k, 40 + i * gA, 540 + (130 - tA), tA)); }],
      ['B', 'Wolf contre le CAC 40', (s, c) => { const H = T.find(z => z.id === 'hebdoW'), w0 = c.wolf && c.wolf.week;
         txt(s.l1, 40, 105, 92); ybox(OV(s, 'sem', H.auto.sem(s, c)), 40, 205, 76);
         if (w0) bars([[K_('WOLF'), w0.wolf, OV(s, 'p', sgn(w0.wolf, 1))], [K_('CAC'), w0.cac, sgn(w0.cac, 1)]], 40, 290, 150, 330);
-        const L = hebdoLogos(s, c); L.slice(0, 4).forEach((k, i) => tile(k, 40 + i * 115, 605, 95)); }],
+        const L = hebdoLogos(s, c), nB = Math.min(L.length, 6), tB = nB > 4 ? 78 : 95; L.slice(0, 6).forEach((k, i) => tile(k, 40 + i * (tB + 14), 700 - tB - 15, tB)); }],
      ['C', 'Question + logos « ? »', (s, c) => { const H = T.find(z => z.id === 'hebdoW'), L = hebdoLogos(s, c);
-        txt(OV(s, 'sem', H.auto.sem(s, c)), 40, 100, 74); ybox(s.q, 40, 230, 120); L.slice(0, 4).forEach((k, i) => tile(k, 40 + (i % 2) * 190, 290 + Math.floor(i / 2) * 200, 170, { q: 1 }));
+        txt(OV(s, 'sem', H.auto.sem(s, c)), 40, 100, 74); ybox(s.q, 40, 230, 120);
+        const nC = Math.min(L.length, 6), cols = nC <= 2 ? nC : nC <= 4 ? 2 : 3, rows = Math.ceil(nC / Math.max(1, cols)), tC = nC <= 2 ? 190 : nC <= 4 ? 170 : 160, gC = tC + 22;
+        L.slice(0, 6).forEach((k, i) => tile(k, 40 + (i % cols) * gC, 285 + Math.floor(i / cols) * (rows > 1 ? (700 - 285 - tC) / Math.max(1, rows - 1) : 0) , tC, { q: 1 }));
         if (!L.length) pct(OV(s, 'p', H.auto.p(s, c)), 40, 470, 180, { max: 560 }); }]] }
 ];
 
 // logos de la miniature hebdo : ceux choisis, sinon les opérations de la semaine, sinon les 3 plus grosses lignes
-function hebdoLogos(s, c){ if (s.logos && s.logos.length) return s.logos; const w = c.wolf; if (!w) return []; return (w.weekOps && w.weekOps.length ? w.weekOps : w.items.slice(0, 3)).slice(0, 4); }
+function hebdoLogos(s, c){ if (s.logos && s.logos.length) return s.logos.slice(0, 6); const w = c.wolf; if (!w) return []; return (w.weekOps && w.weekOps.length ? w.weekOps : w.items.slice(0, 3)).slice(0, 6); }
 
 /* ---------- préparation des données d'un modèle (avant dessin synchrone) ---------- */
 async function prep(t, s){
@@ -644,12 +646,48 @@ const SHORT = (() => {
         { k: 'gvente', t: 'La vente', d: 'Point de vente + performance sur le cours', dur: 2.6, say: d => `Vendu le ${dl(d.sellDate)}${isNum(d.spx) ? ' à ' + money(d.spx, d.sccy) : ''} : ${sgn(d.perf, 1)}.`, ok: d => d && d.type === 'SELL' },
         { k: 'gdepuis', t: 'Depuis l’achat', d: 'Le cours jusqu’à aujourd’hui + performance', dur: 2.6, say: d => `Depuis l'achat : ${sgn(d.perf, 1)}.`, ok: d => d && d.type === 'BUY' },
         { k: 'bilan', t: 'Le bilan', d: 'La performance en grand (facultatif)', dur: 2, say: d => `${sgn(d.perf, 1)} en ${dur(d.days)}${d.divs > 0 ? ', dividendes compris' : ''}.` },
-        { k: 'pourquoi', t: 'Pourquoi', d: 'Tes raisons, une par une', dur: 3, say: (d, p) => lines(p.raisons).join(' · ') }, FIN] }
+        { k: 'pourquoi', t: 'Pourquoi', d: 'Tes raisons, une par une', dur: 3, say: (d, p) => lines(p.raisons).join(' · ') }, FIN] },
+    resultats: { name: '📊 Résultats trimestriels', desc: 'Publié contre attendu (TradingView, modifiable)', manual: true, p: { co: null, sticker: 'surpris', date: '', epsA: '', epsE: '', revA: '', revE: '', avis: 'Croissance solide\nMarges en hausse\nJe garde la ligne', fin: '' },
+      scenes: [{ k: 'hook', t: 'Accroche', d: 'Logo + date de publication', dur: 2.2, say: d => `${d.name} vient de publier ses résultats.` },
+        { k: 'bpa', t: 'Bénéfice par action', d: 'Publié contre attendu', dur: 2.4, say: (d, p) => { const r = resV(d, p); return `Bénéfice par action : ${fr(r.epsA, 2)} publié, contre ${fr(r.epsE, 2)} attendu.`; }, ok: (d, p) => d && isNum(resV(d, p).epsA) },
+        { k: 'ca', t: "Chiffre d'affaires", d: 'Publié contre attendu', dur: 2.4, say: (d, p) => { const r = resV(d, p); return `Chiffre d'affaires : ${fr(r.revA, 2)} milliards, contre ${fr(r.revE, 2)} attendus.`; }, ok: (d, p) => d && isNum(resV(d, p).revA) },
+        { k: 'reaction', t: 'Réaction du cours', d: 'Le cours depuis les résultats', dur: 2.6, say: d => `Depuis les résultats, le cours fait ${sgn(d.react, 1)}.`, ok: d => d && isNum(d.react) },
+        { k: 'avis', t: 'Mon avis', d: 'Tes points, un par un', dur: 3, say: (d, p) => lines(p.avis).join(' · ') }, FIN] },
+    duel: { name: '🥊 Duel', desc: 'Deux actions, la course en base 100', manual: true, p: { a: { sym: 'EURONEXT:MC', name: 'LVMH', logoid: 'lvmh' }, b: { sym: 'EURONEXT:RMS', name: 'Hermès', logoid: 'hermes' }, na: '', nb: '', yrs: '10', fin: '' },
+      scenes: [{ k: 'hook', t: 'Accroche', d: 'Les deux logos face à face', dur: 2.2, say: (d, p) => `${nmA(d, p)} ou ${nmB(d, p)} : qui a fait mieux en ${yTxt2(d.yrs)} ?` },
+        { k: 'course', t: 'La course', d: 'Les deux courbes en base 100', dur: 3.4, say: (d, p) => `${nmA(d, p)} fait ${sgn((d.ma - 1) * 100, 0)}, ${nmB(d, p)} ${sgn((d.mb - 1) * 100, 0)}.` },
+        { k: 'gagnant', t: 'Le gagnant', d: 'Couronne + multiplicateurs', dur: 2.4, say: (d, p) => `Le gagnant : ${d.ma >= d.mb ? nmA(d, p) : nmB(d, p)}, multiplié par ${fr(Math.max(d.ma, d.mb), 1)}.` }, FIN] },
+    dividende: { name: '💶 Dividende', desc: 'Rendement, historique des versements, revenu', manual: true, p: { co: { sym: 'EURONEXT:TTE', name: 'TotalEnergies', logoid: 'total' }, montant: '10000', sticker: 'argent', fin: '' },
+      scenes: [{ k: 'hook', t: 'Le rendement', d: 'Rendement en grand', dur: 2.2, say: d => `${d.name} verse ${fr(d.yld, 1)} % de rendement.` },
+        { k: 'histo', t: "L'historique", d: 'Dividende par action, année par année', dur: 3, say: d => d.cagr != null ? `Le dividende a progressé de ${fr(d.cagr, 1)} % par an sur ${d.cagrN} ans.` : 'Le dividende année par année.', ok: d => d && d.rows.length >= 3 },
+        { k: 'revenu', t: 'Le revenu', d: 'Avec X €, tu touches…', dur: 2.4, say: (d, p) => `Avec ${fr(+p.montant || 10000)} €, tu touches environ ${fr((+p.montant || 10000) * d.yld / 100)} € par an, avant impôts.`, ok: d => d && isNum(d.yld) }, FIN] },
+    investi: { name: '💸 Si tu avais investi', desc: '1 000 € il y a X ans, chiffres réels', manual: true, p: { co: { sym: 'EURONEXT:RMS', name: 'Hermès', logoid: 'hermes' }, montant: '1000', yrs: '10', fin: '' },
+      scenes: [{ k: 'hook', t: 'La question', d: 'Montant + logo + il y a X ans', dur: 2.2, say: (d, p) => `Si tu avais investi ${fr(+p.montant || 1000)} € dans ${d.name} il y a ${yTxt2(d.yrs)}…` },
+        { k: 'course', t: 'La courbe', d: 'Le compteur monte avec le cours', dur: 3.2, say: () => 'Regarde comment ça a évolué.' },
+        { k: 'result', t: 'Le résultat', d: 'Montant final en grand', dur: 2.2, say: (d, p) => `Tu aurais aujourd'hui ${fr((+p.montant || 1000) * d.mult)} €, hors dividendes.` }, FIN] },
+    portef: { name: '🐺 Mon portefeuille en 30 s', desc: 'Performance, composition, meilleure et pire ligne', manual: true, p: { fin: '' },
+      scenes: [{ k: 'hook', t: 'Accroche', d: 'Tête de loup + titre', dur: 2, say: () => 'Mon portefeuille en 30 secondes.' },
+        { k: 'perf', t: 'Depuis le début', d: 'Wolf contre CAC 40 et S&P 500', dur: 3, say: d => `Depuis le lancement : ${sgn(d.since.wolf, 1)}, contre ${sgn(d.since.cac, 1)} pour le CAC 40.`, ok: d => d && d.since },
+        { k: 'compo', t: 'Composition', d: 'Camembert avec les logos', dur: 3.4, say: d => `${d.n} lignes et ${fr(d.cashW)} % de liquidités.` },
+        { k: 'lignes', t: 'Les 3 plus grosses', d: 'Poids dans le portefeuille', dur: 2.6, say: d => `Plus grosse ligne : ${d.compo[0] ? d.compo[0].name : ''}.`, ok: d => d && d.compo.length },
+        { k: 'best', t: 'Meilleure et pire', d: 'Performance depuis l’achat', dur: 2.8, say: d => d.best ? `Meilleure ligne : ${d.best.name}, ${sgn(d.best.perf, 0)}. La pire : ${d.worst.name}, ${sgn(d.worst.perf, 0)}.` : '', ok: d => d && d.best }, FIN] },
+    garde: { name: '🗑 Garde ou poubelle', desc: 'Carte par carte : je garde, je jette, je surveille', manual: true, p: { titre: 'Je garde ou je jette ?', items: [], une: '', fin: '' },
+      scenes: [{ k: 'titre', t: 'Le titre', d: 'Toutes les cartes face visible', dur: 2.2, say: (d, p) => p.titre }].concat([1, 2, 3, 4, 5, 6, 7, 8].map(i => ({ k: 'c' + i, t: 'Carte ' + i, d: 'La carte, puis ton verdict', dur: 2.4, say: (d, p) => { const it = (p.items || [])[i - 1]; return it ? `${it.name} : ${VERD[it.v || 'garde'][1].toLowerCase()}. ${it.why || ''}` : ''; }, ok: (d, p) => (p.items || []).length >= i })))
+        .concat([{ k: 'recap', t: 'Le récap', d: 'Toutes les cartes avec leur verdict', dur: 2.4, say: () => 'Le récap.' },
+          { k: 'une', t: "Si je n'en gardais qu'une", d: 'Ta préférée avec la couronne', dur: 2.4, say: (d, p) => { const it = (p.items || []).find(z => z.sym === p.une); return it ? `Si je ne devais en garder qu'une : ${it.name}.` : ''; }, ok: (d, p) => (p.items || []).some(z => z.sym === p.une) }, FIN]) }
   };
   const FMT_KEYS = Object.keys(FMT);
   const money = (v, ccy) => { if (!isNum(v)) return '—'; const s = { EUR: '€', USD: '$', GBP: '£', CHF: 'CHF', JPY: '¥', DKK: 'kr', SEK: 'kr', NOK: 'kr', CAD: '$ CA' }[ccy] || ccy || '€'; return fr(v, Math.abs(v) < 100 ? 2 : 0) + ' ' + s; };
   const pot = (d, k) => d && isNum(d.sc[k]) && d.cours ? (d.sc[k] / d.cours - 1) * 100 : null;
   const dl = s => s ? dt(s).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+  const numFr = v => { if (v == null || String(v).trim() === '') return null; const x2 = parseFloat(String(v).replace(/[\s ]/g, '').replace(',', '.')); return isFinite(x2) ? x2 : null; };
+  const pick = (ov, auto) => { const v = numFr(ov); return v != null ? v : (isNum(auto) ? auto : null); };
+  // résultats : valeurs TradingView, sauf celles corrigées à la main dans les réglages
+  const resV = (d, p) => { p = p || fc().p; const A = (d && d.auto) || {}; let date = A.date; const m = String(p.date || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if (m) date = m[3] + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0');
+    return { date, epsA: pick(p.epsA, A.epsA), epsE: pick(p.epsE, A.epsE), revA: pick(p.revA, A.revA), revE: pick(p.revE, A.revE) }; };
+  const nmA = (d, p) => (p && p.na) || (d && d.a && d.a.name) || 'A', nmB = (d, p) => (p && p.nb) || (d && d.b && d.b.name) || 'B';
+  const yTxt2 = y => { const r = Math.round(y || 0); return r <= 1 ? '1 an' : r + ' ans'; };
+  const VERD = { garde: ['#1B9660', 'Je garde'], poubelle: ['#CF3E48', 'Poubelle'], surveille: ['#E3A21A', 'Je surveille'], renforce: ['#4A86C5', 'Je renforce'] };
   const ecartJ = d => d && isNum(d.sc.real) && d.sc.real > 0 && isNum(d.cours) ? (d.cours / d.sc.real - 1) * 100 : null;   // cours vs prix juste
   const dur = n => n < 45 ? Math.round(n) + ' jours' : n < 700 ? Math.round(n / 30.4) + ' mois' : fr(n / 365.25, 1) + ' ans';
   const dS = t => new Date(t * 1000).toLocaleDateString('fr-FR');
@@ -677,7 +715,7 @@ const SHORT = (() => {
 
   /* --- données --- */
   async function loadData(){
-    const f = getCfg().fmt, o = fc(); DATA = null; dataErr = null; const sig = f + JSON.stringify(f === 'hebdo' ? getCfg().per : [o.p.co, o.p.yrs, o.p.nom, o.p.op, o.p.gyrs]); dataFor = sig;
+    const f = getCfg().fmt, o = fc(); DATA = null; dataErr = null; const sig = f + JSON.stringify(f === 'hebdo' ? getCfg().per : [o.p.co, o.p.yrs, o.p.nom, o.p.op, o.p.gyrs, o.p.a, o.p.b, (o.p.items || []).map(z => z.sym)]); dataFor = sig;
     let d = null;
     try { d = await LOAD[f](o.p); } catch(e){ if (dataFor === sig) dataErr = e.message || String(e); return; }
     if (dataFor !== sig) return;
@@ -757,6 +795,60 @@ const SHORT = (() => {
       const buyPx = Math.abs(o.eur) / o.qty, now = E.priceEur(w.S, o.symbol, today());
       return { type: 'BUY', item: s, name: s.name, buyDate: o.date, buyPx, nowPx: now, perf: now ? (now / buyPx - 1) * 100 : null, days: E.daysBetween(o.date, today()), divs: 0,
         bpx: isNum(o.px) ? o.px : null, bccy: o.ccy || 'EUR', chart: await chartFor(o.date, null) };
+    },
+    async resultats(p){
+      const co = p.co; if (!co || !co.sym) throw new Error('choisis une entreprise (recherche TradingView dans les réglages)');
+      await ensureLogo(co); if (co.logoid) await img(tvLogo(co.logoid));
+      let sn = null; try { sn = await tvFetchSnapshot(co.sym, false); } catch(e){ try { sn = await tvFetchSnapshot(co.sym, true); } catch(e2){} }
+      if (!sn) throw new Error('TradingView ne répond pas pour ' + co.sym);
+      const rv = sn.earnings_release_date, rel = isNum(rv) ? new Date(rv > 1e12 ? rv : rv * 1000) : null;
+      let chart = null, react = null;
+      try { await history(co.sym); const C0 = histNow(co.sym), D0 = histD(co.sym), n = Math.min(C0.length, 52); const S = C0.slice(-n), Dd = D0.slice(-n), ri = rel ? Dd.findIndex(t => t * 1000 >= rel.getTime()) : -1;
+        if (S.length > 3) chart = { S, Dd, ri }; if (ri > 0) react = (S[S.length - 1] / S[ri - 1] - 1) * 100; } catch(e){}
+      return { co, name: co.name || co.sym, ccyF: sn.fundamental_currency_code || sn.currency || 'EUR', ccy: (HIST[co.sym] && HIST[co.sym]._ccy) || sn.currency || 'EUR', chart, react,
+        auto: { date: rel ? rel.toISOString().slice(0, 10) : '', epsA: sn.earnings_per_share_fq, epsE: sn.earnings_per_share_forecast_fq, revA: isNum(sn.revenue_fq) ? sn.revenue_fq / 1e9 : null, revE: isNum(sn.revenue_forecast_fq) ? sn.revenue_forecast_fq / 1e9 : null } };
+    },
+    async duel(p){
+      const a = p.a, b = p.b; if (!a || !b || !a.sym || !b.sym) throw new Error('choisis les deux entreprises dans les réglages');
+      await Promise.all([a, b].map(async c => { await ensureLogo(c); if (c.logoid) await img(tvLogo(c.logoid)); await history(c.sym); }));
+      const Y = Math.min(+p.yrs || 10, availY(a) || 99, availY(b) || 99), A = hs(a, Y), B = hs(b, Y), n = Math.min(A.length, B.length); if (n < 3) throw new Error('cours indisponibles');
+      const As = A.slice(-n).map(v => v / A[A.length - n] * 100), Bs = B.slice(-n).map(v => v / B[B.length - n] * 100);
+      await img(stkUrl('couronne'));
+      return { a, b, As, Bs, Dd: histD(a.sym).slice(-n), yrs: Y, ma: As[n - 1] / 100, mb: Bs[n - 1] / 100 };
+    },
+    async dividende(p){
+      const co = p.co; if (!co || !co.sym) throw new Error('choisis une entreprise dans les réglages');
+      await ensureLogo(co); if (co.logoid) await img(tvLogo(co.logoid));
+      let sn = null; try { sn = await tvFetchSnapshot(co.sym, true); } catch(e){} if (!sn) throw new Error('TradingView ne répond pas pour ' + co.sym);
+      const h = Array.isArray(sn.dps_common_stock_prim_issue_fy_h) ? sn.dps_common_stock_prim_issue_fy_h : [], ym = String(sn.fiscal_period_fy || '').match(/\d{4}/), y0 = ym ? +ym[0] : new Date().getFullYear() - 1;
+      const rows = h.map((v, i) => [y0 - i, v]).filter(r => isNum(r[1]) && r[1] > 0).reverse().slice(-15);
+      let streak = 0; for (let i = rows.length - 1; i > 0; i--){ if (rows[i][1] >= rows[i - 1][1] * 0.999) streak++; else break; }
+      const cagrN = Math.min(10, rows.length - 1), cagr = cagrN >= 3 ? (Math.pow(rows[rows.length - 1][1] / rows[rows.length - 1 - cagrN][1], 1 / cagrN) - 1) * 100 : null;
+      const yld = isNum(sn.dividends_yield_current) ? sn.dividends_yield_current : sn.dividends_yield, cur = sn.currency === 'GBX' ? 'GBP' : (sn.currency || 'EUR');
+      return { co, name: co.name || co.sym, yld, rows, streak, cagr, cagrN, ccy: cur, dps: rows.length ? rows[rows.length - 1][1] : sn.dps_common_stock_prim_issue_fy };
+    },
+    async investi(p){
+      const co = p.co; if (!co || !co.sym) throw new Error('choisis une entreprise dans les réglages');
+      await ensureLogo(co); if (co.logoid) await img(tvLogo(co.logoid)); await history(co.sym);
+      const yrs = Math.min(+p.yrs || 10, availY(co) || 99), S = hs(co, yrs); if (S.length < 3) throw new Error('cours indisponibles pour ' + co.sym);
+      return { co, name: co.name || co.sym, S, Dd: histD(co.sym).slice(-S.length), yrs, mult: S[S.length - 1] / S[0] };
+    },
+    async portef(){
+      const F0 = await wolfFacts(), w = await wolf(), E = w.E, t = today(), st = E.replay(w.ops, t);
+      const L = Object.keys(st.pos).map(sy => { const pe = E.priceEur(w.S, sy, t), q = st.pos[sy]; return pe ? Object.assign(w.sym(sy), { val: q.qty * pe, perf: q.cost > 0 ? (q.qty * pe / q.cost - 1) * 100 : null }) : null; }).filter(Boolean);
+      const compo = L.map(l => Object.assign(l, { w: l.val / F0.value * 100 })).sort((a, b) => b.w - a.w), byP = compo.filter(l => isNum(l.perf)).sort((a, b) => b.perf - a.perf);
+      await Promise.all(compo.map(it => img(tvLogo(it.logoid))));
+      return { compo, cashW: F0.cashW, since: F0.since, best: byP[0], worst: byP[byP.length - 1], n: compo.length };
+    },
+    async garde(p){
+      const its = (p.items || []).slice(0, 8); if (!its.length) throw new Error('ajoute des entreprises dans les réglages (recherche TradingView)');
+      const stats = {};
+      await Promise.all(its.map(async it => { const st0 = {}; try { await ensureLogo(it); if (it.logoid) await img(tvLogo(it.logoid)); } catch(e){}
+        try { await history(it.sym); st0.p1 = perf(it, 1); } catch(e){}
+        try { const sn = await tvFetchSnapshot(it.sym, true); st0.yld = isNum(sn.dividends_yield_current) ? sn.dividends_yield_current : null; st0.per = isNum(sn.price_earnings_ttm) ? sn.price_earnings_ttm : null; } catch(e){}
+        stats[it.sym] = st0; }));
+      await Promise.all(['pouce', 'facepalm', 'loupe', 'couronne'].map(k => img(stkUrl(k))));
+      return { stats };
     }
   };
 
@@ -863,6 +955,7 @@ const SHORT = (() => {
   function drawFmt(f, s, p, Rg){
     const d = DATA, pp = fc().p, k = Rg.k, Yf = q => Rg.y + Rg.h * q, cx = 540;
     if (s.k === 'fin') return drawFin(p, Rg, pp);
+    if (DRAW2[f]) return DRAW2[f](s.k, p, Rg, pp, pp.nomA ? Object.assign({}, d, { name: pp.nomA }) : d);
     if (f === 'ecran' && s.k === 'titre'){ title(pp.titre, cx, Yf(0.18), 130 * k, 3); sx.save(); sx.globalAlpha *= ease(segp(p, 0.2, 0.45)); if (pp.sous) hl2(pp.sous, cx, Yf(0.47), 70 * k); sx.restore(); stk(pp.sticker, cx, Yf(0.75), 380 * k, segp(p, 0.3, 1)); }
     if (f === 'explique'){
       const pts = lines(pp.points);
@@ -957,6 +1050,121 @@ const SHORT = (() => {
         if (isNum(d.perf)){ const v = d.perf * ease(segp(p, 0.4, 0.85)), tv = sgn(v, 1); T2(tv, cx, Yf(0.8), fit2(tv, 220 * k, 980), col(d.perf)); } }
       if (s.k === 'pourquoi'){ head('Pourquoi ?'); cards(lines(pp.raisons), Yf(0.27), Rg.h * 0.66, p, Rg); } }
   }
+  // ---------- dessins des nouveaux modèles ----------
+  function stamp(t0, cx, cy, size, color, q){ if (q <= 0) return; const z = 1 + 1.3 * (1 - ease(q)); sx.save(); sx.globalAlpha *= Math.min(1, q * 3); sx.translate(cx, cy); sx.rotate(-0.15); sx.scale(z, z);
+    sx.font = `400 ${size}px ${AF}`; const w = sx.measureText(up(t0)).width + size * 0.6, h = size * 1.28; sx.fillStyle = 'rgba(255,255,255,.88)'; R2(-w / 2, -h / 2, w, h, size * 0.16); sx.fill(); sx.lineWidth = size * 0.09; sx.strokeStyle = color; sx.stroke(); T2(up(t0), 0, size * 0.36, size, color); sx.restore(); }
+  function bin(cx, by, w, a){ if (a <= 0) return; sx.save(); sx.globalAlpha *= a; sx.fillStyle = C.ink2; const h = w * 1.15; sx.beginPath(); sx.moveTo(cx - w / 2, by - h); sx.lineTo(cx + w / 2, by - h); sx.lineTo(cx + w * 0.4, by); sx.lineTo(cx - w * 0.4, by); sx.closePath(); sx.fill();
+    R2(cx - w * 0.6, by - h - w * 0.16, w * 1.2, w * 0.12, 6); sx.fill(); R2(cx - w * 0.13, by - h - w * 0.27, w * 0.26, w * 0.12, 5); sx.fill();
+    sx.strokeStyle = C.bg; sx.lineWidth = 6; [-0.2, 0, 0.2].forEach(dx => { sx.beginPath(); sx.moveTo(cx + w * dx, by - h * 0.82); sx.lineTo(cx + w * dx * 0.85, by - h * 0.14); sx.stroke(); }); sx.restore(); }
+  function headRow(it, name, Yf, k){ logo2(it, 120, Yf(0.06), 54 * k, true); T2(up(name), 192, Yf(0.06) + 22 * k, fit2(up(name), 70 * k, 820), C.ink, 'left'); }
+  function vsBars(rows, top, Rg, p, unit){   // barres verticales « attendu / publié »
+    const k = Rg.k, mx = Math.max(...rows.map(r => Math.abs(r[1] || 0)), 1e-9), H = Rg.h * 0.36, base = top + H;
+    rows.forEach(([lab, v, color, txt0], i) => { const cxx = 330 + i * 420, a = ease(segp(p, 0.08 + i * 0.18, 0.5 + i * 0.18)), h = Math.max(8, H * Math.abs(v || 0) / mx * a);
+      sx.fillStyle = C.track; R2(cxx - 110, top, 220, H, 22); sx.fill(); sx.fillStyle = color; R2(cxx - 110, base - h, 220, h, 22); sx.fill();
+      T2(lab, cxx, base + 54 * k, 38 * k, C.ink2, 'center', BF, 800); sx.save(); sx.globalAlpha *= a; T2(txt0, cxx, base - h - 20, fit2(txt0, 64 * k, 400), C.ink); sx.restore(); }); return base; }
+  const DRAW2 = {
+    resultats(k0, p, Rg, pp, d){
+      const k = Rg.k, Yf = q => Rg.y + Rg.h * q, R = resV(d, pp), cc = d.ccyF;
+      if (k0 === 'hook'){ const b = back(segp(p, 0, 0.3)); sx.save(); sx.translate(540, Yf(0.15)); sx.scale(b, b); logo2(d.co, 0, 0, 115 * k, true); sx.restore();
+        T2(up(d.name), 540, Yf(0.36), fit2(up(d.name), 96 * k, 960), C.ink); sx.save(); sx.globalAlpha *= ease(segp(p, 0.2, 0.45)); hl2('Resultats', 540, Yf(0.47), 90 * k);
+        if (R.date) T2('publiés le ' + dl(R.date), 540, Yf(0.555), 40 * k, C.ink2, 'center', BF, 700); sx.restore(); stk(pp.sticker, 540, Yf(0.77), 300 * k, segp(p, 0.35, 1)); return; }
+      if (k0 === 'bpa' || k0 === 'ca'){ const isB = k0 === 'bpa', A = isB ? R.epsA : R.revA, Ex = isB ? R.epsE : R.revE, beat = isNum(Ex) && Ex !== 0 ? (A / Ex - 1) * 100 : null;
+        headRow(d.co, d.name, Yf, k); hl2(isB ? 'Benefice par action' : "Chiffre d'affaires", 540, Yf(0.165), 66 * k);
+        const f2 = v => !isNum(v) ? '—' : isB ? fr(v, 2) + ' ' + cc : Math.abs(v) < 1 ? fr(v * 1000, 0) + ' M ' + cc : fr(v, 2) + ' Md ' + cc, colA = !isNum(beat) ? C.ink : beat >= 1 ? C.green : beat <= -1 ? C.red : '#E3A21A';
+        const base = vsBars([['ATTENDU', Ex, C.dim, isNum(Ex) ? f2(Ex) : '—'], ['PUBLIÉ', A, colA, f2(A)]], Yf(0.3), Rg, p);
+        if (isNum(beat)) stamp(beat >= 1 ? 'Battu ' + sgn(beat, 1) : beat <= -1 ? 'Manque ' + sgn(beat, 1) : 'Conforme', 540, base + 150 * k, 76 * k, colA, segp(p, 0.62, 0.85)); return; }
+      if (k0 === 'reaction' && d.chart){ const ch = d.chart, up0 = d.react >= 0; headRow(d.co, d.name, Yf, k); hl2('Reaction du cours', 540, Yf(0.165), 66 * k);
+        const box = { x: 80, y: Yf(0.3), w: 920, h: Rg.h * 0.44 }, G = pxFrame(ch.S, ch.Dd, box, []); G.curve(ease(segp(p, 0, 0.4)), C.ink, 6);
+        if (p > 0.35){ G.curve(ease(segp(p, 0.4, 0.75)), up0 ? C.green : C.red, 11, ch.ri - 1, G.n - 1); const xx = G.px(ch.ri - 1); sx.save(); sx.setLineDash([8, 9]); sx.strokeStyle = C.ink; sx.lineWidth = 3; sx.beginPath(); sx.moveTo(xx, box.y); sx.lineTo(xx, box.y + box.h); sx.stroke(); sx.restore();
+          chipD('RÉSULTATS', xx < box.x + 200 ? xx - 10 : xx, box.y + 30, 28, C.ink, C.bg, xx < box.x + 200 ? 'left' : 'center'); }
+        sx.save(); sx.globalAlpha *= ease(segp(p, 0.55, 0.75)); const tv = sgn(d.react, 1); T2(tv, 540, box.y + box.h + 85 + 120 * k, fit2(tv, 130 * k, 900), up0 ? C.green : C.red); T2('depuis les résultats', 540, box.y + box.h + 85 + 168 * k, 34 * k, C.ink2, 'center', BF, 700); sx.restore(); return; }
+      if (k0 === 'avis'){ headRow(d.co, d.name, Yf, k); hl2('Mon avis', 540, Yf(0.165), 66 * k); cards(lines(pp.avis), Yf(0.25), Rg.h * 0.7, p, Rg); }
+    },
+    duel(k0, p, Rg, pp, d){
+      const k = Rg.k, Yf = q => Rg.y + Rg.h * q, cA = '#E3A21A', cB = C.line3;
+      if (k0 === 'hook'){ title('Qui a fait mieux ?', 540, Yf(0.12), 110 * k, 2); const b = back(segp(p, 0.1, 0.45)); [[d.a, 290, nmA(d, pp)], [d.b, 790, nmB(d, pp)]].forEach(([it, xx, nm]) => { sx.save(); sx.translate(xx, Yf(0.47)); sx.scale(b, b); logo2(it, 0, 0, 140 * k, true); sx.restore(); T2(up(nm), xx, Yf(0.47) + 210 * k, fit2(up(nm), 66 * k, 420), C.ink); });
+        sx.save(); sx.globalAlpha *= ease(segp(p, 0.4, 0.6)); hl2('VS', 540, Yf(0.49), 90 * k); T2('en ' + yTxt2(d.yrs), 540, Yf(0.8), 50 * k, C.ink2, 'center', BF, 800); sx.restore(); return; }
+      if (k0 === 'course' || k0 === 'gagnant'){ const n = d.As.length, box = { x: 80, y: Yf(0.22), w: 700, h: Rg.h * 0.5 }, all = d.As.concat(d.Bs), lo = Math.min(...all) * 0.95, hi = Math.max(...all) * 1.04, px = i => box.x + box.w * i / (n - 1), py = v => box.y + box.h - box.h * (v - lo) / (hi - lo);
+        hl2(k0 === 'course' ? 'La course' : 'Le gagnant', 540, Yf(0.1), 70 * k); sx.fillStyle = C.card; R2(box.x - 28, box.y - 36, 976, box.h + 100, 30); sx.fill();
+        T2(dS(d.Dd[0]), box.x, box.y + box.h + 50, 30, C.dim, 'left', BF, 700); T2(dS(d.Dd[n - 1]), box.x + box.w, box.y + box.h + 50, 30, C.dim, 'right', BF, 700);
+        const a = k0 === 'course' ? ease(segp(p, 0, 0.8)) : 1, m = Math.max(1, Math.floor(a * (n - 1)));
+        [[d.Bs, cB], [d.As, cA]].forEach(([S0, c0]) => { sx.strokeStyle = c0; sx.lineWidth = 9; sx.lineJoin = 'round'; sx.beginPath(); for (let i = 0; i <= m; i++) i ? sx.lineTo(px(i), py(S0[i])) : sx.moveTo(px(i), py(S0[i])); sx.stroke(); });
+        let ya = py(d.As[m]), yb = py(d.Bs[m]); if (Math.abs(ya - yb) < 110){ if (ya < yb) yb = ya + 110; else ya = yb + 110; }
+        [[d.a, ya, d.As[m], cA], [d.b, yb, d.Bs[m], cB]].forEach(([it, yy, v, c0]) => { logo2(it, px(m) + 52, yy, 42, false); sx.save(); chipD(sgn(v - 100, 0), px(m) + 100, yy, 30, c0, '#fff'); sx.restore(); });
+        if (k0 === 'gagnant'){ const wA = d.ma >= d.mb, W = wA ? d.a : d.b, b = back(segp(p, 0, 0.4)), yW = box.y + box.h + 210 * k; sx.save(); sx.translate(300, yW); sx.scale(b, b); logo2(W, 0, 0, 90 * k, true); sx.restore(); stk('couronne', 300, yW - 120 * k, 130 * k, segp(p, 0.2, 1), 'float');
+          T2('x' + fr(Math.max(d.ma, d.mb), 1), 430, yW + 30 * k, 120 * k, wA ? cA : cB, 'left'); T2('contre x' + fr(Math.min(d.ma, d.mb), 1), 435, yW + 85 * k, 38 * k, C.ink2, 'left', BF, 800); }
+        return; }
+    },
+    dividende(k0, p, Rg, pp, d){
+      const k = Rg.k, Yf = q => Rg.y + Rg.h * q;
+      if (k0 === 'hook'){ const b = back(segp(p, 0, 0.3)); sx.save(); sx.translate(540, Yf(0.14)); sx.scale(b, b); logo2(d.co, 0, 0, 105 * k, true); sx.restore(); T2(up(d.name), 540, Yf(0.33), fit2(up(d.name), 90 * k, 960), C.ink);
+        T2('RENDEMENT', 540, Yf(0.42), 46 * k, C.dim, 'center', BF, 800); const v = (d.yld || 0) * ease(segp(p, 0.15, 0.6)), tv = fr(v, 1) + ' %'; T2(tv, 540, Yf(0.6), fit2(tv, 230 * k, 960), C.green);
+        sx.save(); sx.globalAlpha *= ease(segp(p, 0.55, 0.75)); if (isNum(d.dps)) hl2(money(d.dps, d.ccy) + ' par action', 540, Yf(0.7), 58 * k); sx.restore(); if (pp.sticker) stk(pp.sticker, 540, Yf(0.86), 200 * k, segp(p, 0.6, 1)); return; }
+      if (k0 === 'histo'){ headRow(d.co, d.name, Yf, k); hl2('Dividende par action', 540, Yf(0.165), 62 * k); const rows = d.rows, n = rows.length, X0 = 90, W = 900, top = Yf(0.27), H = Rg.h * 0.48, mx = Math.max(...rows.map(r => r[1])), bw = W / n * 0.72;
+        sx.fillStyle = C.card; R2(X0 - 30, top - 30, W + 60, H + 110, 28); sx.fill();
+        rows.forEach(([yy, v], i) => { const a = ease(segp(p, i / n * 0.6, i / n * 0.6 + 0.25)), h = Math.max(4, H * v / mx * a), xx = X0 + W * (i + 0.5) / n; const prev = i ? rows[i - 1][1] : v;
+          sx.fillStyle = v >= prev * 0.999 ? '#E3A21A' : C.red; R2(xx - bw / 2, top + H - h, bw, h, Math.min(10, bw / 3)); sx.fill(); if (i === 0 || i === n - 1 || n <= 8) T2(String(yy).slice(n > 8 ? 2 : 0), xx, top + H + 44, n > 10 ? 24 : 28, C.dim, 'center', BF, 700); });
+        sx.save(); sx.globalAlpha *= ease(segp(p, 0.7, 0.9)); const last = rows[n - 1][1]; chipD(money(last, d.ccy), X0 + W - 10, top + 20, 32, C.ink, C.bg, 'right');
+        const tl = (d.cagr != null ? sgn(d.cagr, 1) + ' par an sur ' + d.cagrN + ' ans' : '') + (d.streak >= 3 ? (d.cagr != null ? ' · ' : '') + d.streak + ' ans sans baisse' : ''); if (tl) T2(tl, 540, top + H + 120 * k, 40 * k, C.ink, 'center', BF, 800); sx.restore(); return; }
+      if (k0 === 'revenu'){ const m = +pp.montant || 10000, an = m * (d.yld || 0) / 100; headRow(d.co, d.name, Yf, k); T2('AVEC', 540, Yf(0.2), 60 * k, C.dim, 'center', BF, 800); hl2(fr(m) + ' €', 540, Yf(0.3), 110 * k);
+        T2('TU TOUCHES', 540, Yf(0.45), 60 * k, C.dim, 'center', BF, 800); const v = an * ease(segp(p, 0.2, 0.7)), tv = fr(v) + ' €'; T2(tv, 540, Yf(0.62), fit2(tv, 210 * k, 960), C.green);
+        T2('par an, soit ' + fr(an / 12) + ' € par mois (avant impôts)', 540, Yf(0.71), 38 * k, C.ink2, 'center', BF, 700); if (pp.sticker) stk(pp.sticker, 540, Yf(0.86), 200 * k, segp(p, 0.5, 1)); }
+    },
+    investi(k0, p, Rg, pp, d){
+      const k = Rg.k, Yf = q => Rg.y + Rg.h * q, m = +pp.montant || 1000, fin0 = m * d.mult, win = d.mult >= 1;
+      if (k0 === 'hook'){ title('Si tu avais investi', 540, Yf(0.1), 110 * k, 2); sx.save(); sx.globalAlpha *= ease(segp(p, 0.15, 0.35)); hl2(fr(m) + ' €', 540, Yf(0.36), 120 * k); sx.restore();
+        const b = back(segp(p, 0.3, 0.6)); sx.save(); sx.translate(540, Yf(0.56)); sx.scale(b, b); logo2(d.co, 0, 0, 100 * k, true); sx.restore(); T2(up(d.name), 540, Yf(0.71), fit2(up(d.name), 80 * k, 960), C.ink);
+        sx.save(); sx.globalAlpha *= ease(segp(p, 0.55, 0.8)); T2('il y a ' + yTxt2(d.yrs), 540, Yf(0.8), 60 * k, C.ink2, 'center', BF, 800); sx.restore(); return; }
+      if (k0 === 'course'){ headRow(d.co, d.name, Yf, k); const box = { x: 80, y: Yf(0.33), w: 920, h: Rg.h * 0.44 }, V = d.S.map(v => m * v / d.S[0]), G = pxFrame(V, d.Dd, box, [m]);
+        const a = ease(segp(p, 0, 0.85)), i1 = G.curve(a, win ? C.green : C.red, 8); const cur = V[i1], tv = fr(cur) + ' €'; T2(tv, 540, Yf(0.24), fit2(tv, 150 * k, 960), C.ink); return; }
+      if (k0 === 'result'){ headRow(d.co, d.name, Yf, k); T2("AUJOURD'HUI", 540, Yf(0.25), 60 * k, C.dim, 'center', BF, 800); const v = m + (fin0 - m) * ease(segp(p, 0, 0.6)), tv = fr(Math.round(v / 10) * 10) + ' €'; T2(tv, 540, Yf(0.45), fit2(tv, 230 * k, 980), win ? C.green : C.red);
+        sx.save(); sx.globalAlpha *= ease(segp(p, 0.5, 0.75)); hl2('x' + fr(d.mult, 1) + ' en ' + yTxt2(d.yrs), 540, Yf(0.56), 70 * k); T2('hors dividendes · cours TradingView', 540, Yf(0.65), 34 * k, C.dim, 'center', BF, 700); sx.restore(); stk(win ? 'fusee' : 'decourage', 540, Yf(0.83), 230 * k, segp(p, 0.5, 1)); }
+    },
+    portef(k0, p, Rg, pp, d){
+      const k = Rg.k, Yf = q => Rg.y + Rg.h * q;
+      if (k0 === 'hook'){ const im = imgNow('data/wolf-tete.png'), b = back(segp(p, 0, 0.35)); if (im){ sx.save(); sx.translate(540, Yf(0.27)); sx.scale(b, b); sx.drawImage(im, -170 * k, -170 * k, 340 * k, 340 * k); sx.restore(); }
+        sx.save(); sx.globalAlpha *= ease(segp(p, 0.2, 0.45)); T2('MON PORTEFEUILLE', 540, Yf(0.58), fit2('MON PORTEFEUILLE', 120 * k, 980), C.ink); hl2('En 30 secondes', 540, Yf(0.69), 84 * k); sx.restore(); return; }
+      if (k0 === 'perf'){ T2('DEPUIS LE DEBUT', 540, Yf(0.12), 96 * k, C.ink); hl2('Wolf vs indices', 540, Yf(0.22), 60 * k);
+        const rows = [['WOLF', 'Wolf Portfolio', d.since.wolf], ['CAC', 'CAC 40', d.since.cac], ['SPX', 'S&P 500 (en €)', d.since.spx]], max = Math.max(...rows.map(r => Math.abs(r[2] || 0)), 0.1) * 1.05, axis = 380, span = 620;
+        rows.forEach((r, i) => { const yy = Yf(0.38 + i * 0.18), a = ease(segp(p, 0.12 + i * 0.12, 0.55 + i * 0.12)); logo2(r[0], 130, yy, 58 * k, r[0] === 'WOLF');
+          T2(r[1], 210, yy - 30 * k, 36 * k, C.ink2, 'left', BF, 700); T2(sgn((r[2] || 0) * a, 1), 1000, yy - 24 * k, 64 * k, col(r[2] || 0), 'right');
+          sx.fillStyle = C.track; R2(210, yy - 6 * k, 790, 44 * k, 22 * k); sx.fill(); const w = Math.max(6, (span - 30) * Math.abs(r[2] || 0) / max * a), xs = (r[2] || 0) >= 0 ? axis : axis - w; sx.fillStyle = col(r[2] || 0); R2(xs, yy - 6 * k, w, 44 * k, 22 * k); sx.fill(); }); return; }
+      if (k0 === 'compo'){ drawHebdo({ k: 'compo' }, p, Rg); return; }
+      if (k0 === 'lignes'){ T2('MES 3 PLUS', 540, Yf(0.11), 100 * k, C.ink); hl2('Grosses lignes', 540, Yf(0.21), 64 * k); const top3 = d.compo.slice(0, 3), mx = Math.max(...top3.map(z => z.w), 1);
+        top3.forEach((it, i) => { const yy = Yf(0.32 + i * 0.2), a = ease(segp(p, 0.1 + i * 0.15, 0.45 + i * 0.15)); sx.save(); sx.globalAlpha *= a; sx.fillStyle = C.card; R2(60, yy, 960, 190 * k, 40); sx.fill(); logo2(it, 60 + 95 * k, yy + 95 * k, 62 * k);
+          T2(it.name, 60 + 190 * k, yy + 70 * k, fit2(it.name, 46 * k, 560, BF, 800), C.ink, 'left', BF, 800); sx.fillStyle = C.track; R2(60 + 190 * k, yy + 110 * k, 560, 36 * k, 18 * k); sx.fill(); sx.fillStyle = '#E3A21A'; R2(60 + 190 * k, yy + 110 * k, Math.max(20, 560 * it.w / mx * a), 36 * k, 18 * k); sx.fill();
+          T2(fr(it.w, 1) + ' %', 1000, yy + 140 * k, 64 * k, C.ink, 'right'); sx.restore(); }); return; }
+      if (k0 === 'best'){ T2('MEILLEURE', 540, Yf(0.11), 100 * k, C.ink); hl2('Et pire ligne', 540, Yf(0.21), 64 * k);
+        [[d.best, 'MEILLEURE', 0.33], [d.worst, 'PIRE', 0.62]].forEach(([it, lab, f0], i) => { if (!it) return; const yy = Yf(f0), a = ease(segp(p, 0.1 + i * 0.3, 0.45 + i * 0.3)); sx.save(); sx.globalAlpha *= a; sx.translate((1 - a) * 90, 0);
+          sx.fillStyle = C.card; R2(60, yy, 960, 290 * k, 44); sx.fill(); logo2(it, 60 + 130 * k, yy + 145 * k, 90 * k, true); T2(lab, 60 + 260 * k, yy + 90 * k, 34 * k, C.dim, 'left', BF, 800);
+          T2(it.name, 60 + 260 * k, yy + 150 * k, fit2(it.name, 50 * k, 620, BF, 800), C.ink, 'left', BF, 800); T2(sgn(it.perf, 1), 60 + 260 * k, yy + 245 * k, 100 * k, col(it.perf), 'left'); sx.restore(); });
+        T2('depuis l’achat, hors dividendes', 540, Yf(0.97), 30 * k, C.dim, 'center', BF, 700); }
+    },
+    garde(k0, p, Rg, pp, d){
+      const k = Rg.k, Yf = q => Rg.y + Rg.h * q, its = (pp.items || []).slice(0, 8);
+      const grid = (vis, withV, aFn) => { const n = its.length, cols = n <= 4 ? 2 : n <= 6 ? 3 : 4, rows = Math.ceil(n / cols), cw = 960 / cols, ch = Math.min(260 * k, Rg.h * 0.62 / rows), y0 = Yf(0.28);
+        its.forEach((it, i) => { const cx0 = 60 + cw * (i % cols) + cw / 2, cy0 = y0 + ch * Math.floor(i / cols) + ch / 2, a = aFn(i); if (a <= 0) return; sx.save(); sx.globalAlpha *= Math.min(1, a); sx.fillStyle = C.card; R2(cx0 - cw / 2 + 10, cy0 - ch / 2 + 8, cw - 20, ch - 16, 28); sx.fill();
+          logo2(it, cx0, cy0 - ch * 0.12, Math.min(cw, ch) * 0.24); T2(it.name, cx0, cy0 + ch * 0.3, fit2(it.name, 30 * k, cw - 40, BF, 800), C.ink, 'center', BF, 800);
+          if (withV){ const V = VERD[it.v || 'garde']; stamp(V[1], cx0, cy0 - ch * 0.05, Math.min(44 * k, cw * 0.16), V[0], 1); } sx.restore(); }); };
+      if (k0 === 'titre'){ title(pp.titre || 'Je garde ou je jette ?', 540, Yf(0.08), 110 * k, 2); grid(false, false, i => ease(segp(p, 0.15 + i * 0.06, 0.4 + i * 0.06))); return; }
+      if (k0 === 'recap'){ T2('LE RECAP', 540, Yf(0.12), 110 * k, C.ink); grid(false, true, i => ease(segp(p, i * 0.05, 0.3 + i * 0.05))); return; }
+      if (k0 === 'une'){ const it = its.find(z => z.sym === pp.une); if (!it) return; title("Si je ne devais en garder qu'une", 540, Yf(0.08), 96 * k, 2);
+        const b = back(segp(p, 0.15, 0.5)); sx.save(); sx.translate(540, Yf(0.5)); sx.scale(b, b); logo2(it, 0, 0, 150 * k, true); sx.restore(); stk('couronne', 540, Yf(0.5) - 210 * k, 170 * k, segp(p, 0.35, 1), 'float');
+        T2(up(it.name), 540, Yf(0.5) + 230 * k, fit2(up(it.name), 90 * k, 960), C.ink); if (it.why){ sx.save(); sx.globalAlpha *= ease(segp(p, 0.55, 0.8)); para(it.why, 540, Yf(0.5) + 320 * k, 900, 42 * k, C.ink2); sx.restore(); } return; }
+      const i = +k0.slice(1) - 1, it = its[i]; if (!it) return; const V = VERD[it.v || 'garde'], st0 = (d.stats || {})[it.sym] || {}, trash = (it.v || 'garde') === 'poubelle';
+      T2((i + 1) + ' / ' + its.length, 540, Yf(0.06), 40 * k, C.dim, 'center', BF, 800);
+      const fall = trash ? ease(segp(p, 0.72, 0.98)) : 0, sc = 1 - 0.75 * fall, cy0 = Yf(0.42) + fall * Rg.h * 0.36, inA = back(segp(p, 0, 0.25));
+      sx.save(); sx.translate(540, cy0); sx.scale(sc * inA, sc * inA); sx.rotate(fall * 0.5); sx.globalAlpha *= 1 - fall * 0.6;
+      sx.fillStyle = C.card; R2(-380, -Rg.h * 0.3, 760, Rg.h * 0.6, 44); sx.fill(); logo2(it, 0, -Rg.h * 0.17, 115 * k, true); T2(up(it.name), 0, -Rg.h * 0.17 + 190 * k, fit2(up(it.name), 76 * k, 700), C.ink);
+      const L2 = [['1 an', isNum(st0.p1) ? sgn(st0.p1, 0) : '—', isNum(st0.p1) ? col(st0.p1) : C.dim], ['Rendement', isNum(st0.yld) ? fr(st0.yld, 1) + ' %' : '—', C.ink], ['PER', isNum(st0.per) && st0.per >= 0.5 ? fr(st0.per, 1) : '—', C.ink]];
+      L2.forEach(([l, v, c0], j) => { const xx = -250 + j * 250; T2(l, xx, Rg.h * 0.13, 30 * k, C.dim, 'center', BF, 800); T2(v, xx, Rg.h * 0.13 + 62 * k, 52 * k, c0, 'center', BF, 800); });
+      sx.restore();
+      if (trash) bin(540, Rg.y + Rg.h - 20, 230 * k, ease(segp(p, 0.4, 0.6)));
+      if (!fall || fall < 0.3) stamp(V[1], 540 + 190, Yf(0.42) - Rg.h * 0.2, 84 * k, V[0], segp(p, 0.42, 0.62));
+      if (it.why && !trash){ sx.save(); sx.globalAlpha *= ease(segp(p, 0.62, 0.85)); para(it.why, 540, Yf(0.8), 900, 42 * k, C.ink2); sx.restore(); }
+      if (!trash) stk((it.v || 'garde') === 'surveille' ? 'loupe' : 'pouce', 920, Yf(0.14), 170 * k, segp(p, 0.5, 1));
+    }
+  };
   function drawValoChart(d, k0, p, Rg, pp){
     const k = Rg.k, Yf = q => Rg.y + Rg.h * q, order = ['pess', 'real', 'opt'], cc = { pess: C.red, real: '#E3A21A', opt: C.green }, lab = { pess: 'Pessimiste', real: 'Réaliste', opt: 'Optimiste' };
     const shown = k0 === 'gcours' ? [] : k0 === 'verdict' ? order : order.slice(0, order.indexOf(k0) + 1), isNew = z => z === k0, an = ease(segp(p, 0.05, 0.55));
@@ -1051,8 +1259,10 @@ const SHORT = (() => {
   const stkSel = (key, label) => `<label class="sd-f">${esc(label)}<select data-sd-p="${key}"><option value="">Aucun</option>${Object.entries(STK).map(([k2, v]) => `<option value="${k2}" ${fc().p[key] === k2 ? 'selected' : ''}>${esc(v[0])}</option>`).join('')}</select></label>`;
   const txtIn = (key, label, ph) => `<label class="sd-f">${esc(label)}<input data-sd-p="${key}" value="${esc(fc().p[key] || '')}" placeholder="${esc(ph || '')}"></label>`;
   const area = (key, label, ph) => `<label class="sd-f">${esc(label)}<textarea data-sd-p="${key}" rows="4" placeholder="${esc(ph || '')}">${esc(fc().p[key] || '')}</textarea></label>`;
-  const coPick = label => { const co = fc().p.co; return `<div class="sd-grp"><span>${esc(label)}</span>${co ? `<div class="sd-chips"><span class="sd-chip">${co.logoid ? `<img src="${esc(tvLogo(co.logoid))}" alt="">` : ''}${esc(co.name || co.sym)}<button type="button" data-sd-s="corm" aria-label="Retirer">✕</button></span></div>` : ''}
-    <input class="sd-search" id="sdCoQ" placeholder="Chercher une action ou un ETF (TradingView)…" autocomplete="off"><div class="sd-sugg" id="sdCoSugg"></div></div>`; };
+  const coPick = (label, key = 'co') => { const co = key === 'add' ? null : fc().p[key]; return `<div class="sd-grp"><span>${esc(label)}</span>${co ? `<div class="sd-chips"><span class="sd-chip">${co.logoid ? `<img src="${esc(tvLogo(co.logoid))}" alt="">` : ''}${esc(co.name || co.sym)}<button type="button" data-sd-corm="${key}" aria-label="Retirer">✕</button></span></div>` : ''}
+    <input class="sd-search" id="sdCoQ_${key}" data-sd-coq="${key}" placeholder="Chercher une action ou un ETF (TradingView)…" autocomplete="off"><div class="sd-sugg" id="sdCoSugg_${key}"></div></div>`; };
+  const ovIn = (key, label, auto) => `<label class="sd-f">${esc(label)}<input data-sd-p="${key}" value="${esc(fc().p[key] || '')}" placeholder="${esc(auto != null && auto !== '' ? 'Auto : ' + auto : 'à saisir')}"></label>`;
+  const yrsSel = (key, label, opts) => `<label class="sd-f">${esc(label)}<select data-sd-p="${key}">${opts.map(v => `<option value="${v}" ${String(fc().p[key]) === String(v) ? 'selected' : ''}>${v} an${v > 1 ? 's' : ''}</option>`).join('')}</select></label>`;
   function fmtSettings(){
     const f = getCfg().fmt, p = fc().p, c = getCfg();
     if (f === 'hebdo') return `<label class="sd-f">Semaine<select data-sd-sc="per"><option value="w0" ${c.per === 'w0' ? 'selected' : ''}>Cette semaine</option><option value="w1" ${c.per === 'w1' ? 'selected' : ''}>La semaine dernière</option></select></label>`;
@@ -1061,8 +1271,8 @@ const SHORT = (() => {
       <label class="sd-f">Zoom sur l’écran<select data-sd-p="zoom">${[['1', 'Écran entier'], ['1.5', 'Zoom ×1,5'], ['2', 'Zoom ×2'], ['3', 'Zoom ×3']].map(([v, l]) => `<option value="${v}" ${String(p.zoom) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label class="sd-f">Zone zoomée<select data-sd-p="focus">${[['c', 'Centre'], ['hg', 'Haut gauche'], ['h', 'Haut'], ['hd', 'Haut droite'], ['g', 'Gauche'], ['d', 'Droite'], ['bg', 'Bas gauche'], ['b', 'Bas'], ['bd', 'Bas droite']].map(([v, l]) => `<option value="${v}" ${p.focus === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <p class="sd-sub">Astuce : partage une FENÊTRE (TradingView, l’onglet Analyse…) et garde le Studio visible à côté pour utiliser → et Espace. Le zoom se change même pendant l’enregistrement.</p>` + txtIn('fin', 'Encadré de fin', 'Pour la suite');
-    if (f === 'explique') return txtIn('titre', 'Titre') + txtIn('sous', 'Encadré sous le titre') + area('points', 'Tes points (un par ligne, 5 au plus)', 'Un point par ligne') + coPick('Entreprise (logo, facultatif)') + stkSel('sticker', 'Loup du titre') + txtIn('fin', 'Encadré de fin', 'Pour la suite');
-    if (f === 'chute') return coPick('Action') + `<label class="sd-f">Plus haut cherché sur<select data-sd-p="yrs">${[['1', '1 an'], ['2', '2 ans'], ['3', '3 ans'], ['5', '5 ans'], ['10', '10 ans'], ['max', 'Tout l’historique']].map(([v, l]) => `<option value="${v}" ${String(p.yrs) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`
+    if (f === 'explique') return txtIn('titre', 'Titre') + txtIn('sous', 'Encadré sous le titre') + area('points', 'Tes points (un par ligne, 5 au plus)', 'Un point par ligne') + coPick('Entreprise (logo, facultatif)', 'co') + stkSel('sticker', 'Loup du titre') + txtIn('fin', 'Encadré de fin', 'Pour la suite');
+    if (f === 'chute') return coPick('Action', 'co') + `<label class="sd-f">Plus haut cherché sur<select data-sd-p="yrs">${[['1', '1 an'], ['2', '2 ans'], ['3', '3 ans'], ['5', '5 ans'], ['10', '10 ans'], ['max', 'Tout l’historique']].map(([v, l]) => `<option value="${v}" ${String(p.yrs) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`
       + stkSel('sticker', 'Loup du choc') + area('raisons', 'Pourquoi ça chute (une raison par ligne)') + txtIn('question', 'La question') + txtIn('verdict', 'Ton verdict (apparaît sous la question)') + stkSel('sticker2', 'Loup de la question') + txtIn('fin', 'Encadré de fin', 'Pour la suite');
     if (f === 'valo') return `<label class="sd-f">Entreprise (fiches de « Prix par secteur »)<select data-sd-p="nom">${(valoList || []).map(x => `<option value="${esc(x.nom)}" ${p.nom === x.nom ? 'selected' : ''}>${esc(x.nom)}${isNum(x.sc.real) ? '' : ' (pas de scénario réaliste)'}</option>`).join('') || '<option>Chargement…</option>'}</select></label>
       <p class="sd-sub">Les 3 prix viennent de TA simulation dans « Prix par secteur » (rien n’est estimé ici). Annonce-les un par un avec → : chaque scénario devient une ligne sur le graphique du cours, avec le dégradé rouge → jaune → vert.</p>
@@ -1070,6 +1280,21 @@ const SHORT = (() => {
       <label class="sd-f">Période du graphique<select data-sd-p="gyrs">${[['1', '1 an'], ['2', '2 ans'], ['3', '3 ans'], ['5', '5 ans'], ['10', '10 ans'], ['max', 'Tout l’historique']].map(([v, l]) => `<option value="${v}" ${String(p.gyrs) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>` + stkSel('sticker', 'Loup (vide = choisi selon le verdict)') + txtIn('fin', 'Encadré de fin', 'Pour la suite');
     if (f === 'trans') return `<label class="sd-f">Opération du Wolf Portfolio<select data-sd-p="op">${(opsList || []).map(o => `<option value="${esc(o.id)}" ${p.op === o.id ? 'selected' : ''}>${esc(o.label)}</option>`).join('') || '<option>Chargement…</option>'}</select></label>
       <p class="sd-sub">Dates, prix et performance (dividendes compris) calculés depuis ton journal. Wolf Portfolio seulement, jamais le PEA ni le CTO.</p>` + stkSel('sticker', 'Loup de l’accroche') + area('raisons', 'Pourquoi (une raison par ligne)') + txtIn('fin', 'Encadré de fin', 'Pour la suite');
+    if (f === 'resultats'){ const A = (DATA && DATA.auto) || {};
+      return coPick('Entreprise', 'co') + txtIn('nomA', 'Nom affiché (raccourci, vide = nom TradingView)', '') + `<p class="sd-sub">Chiffres relevés sur TradingView (dernier trimestre publié). Une case remplie remplace le chiffre automatique : corrige ici en cas d’erreur.</p>`
+        + ovIn('date', 'Date de publication (JJ/MM/AAAA)', A.date ? dS(Date.parse(A.date) / 1000) : '') + ovIn('epsA', 'Bénéfice par action PUBLIÉ', isNum(A.epsA) ? fr(A.epsA, 2) : '') + ovIn('epsE', 'Bénéfice par action ATTENDU', isNum(A.epsE) ? fr(A.epsE, 2) : '')
+        + ovIn('revA', 'Chiffre d’affaires PUBLIÉ (milliards)', isNum(A.revA) ? fr(A.revA, 2) : '') + ovIn('revE', 'Chiffre d’affaires ATTENDU (milliards)', isNum(A.revE) ? fr(A.revE, 2) : '')
+        + area('avis', 'Ton avis (un point par ligne)') + stkSel('sticker', 'Loup de l’accroche') + txtIn('fin', 'Encadré de fin', 'Pour la suite'); }
+    if (f === 'duel') return coPick('Action A (jaune)', 'a') + txtIn('na', 'Nom affiché A (raccourci)', (p.a && p.a.name) || '') + coPick('Action B (bleue)', 'b') + txtIn('nb', 'Nom affiché B (raccourci)', (p.b && p.b.name) || '') + yrsSel('yrs', 'Période', [1, 2, 3, 5, 10, 15, 20]) + txtIn('fin', 'Encadré de fin', 'Pour la suite');
+    if (f === 'dividende') return coPick('Entreprise', 'co') + txtIn('nomA', 'Nom affiché (raccourci, vide = nom TradingView)', '') + txtIn('montant', 'Montant investi pour l’exemple (€)', '10000') + stkSel('sticker', 'Loup') + txtIn('fin', 'Encadré de fin', 'Pour la suite');
+    if (f === 'investi') return coPick('Entreprise', 'co') + txtIn('nomA', 'Nom affiché (raccourci, vide = nom TradingView)', '') + txtIn('montant', 'Montant de départ (€)', '1000') + yrsSel('yrs', 'Il y a', [1, 2, 3, 5, 10, 15, 20]) + txtIn('fin', 'Encadré de fin', 'Pour la suite');
+    if (f === 'portef') return `<p class="sd-sub">Wolf Portfolio uniquement (jamais le PEA ni le CTO) : performance depuis le lancement, composition, plus grosses lignes, meilleure et pire ligne. Aucun montant en euros.</p>` + txtIn('fin', 'Encadré de fin', 'Pour la suite');
+    if (f === 'garde'){ const its = p.items || [];
+      return txtIn('titre', 'Titre', 'Je garde ou je jette ?') + coPick('Ajouter une entreprise (8 au plus)', 'add')
+        + `<div class="sd-items">${its.map((it, i) => `<div class="sd-item">${it.logoid ? `<img src="${esc(tvLogo(it.logoid))}" alt="">` : '<i></i>'}<input data-sd-it="${i}|name" value="${esc(it.name)}" aria-label="Nom affiché" title="Nom affiché (raccourcis-le si besoin)">
+          <select data-sd-it="${i}|v">${Object.entries(VERD).map(([v0, V]) => `<option value="${v0}" ${(it.v || 'garde') === v0 ? 'selected' : ''}>${V[1]}</option>`).join('')}</select>
+          <input data-sd-it="${i}|why" value="${esc(it.why || '')}" placeholder="Pourquoi (facultatif)"><button type="button" data-sd-itup="${i}" aria-label="Monter">↑</button><button type="button" data-sd-itrm="${i}" aria-label="Retirer">✕</button></div>`).join('') || '<p class="sd-sub">Aucune entreprise : cherche-les ci-dessus.</p>'}</div>
+        <label class="sd-f">Si je ne devais en garder qu’une<select data-sd-p="une"><option value="">(pas d’étape finale)</option>${its.map(it => `<option value="${esc(it.sym)}" ${p.une === it.sym ? 'selected' : ''}>${esc(it.name)}</option>`).join('')}</select></label>` + txtIn('fin', 'Encadré de fin', 'Pour la suite'); }
     return '';
   }
   function view(){
@@ -1106,9 +1331,9 @@ const SHORT = (() => {
     if (!DATA && !dataErr) loadData().then(() => { if (ui.tab === 'short' && !recording) view(); });
   }
   function reload(){ pubOv = { yt: null, fb: null }; DATA = null; dataErr = null; if (!recording){ tt = 0; } view(); }
-  async function coSearch(q){ const box = $('sdCoSugg'); if (!box) return; if (q.trim().length < 2){ box.innerHTML = ''; return; }
+  async function coSearch(q, key){ const box = $('sdCoSugg_' + key); if (!box) return; if (q.trim().length < 2){ box.innerHTML = ''; return; }
     try { const r = await fetch('/api/tv/search?all=1&q=' + encodeURIComponent(q.trim().slice(0, 50)), { cache: 'no-store' }); const j = await r.json(); coSugg = j.ok ? (j.results || []).slice(0, 8) : []; } catch(e){ coSugg = []; }
-    box.innerHTML = coSugg.length ? coSugg.map((r, i) => `<button type="button" data-sd-copick="${i}">${r.logoid ? `<img src="${esc(tvLogo(r.logoid))}" alt="">` : '<i></i>'}<b>${esc(r.name)}</b><span>${esc(r.symbol)}</span></button>`).join('') : '<p class="sd-sub">Aucun résultat (serveur local ?).</p>'; }
+    box.innerHTML = coSugg.length ? coSugg.map((r, i) => `<button type="button" data-sd-copick="${key}|${i}">${r.logoid ? `<img src="${esc(tvLogo(r.logoid))}" alt="">` : '<i></i>'}<b>${esc(r.name)}</b><span>${esc(r.symbol)}</span></button>`).join('') : '<p class="sd-sub">Aucun résultat (serveur local ?).</p>'; }
   async function devices(){ if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
     try { const ds = await navigator.mediaDevices.enumerateDevices(), cs = $('sdCamSel'), ms = $('sdMicSel'); if (!cs || !ms) return;
       cs.innerHTML = ds.filter(d => d.kind === 'videoinput').map((d, i) => `<option value="${esc(d.deviceId)}">${esc(d.label || 'Caméra ' + (i + 1))}</option>`).join('') || '<option value="">Aucune caméra</option>';
@@ -1174,13 +1399,25 @@ const SHORT = (() => {
     if (f === 'trans'){ const t0 = tag(d.name), sell = d.type === 'SELL';
       return pack(`${sell ? "J'ai vendu" : "J'ai acheté"} ${d.name}${isNum(d.perf) ? ' (' + pr(d.perf) + ')' : ''}`, `${sell ? 'Vente' : 'Achat'} ${deN(d.name)} dans le Wolf Portfolio.\n\n📅 Achat : ${dl(d.buyDate)}${sell ? `\n📅 Vente : ${dl(d.sellDate)}` : ''}${isNum(d.perf) ? `\n📈 Performance : ${pr(d.perf)}${sell && d.divs > 0 ? ' (dividendes compris)' : ''}` : ''}\n\nPourquoi ?\n${lines(pp.raisons).map(l => '• ' + l).join('\n')}`,
         `🐺 ${sell ? "J'ai vendu" : "J'ai acheté"} ${d.name}${isNum(d.perf) ? ' : ' + pr(d.perf) : ''}.\n\n${lines(pp.raisons).map(l => '• ' + l).join('\n')}`, t0 + ' #wolfportfolio'); }
+    if (f === 'resultats'){ const R = resV(d, pp), t0 = tag(d.name), beat = isNum(R.epsE) && R.epsE ? (R.epsA / R.epsE - 1) * 100 : null, vb = !isNum(beat) ? '' : beat >= 1 ? 'battus' : beat <= -1 ? 'manqués' : 'conformes';
+      return pack(`${d.name} : résultats ${vb}${isNum(d.react) ? ' (' + pr(d.react) + ')' : ''}`, `Résultats de ${d.name}${R.date ? ' publiés le ' + dl(R.date) : ''}.\n\n• Bénéfice par action : ${fr(R.epsA, 2)} (attendu ${fr(R.epsE, 2)})${isNum(R.revA) ? `\n• Chiffre d'affaires : ${fr(R.revA, 2)} Md (attendu ${fr(R.revE, 2)} Md)` : ''}${isNum(d.react) ? `\n• Réaction du cours : ${pr(d.react)}` : ''}\n\nMon avis :\n${lines(pp.avis).map(l => '• ' + l).join('\n')}`,
+        `📊 ${d.name} : résultats ${vb}.\n\nBénéfice par action ${fr(R.epsA, 2)} contre ${fr(R.epsE, 2)} attendu.${isNum(d.react) ? ' Le cours fait ' + pr(d.react) + ' depuis.' : ''}`, t0 + ' #resultats #earnings'); }
+    if (f === 'duel'){ const A = nmA(d, pp), B = nmB(d, pp), W = d.ma >= d.mb ? A : B; return pack(`${A} ou ${B} : qui a fait mieux en ${yTxt2(d.yrs)} ?`, `${A} : x${fr(d.ma, 1)}\n${B} : x${fr(d.mb, 1)}\n\nLe gagnant : ${W}.\n(cours TradingView, hors dividendes)`, `🥊 ${A} contre ${B} en ${yTxt2(d.yrs)} : ${W} l'emporte (x${fr(Math.max(d.ma, d.mb), 1)}).`, tag(A) + ' ' + tag(B) + ' #duel'); }
+    if (f === 'dividende'){ const m = +pp.montant || 10000; return pack(`${d.name} : ${fr(d.yld, 1)} % de rendement`, `${d.name} verse ${fr(d.yld, 1)} % de rendement${isNum(d.dps) ? ' (' + money(d.dps, d.ccy) + ' par action)' : ''}.${d.cagr != null ? `\nDividende en hausse de ${fr(d.cagr, 1)} % par an sur ${d.cagrN} ans.` : ''}\n\nAvec ${fr(m)} €, environ ${fr(m * d.yld / 100)} € par an, avant impôts.`,
+      `💶 ${d.name} : ${fr(d.yld, 1)} % de rendement. Avec ${fr(m)} €, ça fait environ ${fr(m * d.yld / 100)} € par an.`, tag(d.name) + ' #dividende #rentepassive'); }
+    if (f === 'investi'){ const m = +pp.montant || 1000; return pack(`${fr(m)} € dans ${d.name} il y a ${yTxt2(d.yrs)}`, `Si tu avais investi ${fr(m)} € dans ${d.name} il y a ${yTxt2(d.yrs)}, tu aurais aujourd'hui ${fr(Math.round(m * d.mult / 10) * 10)} € (x${fr(d.mult, 1)}, hors dividendes).`,
+      `💸 ${fr(m)} € dans ${d.name} il y a ${yTxt2(d.yrs)} = ${fr(Math.round(m * d.mult / 10) * 10)} € aujourd'hui.`, tag(d.name) + ' #investir'); }
+    if (f === 'portef') return pack('Mon portefeuille en 30 secondes', `Depuis le lancement : ${pr(d.since.wolf)} (CAC 40 : ${pr(d.since.cac)}, S&P 500 en € : ${pr(d.since.spx)}).\n${d.n} lignes, ${fr(d.cashW)} % de liquidités.${d.best ? `\nMeilleure ligne : ${d.best.name} (${sgn(d.best.perf, 0)}).` : ''}`,
+      `🐺 Mon portefeuille en 30 secondes : ${pr(d.since.wolf)} depuis le lancement, ${d.n} lignes.`, '#wolfportfolio #portefeuille');
+    if (f === 'garde'){ const its = pp.items || [], une = its.find(z => z.sym === pp.une); return pack(pp.titre || 'Je garde ou je jette ?', its.map(it => `${it.name} : ${VERD[it.v || 'garde'][1]}${it.why ? ' (' + it.why + ')' : ''}`).join('\n') + (une ? `\n\nSi je ne devais en garder qu'une : ${une.name}.` : ''),
+      `🗑 ${pp.titre || 'Je garde ou je jette ?'}\n\n${its.map(it => (it.v === 'poubelle' ? '❌ ' : it.v === 'surveille' ? '👀 ' : '✅ ') + it.name).join('\n')}`, its.slice(0, 3).map(it => tag(it.name)).join(' ')); }
     return '';
   }
   async function copyPub(k){ const ta = $('sdPub_' + k), msg = $('sdPubMsg'); if (!ta) return;
     try { await navigator.clipboard.writeText(ta.value); } catch(e){ ta.select(); document.execCommand('copy'); }
     if (msg){ msg.textContent = (k === 'yt' ? 'Texte YouTube' : 'Texte Facebook') + ' copié ✔'; setTimeout(() => { if (msg.isConnected) msg.textContent = ''; }, 2500); } }
 
-  const DATA_KEYS = ['co', 'yrs', 'nom', 'op', 'gyrs'];
+  const DATA_KEYS = ['co', 'yrs', 'nom', 'op', 'gyrs'];   // « une », montants, verdicts : redessinés sans recharger
   return {
     view,
     _seek(i, q){ const a = active(), s = a[Math.min(i, a.length - 1)]; let acc = 0; for (const z of a){ if (z === s) break; acc += +z.dur || 3; } tt = acc + (+s.dur || 3) * Math.min(q, 0.999); playing = false; frame(); return $('sdShortCv').toDataURL('image/jpeg', 0.6); },
@@ -1197,21 +1434,26 @@ const SHORT = (() => {
       if (ds.sdS === 'scrstop'){ stopScreen(); view(); return true; }
       if (ds.sdS === 'rec'){ recording ? stopRec() : (countdown > 0 ? null : startRec()); return true; }
       if (ds.sdS === 'pubreset'){ pubOv = { yt: null, fb: null }; ['yt', 'fb'].forEach(k => { const ta = $('sdPub_' + k); if (ta) ta.value = pubText(k); }); return true; }
-      if (ds.sdS === 'corm'){ fc().p.co = null; persist(); reload(); return true; }
+      if (ds.sdCorm){ fc().p[ds.sdCorm] = null; persist(); reload(); return true; }
+      if (ds.sdItrm != null){ if (recording) return true; fc().p.items.splice(+ds.sdItrm, 1); persist(); reload(); return true; }
+      if (ds.sdItup != null){ const L = fc().p.items, i = +ds.sdItup; if (i > 0 && !recording){ [L[i - 1], L[i]] = [L[i], L[i - 1]]; persist(); pubOv = { yt: null, fb: null }; view(); } return true; }
       if (ds.sdCopy){ copyPub(ds.sdCopy); return true; }
       if (ds.sdFmt){ if (recording) return true; getCfg().fmt = ds.sdFmt; persist(); playing = false; reload(); return true; }
-      if (ds.sdCopick != null){ const r = coSugg[+ds.sdCopick]; if (r){ fc().p.co = { sym: r.symbol, name: r.name, logoid: r.logoid || null }; persist(); reload(); } return true; }
+      if (ds.sdCopick != null){ const [key, ix] = ds.sdCopick.split('|'), r = coSugg[+ix]; if (r){ const it = { sym: r.symbol, name: r.name, logoid: r.logoid || null }, o2 = fc();
+          if (key === 'add'){ o2.p.items = o2.p.items || []; if (o2.p.items.length < 8 && !o2.p.items.some(z => z.sym === it.sym)) o2.p.items.push(Object.assign(it, { v: 'garde', why: '' })); } else o2.p[key] = it; persist(); reload(); } return true; }
       const o = fc();
       if ((ds.sdUp != null || ds.sdDown != null) && !recording){ const i = +(ds.sdUp != null ? ds.sdUp : ds.sdDown), j = i + (ds.sdUp != null ? -1 : 1); if (j < 0 || j >= o.scenes.length) return true; [o.scenes[i], o.scenes[j]] = [o.scenes[j], o.scenes[i]]; persist(); view(); return true; }
       if (ds.sdGo != null){ const z = o.scenes[+ds.sdGo]; let acc = 0; for (const s of active()){ if (s === z) break; acc += +s.dur || 3; } tt = acc + 0.01; playing = true; syncPlay(); return true; }
       return false; },
     input(e){ const t = e.target, o = fc();
-      if (t.id === 'sdCoQ'){ clearTimeout(t._tm); t._tm = setTimeout(() => coSearch(t.value), 250); return; }
+      if (t.dataset.sdCoq){ clearTimeout(t._tm); t._tm = setTimeout(() => coSearch(t.value, t.dataset.sdCoq), 250); return; }
+      if (t.dataset.sdIt && t.tagName !== 'SELECT'){ const [i, fld] = t.dataset.sdIt.split('|'); if (o.p.items && o.p.items[+i]){ o.p.items[+i][fld] = t.value; persist(); pubOv = { yt: null, fb: null }; lastK = null; } return; }
       if (t.dataset.sdPub){ pubOv[t.dataset.sdPub] = t.value; return; }
       if (t.dataset.sdP && t.tagName !== 'SELECT'){ o.p[t.dataset.sdP] = t.value; persist(); pubOv = { yt: null, fb: null }; lastK = null; return; }
       if (t.dataset.sdTxt){ o.texts[t.dataset.sdTxt] = t.value; persist(); lastK = null; return; }
       if (t.dataset.sdDur != null){ const v = Math.max(0.5, Math.min(10, +t.value || 3)); o.scenes[+t.dataset.sdDur].dur = v; persist(); return; } },
     change(e){ const t = e.target, c = getCfg(), o = fc();
+      if (t.dataset && t.dataset.sdIt && t.tagName === 'SELECT'){ const [i, fld] = t.dataset.sdIt.split('|'); if (o.p.items && o.p.items[+i]){ o.p.items[+i][fld] = t.value; persist(); pubOv = { yt: null, fb: null }; lastK = null; } return; }
       if (t.dataset && t.dataset.sdP && t.tagName === 'SELECT'){ o.p[t.dataset.sdP] = t.value; persist(); if (DATA_KEYS.includes(t.dataset.sdP)) reload(); else { const u = stkUrl(t.value); if (u) img(u); pubOv = { yt: null, fb: null }; } return; }
       if (t.dataset && t.dataset.sdP && t.tagName !== 'SELECT'){ if (!recording) { pubOv = { yt: null, fb: null }; ['yt', 'fb'].forEach(k => { const ta = $('sdPub_' + k); if (ta) ta.value = pubText(k); }); } return; }
       if (t.id === 'sdManual'){ o.manual = t.checked; persist(); return; }
