@@ -1215,6 +1215,13 @@ changement du serveur) : cours, jour, depuis le 1er janvier, 1 an, PER, P/FCF, r
 Clic : fiche Analyse si suivie (ticker = symbole), sinon fiche TradingView à la volée (`selectTvCompany`). Introuvables dans le
 scanner : FRED:VIXCLS, ICEEUR:IBE1!.
 
+### Tier list — logos refaits (2026-11-13)
+Logos = ronds TradingView (`s3-symbol-logo.tradingview.com/<logoid>--big.svg`, remplissent le rond, servis avec CORS : la miniature
+PNG/JPEG reste exportable) : `tierLogoUrl(nom)` lit `tierListLogos` (localStorage `wolfTierListLogos`, {nom:{sym,logoid}}) ;
+`resolveTierLogos()` (appelé par `renderTierList`) remplit les manquants : entreprises suivies = scanner public par leur symbole
+(un appel), autres = `/api/tv/search` par le nom (serveur local). Recherche de la Tier list : entreprises suivies + TradingView en
+direct (plus la base FMP) ; « Parcourir par secteur » = entreprises suivies. Cartes 58 px, lettres de tier en Anton (écran et miniature).
+
 ### Onglet Watchlist (fait, fonctionnel)
 4 colonnes (Liste d'achat / Idée du moment / À surveiller / À analyser) + un "pool" en
 haut avec toutes les entreprises non classées. Glisser-déposer HTML5 natif

@@ -14035,7 +14035,7 @@ function exportTierList(){
 function tierListPrintGridHtml(noms){
   if (!noms.length) return '<p style="color:var(--text-dim);">Aucune entreprise dans ce tier.</p>';
   return `<div class="print-tier-grid">${noms.map(n => {
-    const logo = companyLogoUrl(n);
+    const logo = tierLogoUrl(n);
     const safe = n.replace(/</g, '&lt;');
     return `<div class="print-tier-item">
       <div class="print-tier-logo">${logo ? `<img src="${logo}" alt="">` : `<span>${n.charAt(0).toUpperCase()}</span>`}</div>
@@ -14067,6 +14067,9 @@ function exportTierListAsPdf(){
 // CORS "tainte" le canvas (voir CLAUDE.md piège #13) et empêcherait tout export PNG/JPEG
 // du reste de l'image, pas seulement ce logo — repli sur une bulle à l'initiale sinon.
 function tierListSafeLogoUrl(nom){
+  const tl = tierLogoUrl(nom);
+  if (tl && /s3-symbol-logo\.tradingview\.com/.test(tl)) return tl;              // servi avec CORS : canvas exportable
+  if (tl && !/^https?:/i.test(tl)) return new URL(tl, location.href).href;       // fichier local, même origine
   const match = Object.keys(companies).find(n => stripAccents(n.toLowerCase()) === stripAccents(nom.toLowerCase()));
   const symbol = fmpSymbols[nom] || (match && fmpSymbols[match]);
   if (!symbol) return null;
@@ -14086,6 +14089,7 @@ function tierListThumbnailCanvas(){
       const url = tierListSafeLogoUrl(nom);
       if (!url){ res(); return; }
       const img = new Image();
+      if (/^https?:/i.test(url) && !url.startsWith(location.origin)) img.crossOrigin = 'anonymous';
       img.onload = () => { logoImgs[nom] = img; res(); };
       img.onerror = () => res();
       img.src = url;
@@ -14105,7 +14109,7 @@ function tierListThumbnailCanvas(){
         ctx.fillStyle = r.t.color;
         ctx.fillRect(0, y, labelW, rowH);
         ctx.fillStyle = '#0D1013';
-        ctx.font = 'bold 64px "Space Grotesk", sans-serif';
+        ctx.font = '72px Anton, "Space Grotesk", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(r.t.key, labelW / 2, y + rowH / 2 + 4);
@@ -14133,7 +14137,9 @@ function tierListThumbnailCanvas(){
           ctx.fillStyle = '#fff';
           ctx.fillRect(x, cy - d / 2, d, d);
           const img = logoImgs[nom];
-          if (img && img.naturalWidth && img.naturalHeight){
+          if (img && img.naturalWidth && img.naturalHeight && /s3-symbol-logo\.tradingview\.com/.test(img.src)){
+            drawLogoInCircle(ctx, img, x + d / 2, cy, d / 2, img.src);   // logo TradingView : remplit le rond
+          } else if (img && img.naturalWidth && img.naturalHeight){
             // "contain" (comme .tierlist-card object-fit:contain à l'écran) — jamais
             // étiré/déformé, jamais rogné : un logo non carré (souvent le cas) plaqué en
             // d×d se retrouvait déformé ("cropé bizarre", retour utilisateur direct).
@@ -14169,6 +14175,58 @@ function downloadTierListImage(format){
     }, format === 'jpeg' ? 'image/jpeg' : 'image/png', 0.95);
   });
 }
+/* ---- Logos de la Tier list : TradingView (refonte du 2026-11-13) ----
+   Une entreprise ajoutée par la recherche TradingView garde son symbole et son logoid (tierListLogos, localStorage
+   « wolfTierListLogos ») ; une entreprise suivie prend son logo TradingView local (data/logos/, même origine) ;
+   sinon le logo est cherché UNE fois sur TradingView par son nom (/api/tv/search) puis mémorisé. Logos TradingView =
+   ronds pleins (ils sont dessinés pour ça) ; servis avec CORS : l'export PNG/JPEG de la miniature reste possible. */
+const TIER_LOGOS_LS_KEY = 'wolfTierListLogos';
+let tierListLogos = {};
+try{ tierListLogos = JSON.parse(localStorage.getItem(TIER_LOGOS_LS_KEY) || '{}') || {}; }catch(e){ tierListLogos = {}; }
+function persistTierListLogos(){ try{ localStorage.setItem(TIER_LOGOS_LS_KEY, JSON.stringify(tierListLogos)); }catch(e){ /* stockage indisponible */ } }
+const tvLogoUrl = id => 'https://s3-symbol-logo.tradingview.com/' + id + '--big.svg';
+function tierTrackedName(nom){ return Object.keys(companies).find(n => stripAccents(n.toLowerCase()) === stripAccents(String(nom).toLowerCase())) || null; }
+function tierLogoUrl(nom){
+  const m = tierListLogos[nom];
+  if (m && m.logoid) return tvLogoUrl(m.logoid);
+  const t = tierTrackedName(nom);
+  if (t){ const l = companies[t][companies[t].length - 1]; if (l && l.lienImage) return l.lienImage; }
+  return companyLogoUrl(nom);
+}
+const tierLogoPending = {};
+async function resolveTierLogos(){
+  let changed = false;
+  // entreprises suivies : logo TradingView exact par leur symbole (scanner public, un seul appel)
+  const tracked = Object.keys(tierListStore).filter(n => !tierListLogos[n] && tierTrackedName(n) && !tierLogoPending[n])
+    .map(n => { const t = tierTrackedName(n), l = companies[t][companies[t].length - 1]; return { n, sym: l && String(l.ticker || '').includes(':') ? l.ticker : l && l.tvSymbol }; }).filter(x => x.sym);
+  if (tracked.length){
+    tracked.forEach(x => { tierLogoPending[x.n] = true; });
+    try{
+      const r = await fetch('https://scanner.tradingview.com/global/scan', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+        body: JSON.stringify({ symbols: { tickers: tracked.map(x => x.sym) }, columns: ['logoid'] }) });
+      const j = await r.json(), by = {}; (j.data || []).forEach(d => { by[d.s] = d.d[0]; });
+      tracked.forEach(x => { if (by[x.sym]){ tierListLogos[x.n] = { sym: x.sym, logoid: by[x.sym] }; changed = true; } });
+    }catch(e){ tracked.forEach(x => { delete tierLogoPending[x.n]; }); }
+  }
+  const todo = Object.keys(tierListStore).filter(n => !tierListLogos[n] && !tierTrackedName(n) && !tierLogoPending[n]);
+  for (const nom of (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? todo : [])){   // recherche par nom : serveur local
+    tierLogoPending[nom] = true;
+    try{
+      const j = await (await fetch('/api/tv/search?all=1&q=' + encodeURIComponent(nom), { cache: 'no-store' })).json();
+      const r = tierBestResult(j && j.results);
+      tierListLogos[nom] = r && r.logoid ? { sym: r.symbol, logoid: r.logoid } : { none: true };
+      changed = true;
+    }catch(e){ /* serveur injoignable : on réessaiera au prochain affichage */ delete tierLogoPending[nom]; }
+  }
+  if (changed){ persistTierListLogos(); renderTierList(); }
+}
+// Parmi les cotations renvoyées par TradingView : une action (pas un certificat), avec logo, de préférence sur sa bourse principale.
+function tierBestResult(results){
+  if (!results || !results.length) return null;
+  return results.slice().sort((a, b) => tierResultScore(b) - tierResultScore(a))[0];
+}
+function tierResultScore(r){ return ( r.type === 'stock' ? 4 : r.type === 'fund' ? 2 : 0) + (r.logoid ? 4 : 0) + (/^(NASDAQ|NYSE|EURONEXT|XETR|LSE|SIX|MIL|BME|TSE|HKEX|TSX|OMXSTO|OMXCOP|OMXHEX|OSL|ASX)$/.test(r.exchange) ? 2 : 0); }
+function tierShortName(n){ return String(n || '').replace(/\s+(Inc\.?|Incorporated|Corporation|Corp\.?|Company|Co\.|S\.?A\.?|SE|N\.?V\.?|AG|plc|PLC|Ltd\.?|Limited|Holdings?|Group|Class [A-C]|Shs.*)$/i, '').replace(/\s+(Inc\.?|Corporation|S\.?A\.?|SE|AG|plc)$/i, '').trim(); }
 function tierListLocationOf(nom){ return tierListStore[nom] || null; }
 function setTierListEntry(nom, tierKey){
   if (tierKey) tierListStore[nom] = tierKey;
@@ -14177,7 +14235,8 @@ function setTierListEntry(nom, tierKey){
   renderTierList();
 }
 function tierListCardHtml(nom){
-  const logo = companyLogoUrl(nom);
+  const logo = tierLogoUrl(nom);
+  const tvLogo = /s3-symbol-logo\.tradingview\.com/.test(logo || '');
   const safe = nom.replace(/"/g, '&quot;');
   const initial = nom.charAt(0).toUpperCase();
   // Logo seul, pas de nom en texte à côté (demande explicite) — le nom complet reste
@@ -14190,7 +14249,7 @@ function tierListCardHtml(nom){
   // vraiment — sans ce filet, une entreprise sans logo réel affichait une icône d'image
   // cassée au lieu de l'initiale de repli (retour utilisateur : "je marque Visa et je
   // n'ai pas de logo dessus").
-  return `<div class="tierlist-card" data-nom="${safe}" title="${safe}">
+  return `<div class="tierlist-card${tvLogo ? ' tierlist-card-tv' : ''}" data-nom="${safe}" title="${safe}">
     ${logo
       ? `<img src="${logo}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"><span style="display:none;">${initial}</span>`
       : `<span>${initial}</span>`}
@@ -14223,6 +14282,7 @@ function renderTierList(){
     const selNoms = Object.keys(tierListStore).filter(nom => tierListStore[nom] === TIER_LIST_SELECTION_KEY);
     selection.innerHTML = selNoms.map(tierListCardHtml).join('');
   }
+  resolveTierLogos();
 
   // Pool simplifié en simple indication (retour explicite : "ça ne sert plus à rien de
   // me mettre pool entreprise non classée, plein d'images" — la recherche + le
@@ -14246,7 +14306,26 @@ function renderTierListSuggestions(query){
     box.innerHTML = '';
     return;
   }
-  const matches = rankingSummaryData.filter(e => stripAccents(e.nom.toLowerCase()).includes(q)).slice(0, 20);
+  // 2026-11-13 : plus la base FMP — entreprises suivies (TradingView) puis recherche TradingView en direct
+  const tracked = Object.keys(companies).filter(n => isTvCompany(n) && stripAccents(n.toLowerCase()).includes(q)).slice(0, 8);
+  const esc2 = t => escapeHtml(String(t || ''));
+  const trackedHtml = tracked.map(n => { const cur = tierListLocationOf(n), logo = tierLogoUrl(n);
+    return `<div class="search-suggestion watchlist-suggestion" data-tierlist-suggestion="${esc2(n)}"><img class="search-suggestion-logo" src="${esc2(logo || '')}" alt=""><span>${esc2(fmpDisplayName(n))}</span>${cur ? `<span class="search-suggestion-tag">déjà : ${cur === TIER_LIST_SELECTION_KEY ? 'sélection' : 'tier ' + cur}</span>` : ''}</div>`; }).join('');
+  box.innerHTML = trackedHtml || '<div class="search-suggestion tierlist-searching" style="color:var(--text-faint);cursor:default;">Recherche sur TradingView…</div>';
+  box.classList.add('open');
+  const seq = (renderTierListSuggestions.seq = (renderTierListSuggestions.seq || 0) + 1);
+  fetch('/api/tv/search?all=1&q=' + encodeURIComponent(query.trim()), { cache: 'no-store' }).then(r => r.json()).then(j => {
+    if (seq !== renderTierListSuggestions.seq) return;
+    const seen = new Set(), items = [];
+    ((j && j.results) || []).slice().sort((a, b) => tierResultScore(b) - tierResultScore(a)).forEach(r => { const k = r.logoid || r.symbol; if (seen.has(k)) return; seen.add(k); items.push(r); });
+    const html = items.slice(0, 10).map(r => `<div class="search-suggestion watchlist-suggestion" data-tierlist-suggestion="${esc2(tierShortName(r.name))}" data-tv-sym="${esc2(r.symbol)}" data-tv-logo="${esc2(r.logoid || '')}">
+      ${r.logoid ? `<img class="search-suggestion-logo" src="${esc2(tvLogoUrl(r.logoid))}" alt="">` : '<span class="search-suggestion-logo"></span>'}<span>${esc2(tierShortName(r.name))}</span><span class="search-suggestion-tag">${esc2(r.symbol)}</span></div>`).join('');
+    box.querySelectorAll('.tierlist-searching').forEach(x => x.remove());
+    if (html) box.insertAdjacentHTML('beforeend', '<div class="search-suggestion-sep">Depuis TradingView</div>' + html);
+    else if (!trackedHtml) box.innerHTML = '<div class="search-suggestion" style="color:var(--text-faint);cursor:default;">Aucun résultat</div>';
+  }).catch(() => { box.querySelectorAll('.tierlist-searching').forEach(x => { x.textContent = 'TradingView injoignable (serveur local arrêté ?)'; }); });
+  return;
+  const matches = [];
   if (!matches.length){
     box.innerHTML = '<div class="search-suggestion" style="color:var(--text-faint);cursor:default;">Aucun résultat</div>';
     box.classList.add('open');
@@ -14286,14 +14365,15 @@ function renderTierListSectorBrowse(){
   if (!box || !select) return;
   const sectorVal = select.value;
   if (!sectorVal){ box.style.display = 'none'; box.innerHTML = ''; return; }
-  const matches = rankingSummaryData
+  // 2026-11-13 : entreprises suivies (TradingView) au lieu de la base FMP
+  const matches = Object.keys(companies).filter(n => isTvCompany(n)).map(n => ({ nom: n, secteur: (companies[n][companies[n].length - 1] || {}).secteur || '' }))
     .filter(e => (sectorVal === 'autre' ? !normalizeSector(e.secteur) : normalizeSector(e.secteur) === sectorVal))
     .sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
   box.style.display = 'flex';
   box.innerHTML = matches.length
     ? matches.map(e => {
         const current = tierListLocationOf(e.nom);
-        const logo = companyLogoUrl(e.nom) || (e.symbol ? `data/logos/${e.symbol}.png` : null);
+        const logo = tierLogoUrl(e.nom);
         return `<div class="tierlist-sector-item${current ? ' active' : ''}" data-tierlist-sector-add="${escapeHtml(e.nom)}" title="${current ? (current === TIER_LIST_SELECTION_KEY ? 'Déjà dans la sélection du jour' : 'Déjà classée — Tier ' + current) : 'Ajouter à la sélection du jour'}">
           <img src="${logo || ''}" alt="">
           <span>${escapeHtml(e.nom)}</span>
@@ -14434,6 +14514,7 @@ function initTierList(){
       e.stopPropagation();
       const row = e.target.closest('[data-tierlist-suggestion]');
       if (!row) return;
+      if (row.dataset.tvSym){ tierListLogos[row.dataset.tierlistSuggestion] = row.dataset.tvLogo ? { sym: row.dataset.tvSym, logoid: row.dataset.tvLogo } : { sym: row.dataset.tvSym, none: true }; persistTierListLogos(); }
       setTierListEntry(row.dataset.tierlistSuggestion, TIER_LIST_SELECTION_KEY);
       searchInput.value = '';
       renderTierListSuggestions('');

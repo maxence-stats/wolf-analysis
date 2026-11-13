@@ -3685,3 +3685,14 @@
 .tl-sect small{color:var(--text-faint);margin-left:6px;}
 .tl-empty{padding:18px;color:var(--text-dim);font-size:13px;}
 @media (max-width:900px){ .tl-wrap{grid-template-columns:1fr;} .tl-side{position:static;flex-direction:row;flex-wrap:wrap;max-height:none;} }
+
+/* Tier list — logos refaits (2026-11-13) : plus grands, logos TradingView en rond PLEIN (dessinés pour ça), autres logos
+   entiers dans un rond blanc ; anneau discret au survol. */
+.tierlist-card{width:58px;height:58px;padding:7px;border:2px solid rgba(255,255,255,0.08);box-shadow:0 2px 8px rgba(0,0,0,0.35);transition:transform .12s ease,border-color .12s ease;}
+.tierlist-card:hover{transform:translateY(-2px);border-color:var(--gold);}
+.tierlist-card.tierlist-card-tv{padding:0;background:#fff;}
+.tierlist-card.tierlist-card-tv img{width:100%;height:100%;max-width:none;max-height:none;object-fit:cover;}
+.tierlist-card span{font-size:20px;}
+.tierlist-dropzone{gap:12px;min-height:82px;align-items:center;}
+.tierlist-row-label{width:72px;font:400 34px/1 Anton,'Space Grotesk',sans-serif;}
+.tierlist-sector-item img{border-radius:50%;object-fit:cover;background:#fff;}
