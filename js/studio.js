@@ -72,13 +72,14 @@ function history(sym){
     const r = await fetch('/api/tv/history?symbols=' + encodeURIComponent(sym) + '&from=2000-01-01&adj=1', { cache: 'no-store' });
     const j = await r.json(); const h = j.ok && j.data && j.data[sym];
     if (!h || !h.bars || !h.bars.length) throw new Error('cours indisponibles pour ' + sym);
-    const w = []; let last = null;   // une clôture par semaine (la dernière)
-    h.bars.forEach(([t, c]) => { const d = new Date(t * 1000), k = d.getUTCFullYear() + '-' + Math.floor((d - Date.UTC(d.getUTCFullYear(), 0, 1)) / 6048e5); if (k !== last){ w.push(c); last = k; } else w[w.length - 1] = c; });
-    HIST[sym]._v = w; return w;
+    const w = [], wd = []; let last = null;   // une clôture par semaine (la dernière) + sa date (secondes)
+    h.bars.forEach(([t, c]) => { const d = new Date(t * 1000), k = d.getUTCFullYear() + '-' + Math.floor((d - Date.UTC(d.getUTCFullYear(), 0, 1)) / 6048e5); if (k !== last){ w.push(c); wd.push(t); last = k; } else { w[w.length - 1] = c; wd[wd.length - 1] = t; } });
+    HIST[sym]._d = wd; HIST[sym]._v = w; return w;
   })().catch(e => { delete HIST[sym]; throw e; });
   return HIST[sym];
 }
 const histNow = sym => (sym && HIST[sym] && HIST[sym]._v) || [];
+const histD = sym => (sym && HIST[sym] && HIST[sym]._d) || [];
 const availY = it => Math.max(0, (histNow(it && it.sym).length - 1) / 52);
 // Duel : même période pour les deux actions (bornée par l'historique le plus court, sinon comparaison injuste).
 function duelY(s){ const a = availY(s.a && s.a[0]), b = availY(s.b && s.b[0]), m = Math.min(a || 99, b || 99); return Math.min(+s.yrs || 10, m); }
@@ -112,8 +113,10 @@ async function wolfFacts(){
   const per = from => { try { const rows = E.periodRows(w.ops, w.S, { from, to: t, step: 'day' }); if (!rows.length) return null;
     return { wolf: E.chain(rows) * 100, cac: E.chain(E.benchRows(rows, w.S, w.cac)) * 100, spx: E.chain(E.benchRows(rows, w.S, w.spx, 'FX_IDC:EURUSD')) * 100 }; } catch(e){ return null; } };
   const m0 = addD(t.slice(0, 8) + '01', -1), y0 = addD(t.slice(0, 5) + '01-01', -1);
+  const wdN = (dt(t).getDay() + 6) % 7, mon = addD(t, -wdN), wk = (() => { const d = dt(t), j = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); j.setUTCDate(j.getUTCDate() + 4 - (j.getUTCDay() || 7)); const y1 = new Date(Date.UTC(j.getUTCFullYear(), 0, 1)); return Math.ceil(((j - y1) / 864e5 + 1) / 7); })();
+  const wOps = [...new Set(ops.filter(o => o.date >= mon && (o.type === 'BUY' || o.type === 'SELL')).map(o => o.symbol))].map(s0 => w.sym(s0));
   const v = { value, gain: value - flows, items: items.map(x => Object.assign(x, { w: x.v / value * 100 })).sort((a, b) => b.w - a.w), cashW: Math.max(0, st.cash) / value * 100,
-    since: per(addD(first, -1)), month: per(m0), year: per(y0 < first ? addD(first, -1) : y0), first };
+    since: per(addD(first, -1)), month: per(m0), year: per(y0 < first ? addD(first, -1) : y0), first, week: per(addD(mon, -1)), wk, weekOps: wOps };
   WOLFC.v = v; WOLFC.at = Date.now(); return v;
 }
 
@@ -321,8 +324,26 @@ const T = [
   auto: { r: s => { const m = mult(s.logo[0], s.yrs); return m == null ? '—' : fr(Math.round(s.m * m / 10) * 10) + ' €'; } },
   f: [['logo', 'Action (calcul réel)', 'L', 1], ['m', 'Montant de départ', 'sel', [[1000, '1 000 €'], [5000, '5 000 €'], [10000, '10 000 €']]], ['yrs', 'Il y a', 'sel', [3, 5, 10]], ['r', 'Résultat', 'ov']], d: { logo: [S_('EURONEXT:RMS', 'Hermès', 'hermes')], m: 1000, yrs: 10, r: '' },
   v: [['A', 'Montant de départ → résultat', s => { const r = OV(s, 'r', T[16].auto.r(s)); ybox(fr(+s.m) + ' €', 40, 150, 120); const dw = txt('dans', 40, 270, 90); tile(s.logo[0], 40 + dw + 44, 190, 110); txt('il y a ' + s.yrs + ' ans', 40, 380, 90); pct('= ' + r, 40, 560, 150); txt('hors dividendes', 40, 630, 40, { color: '#C9CED6' }); }],
-     ['B', 'Résultat en très grand', s => { const r = OV(s, 'r', T[16].auto.r(s)); tile(s.logo[0], 40, 40, 170); txt(fr(+s.m) + ' € il y a ' + s.yrs + ' ans', 240, 150, 70, { max: 400 }); ybox(r, 40, 420, 190); txt("aujourd'hui", 40, 560, 90); }]] }
+     ['B', 'Résultat en très grand', s => { const r = OV(s, 'r', T[16].auto.r(s)); tile(s.logo[0], 40, 40, 170); txt(fr(+s.m) + ' € il y a ' + s.yrs + ' ans', 240, 150, 70, { max: 400 }); ybox(r, 40, 420, 190); txt("aujourd'hui", 40, 560, 90); }]] },
+ { id: 'hebdoW', name: 'Analyse hebdo', vid: 'Analyse hebdo (samedi)', pose: 'casque', need: [NEED.wolf], note: 'Loup au casque : version DORÉE si le Wolf monte cette semaine, ROUGE s’il baisse (réglage « Ambiance »). Chiffres de la semaine en cours.',
+  auto: { sem: (s, c) => c.wolf ? 'Semaine ' + c.wolf.wk : 'Semaine', p: (s, c) => c.wolf && c.wolf.week ? sgn(c.wolf.week.wolf, 1) : '—', cac: (s, c) => c.wolf && c.wolf.week ? 'CAC 40 : ' + sgn(c.wolf.week.cac, 1) : '' },
+  poseOf: (s, c) => { if (s.pose !== 'casque' && s.pose !== 'casque_rouge') return s.pose; if (s.amb === 'or') return 'casque'; if (s.amb === 'rouge') return 'casque_rouge'; const v = c.wolf && c.wolf.week ? c.wolf.week.wolf : 0; return v >= 0 ? 'casque' : 'casque_rouge'; },
+  f: [['l1', 'Titre', 't'], ['sem', 'Encadré jaune (semaine)', 'ov'], ['p', 'Performance de la semaine', 'ov'], ['cac', 'Ligne de l’indice', 'ov'], ['q', 'Question (mise en page C)', 'y'], ['logos', 'Entreprises (vide = opérations de la semaine)', 'L', 4], ['amb', 'Ambiance du loup', 'sel', [['auto', 'Selon la semaine (or / rouge)'], ['or', 'Toujours dorée'], ['rouge', 'Toujours rouge']]]],
+  d: { l1: 'Analyse hebdo', sem: '', p: '', cac: '', q: "J'achète ?", logos: [], amb: 'auto' },
+  v: [['A', 'Semaine + performance', (s, c) => { const H = T.find(z => z.id === 'hebdoW'), L = hebdoLogos(s, c);
+        txt(s.l1, 40, 105, 92); ybox(OV(s, 'sem', H.auto.sem(s, c)), 40, 205, 76); pct(OV(s, 'p', H.auto.p(s, c)), 40, 420, 200, { max: 580 }); txt(OV(s, 'cac', H.auto.cac(s, c)), 40, 495, 46, { color: '#C9CED6', max: 580 });
+        L.slice(0, 4).forEach((k, i) => tile(k, 40 + i * 145, 540, 130)); }],
+     ['B', 'Wolf contre le CAC 40', (s, c) => { const H = T.find(z => z.id === 'hebdoW'), w0 = c.wolf && c.wolf.week;
+        txt(s.l1, 40, 105, 92); ybox(OV(s, 'sem', H.auto.sem(s, c)), 40, 205, 76);
+        if (w0) bars([[K_('WOLF'), w0.wolf, OV(s, 'p', sgn(w0.wolf, 1))], [K_('CAC'), w0.cac, sgn(w0.cac, 1)]], 40, 290, 150, 330);
+        const L = hebdoLogos(s, c); L.slice(0, 4).forEach((k, i) => tile(k, 40 + i * 115, 605, 95)); }],
+     ['C', 'Question + logos « ? »', (s, c) => { const H = T.find(z => z.id === 'hebdoW'), L = hebdoLogos(s, c);
+        txt(OV(s, 'sem', H.auto.sem(s, c)), 40, 100, 74); ybox(s.q, 40, 230, 120); L.slice(0, 4).forEach((k, i) => tile(k, 40 + (i % 2) * 190, 290 + Math.floor(i / 2) * 200, 170, { q: 1 }));
+        if (!L.length) pct(OV(s, 'p', H.auto.p(s, c)), 40, 470, 180, { max: 560 }); }]] }
 ];
+
+// logos de la miniature hebdo : ceux choisis, sinon les opérations de la semaine, sinon les 3 plus grosses lignes
+function hebdoLogos(s, c){ if (s.logos && s.logos.length) return s.logos; const w = c.wolf; if (!w) return []; return (w.weekOps && w.weekOps.length ? w.weekOps : w.items.slice(0, 3)).slice(0, 4); }
 
 /* ---------- préparation des données d'un modèle (avant dessin synchrone) ---------- */
 async function prep(t, s){
@@ -335,11 +356,13 @@ async function prep(t, s){
   items.forEach(it => { const u = logoUrl(it); if (u) jobs.push(img(u)); });
   if ((t.need || []).includes(NEED.hist)) t.f.forEach(([k, , ty]) => { if (ty === 'L' && s[k] && s[k][0] && s[k][0].sym) jobs.push(history(s[k][0].sym).catch(() => null)); });
   if ((t.need || []).includes(NEED.yield)) s.logos.forEach(it => { if (it.sym) jobs.push(snap(it.sym).then(v => { if (SNAP[it.sym]) SNAP[it.sym]._v = v; })); });
-  if ((t.need || []).includes(NEED.wolf)) jobs.push(wolfFacts().then(v => { ctx.wolf = v; return Promise.all(v.items.map(it => img(tvLogo(it.logoid)))); }).catch(e => { ctx.err = e.message; }));
+  if ((t.need || []).includes(NEED.wolf)) jobs.push(wolfFacts().then(v => { ctx.wolf = v; return Promise.all(v.items.concat(v.weekOps || []).map(it => img(tvLogo(it.logoid)))); }).catch(e => { ctx.err = e.message; }));
+  if (t.poseOf) ['casque', 'casque_rouge'].forEach(k => jobs.push(img(wolfUrl(k))));
   await Promise.all(jobs);
   return ctx;
 }
-function render(cv, t, st, ctx){ x = cv.getContext('2d'); x.setTransform(cv.width / 1280, 0, 0, cv.height / 720, 0, 0); x.filter = 'none'; bg(st); try { t.v[st.vi][2](st, ctx || {}); } catch(e){ console.warn('Studio', e); } }
+function render(cv, t, st, ctx){ x = cv.getContext('2d'); x.setTransform(cv.width / 1280, 0, 0, cv.height / 720, 0, 0); x.filter = 'none';
+  let ps = st; if (t.poseOf){ try { ps = Object.assign({}, st, { pose: t.poseOf(st, ctx || {}) || st.pose }); } catch(e){} } bg(ps); try { t.v[st.vi][2](st, ctx || {}); } catch(e){ console.warn('Studio', e); } }
 
 /* ======================= STOCKAGE (fichier studio.json) ======================= */
 let D = null, serverOk = false, dirty = false, saving = false, saveTimer = null, conflict = false, saveErr = null, lastSaved = null, pendingDeleted = [];
@@ -430,7 +453,7 @@ function thumbView(){
     <div class="sd-panel" id="sdPanel"></div>
    </div>
    <div class="sd-gal" id="sdGal"><h3>Tous les modèles <small>clique sur un modèle pour l'ouvrir</small></h3>
-    <div class="sd-tplgrid">${T.map((t, i) => `<button type="button" data-sd-tpl="${i}" class="${i === ui.cur ? 'on' : ''}"><canvas data-sd-th="${i}" width="320" height="180"></canvas><b>${esc(t.name)}</b><small>${esc(t.vid)} · ${t.v.length} mise${t.v.length > 1 ? 's' : ''} en page</small></button>`).join('')}</div></div>
+    <div class="sd-tplgrid">${T.map((t, i) => [t, i]).sort((a, b) => (b[0].id === 'hebdoW') - (a[0].id === 'hebdoW')).map(([t, i]) => `<button type="button" data-sd-tpl="${i}" class="${i === ui.cur ? 'on' : ''}"><canvas data-sd-th="${i}" width="320" height="180"></canvas><b>${esc(t.name)}</b><small>${esc(t.vid)} · ${t.v.length} mise${t.v.length > 1 ? 's' : ''} en page</small></button>`).join('')}</div></div>
    <div class="sd-lib"><h3>Ma bibliothèque de miniatures</h3><div id="sdLib"></div></div>`;
   panel(); lib(); draw(); galThumbs();
 }
@@ -608,24 +631,28 @@ const SHORT = (() => {
         { k: 'graph', t: 'Le graphique', d: 'La courbe se dessine', dur: 3.2, say: d => `Plus haut à ${money(d.max, d.ccy)}, aujourd'hui ${money(d.last, d.ccy)}.` },
         { k: 'raisons', t: 'Pourquoi ?', d: 'Tes raisons, une par une', dur: 3, say: (d, p) => lines(p.raisons).join(' · ') },
         { k: 'question', t: 'La question', d: 'Opportunité ou piège ?', dur: 2.4, say: (d, p) => p.verdict }, FIN] },
-    valo: { name: '🎯 Valorisation', desc: 'Tes 3 scénarios de « Prix par secteur » face au cours', manual: true, p: { nom: '', sticker: '', gyrs: '3', fin: '' },
+    valo: { name: '🎯 Valorisation', desc: 'Tes 3 scénarios de « Prix par secteur » posés sur le cours', manual: true, p: { nom: '', sticker: '', gyrs: '2', verdictT: '', fin: '' },
       scenes: [{ k: 'intro', t: 'Le cours', d: 'Logo + cours actuel', dur: 2.4, say: d => `${d.nom} cote aujourd'hui ${money(d.cours, d.ccy)}. Quel est son prix juste ?` },
-        { k: 'pess', t: 'Pessimiste', d: 'Premier scénario', dur: 1.8, say: d => `Scénario pessimiste : ${money(d.sc.pess, d.ccy)}, soit ${sgn(pot(d, 'pess'))}.` },
-        { k: 'real', t: 'Réaliste', d: 'Deuxième scénario', dur: 1.8, say: d => `Scénario réaliste : ${money(d.sc.real, d.ccy)}, soit ${sgn(pot(d, 'real'))}.` },
-        { k: 'opt', t: 'Optimiste', d: 'Troisième scénario', dur: 1.8, say: d => `Scénario optimiste : ${money(d.sc.opt, d.ccy)}, soit ${sgn(pot(d, 'opt'))}.` },
-        { k: 'verdict', t: 'Mon verdict', d: 'Prix juste + zone d’achat', dur: 2.6, say: d => `Mon prix juste : ${money(d.sc.real, d.ccy)}. Zone d'achat sous ${money(d.sc.real * 0.8, d.ccy)}.` },
-        { k: 'graph', t: 'Sur le graphique', d: 'Cours + tes 3 scénarios en lignes, puis la zone d’achat', dur: 5, say: d => d.S ? `Sur le graphique : le cours ${d.trend >= 0 ? 'monte' : 'baisse'} de ${fr(Math.abs(d.trend), 0)} % en ${d.gy} an${d.gy > 1 ? 's' : ''}. Pessimiste, réaliste, optimiste : on voit tout de suite où on se situe.` : 'Graphique indisponible (pas de symbole TradingView pour cette fiche).', ok: d => !!(d && d.S) }, FIN] },
-    trans: { name: '🔁 Mon achat / ma vente', desc: 'Une opération du Wolf Portfolio, chiffres réels', manual: true, p: { op: '', raisons: 'Objectif de cours atteint\nJe préfère renforcer une autre ligne', sticker: 'fier', fin: '' },
+        { k: 'gcours', t: 'Le graphique', d: 'La courbe du cours se dessine', dur: 2.2, say: d => d.S ? `Voilà le cours sur ${d.gy} an${d.gy > 1 ? 's' : ''} : ${d.trend >= 0 ? '+' : '−'}${fr(Math.abs(d.trend), 0)} %.` : '', ok: d => !!(d && d.S) },
+        { k: 'pess', t: 'Pessimiste', d: 'La ligne rouge apparaît sur le graphique', dur: 1.8, say: d => `Scénario pessimiste : ${money(d.sc.pess, d.ccy)}, soit ${sgn(pot(d, 'pess'))} par rapport au cours.` },
+        { k: 'real', t: 'Réaliste', d: 'La ligne jaune + le dégradé', dur: 1.8, say: d => `Scénario réaliste, mon prix juste : ${money(d.sc.real, d.ccy)}, soit ${sgn(pot(d, 'real'))}.` },
+        { k: 'opt', t: 'Optimiste', d: 'La ligne verte, dégradé complet', dur: 1.8, say: d => `Scénario optimiste : ${money(d.sc.opt, d.ccy)}, soit ${sgn(pot(d, 'opt'))}.` },
+        { k: 'verdict', t: 'Mon verdict', d: 'Titre + écart au prix juste, sur le graphique', dur: 2.2, say: d => { const e = ecartJ(d); return isNum(e) ? `Le cours est ${fr(Math.abs(e), 0)} % ${e >= 0 ? 'au-dessus' : 'en dessous'} de mon prix juste de ${money(d.sc.real, d.ccy)}.` : ''; } }, FIN] },
+    trans: { name: '🔁 Mon achat / ma vente', desc: 'Une opération du Wolf Portfolio, posée sur le cours', manual: true, p: { op: '', raisons: 'Objectif de cours atteint\nJe préfère renforcer une autre ligne', sticker: 'fier', fin: '' },
       scenes: [{ k: 'hook', t: 'Accroche', d: 'J’ai vendu / j’ai acheté', dur: 2.2, say: d => `${d.type === 'SELL' ? "J'ai vendu" : "J'ai acheté"} ${d.name}.` },
-        { k: 'achat', t: "L'achat", d: 'Date et prix d’achat', dur: 2, say: d => `Acheté le ${dl(d.buyDate)} à ${money(d.buyPx, 'EUR')}.` },
-        { k: 'vente', t: 'La vente', d: 'Date, prix, performance', dur: 2.6, say: d => `Vendu le ${dl(d.sellDate)} à ${money(d.sellPx, 'EUR')} : ${sgn(d.perf, 1)}.`, ok: d => d && d.type === 'SELL' },
-        { k: 'depuis', t: 'Depuis', d: 'Performance depuis l’achat', dur: 2.6, say: d => `Depuis l'achat : ${sgn(d.perf, 1)}.`, ok: d => d && d.type === 'BUY' },
+        { k: 'gachat', t: "L'achat", d: 'Point d’achat sur le cours', dur: 2.4, say: d => `Acheté le ${dl(d.buyDate)}${isNum(d.bpx) ? ' à ' + money(d.bpx, d.bccy) : ''}.` },
+        { k: 'gvente', t: 'La vente', d: 'Point de vente + performance sur le cours', dur: 2.6, say: d => `Vendu le ${dl(d.sellDate)}${isNum(d.spx) ? ' à ' + money(d.spx, d.sccy) : ''} : ${sgn(d.perf, 1)}.`, ok: d => d && d.type === 'SELL' },
+        { k: 'gdepuis', t: 'Depuis l’achat', d: 'Le cours jusqu’à aujourd’hui + performance', dur: 2.6, say: d => `Depuis l'achat : ${sgn(d.perf, 1)}.`, ok: d => d && d.type === 'BUY' },
+        { k: 'bilan', t: 'Le bilan', d: 'La performance en grand (facultatif)', dur: 2, say: d => `${sgn(d.perf, 1)} en ${dur(d.days)}${d.divs > 0 ? ', dividendes compris' : ''}.` },
         { k: 'pourquoi', t: 'Pourquoi', d: 'Tes raisons, une par une', dur: 3, say: (d, p) => lines(p.raisons).join(' · ') }, FIN] }
   };
   const FMT_KEYS = Object.keys(FMT);
   const money = (v, ccy) => { if (!isNum(v)) return '—'; const s = { EUR: '€', USD: '$', GBP: '£', CHF: 'CHF', JPY: '¥', DKK: 'kr', SEK: 'kr', NOK: 'kr', CAD: '$ CA' }[ccy] || ccy || '€'; return fr(v, Math.abs(v) < 100 ? 2 : 0) + ' ' + s; };
   const pot = (d, k) => d && isNum(d.sc[k]) && d.cours ? (d.sc[k] / d.cours - 1) * 100 : null;
   const dl = s => s ? dt(s).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+  const ecartJ = d => d && isNum(d.sc.real) && d.sc.real > 0 && isNum(d.cours) ? (d.cours / d.sc.real - 1) * 100 : null;   // cours vs prix juste
+  const dur = n => n < 45 ? Math.round(n) + ' jours' : n < 700 ? Math.round(n / 30.4) + ' mois' : fr(n / 365.25, 1) + ' ans';
+  const dS = t => new Date(t * 1000).toLocaleDateString('fr-FR');
 
   let C = THEMES.beige, cfg = null, DATA = null, dataErr = null, dataFor = null, tt = 0, playing = false, raf = 0, LAY = 'bulle';
   let cam = null, camVideo = null, scr = null, scrVideo = null, rec = null, recChunks = [], recording = false, countdown = 0, pubOv = { yt: null, fb: null }, coSugg = [], valoList = null, opsList = null;
@@ -703,11 +730,11 @@ const SHORT = (() => {
       if (item.sym){ await ensureLogo(item); }
       if (item.logoid) await img(tvLogo(item.logoid)); else if (item.logoUrl) await img(item.logoUrl);
       if (!isNum(it.cours)) throw new Error('pas de cours pour ' + it.nom);
-      let S = null, gy = 0;
-      if (item.sym){ try { await history(item.sym); const yrs = p.gyrs === 'max' ? 99 : +p.gyrs || 3; S = hs(item, yrs).slice(); gy = Math.max(1, Math.round(Math.min(yrs, availY(item))));
+      let S = null, Dd = null, gy = 0;
+      if (item.sym){ try { await history(item.sym); const yrs = p.gyrs === 'max' ? 99 : +p.gyrs || 2; S = hs(item, yrs).slice(); Dd = histD(item.sym).slice(-S.length); gy = Math.max(1, Math.round(Math.min(yrs, availY(item))));
         const r = S.length ? S[S.length - 1] / it.cours : 1; if (r > 60 && r < 160) S = S.map(v => v / 100); else if (r < 0.5 || r > 2) S = null;   // unité incohérente : pas de graphique faux
         if (S && S.length < 3) S = null; } catch(e){ S = null; } }
-      return { nom: it.nom, item, cours: it.cours, ccy: it.devise || 'EUR', sc: it.sc, metric: it.metric, S, gy, trend: S ? (S[S.length - 1] / S[0] - 1) * 100 : 0 };
+      return { nom: it.nom, item, cours: it.cours, ccy: it.devise || 'EUR', sc: it.sc, metric: it.metric, S, Dd, gy, trend: S ? (S[S.length - 1] / S[0] - 1) * 100 : 0 };
     },
     async trans(p){
       const w = await wolf(), E = w.E, sorted = E.sortOps(w.ops);
@@ -716,11 +743,20 @@ const SHORT = (() => {
       if (!p.op) p.op = o.id;
       const s = w.sym(o.symbol); if (s.logoid) await img(tvLogo(s.logoid));
       const before = E.replay(sorted.slice(0, sorted.indexOf(o))), pos = before.pos[o.symbol];
+      // cours hebdo TradingView : un peu avant l'achat jusqu'à aujourd'hui (on voit aussi ce qu'il s'est passé après une vente)
+      const chartFor = async (from, mark) => { try { await history(o.symbol); } catch(e){ return null; } const C0 = histNow(o.symbol), D0 = histD(o.symbol); if (C0.length < 3) return null;
+        const t0 = Date.parse(from) / 1000, t1 = Date.now() / 1000, a = t0 - Math.max(56 * 86400, (t1 - t0) * 0.3); let i0 = D0.findIndex(t => t >= a); if (i0 < 0) return null; i0 = Math.max(0, i0 - 1);
+        const S = C0.slice(i0), Dd = D0.slice(i0), idx = ds => { const tt = Date.parse(ds) / 1000; const k = Dd.findIndex(t => t >= tt); return k < 0 ? Dd.length - 1 : k; };
+        return S.length >= 3 ? { S, Dd, ib: idx(from), is: mark ? idx(mark) : S.length - 1 } : null; };
       if (o.type === 'SELL'){ if (!pos) throw new Error('position introuvable avant la vente');
         const divs = sorted.filter(z => z.type === 'DIV' && z.symbol === o.symbol && z.date >= pos.open && z.date <= o.date).reduce((a, z) => a + (z.eur || 0), 0);
-        return { type: 'SELL', item: s, name: s.name, buyDate: pos.open, buyPx: pos.cost / pos.qty, sellDate: o.date, sellPx: o.eur / o.qty, divs, perf: ((o.eur / o.qty * Math.min(o.qty, pos.qty) + divs * Math.min(1, o.qty / pos.qty)) / (pos.cost * Math.min(1, o.qty / pos.qty)) - 1) * 100, days: E.daysBetween(pos.open, o.date), all: Math.abs(pos.qty - o.qty) < 1e-6 }; }
+        const ob = sorted.find(z => (z.type === 'BUY' || z.type === 'INIT') && z.symbol === o.symbol && z.date >= pos.open);
+        return { type: 'SELL', item: s, name: s.name, buyDate: pos.open, buyPx: pos.cost / pos.qty, sellDate: o.date, sellPx: o.eur / o.qty, divs,
+          bpx: ob && isNum(ob.px) ? ob.px : null, bccy: (ob && ob.ccy) || 'EUR', spx: isNum(o.px) ? o.px : null, sccy: o.ccy || 'EUR', chart: await chartFor(pos.open, o.date),
+          perf: ((o.eur / o.qty * Math.min(o.qty, pos.qty) + divs * Math.min(1, o.qty / pos.qty)) / (pos.cost * Math.min(1, o.qty / pos.qty)) - 1) * 100, days: E.daysBetween(pos.open, o.date), all: Math.abs(pos.qty - o.qty) < 1e-6 }; }
       const buyPx = Math.abs(o.eur) / o.qty, now = E.priceEur(w.S, o.symbol, today());
-      return { type: 'BUY', item: s, name: s.name, buyDate: o.date, buyPx, nowPx: now, perf: now ? (now / buyPx - 1) * 100 : null, days: E.daysBetween(o.date, today()) };
+      return { type: 'BUY', item: s, name: s.name, buyDate: o.date, buyPx, nowPx: now, perf: now ? (now / buyPx - 1) * 100 : null, days: E.daysBetween(o.date, today()), divs: 0,
+        bpx: isNum(o.px) ? o.px : null, bccy: o.ccy || 'EUR', chart: await chartFor(o.date, null) };
     }
   };
 
@@ -768,6 +804,15 @@ const SHORT = (() => {
       sx.beginPath(); sx.arc(124, y + h / 2, 34, 0, 7); sx.fillStyle = cur ? C.hlInk : C.gold; sx.fill(); T2(String(i + 1), 124, y + h / 2 + 15, 42, cur ? C.hlBg : '#fff', 'center', AF);
       L.forEach((l, j) => T2(l, 186, y + 22 + size * 0.92 + j * size * 1.24, size, cur ? C.hlInk : C.ink, 'left', BF, 700)); sx.restore(); y += h + 18; }); }
 
+  // graphique de cours commun aux shorts Valorisation et Achat/Vente
+  function pxFrame(S, Dd, box, extra){ const n = S.length, all = S.concat((extra || []).filter(isNum)), mn = Math.min(...all), mx = Math.max(...all), pad = (mx - mn) * 0.08 || 1, lo = mn - pad, hi = mx + pad;
+    const px = i => box.x + box.w * i / Math.max(1, n - 1), py = v => box.y + box.h - box.h * (v - lo) / (hi - lo);
+    sx.fillStyle = C.card; R2(box.x - 28, box.y - 36, box.w + 56, box.h + 100, 30); sx.fill();
+    if (Dd && Dd.length){ T2(dS(Dd[0]), box.x, box.y + box.h + 50, 30, C.dim, 'left', BF, 700); T2(dS(Dd[n - 1]), box.x + box.w, box.y + box.h + 50, 30, C.dim, 'right', BF, 700); }
+    return { n, px, py,
+      curve(a, color, lw, from, to){ const i0 = from || 0, i1 = Math.min(to == null ? n - 1 : to, i0 + Math.max(1, Math.floor(a * ((to == null ? n - 1 : to) - i0)))); sx.strokeStyle = color; sx.lineWidth = lw; sx.lineJoin = 'round'; sx.lineCap = 'round'; sx.beginPath(); for (let i = i0; i <= i1; i++) i === i0 ? sx.moveTo(px(i), py(S[i])) : sx.lineTo(px(i), py(S[i])); sx.stroke(); return i1; } }; }
+  function chipD(t0, X, Yy, size, bg, fg, align){ sx.font = `800 ${size}px ${BF}`; const w = sx.measureText(t0).width + size * 0.9, h = size * 1.5, L = align === 'right' ? X - w : align === 'center' ? X - w / 2 : X;
+    R2(L, Yy - h / 2, w, h, h * 0.28); sx.fillStyle = bg; sx.fill(); T2(t0, L + size * 0.45, Yy + size * 0.36, size, fg, 'left', BF, 800); return { L, w, h }; }
   function drawHebdo(s, p, Rg){
     const d = DATA, k = Rg.k, Yf = f => Rg.y + Rg.h * f, cx = 540;
     if (s.k === 'hook'){ T2('WOLF PORTFOLIO', cx, Yf(0.15), 110 * k, C.ink); hl2('SEMAINE ' + d.week, cx, Yf(0.26), 78 * k); T2('CETTE SEMAINE', cx, Yf(0.355), 44 * k, C.dim, 'center', BF, 800);
@@ -845,6 +890,7 @@ const SHORT = (() => {
         sx.save(); sx.globalAlpha *= ease(segp(p, 0.45, 0.7)); if (pp.verdict) hl2(pp.verdict, cx, Yf(0.83), 60 * k); sx.restore(); } }
     if (f === 'valo'){
       const it = d.item;
+      if (d.S && ['gcours', 'pess', 'real', 'opt', 'verdict'].includes(s.k)){ drawValoChart(d, s.k, p, Rg, pp); return; }
       if (s.k === 'graph' && d.S){   // le cours, puis chaque scénario devient une ligne horizontale, puis la zone d'achat
         logo2(it, 120, Yf(0.06), 52 * k); T2(up(d.nom), 190, Yf(0.06) + 20 * k, fit2(up(d.nom), 60 * k, 820), C.ink, 'left'); hl2('Sur le graphique', cx, Yf(0.155), 60 * k);
         const S = d.S, n = S.length, order = ['pess', 'real', 'opt'], lab = { pess: 'PESSIMISTE', real: 'REALISTE', opt: 'OPTIMISTE' }, cc = { pess: C.red, real: C.line3, opt: C.green };
@@ -891,8 +937,13 @@ const SHORT = (() => {
           const xo = (1 - a) * 80; sx.fillStyle = mk.z === 'cours' ? C.card : cc[mk.z]; R2(AX + 50 + xo, mk.y - 40 * k, 720, 80 * k, 40 * k); sx.fill();
           const tc = mk.z === 'cours' ? C.ink : '#fff'; T2(mk.z === 'cours' ? "AUJOURD'HUI" : lab[mk.z], AX + 82 + xo, mk.y + 13 * k, 34 * k, tc, 'left', BF, 800);
           T2(money(mk.v, d.ccy) + (mk.z !== 'cours' && isNum(pot(d, mk.z)) ? '  ' + sgn(pot(d, mk.z)) : ''), AX + 740 + xo, mk.y + 13 * k, 38 * k, tc, 'right', BF, 800); sx.restore(); }); } }
+    if (f === 'trans' && d.chart && ['gachat', 'gvente', 'gdepuis'].includes(s.k)){ drawTransChart(d, s.k, p, Rg, pp); return; }
+    if (f === 'trans' && s.k === 'bilan'){ const win = (d.perf || 0) >= 0; logo2(d.item, 540, Yf(0.13), 90 * k, true); T2(up(d.name), 540, Yf(0.3), fit2(up(d.name), 84 * k, 960), C.ink); hl2('Le bilan', 540, Yf(0.4), 70 * k);
+      const v = (d.perf || 0) * ease(segp(p, 0.1, 0.6)), tv = isNum(d.perf) ? sgn(v, 1) : '—'; T2(tv, 540, Yf(0.66), fit2(tv, 260 * k, 980), win ? C.green : C.red);
+      T2('en ' + dur(d.days) + (d.divs > 0 ? ' · dividendes compris' : ''), 540, Yf(0.75), 44 * k, C.ink2, 'center', BF, 700); if (pp.sticker) stk(win ? pp.sticker : 'decourage', 540, Yf(0.9), 200 * k, segp(p, 0.4, 1)); return; }
     if (f === 'trans'){
       const it = d.item, sell = d.type === 'SELL';
+      s = { k: { gachat: 'achat', gvente: 'vente', gdepuis: 'depuis' }[s.k] || s.k };
       if (s.k === 'hook'){ title(sell ? "J'ai vendu" : "J'ai achete", cx, Yf(0.13), 150 * k, 1); const b = back(segp(p, 0.1, 0.45)); sx.save(); sx.translate(cx, Yf(0.38)); sx.scale(b, b); logo2(it, 0, 0, 150 * k, true); sx.restore();
         sx.save(); sx.globalAlpha *= ease(segp(p, 0.35, 0.55)); T2(up(d.name), cx, Yf(0.6), fit2(up(d.name), 90 * k, 960), C.ink); hl2(sell ? (isNum(d.perf) ? sgn(d.perf, 1) : 'Vente') : 'Achat du ' + dt(d.buyDate).toLocaleDateString('fr-FR'), cx, Yf(0.7), 80 * k); sx.restore();
         if (pp.sticker) stk(pp.sticker, cx, Yf(0.87), 240 * k, segp(p, 0.5, 1)); }
@@ -905,6 +956,55 @@ const SHORT = (() => {
       if (s.k === 'depuis'){ head("Depuis l'achat"); row('PRIX D’ACHAT', money(d.buyPx, 'EUR'), Yf(0.27), ease(segp(p, 0.05, 0.3))); row("AUJOURD'HUI", money(d.nowPx, 'EUR'), Yf(0.27) + 175 * k, ease(segp(p, 0.2, 0.45)));
         if (isNum(d.perf)){ const v = d.perf * ease(segp(p, 0.4, 0.85)), tv = sgn(v, 1); T2(tv, cx, Yf(0.8), fit2(tv, 220 * k, 980), col(d.perf)); } }
       if (s.k === 'pourquoi'){ head('Pourquoi ?'); cards(lines(pp.raisons), Yf(0.27), Rg.h * 0.66, p, Rg); } }
+  }
+  function drawValoChart(d, k0, p, Rg, pp){
+    const k = Rg.k, Yf = q => Rg.y + Rg.h * q, order = ['pess', 'real', 'opt'], cc = { pess: C.red, real: '#E3A21A', opt: C.green }, lab = { pess: 'Pessimiste', real: 'Réaliste', opt: 'Optimiste' };
+    const shown = k0 === 'gcours' ? [] : k0 === 'verdict' ? order : order.slice(0, order.indexOf(k0) + 1), isNew = z => z === k0, an = ease(segp(p, 0.05, 0.55));
+    // titre + encadré noir (comme la carte de publication)
+    const e = ecartJ(d), verdict = pp.verdictT || (!isNum(e) ? 'Mon prix juste' : e >= 15 ? 'Trop chere ?' : e <= -15 ? 'En solde ?' : 'Au juste prix ?');
+    const head = k0 === 'gcours' ? 'Quel prix juste ?' : k0 === 'verdict' ? verdict : 'Scenario ' + lab[k0].toLowerCase();
+    const sub = k0 === 'gcours' ? 'Cours : ' + money(d.cours, d.ccy) : k0 === 'verdict' ? (isNum(e) ? (e >= 0 ? '+' : '−') + fr(Math.abs(e), 0) + ' % ' + (e >= 0 ? 'au-dessus' : 'en dessous') + ' de mon prix juste' : '') : money(d.sc[k0], d.ccy) + (isNum(pot(d, k0)) ? ' · ' + sgn(pot(d, k0)) + ' vs le cours' : '');
+    sx.save(); if (k0 !== 'gcours' && k0 !== 'pess') { /* titre fixe */ } T2(up(head), 60, Yf(0.085), fit2(up(head), 112 * k, 960), C.ink, 'left'); sx.restore();
+    if (sub){ sx.save(); sx.globalAlpha *= ease(segp(p, 0.1, 0.35)); chipD(sub, 60, Yf(0.135), fit2(sub, 40 * k, 900, BF, 800), '#16130F', '#F2B33D'); sx.restore(); }
+    // logo + nom
+    sx.save(); sx.fillStyle = '#fff'; R2(60, Yf(0.17), 130 * k, 130 * k, 30 * k); sx.fill(); sx.restore(); logo2(d.item, 60 + 65 * k, Yf(0.17) + 65 * k, 52 * k);
+    T2(up(d.nom), 60 + 160 * k, Yf(0.17) + 92 * k, fit2(up(d.nom), 96 * k, 960 - 160 * k), C.ink, 'left');
+    // le graphique
+    const box = { x: 80, y: Yf(0.33), w: 920, h: Rg.h * 0.54 }, G = pxFrame(d.S, d.Dd, box, order.map(z => d.sc[z]));
+    // dégradé rouge → jaune → vert entre les scénarios déjà annoncés
+    const sv = shown.filter(z => isNum(d.sc[z])).map(z => ({ z, v: d.sc[z] })).sort((a, b) => a.v - b.v);
+    if (sv.length >= 2){ const lo = sv[0], hi = sv[sv.length - 1], yT = G.py(hi.v), yB = G.py(lo.v), g = sx.createLinearGradient(0, yB, 0, yT), rgb = { pess: '229,99,107', real: '242,196,61', opt: '61,200,140' };
+      sv.forEach(o => g.addColorStop(clamp((o.v - lo.v) / ((hi.v - lo.v) || 1)), `rgba(${rgb[o.z]},0.30)`)); sx.save(); sx.globalAlpha *= sv.some(o => isNew(o.z)) ? an : 1; sx.fillStyle = g; sx.fillRect(box.x, yT, box.w, yB - yT); sx.restore(); }
+    // lignes pointillées + étiquettes
+    const labs = [];
+    shown.filter(z => isNum(d.sc[z])).forEach(z => { const a = isNew(z) ? an : 1, yy = G.py(d.sc[z]); sx.save(); sx.setLineDash([16, 12]); sx.strokeStyle = cc[z]; sx.lineWidth = 5; sx.beginPath(); sx.moveTo(box.x, yy); sx.lineTo(box.x + box.w * a, yy); sx.stroke(); sx.restore(); labs.push({ z, y: yy - 36, a }); });
+    labs.sort((a, b) => a.y - b.y); for (let i = 1; i < labs.length; i++) if (labs[i].y - labs[i - 1].y < 60) labs[i].y = labs[i - 1].y + 60;
+    // la courbe du cours (par-dessus) + étiquette du dernier cours
+    const a = k0 === 'gcours' ? ease(segp(p, 0, 0.8)) : 1, last = G.curve(a, C.ink, 7);
+    if (a > 0.98){ const xe = G.px(G.n - 1), ye = G.py(d.S[G.n - 1]); sx.fillStyle = C.ink; sx.beginPath(); sx.arc(xe, ye, 14, 0, 7); sx.fill(); chipD(money(d.S[G.n - 1], d.ccy), xe + 8, Math.max(box.y - 4, ye - 50), 34, C.ink, C.bg, 'right'); }
+    labs.forEach(l => { sx.save(); sx.globalAlpha *= l.a; chipD(lab[l.z] + ' ' + fr(d.sc[l.z], d.sc[l.z] < 100 ? 2 : 0), box.x + 10, l.y, 32, C.bg, cc[l.z]); sx.restore(); });
+    if (k0 === 'verdict'){ const st = pp.sticker || (isNum(e) && e >= 15 ? 'facepalm' : isNum(e) && e <= -15 ? 'fusee' : 'reflexion'); stk(st, 930, Yf(0.205), 170 * k, segp(p, 0.25, 1)); }
+  }
+  function drawTransChart(d, k0, p, Rg, pp){
+    const k = Rg.k, Yf = q => Rg.y + Rg.h * q, ch = d.chart, sell = d.type === 'SELL', win = (d.perf || 0) >= 0;
+    logo2(d.item, 120, Yf(0.06), 54 * k, true); T2(up(d.name), 192, Yf(0.06) + 22 * k, fit2(up(d.name), 70 * k, 820), C.ink, 'left');
+    hl2(k0 === 'gachat' ? "L'achat" : k0 === 'gvente' ? 'La vente' : "Depuis l'achat", 540, Yf(0.165), 70 * k);
+    const box = { x: 80, y: Yf(0.3), w: 920, h: Rg.h * 0.44 }, G = pxFrame(ch.S, ch.Dd, box, []);
+    const a = k0 === 'gachat' ? ease(segp(p, 0, 0.45)) : 1; G.curve(a, C.ink, 6);
+    // segment détenu, en vert ou rouge
+    const segTo = k0 === 'gachat' ? null : sell ? ch.is : G.n - 1;
+    if (segTo != null){ const sa = ease(segp(p, 0.05, 0.6)); G.curve(sa, win ? C.green : C.red, 11, ch.ib, segTo); }
+    const mark = (i, t0, sub, color, slot, alpha) => { const xx = G.px(i), yy = G.py(ch.S[i]), ty = box.y + 34 + slot * 96; sx.save(); sx.globalAlpha *= alpha;
+      sx.setLineDash([8, 9]); sx.strokeStyle = color; sx.lineWidth = 3; sx.beginPath(); sx.moveTo(xx, ty + 30); sx.lineTo(xx, yy); sx.stroke(); sx.setLineDash([]);
+      sx.fillStyle = color; sx.beginPath(); sx.arc(xx, yy, 16, 0, 7); sx.fill(); sx.strokeStyle = C.bg; sx.lineWidth = 5; sx.stroke();
+      const al = xx < box.x + 260 ? 'left' : xx > box.x + box.w - 260 ? 'right' : 'center'; const c1 = chipD(t0, al === 'left' ? xx - 20 : al === 'right' ? xx + 20 : xx, ty, 30, color, '#fff', al);
+      if (sub) T2(sub, al === 'left' ? c1.L + 4 : al === 'right' ? c1.L + c1.w - 4 : xx, ty + 52, 28, C.ink2, al === 'left' ? 'left' : al === 'right' ? 'right' : 'center', BF, 800); sx.restore(); };
+    const bAlpha = k0 === 'gachat' ? ease(segp(p, 0.45, 0.7)) : 1;
+    mark(ch.ib, 'ACHAT · ' + dt(d.buyDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }), isNum(d.bpx) ? money(d.bpx, d.bccy) : '', C.ink, 0, bAlpha);
+    if (sell && k0 === 'gvente') mark(ch.is, 'VENTE · ' + dt(d.sellDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }), isNum(d.spx) ? money(d.spx, d.sccy) : '', win ? C.green : C.red, 1, ease(segp(p, 0.3, 0.55)));
+    if (!sell && k0 === 'gdepuis'){ const xe = G.px(G.n - 1), ye = G.py(ch.S[G.n - 1]); sx.save(); sx.globalAlpha *= ease(segp(p, 0.3, 0.55)); sx.fillStyle = win ? C.green : C.red; sx.beginPath(); sx.arc(xe, ye, 16, 0, 7); sx.fill(); chipD("AUJOURD'HUI", xe + 20, box.y + 34 + 96, 30, win ? C.green : C.red, '#fff', 'right'); sx.restore(); }
+    if (k0 !== 'gachat' && isNum(d.perf)){ const v = d.perf * ease(segp(p, 0.45, 0.9)), tv = sgn(v, 1); sx.save(); sx.globalAlpha *= ease(segp(p, 0.4, 0.6));
+      const z = fit2(tv, 130 * k, 900); T2(tv, 540, box.y + box.h + 85 + 120 * k, z, win ? C.green : C.red); T2(dur(d.days) + (sell && d.divs > 0 ? ' · dividendes compris' : ''), 540, box.y + box.h + 85 + 168 * k, 34 * k, C.ink2, 'center', BF, 700); sx.restore(); }
   }
   function sceneDraw(s, p, Rg){ const f = getCfg().fmt; if (f === 'hebdo') drawHebdo(s, p, Rg); else drawFmt(f, s, p, Rg); }
   function frame(){
@@ -965,7 +1065,8 @@ const SHORT = (() => {
     if (f === 'chute') return coPick('Action') + `<label class="sd-f">Plus haut cherché sur<select data-sd-p="yrs">${[['1', '1 an'], ['2', '2 ans'], ['3', '3 ans'], ['5', '5 ans'], ['10', '10 ans'], ['max', 'Tout l’historique']].map(([v, l]) => `<option value="${v}" ${String(p.yrs) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`
       + stkSel('sticker', 'Loup du choc') + area('raisons', 'Pourquoi ça chute (une raison par ligne)') + txtIn('question', 'La question') + txtIn('verdict', 'Ton verdict (apparaît sous la question)') + stkSel('sticker2', 'Loup de la question') + txtIn('fin', 'Encadré de fin', 'Pour la suite');
     if (f === 'valo') return `<label class="sd-f">Entreprise (fiches de « Prix par secteur »)<select data-sd-p="nom">${(valoList || []).map(x => `<option value="${esc(x.nom)}" ${p.nom === x.nom ? 'selected' : ''}>${esc(x.nom)}${isNum(x.sc.real) ? '' : ' (pas de scénario réaliste)'}</option>`).join('') || '<option>Chargement…</option>'}</select></label>
-      <p class="sd-sub">Les 3 prix viennent de TA simulation dans « Prix par secteur » (rien n’est estimé ici). Annonce-les un par un avec → : chacun se place sur l’échelle à côté du cours actuel, puis l’étape « Sur le graphique » les trace sur le cours.</p>
+      <p class="sd-sub">Les 3 prix viennent de TA simulation dans « Prix par secteur » (rien n’est estimé ici). Annonce-les un par un avec → : chaque scénario devient une ligne sur le graphique du cours, avec le dégradé rouge → jaune → vert.</p>
+      ${txtIn('verdictT', 'Titre du verdict (vide = automatique : « Trop chère ? », « En solde ? », « Au juste prix ? »)')}
       <label class="sd-f">Période du graphique<select data-sd-p="gyrs">${[['1', '1 an'], ['2', '2 ans'], ['3', '3 ans'], ['5', '5 ans'], ['10', '10 ans'], ['max', 'Tout l’historique']].map(([v, l]) => `<option value="${v}" ${String(p.gyrs) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>` + stkSel('sticker', 'Loup (vide = choisi selon le verdict)') + txtIn('fin', 'Encadré de fin', 'Pour la suite');
     if (f === 'trans') return `<label class="sd-f">Opération du Wolf Portfolio<select data-sd-p="op">${(opsList || []).map(o => `<option value="${esc(o.id)}" ${p.op === o.id ? 'selected' : ''}>${esc(o.label)}</option>`).join('') || '<option>Chargement…</option>'}</select></label>
       <p class="sd-sub">Dates, prix et performance (dividendes compris) calculés depuis ton journal. Wolf Portfolio seulement, jamais le PEA ni le CTO.</p>` + stkSel('sticker', 'Loup de l’accroche') + area('raisons', 'Pourquoi (une raison par ligne)') + txtIn('fin', 'Encadré de fin', 'Pour la suite');

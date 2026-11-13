@@ -884,6 +884,14 @@ https://claude.ai/artifact/B4bfYADeVQL6G83Q4kJ6WX (17 modèles, 45 mises en page
   suivante, ← = précédente. **Espace = FIGER l'écran (animations), l'enregistrement continue** (webcam et voix) — demande explicite :
   ce n'est PAS une pause de l'enregistrement. Rien de ce qui est hors du canvas n'est filmé. Texte de publication YouTube / Facebook
   avec hashtags généré par modèle. `STUDIO_UI._short._seek(i, p)` rend une étape figée (tests).
+- **Refonte du 2026-11-13 (demande : « tout comparer au cours »)** : Valorisation = intro, puis étapes SUR LE GRAPHIQUE (`drawValoChart`) :
+  cours (2 ans par défaut), pessimiste / réaliste / optimiste en lignes pointillées + dégradé rouge → jaune → vert qui grandit, verdict
+  (« Trop chère ? » si cours ≥ +15 % du réaliste, « En solde ? » ≤ −15 %, sinon « Au juste prix ? », modifiable `p.verdictT`) avec
+  « +49 % au-dessus de mon prix juste ». Achat/Vente (`drawTransChart`) : point d'achat puis de vente sur le cours hebdo (période
+  détenue en vert / rouge, prix RÉELLEMENT payés `op.px`), performance sous le graphique, page « Le bilan » facultative. Sans cours :
+  anciennes pages. `history()` garde les dates (`histD`). Miniature **« Analyse hebdo »** (`hebdoW`, 1re de la galerie) : loup au
+  casque DORÉ si le Wolf monte cette semaine, ROUGE s'il baisse (`poseOf`, réglage « Ambiance »), semaine, performance vs CAC 40,
+  logos = opérations de la semaine (`wolfFacts().week/wk/weekOps`).
 
 ### Onglet Portefeuille IA (fait, 2026-09-19)
 Sous-onglet de « 💼 Portefeuille » : 4 portefeuilles simulés (ChatGPT, Claude, Gemini, Grok, logos
