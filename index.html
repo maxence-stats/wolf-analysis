@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Anton&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<link rel="stylesheet" href="css/style.css?v=20261113e">
+<link rel="stylesheet" href="css/style.css?v=20261113f">
 </head>
 <body>
 <div class="wrap">
@@ -463,19 +463,25 @@
     </div>
 
     <div id="pageValorisation" class="page">
-      <div class="section-label" id="valorisationSectionLabel">Simulations scénarisées</div>
+      <!-- Refonte v3 (maquette « Analyse-Valo » validée le 2026-11-13) : en-tête Anton + méthodes en pastilles -->
+      <div class="vv-head">
+        <span class="vv-logo"><img id="vvLogo" alt=""></span>
+        <h1 class="vv-title">Valorisation</h1>
+        <span class="vv-sub" id="vvSub">—</span>
+        <div class="vv-methods" id="valoMetricToggle" role="group" aria-label="Méthode de valorisation">
+          <button class="active" data-metric="fcf" onclick="setValorisationMetric('fcf')" title="Valoriser avec le FCF">FCF</button>
+          <button data-metric="ocf" onclick="setValorisationMetric('ocf')" title="Valoriser avec l'OCF">OCF</button>
+          <button data-metric="per" onclick="setValorisationMetric('per')" title="Valoriser avec le PER">PER</button>
+          <button data-metric="ev" onclick="setValorisationMetric('ev')" title="Valoriser avec l'EV/EBITDA">EV/EBITDA</button>
+          <button data-metric="pb" onclick="setValorisationMetric('pb')" title="Valoriser avec le P/B">P/B</button>
+          <button class="vv-pdf" onclick="exportValorisationFullAsPdf()" title="Exporter la page en PDF">🖨 PDF</button>
+        </div>
+      </div>
+      <div class="section-label" id="valorisationSectionLabel" style="display:none;">Simulations scénarisées</div>
       <p class="valo-intro">Le FCF (ou l'OCF/l'EPS selon le mode choisi) est rempli automatiquement depuis les
         derniers résultats, mais reste modifiable directement dans la tuile ci-dessous (↺ pour revenir à la valeur
         automatique). Ajuste aussi la croissance et le multiple de chaque scénario — Prix Juste = Métrique × Médiane.</p>
 
-      <div class="range-buttons" id="valoMetricToggle" style="margin-bottom:16px;">
-        <button class="active" data-metric="fcf" onclick="setValorisationMetric('fcf')">Valoriser avec le FCF</button>
-        <button data-metric="ocf" onclick="setValorisationMetric('ocf')">Valoriser avec l'OCF</button>
-        <button data-metric="per" onclick="setValorisationMetric('per')">Valoriser avec le PER</button>
-        <button data-metric="ev" onclick="setValorisationMetric('ev')">Valoriser avec l'EV/EBITDA</button>
-        <button data-metric="pb" onclick="setValorisationMetric('pb')">Valoriser avec le P/B</button>
-        <button class="objectifs-export" style="margin-left:auto;" onclick="exportValorisationFullAsPdf()">🖨 Exporter PDF</button>
-      </div>
 
       <div class="ratio-grid valo-summary">
         <div class="ratio-card"><div class="k">Prix actuel</div><div class="v" id="voPrixActuel">—</div><div class="sub">cours au dernier exercice</div></div>
@@ -485,12 +491,6 @@
         <div class="ratio-card"><div class="k" id="voMediane20Label">Médiane (20 ans)</div><div class="v" id="voMediane20">—</div><div class="sub">multiple médian sur 20 ans</div></div>
       </div>
 
-      <div class="section-label" style="margin-top:14px;">Référence externe — DCF (FMP)</div>
-      <p class="valo-intro" style="margin-top:0;">Estimation de juste valeur par discounted cash flow calculée par FMP — une méthode différente de tes scénarios (qui reposent sur FCF × médiane P/FCF), à prendre comme second avis, pas comme remplacement.</p>
-      <div class="ratio-grid">
-        <div class="ratio-card"><div class="k">DCF (non levier)</div><div class="v" id="voDcf">—</div><div class="sub">valorise TOUTE l'entreprise (dette + capitaux propres), avant effet du levier financier</div></div>
-        <div class="ratio-card"><div class="k">DCF (levier)</div><div class="v" id="voDcfLevered">—</div><div class="sub">valorise les seuls capitaux propres (après charge de la dette) — reflète l'effet du levier</div></div>
-      </div>
 
       <!-- Historique FCF/OCF/EPS + médianes de multiple + CAGR sur 4 horizons, propre à
            la métrique actuellement sélectionnée (Valoriser avec le FCF/OCF/PER) —
@@ -504,6 +504,19 @@
       <div id="voFcfNorm"></div>
 
       <div class="scenario-grid" id="scenarioGrid"></div>
+
+      <!-- « Où peut aller le cours dans 5 ans » : cours TradingView puis éventail des 3 scénarios (js/app.js, renderValoFan) -->
+      <div class="vv-fan">
+        <div class="vv-fan-head"><h2 class="vv-h2">Où peut aller le cours dans 5 ans</h2><span class="vv-sub">Cours passé, puis l'éventail des 3 scénarios</span>
+          <span class="vv-fan-tools" id="vvFanTools"></span></div>
+        <div class="vv-fan-holder"><canvas id="vvFanCanvas" role="img" aria-label="Cours passé puis projection à 5 ans des scénarios pessimiste, réaliste et optimiste"></canvas><div class="av3-empty" id="vvFanEmpty" style="display:none;"></div></div>
+      </div>
+      <div class="vv-actions">
+        <button type="button" class="vv-btn gold" onclick="document.getElementById('sendToPrixBtn').click()">🎯 Envoyer dans Prix par secteur</button>
+        <button type="button" class="vv-btn" onclick="document.getElementById('saveObjectifBtn').click()">💾 Enregistrer cet objectif</button>
+        <button type="button" class="vv-btn" id="vvShortBtn">🎬 Faire le short Valorisation</button>
+        <span class="vv-sub" id="vvActionMsg"></span>
+      </div>
 
       <!-- Calculatrice de valorisation (2026-11-08) : EV/EBITDA « à la main » + calcul libre. Préremplie avec
            l'entreprise affichée (TradingView en direct), tout est modifiable ; rien n'est enregistré. -->
@@ -1850,7 +1863,7 @@
   </div>
 </div>
 
-<script src="js/app.js?v=20261113d"></script>
+<script src="js/app.js?v=20261113g"></script>
 <script src="js/portefeuille-ia.js?v=20260920g"></script>
 <script src="js/mes-portefeuilles.js?v=20261112i"></script>
 <script src="js/valo-multiples.js?v=20261111b"></script>
@@ -1860,7 +1873,7 @@
 <script src="js/publier.js?v=20261111c"></script>
 <script src="js/sauvegardes.js?v=20261112a"></script>
 <script src="js/publications.js?v=20261111j"></script>
-<script src="js/studio.js?v=20261113d"></script>
+<script src="js/studio.js?v=20261113e"></script>
 <script src="js/stylo.js?v=20261110a"></script>
 </body>
 </html>

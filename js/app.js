@@ -6411,6 +6411,7 @@ const NAV_GROUPS = [
 function switchPage(pageId){
   if (MACRO_GROUP_PAGES.includes(pageId)) ensureMacroData();
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === pageId));
+  if (pageId === 'pageValorisation' && typeof scheduleValoFan === 'function') scheduleValoFan();   // éventail : dessiné à la taille réelle
   document.querySelectorAll('.page-nav-btn').forEach(b => b.classList.toggle('active',
     b.dataset.page === pageId ||
     NAV_GROUPS.some(g => b.dataset.group === g.key && g.pages.includes(pageId)) ||
@@ -11169,7 +11170,7 @@ function scenarioCardHtml(s){
   return `
     <div class="scenario-card ${s.key}" data-key="${s.key}">
       <div class="scenario-title-row">
-        <h3 class="scenario-title">${s.label}</h3>
+        <h3 class="scenario-title">${s.label.replace('Scénario ', '')}</h3>
         <button class="zoom-btn scenario-zoom-btn" data-zoom-scenario="${s.key}" title="Agrandir">⤢</button>
       </div>
       <div class="scenario-fcf-history">
@@ -11208,12 +11209,12 @@ function scenarioCardHtml(s){
         <div class="scenario-ev-note" id="vo-${s.key}-detteNote"></div>
       </div>` : ''}
       ${isEv ? `<div class="scenario-results">
-        <div><div class="r-k">Prix théorique actuel</div><div class="r-v" id="vo-${s.key}-prixJuste">—</div><div class="r-sub" id="vo-${s.key}-potActuel"></div></div>
+        <div class="vv-juste"><div class="r-k">Prix théorique actuel</div><div class="r-v" id="vo-${s.key}-prixJuste">—</div><div class="r-sub" id="vo-${s.key}-potActuel"></div></div>
         <div><div class="r-k">Prix théorique (5a)</div><div class="r-v" id="vo-${s.key}-prixEst">—</div><div class="r-sub" id="vo-${s.key}-ebitdaFutur"></div></div>
         <div><div class="r-k">Potentiel total (5a)</div><div class="r-v" id="vo-${s.key}-prixCible">—</div></div>
         <div><div class="r-k">Rendement annualisé</div><div class="r-v" id="vo-${s.key}-rendement">—</div></div>
       </div>` : `<div class="scenario-results">
-        <div><div class="r-k">Prix juste sim.</div><div class="r-v" id="vo-${s.key}-prixJuste">—</div></div>
+        <div class="vv-juste"><div class="r-k">Prix juste</div><div class="r-v" id="vo-${s.key}-prixJuste">—</div><div class="vv-vs" id="vo-${s.key}-vsCours"></div></div>
         <div><div class="r-k">Prix cible (-20%)</div><div class="r-v" id="vo-${s.key}-prixCible">—</div></div>
         <div><div class="r-k">Prix est. (5a)</div><div class="r-v" id="vo-${s.key}-prixEst">—</div></div>
         <div><div class="r-k">Rendement (5a)</div><div class="r-v" id="vo-${s.key}-rendement">—</div></div>
@@ -11278,7 +11279,7 @@ function valorisationInputs(latest, hist, nom){
   let result;
   if (valorisationMetric === 'ev' || valorisationMetric === 'pb'){
     result = multiplesValoInputs(latest, overrideNom);   // TradingView en direct uniquement (jamais FMP)
-  } else if (real && real.chartsHistory){
+  } else if (real && real.chartsHistory && !isTvCompany(overrideNom)){
     const rows = chartsHistoryToRows(real.chartsHistory);
     const known = rows.filter(r => r[f.perShare] != null);
     const fcfActuel = known.length ? known[known.length - 1][f.perShare] : null;
@@ -11294,7 +11295,8 @@ function valorisationInputs(latest, hist, nom){
       label: fixedLabel
     };
   } else if (valorisationMetric === 'ocf'){
-    const ocfActuel = (latest.prixActuel != null && latest.pOcf) ? latest.prixActuel / latest.pOcf : null;
+    // TradingView : OCF actuel seulement (pas d'historique public de l'OCF -> pas de CAGR ni de médiane P/OCF)
+    const ocfActuel = latest.ocfParAction != null ? latest.ocfParAction : (latest.prixActuel != null && latest.pOcf) ? latest.prixActuel / latest.pOcf : null;
     result = { fcfActuel: ocfActuel, cagrHist: latest.cagrOcf10, medianeHist: latest.medianePOcf, mediane20: latest.medianePOcf20, label:'OCF' };
   } else if (valorisationMetric === 'per'){
     // Pas de "Médiane PER" fournie par le Sheet (contrairement à médianePFCF/
@@ -11302,7 +11304,9 @@ function valorisationInputs(latest, hist, nom){
     const h = hist || (activeCompany && companies[activeCompany]) || [];
     result = { fcfActuel: latest.eps, cagrHist: latest.cagrEps10, medianeHist: medianOfLastYears(h, 'per', 10), mediane20: medianOfLastYears(h, 'per', 20), label:'PER' };
   } else {
-    result = { fcfActuel: latest.fcfParAction, cagrHist: latest.cagrFcf10, medianeHist: latest.medianePFCF, mediane20: latest.medianePFCF20, label:'FCF' };
+    const h = hist || (activeCompany && companies[activeCompany]) || [];
+    result = { fcfActuel: latest.fcfParAction, cagrHist: latest.cagrFcf10, medianeHist: latest.medianePFCF,
+      mediane20: latest.medianePFCF20 != null ? latest.medianePFCF20 : medianOfLastYears(h, 'pFcf', 20), label:'FCF' };
   }
   result.fcfActuelAuto = result.fcfActuel;
   const override = overrideNom && valorisationFcfOverrides[overrideNom] ? valorisationFcfOverrides[overrideNom][valorisationMetric] : null;
@@ -12335,14 +12339,19 @@ function renderValoMetricHistory(nom){
   }
   const f = VALO_METRIC_FIELDS[valorisationMetric] || VALO_METRIC_FIELDS.fcf;
   const multipleLabel = valorisationMetric === 'per' ? 'PER' : 'P/' + f.metricName;
-  label.textContent = `Historique ${f.metricName} (FMP)`;
   if (voMetricChart){ voMetricChart.destroy(); voMetricChart = null; }
-  const real = documentsRealData[nom];
+  const tvRows = isTvCompany(nom) ? (companies[nom] || []).filter(r => r.annee < new Date().getFullYear()) : null;
+  label.textContent = `Historique ${f.metricName} (${tvRows ? 'TradingView' : 'FMP'})`;
+  if (tvRows && valorisationMetric === 'ocf'){
+    content.innerHTML = `<div class="documents-empty-banner">TradingView ne publie pas l'historique de l'OCF (cash-flow opérationnel) : seule la valeur actuelle est connue. Pour une médiane et un CAGR sur 5 à 20 ans, valorise avec le FCF ou le PER.</div>`;
+    return;
+  }
+  const real = tvRows ? { chartsHistory: { years: tvRows.map(r => r.annee) }, _rows: tvRows } : documentsRealData[nom];
   if (!real || !real.chartsHistory){
     content.innerHTML = `<div class="documents-empty-banner">📭 En attente de l'import FMP pour cette entreprise — l'historique ${f.metricName}, les médianes ${multipleLabel} et le CAGR sur 5/10/20/30 ans s'afficheront automatiquement une fois disponibles.</div>`;
     return;
   }
-  const rows = chartsHistoryToRows(real.chartsHistory);
+  const rows = real._rows || chartsHistoryToRows(real.chartsHistory);
   const years = real.chartsHistory.years;
   const horizons = [5, 10, 20, 30];
   const medianTiles = horizons.map(n => {
@@ -12355,7 +12364,7 @@ function renderValoMetricHistory(nom){
   }).join('');
   content.innerHTML = `
     <div class="chart-card wide">
-      <div class="chart-card-head"><div><h3>${f.chartLabel}</h3><p>Historique complet, données FMP</p></div></div>
+      <div class="chart-card-head"><div><h3>${f.chartLabel}</h3><p>Historique complet, données ${real._rows ? 'TradingView' : 'FMP'}</p></div></div>
       <div class="chart-holder" style="height:200px;"><canvas id="voMetricChart"></canvas></div>
     </div>
     <div class="section-label" style="margin-top:10px;">Médianes ${multipleLabel}</div>
@@ -12607,8 +12616,8 @@ function renderValorisation(nom){
   document.getElementById('voMedianeLabel').textContent = 'Médiane ' + vl.mediane + ' (historique)';
   document.getElementById('voMediane20Label').textContent = 'Médiane ' + vl.mediane + ' (20 ans)';
   document.getElementById('voCagrHist').textContent = cagrHist != null ? fmtPct(cagrHist) : 'N/D';
-  document.getElementById('voMedianeHist').textContent = medianeHist != null ? medianeHist.toLocaleString('fr-FR', {minimumFractionDigits:1}) + 'x' : 'N/D';
-  document.getElementById('voMediane20').textContent = mediane20 != null ? mediane20.toLocaleString('fr-FR', {minimumFractionDigits:1}) + 'x' : 'N/D';
+  document.getElementById('voMedianeHist').textContent = medianeHist != null ? medianeHist.toLocaleString('fr-FR', {minimumFractionDigits:1, maximumFractionDigits:1}) + 'x' : 'N/D';
+  document.getElementById('voMediane20').textContent = mediane20 != null ? mediane20.toLocaleString('fr-FR', {minimumFractionDigits:1, maximumFractionDigits:1}) + 'x' : 'N/D';
   renderMultiplesSummaryTiles(nom, vInputs);
 
   // Ré-amorce depuis le DERNIER objectif enregistré pour cette entreprise s'il en
@@ -12656,11 +12665,133 @@ function renderValorisation(nom){
 
   renderObjectifsHistory(nom);
 
-  if (!documentsRealData[nom]) ensureDocumentsRealData(nom);
-  renderDcfTiles(nom);
+  if (!isTvCompany(nom) && !documentsRealData[nom]) ensureDocumentsRealData(nom);   // FMP : jamais pour une fiche TradingView
   renderValoMetricHistory(nom);
   renderValoCalculator(nom);
+  renderValoHeader(nom, latest);
+  scheduleValoFan();
 }
+
+/* ============================================================
+   ONGLET VALORISATION — refonte v3 (maquette « Analyse-Valo » validée le 2026-11-13)
+   En-tête Anton, cartes de scénarios restylées (CSS .vv-*), graphique « Où peut aller le cours dans 5 ans » :
+   cours hebdo TradingView puis éventail pessimiste / réaliste / optimiste jusqu'au prix estimé à 5 ans de chaque
+   scénario (mêmes chiffres que les cartes, recalculés à chaque curseur). Boutons Envoyer / Enregistrer / Short.
+   ============================================================ */
+function valoQuoteSym(latest){
+  return latest && latest.devise ? (latest.devise === 'GBX' || latest.devise === 'GBp' ? 'p' : fmpCurrencySymbol(latest.devise)) : '€';
+}
+function renderValoHeader(nom, latest){
+  const logo = document.getElementById('vvLogo'), sub = document.getElementById('vvSub');
+  if (logo){ const src = latest.lienImage || companyLogoUrl(nom) || ''; if (src) logo.src = src; logo.style.visibility = src ? '' : 'hidden'; }
+  if (sub) sub.textContent = fmpDisplayName(nom) + (latest.prixActuel != null ? ' · cours ' + latest.prixActuel.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ' + valoQuoteSym(latest) : '');
+  const btn = document.getElementById('vvShortBtn');
+  if (btn && !btn.dataset.wired){
+    btn.dataset.wired = '1';
+    btn.addEventListener('click', () => { if (window.STUDIO_UI && STUDIO_UI.openShort && activeCompany) STUDIO_UI.openShort('valo', { nom: activeCompany }); });
+    // le message de « Envoyer dans Prix par secteur » s'affiche aussi à côté des nouveaux boutons
+    const src = document.getElementById('sendToPrixMsg'), dst = document.getElementById('vvActionMsg');
+    if (src && dst) new MutationObserver(() => { dst.textContent = src.textContent; }).observe(src, { childList: true, characterData: true, subtree: true });
+  }
+}
+let vvFanTimer = null, vvFanChart = null, vvFanYears = 3;
+const vvFanPrices = {};   // nom -> { at, data }
+function scheduleValoFan(){ clearTimeout(vvFanTimer); vvFanTimer = setTimeout(renderValoFan, 120); }
+function valoScenarioEstimates(){
+  const nom = activeCompany, hist = nom && companies[nom];
+  if (!hist) return {};
+  const prix = hist[hist.length - 1].prixActuel, out = {};
+  SCENARIOS.forEach(s => {
+    const v = scenarioValues[s.key];
+    if (!v || activeFcfActuel == null || prix == null) return;
+    const detteArg = valorisationMetric === 'ev' ? { actuelle: activeValoDetteNetteParAction || 0, future: v.detteFuture } : activeValoDetteNetteParAction;
+    out[s.key] = computeScenario(activeFcfActuel, prix, v.cagr, v.multiple, v.rachat, detteArg);
+  });
+  return out;
+}
+async function renderValoFan(){
+  const canvas = document.getElementById('vvFanCanvas'), empty = document.getElementById('vvFanEmpty'), tools = document.getElementById('vvFanTools');
+  const nom = activeCompany;
+  if (!canvas || !nom || !companies[nom]) return;
+  const page = document.getElementById('pageValorisation');
+  if (page && !page.classList.contains('active')) return;   // dessiné à l'ouverture de l'onglet (taille réelle)
+  if (tools && !tools.dataset.wired){
+    tools.dataset.wired = '1';
+    tools.addEventListener('click', e => { const b = e.target.closest('button[data-fy]'); if (!b) return; vvFanYears = +b.dataset.fy; renderValoFan(); });
+  }
+  if (tools) tools.innerHTML = [1, 3, 5, 10].map(y => `<button type="button" class="av3-chip${vvFanYears === y ? ' on' : ''}" data-fy="${y}">${y}a</button>`).join('');
+  let px = vvFanPrices[nom];
+  if (!px || Date.now() - px.at > 30 * 60000){ px = vvFanPrices[nom] = { at: Date.now(), data: await loadTvWeeklyPrices(nom).catch(() => null) }; }
+  if (activeCompany !== nom) return;
+  const latest = companies[nom][companies[nom].length - 1];
+  const est = valoScenarioEstimates();
+  const q = valoQuoteSym(latest);
+  if (!px.data || !px.data.closes || px.data.closes.length < 10 || latest.prixActuel == null){
+    if (vvFanChart){ vvFanChart.destroy(); vvFanChart = null; }
+    empty.style.display = 'flex';
+    empty.textContent = 'Cours TradingView indisponible (serveur local arrêté ?) : relance le raccourci Wolf Analysis.';
+    return;
+  }
+  empty.style.display = 'none';
+  // passé : clôtures hebdo de la période choisie (+ cours du jour) ; futur : un point toutes les 1 à 4 semaines jusqu'à +5 ans
+  const from = new Date(); from.setFullYear(from.getFullYear() - vvFanYears);
+  const iso = from.toISOString().slice(0, 10);
+  let i0 = px.data.dates.findIndex(d => d >= iso); if (i0 < 0) i0 = 0;
+  const pastD = px.data.dates.slice(i0), pastC = px.data.closes.slice(i0);
+  const now = latest.prixActuel, today = new Date();
+  pastD.push(today.toISOString().slice(0, 10)); pastC.push(now);
+  const stepDays = vvFanYears <= 1 ? 7 : vvFanYears <= 3 ? 14 : 28;
+  const end = new Date(today.getFullYear() + 5, today.getMonth(), today.getDate());
+  const fut = [];
+  for (let t = today.getTime() + stepDays * 864e5; t <= end.getTime(); t += stepDays * 864e5) fut.push(new Date(t).toISOString().slice(0, 10));
+  const labels = pastD.concat(fut), nP = pastD.length, nF = fut.length;
+  const C = { pessimiste: '#E5636B', realiste: '#F2C43D', optimiste: '#3DC88C' };
+  const L = { pessimiste: 'Pessimiste', realiste: 'Réaliste', optimiste: 'Optimiste' };
+  const tgt = k => est[k] && isFinite(est[k].prixEst5A) && est[k].prixEst5A > 0 ? est[k].prixEst5A : null;
+  // trajectoire à rendement constant entre le cours du jour et le prix estimé à 5 ans
+  const path = target => labels.map((_, i) => i < nP - 1 ? null : now * Math.pow(target / now, (i - (nP - 1)) / nF));
+  const ds = [];
+  const pessIdx = tgt('pessimiste') != null ? ds.push({ label: 'Pessimiste (5a)', data: path(tgt('pessimiste')), borderColor: C.pessimiste, borderDash: [8, 6], borderWidth: 2, pointRadius: 0, fill: false }) - 1 : -1;
+  if (tgt('realiste') != null) ds.push({ label: 'Réaliste (5a)', data: path(tgt('realiste')), borderColor: C.realiste, borderDash: [8, 6], borderWidth: 2.4, pointRadius: 0, fill: false });
+  if (tgt('optimiste') != null) ds.push({ label: 'Optimiste (5a)', data: path(tgt('optimiste')), borderColor: C.optimiste, borderDash: [8, 6], borderWidth: 2, pointRadius: 0,
+    fill: pessIdx >= 0 ? pessIdx : false, backgroundColor: ctx => {
+      const ch = ctx.chart, a = ch.chartArea, y = ch.scales && ch.scales.y;
+      if (!a || !y || tgt('pessimiste') == null) return 'rgba(242,196,61,0.15)';
+      const yO = y.getPixelForValue(tgt('optimiste')), yP = y.getPixelForValue(tgt('pessimiste'));
+      if (!isFinite(yO) || !isFinite(yP) || yO === yP) return 'rgba(242,196,61,0.15)';
+      const g = ch.ctx.createLinearGradient(0, yP, 0, yO);
+      g.addColorStop(0, 'rgba(229,99,107,0.30)'); g.addColorStop(0.5, 'rgba(242,196,61,0.24)'); g.addColorStop(1, 'rgba(61,200,140,0.30)');
+      return g; } });
+  ds.push({ label: 'Cours', data: labels.map((_, i) => i < nP ? pastC[i] : null), borderColor: '#FFFFFF', borderWidth: 2.4,
+    pointRadius: labels.map((_, i) => i === nP - 1 ? 6 : 0), pointBackgroundColor: '#FFFFFF', spanGaps: true, fill: false, tension: 0 });
+  const fmtV = v => v.toLocaleString('fr-FR', { maximumFractionDigits: v >= 100 ? 0 : 2 }) + ' ' + q;
+  const endLabels = { id: 'vvEnd', afterDatasetsDraw(ch){
+    const g = ch.ctx, a = ch.chartArea, y = ch.scales.y, x = ch.scales.x; if (!a) return;
+    g.save(); g.font = "800 14px 'Plus Jakarta Sans', sans-serif"; g.textBaseline = 'middle';
+    const items = ['optimiste', 'realiste', 'pessimiste'].filter(k => tgt(k) != null).map(k => ({ k, y: y.getPixelForValue(tgt(k)) })).sort((m, n) => m.y - n.y);
+    for (let j = 1; j < items.length; j++) if (items[j].y - items[j - 1].y < 28) items[j].y = items[j - 1].y + 28;
+    items.forEach(it => {
+      const t = L[it.k] + ' ' + fmtV(tgt(it.k)), w = g.measureText(t).width + 16, xx = a.right - w - 4, yy = Math.max(a.top + 13, Math.min(a.bottom - 13, it.y));
+      g.fillStyle = 'rgba(13,16,19,0.9)'; g.beginPath(); if (g.roundRect) g.roundRect(xx, yy - 13, w, 26, 7); else g.rect(xx, yy - 13, w, 26); g.fill();
+      g.fillStyle = C[it.k]; g.fillText(t, xx + 8, yy + 1); });
+    const xT = x.getPixelForValue(nP - 1);
+    g.strokeStyle = '#262E36'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(xT, a.top); g.lineTo(xT, a.bottom); g.stroke();
+    g.fillStyle = '#8B93A0'; g.font = "800 12px 'Plus Jakarta Sans', sans-serif"; g.fillText("AUJOURD'HUI · " + fmtV(now), xT + 8, a.top + 12);
+    g.restore(); } };
+  const vals = pastC.concat(['pessimiste', 'realiste', 'optimiste'].map(tgt).filter(v => v != null));
+  if (vvFanChart){ vvFanChart.destroy(); vvFanChart = null; }
+  vvFanChart = new Chart(canvas, { type: 'line', data: { labels, datasets: ds }, plugins: [endLabels],
+    options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: { backgroundColor: 'rgba(13,16,19,0.95)', borderColor: '#262E36', borderWidth: 1, padding: 10,
+        callbacks: { title: it => it.length ? it[0].label.split('-').reverse().join('/') : '', label: it => it.raw == null ? null : ' ' + it.dataset.label + ' : ' + fmtV(it.raw) } } },
+      scales: {
+        x: { grid: { display: false }, border: { color: '#262E36' }, ticks: { color: '#8B93A0', autoSkip: false, maxRotation: 0, font: { size: 12 },
+          callback(v, i){ const d = labels[i], p = labels[i - 1]; return d && p && p.slice(0, 4) !== d.slice(0, 4) ? d.slice(0, 4) : ''; } } },
+        y: { position: 'left', grid: { color: '#20272E', drawTicks: false }, border: { display: false },
+          suggestedMin: Math.max(0, Math.min(...vals) * 0.9), suggestedMax: Math.max(...vals) * 1.05,
+          ticks: { color: '#8B93A0', font: { size: 12 }, padding: 6, callback: v => fmtV(v) } } } } });
+}
+
 
 /* ============================================================
    CALCULATRICE DE VALORISATION (onglet Valorisation, 2026-11-08)
@@ -12939,6 +13070,11 @@ function updateScenarioCard(s, hist, prixActuel){
   const signPct = v => v == null ? 'N/D' : (v >= 0 ? '+' : '') + v.toLocaleString('fr-FR', {minimumFractionDigits:1, maximumFractionDigits:1}) + '%';
 
   document.getElementById('vo-'+s.key+'-prixJuste').textContent = fmtEUR(prixJusteSim);
+  const vsEl = document.getElementById('vo-'+s.key+'-vsCours');
+  if (vsEl){ const e = prixActuel > 0 ? (prixJusteSim / prixActuel - 1) * 100 : null;
+    vsEl.textContent = e == null ? '' : (e >= 0 ? '+' : '−') + Math.abs(e).toLocaleString('fr-FR', { maximumFractionDigits: 0 }) + ' % vs le cours';
+    vsEl.className = 'vv-vs ' + (e == null ? '' : e >= 0 ? 'pos' : 'neg'); }
+  scheduleValoFan();
   if (isEv){
     const potEl = document.getElementById('vo-'+s.key+'-prixCible');
     potEl.textContent = signPct(sc.potentiel5A);
@@ -12982,7 +13118,7 @@ function buildScenarioChartConfig(s, hist, prixJusteSim, prixEst5A){
   projection[labels.length - 2] = prices[prices.length - 1];
   projection[labels.length - 1] = prixEst5A;
 
-  const accent = THEME[s.color];
+  const accent = s.key === 'realiste' ? '#F2C43D' : THEME[s.color];   // réaliste en jaune (maquette v3)
 
   return {
     type:'line',

@@ -1071,6 +1071,15 @@ Code : `js/portefeuille-ia.js` (chargé après `app.js`, expose `window.IA_ENGIN
   "Bugs corrigés" ci-dessous)
 
 ### Onglet Valorisation (fait, fonctionnel)
+- **Refonte v3 (2026-11-13, maquette « Analyse-Valo » de https://claude.ai/artifact/PFPaha6LoET5dQJABiD8j9)**, tout l'existant gardé :
+  en-tête Anton (logo, « VALORISATION », nom · cours) avec les méthodes en pastilles FCF / OCF / PER / EV/EBITDA / P/B (`#valoMetricToggle`
+  déplacé dans `.vv-head`) ; cartes dans l'ordre Pessimiste / Réaliste (JAUNE #F2C43D) / Optimiste (CSS `order`, `SCENARIOS` inchangé),
+  titres Anton, bloc « PRIX JUSTE » en grand + « −26 % vs le cours » (`vo-<clé>-vsCours`) ; graphique « Où peut aller le cours dans
+  5 ans » (`renderValoFan`, cours hebdo TradingView 1/3/5/10 ans puis trajectoire à rendement constant jusqu'au prix estimé 5 ans de
+  chaque scénario, dégradé, redessiné à chaque curseur via `scheduleValoFan` et à l'ouverture de l'onglet dans `switchPage`) ; boutons
+  « 🎯 Envoyer dans Prix par secteur » / « 💾 Enregistrer cet objectif » (relais des boutons existants) / « 🎬 Faire le short
+  Valorisation » (`STUDIO_UI.openShort('valo', {nom})`). **Plus de FMP** : tuiles DCF retirées, historique de la métrique et médianes
+  depuis l'historique TradingView (`renderValoMetricHistory`), OCF = valeur actuelle seulement (pas d'historique public).
 Simulations scénarisées pour estimer un prix cible à 5 ans, sur le modèle
 « Prix Juste = FCF × Médiane P/FCF ». Aucun nouvel appel réseau : tout se base sur des
 champs déjà présents dans `companies` (aucune nouvelle colonne `COL` nécessaire).

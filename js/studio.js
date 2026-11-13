@@ -1450,6 +1450,8 @@ const SHORT = (() => {
   const DATA_KEYS = ['co', 'yrs', 'nom', 'op', 'gyrs', 'prog'];   // « une », montants, verdicts : redessinés sans recharger
   return {
     view,
+    // Ouvre un modèle de short avec des réglages (ex. depuis l'onglet Valorisation : { nom } pour le short Valorisation).
+    openFormat(fmt, pp){ if (recording || !FMT[fmt]) return; const c = getCfg(); c.fmt = fmt; const o = fc(); Object.assign(o.p, pp || {}); persist(); playing = false; pubOv = { yt: null, fb: null }; DATA = null; dataErr = null; tt = 0; ui.tab = 'short'; shell(); },
     openProgramme(id){ if (recording) return; const c = getCfg(); c.fmt = 'programme'; const o = fc(); o.p.prog = id; persist(); playing = false; pubOv = { yt: null, fb: null }; DATA = null; dataErr = null; tt = 0; ui.tab = 'short'; shell(); },
     _seek(i, q){ const a = active(), s = a[Math.min(i, a.length - 1)]; let acc = 0; for (const z of a){ if (z === s) break; acc += +z.dur || 3; } tt = acc + (+s.dur || 3) * Math.min(q, 0.999); playing = false; frame(); return $('sdShortCv').toDataURL('image/jpeg', 0.6); },
     _n: () => active().length,
@@ -1622,5 +1624,11 @@ async function onShow(){
   shell();
 }
 document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-page]'); if (!b) return; if (b.dataset.page === PAGE_ID) setTimeout(onShow, 0); else if (ui.tab === 'short') SHORT.stop(); });
-window.STUDIO_UI = { onShow, _T: T, _short: SHORT, _render: async (i, vi, st) => { const t = T[i], s = Object.assign(newState(i), st || {}, { vi: vi || 0 }), cv = document.createElement('canvas'); cv.width = 1280; cv.height = 720; render(cv, t, s, await prep(t, s)); return cv; } };
+// Ouvrir le Studio directement sur un short (bouton « 🎬 Faire le short Valorisation » de l'onglet Valorisation).
+async function openShort(fmt, pp){
+  if (typeof switchPage === 'function') switchPage(PAGE_ID);
+  if (!loaded){ loaded = true; await load(); }
+  SHORT.openFormat(fmt, pp);
+}
+window.STUDIO_UI = { onShow, openShort, _T: T, _short: SHORT, _render: async (i, vi, st) => { const t = T[i], s = Object.assign(newState(i), st || {}, { vi: vi || 0 }), cv = document.createElement('canvas'); cv.width = 1280; cv.height = 720; render(cv, t, s, await prep(t, s)); return cv; } };
 })();
