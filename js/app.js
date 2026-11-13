@@ -6409,7 +6409,7 @@ const PORTFOLIO_GROUP_PAGES = ['pagePortfolio', 'pageDividende', 'pageMesPortefe
 const ANALYSE_GROUP_PAGES = ['pageAnalyse', 'pageValorisation', 'pageDocuments', 'pageRevenus'];
 // Secteur/Classement/Watchlist regroupés sous "🔍 Screener" (même pattern que
 // Portefeuille) — demande explicite pour désencombrer la nav principale.
-const SCREENER_GROUP_PAGES = ['pageSecteur', 'pageClassement', 'pageWatchlist', 'pageComparaison', 'pageTierList', 'pageFiltres'];
+const SCREENER_GROUP_PAGES = ['pageSecteur', 'pageClassement', 'pageWatchlist', 'pageTvListes', 'pageComparaison', 'pageTierList', 'pageFiltres'];
 // Macroéconomie éclatée en 3 sous-onglets (même pattern) — demande explicite : la page
 // mélangeait Crédit, cycle sectoriel et indicateurs macro US sur un seul écran de plus
 // en plus long à mesure que le Crédit s'étoffait.

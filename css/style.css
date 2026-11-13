@@ -3641,3 +3641,47 @@
 .fcfn-apply{font:800 14px var(--font-body);color:#111;background:linear-gradient(180deg,#F0C877,#D9A441);border:0;border-radius:12px;padding:11px 18px;cursor:pointer;white-space:nowrap;}
 .fcfn-apply:disabled{opacity:.45;cursor:default;}
 @media (max-width:720px){ .fcfn-btns{margin-left:0;} }
+
+/* ==========================================================================
+   SCREENER → LISTES TRADINGVIEW (2026-11-13, js/tv-listes.js)
+   ========================================================================== */
+.tl-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin:6px 0 14px;}
+.tl-title{margin:0;font:400 40px/1 Anton,'Space Grotesk',sans-serif;text-transform:uppercase;color:var(--text);}
+.tl-sub{font-size:13px;color:var(--text-dim);}
+.tl-wrap{display:grid;grid-template-columns:260px minmax(0,1fr);gap:16px;align-items:start;}
+.tl-side{display:flex;flex-direction:column;gap:4px;background:var(--card-bg);border:var(--card-border);border-radius:20px;padding:10px;position:sticky;top:10px;max-height:calc(100vh - 40px);overflow:auto;}
+.tl-li{display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;font:600 13px var(--font-body);color:var(--text);background:transparent;border:0;border-radius:12px;padding:9px 12px;cursor:pointer;}
+.tl-li:hover{background:rgba(255,255,255,0.04);}
+.tl-li b{font-size:12px;color:var(--text-dim);background:rgba(255,255,255,0.05);border-radius:999px;padding:2px 8px;}
+.tl-li.on{background:rgba(217,164,65,0.14);color:var(--gold-2);}
+.tl-li.on b{color:#111;background:var(--gold);}
+.tl-main{background:var(--card-bg);border:var(--card-border);border-radius:22px;padding:16px 18px;min-width:0;}
+.tl-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+.tl-h2{margin:0 auto 0 0;font:400 26px/1.1 Anton,'Space Grotesk',sans-serif;text-transform:uppercase;color:var(--text);}
+.tl-q,.tl-sort select{font:600 13px var(--font-body);color:var(--text);background:var(--panel-2);border:1px solid var(--hair);border-radius:10px;padding:8px 12px;}
+.tl-q{min-width:220px;}
+.tl-sort{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-dim);}
+.tl-btn{font:700 15px var(--font-body);color:var(--text);background:transparent;border:1px solid var(--hair);border-radius:10px;padding:6px 12px;cursor:pointer;}
+.tl-btn:hover{border-color:var(--gold);}
+.tl-desc{margin:0 0 10px;font-size:13px;color:var(--text-dim);line-height:1.5;}
+.tl-table-box{overflow-x:auto;}
+.tl-table{width:100%;border-collapse:collapse;font-size:13px;}
+.tl-table th{position:sticky;top:0;text-align:right;font-size:11px;font-weight:800;color:var(--text-dim);letter-spacing:.04em;text-transform:uppercase;padding:8px 10px;border-bottom:1px solid var(--hair);background:var(--panel);white-space:nowrap;}
+.tl-table th:first-child,.tl-table th:last-child{text-align:left;}
+.tl-table td{padding:8px 10px;border-bottom:1px solid rgba(255,255,255,0.04);white-space:nowrap;}
+.tl-table tbody tr[data-sym]{cursor:pointer;}
+.tl-table tbody tr[data-sym]:hover td{background:rgba(255,255,255,0.03);}
+.tl-co{display:flex;align-items:center;gap:10px;min-width:220px;}
+.tl-co span{display:flex;flex-direction:column;line-height:1.25;}
+.tl-co small{font-size:11px;color:var(--text-faint);}
+.tl-co i{font-style:normal;color:var(--gold);}
+.tl-logo{width:30px;height:30px;border-radius:50%;flex:none;background:#fff;object-fit:cover;}
+.tl-ini{display:inline-flex;align-items:center;justify-content:center;background:var(--panel-2);color:var(--text-dim);font:800 11px var(--font-body);}
+.tl-n{text-align:right;font-variant-numeric:tabular-nums;}
+.tl-n.pos{color:var(--green);} .tl-n.neg{color:var(--red);}
+.tl-sec{color:var(--text-dim);font-size:12px;}
+.tl-miss{color:var(--text-faint);font-size:12px;}
+.tl-sect td{padding:16px 10px 6px;font:800 12px var(--font-body);color:var(--gold);letter-spacing:.06em;text-transform:uppercase;border-bottom:1px solid rgba(217,164,65,0.25);}
+.tl-sect small{color:var(--text-faint);margin-left:6px;}
+.tl-empty{padding:18px;color:var(--text-dim);font-size:13px;}
+@media (max-width:900px){ .tl-wrap{grid-template-columns:1fr;} .tl-side{position:static;flex-direction:row;flex-wrap:wrap;max-height:none;} }

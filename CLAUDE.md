@@ -1204,6 +1204,17 @@ fois la position ajoutée. Persistance identique aux autres onglets : `localStor
   depuis le Classement ne se reflète pas tant qu'on n'a pas changé de page et qu'un
   autre événement n'a pas redéclenché un rendu.
 
+### Screener → « 📋 Listes TradingView » (fait, 2026-11-13)
+`#pageTvListes`, `js/tv-listes.js`, CSS `.tl-*`. Les watchlists TradingView de l'utilisateur (21 listes, relevées par Claude avec le
+connecteur `mcp-watchlist-list-watchlists`) sont figées dans `data/tv-watchlists.json` (git-ignoré). **Pour les mettre à jour :
+l'utilisateur demande « mets à jour mes watchlists TradingView » → Claude relit les listes et réécrit ce fichier.** « Wolf Alpha
+Moats » (~600 lignes, beaucoup de symboles mal formés) n'est pas recopiée (note dans le fichier) ; « Radar PEA - test étage 1 » (vide)
+non plus. Lignes `###…` = titres de section. Chiffres EN DIRECT par le scanner public TradingView appelé depuis le navigateur
+(`POST https://scanner.tradingview.com/global/scan` en `text/plain` = pas de pré-vérification CORS, localhost accepté ; aucun
+changement du serveur) : cours, jour, depuis le 1er janvier, 1 an, PER, P/FCF, rendement, capitalisation, secteur, logo. Tri, filtre.
+Clic : fiche Analyse si suivie (ticker = symbole), sinon fiche TradingView à la volée (`selectTvCompany`). Introuvables dans le
+scanner : FRED:VIXCLS, ICEEUR:IBE1!.
+
 ### Onglet Watchlist (fait, fonctionnel)
 4 colonnes (Liste d'achat / Idée du moment / À surveiller / À analyser) + un "pool" en
 haut avec toutes les entreprises non classées. Glisser-déposer HTML5 natif
