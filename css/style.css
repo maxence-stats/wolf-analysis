@@ -3475,3 +3475,27 @@
 .sd-item select,.sd-item input{font:600 13px var(--font-body);color:var(--text);background:var(--bg);border:1px solid var(--hair);border-radius:8px;padding:6px 8px;min-width:0}
 .sd-item button{border:1px solid var(--hair);background:var(--bg);color:var(--text);border-radius:8px;padding:5px 8px;cursor:pointer}
 @media (max-width:700px){.sd-item{grid-template-columns:28px minmax(0,1fr) auto auto;}.sd-item input{grid-column:1/-1}}
+
+/* Studio · sommaire de l'analyse hebdo (2026-11-13) */
+.pg-wrap{display:grid;grid-template-columns:minmax(0,360px) minmax(0,1fr);gap:22px;align-items:start}
+@media (max-width:1000px){.pg-wrap{grid-template-columns:minmax(0,1fr)}}
+.pg-side{display:flex;flex-direction:column;gap:12px}
+.pg-col{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--hair);padding-top:10px}
+.pg-colh{display:flex;justify-content:space-between;align-items:center}.pg-colh span{font-size:12px;color:var(--text-dim)}
+.pg-chips{display:flex;flex-direction:column;gap:6px}
+.pg-chip{display:grid;grid-template-columns:24px minmax(0,1fr) auto auto auto;gap:6px;align-items:center;background:var(--panel-2);border:1px solid var(--hair);border-radius:10px;padding:5px 7px}
+.pg-chip img,.pg-chip i{width:24px;height:24px;border-radius:50%;background:#fff;object-fit:contain}
+.pg-chip b{font:700 13px var(--font-body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pg-chip select{font:600 12px var(--font-body);color:var(--text);background:var(--bg);border:1px solid var(--hair);border-radius:7px;padding:3px 4px;max-width:130px}
+.pg-chip button{border:1px solid var(--hair);background:var(--bg);color:var(--text);border-radius:7px;padding:3px 7px;cursor:pointer}
+.pg-picks{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.pg-picks button{border:1px dashed var(--hair);background:transparent;color:var(--text);font:600 12px var(--font-body);border-radius:999px;padding:4px 9px;cursor:pointer}
+.pg-picks button:hover{border-color:var(--gold)}
+.pg-main{display:flex;flex-direction:column;gap:14px;min-width:0}
+#pgCv{width:100%;aspect-ratio:16/9;display:block;border-radius:14px;box-shadow:0 14px 40px rgba(0,0,0,.35)}
+.pg-hist{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.pg-it{position:relative}.pg-it>button:first-child{width:100%;display:flex;flex-direction:column;gap:4px;text-align:left;background:var(--panel-2);border:1px solid var(--hair);border-radius:12px;padding:8px;color:var(--text);cursor:pointer}
+.pg-it.on>button:first-child{border-color:var(--gold)}
+.pg-it img,.pg-it i{width:100%;aspect-ratio:16/9;border-radius:8px;object-fit:cover;background:#0B0D10;display:block}
+.pg-it b{font:700 13px var(--font-body)}.pg-it span{font-size:12px;color:var(--text-dim)}
+.pg-it .sd-del{position:absolute;top:12px;right:12px}

@@ -375,7 +375,7 @@ async function load(){
     const r = await fetch('/api/store/load?name=studio', { cache: 'no-store' }); const j = await r.json();
     if (!j.ok) throw new Error(j.error || 'lecture impossible');
     D = j.data || { version: 1, revision: 0, items: {}, custom: [], short: {}, trash: [] };
-    D.items = D.items || {}; D.custom = D.custom || []; D.fav = Array.isArray(D.fav) ? D.fav : []; D.short = D.short || {}; D.trash = D.trash || [];
+    D.items = D.items || {}; D.custom = D.custom || []; D.fav = Array.isArray(D.fav) ? D.fav : []; D.progs = D.progs || {}; D.progTrash = D.progTrash || []; D.short = D.short || {}; D.trash = D.trash || [];
   } catch(e){ D = null; ui.err = e.message; }
 }
 function markDirty(){ if (!D) return; dirty = true; saveErr = null; status(); clearTimeout(saveTimer); saveTimer = setTimeout(save, 800); }
@@ -427,11 +427,11 @@ function shell(){
   const el = $(PAGE_ID); if (!el) return;
   el.innerHTML = `<div class="sd-wrap">
     <div class="sd-head"><h2>🎬 Wolf Studio</h2>
-      <div class="sd-tabs" role="tablist"><button type="button" data-sd-tab="thumb" class="${ui.tab === 'thumb' ? 'on' : ''}">🖼 Miniatures</button><button type="button" data-sd-tab="short" class="${ui.tab === 'short' ? 'on' : ''}">📱 Short Wolf Portfolio</button></div>
+      <div class="sd-tabs" role="tablist"><button type="button" data-sd-tab="thumb" class="${ui.tab === 'thumb' ? 'on' : ''}">🖼 Miniatures</button><button type="button" data-sd-tab="short" class="${ui.tab === 'short' ? 'on' : ''}">📱 Shorts</button><button type="button" data-sd-tab="prog" class="${ui.tab === 'prog' ? 'on' : ''}">🗓 Sommaire hebdo</button></div>
       <span id="sdStatus" class="sd-status"></span></div>
     <div id="sdBody"></div></div>`;
   status();
-  ui.tab === 'thumb' ? thumbView() : SHORT.view();
+  ui.tab === 'thumb' ? thumbView() : ui.tab === 'prog' ? PROG.view() : SHORT.view();
 }
 
 /* ---------- Miniatures ---------- */
@@ -559,6 +559,7 @@ document.addEventListener('click', e => {
   const page = $(PAGE_ID); if (!page || !page.contains(e.target)) return;
   const b = e.target.closest('button'); if (!b) return; const ds = b.dataset;
   if (ds.sdTab){ if (ui.tab === 'short' && ds.sdTab !== 'short') SHORT.stop(); ui.tab = ds.sdTab; shell(); return; }
+  if (PROG.click(b)) return;
   if (ds.sdTpl != null){ ui.cur = +ds.sdTpl; ui.st = newState(ui.cur); ui.itemId = null; thumbView(); const top = $('sdBody'); if (top) top.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
   if (ds.sdV != null){ ui.st.vi = +ds.sdV; panel(); draw(); return; }
   if (ds.sdWt){ ui.wolfTab = ds.sdWt; if (ds.sdWt === 'bank') bankAt = 0; panel(); return; }
@@ -582,6 +583,7 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('input', e => {
   const page = $(PAGE_ID); if (!page || !page.contains(e.target)) return;
+  if (PROG.input(e)) return;
   const k = e.target.dataset.sdK;
   if (k){ const v = e.target.value; ui.st[k] = e.target.tagName === 'SELECT' && v !== '' && !isNaN(+v) ? +v : v; draw(); return; }
   if (e.target.dataset.sdQ){ const kk = e.target.dataset.sdQ, q = e.target.value; clearTimeout(suggTimer); suggTimer = setTimeout(() => search(kk, q), 250); return; }
@@ -589,7 +591,7 @@ document.addEventListener('input', e => {
   if (e.target.id === 'sdZone'){ draw(); return; }
   SHORT.input(e);
 });
-document.addEventListener('change', e => { if (e.target.id === 'sdUpload' && e.target.files[0]) uploadImage(e.target.files[0]); if (e.target.id === 'sdZone') draw(); SHORT.change && SHORT.change(e); });
+document.addEventListener('change', e => { const pg = $(PAGE_ID); if (pg && pg.contains(e.target) && PROG.change(e)) return; if (e.target.id === 'sdUpload' && e.target.files[0]) uploadImage(e.target.files[0]); if (e.target.id === 'sdZone') draw(); SHORT.change && SHORT.change(e); });
 document.addEventListener('paste', e => { const page = $(PAGE_ID); if (!page || !page.classList.contains('active') || ui.tab !== 'thumb' || ui.wolfTab !== 'mine') return;
   const f = [...(e.clipboardData && e.clipboardData.files || [])].find(z => /^image\//.test(z.type)); if (f){ e.preventDefault(); uploadImage(f); } });
 
@@ -674,7 +676,12 @@ const SHORT = (() => {
     garde: { name: '🗑 Garde ou poubelle', desc: 'Carte par carte : je garde, je jette, je surveille', manual: true, p: { titre: 'Je garde ou je jette ?', items: [], une: '', fin: '' },
       scenes: [{ k: 'titre', t: 'Le titre', d: 'Toutes les cartes face visible', dur: 2.2, say: (d, p) => p.titre }].concat([1, 2, 3, 4, 5, 6, 7, 8].map(i => ({ k: 'c' + i, t: 'Carte ' + i, d: 'La carte, puis ton verdict', dur: 2.4, say: (d, p) => { const it = (p.items || [])[i - 1]; return it ? `${it.name} : ${VERD[it.v || 'garde'][1].toLowerCase()}. ${it.why || ''}` : ''; }, ok: (d, p) => (p.items || []).length >= i })))
         .concat([{ k: 'recap', t: 'Le récap', d: 'Toutes les cartes avec leur verdict', dur: 2.4, say: () => 'Le récap.' },
-          { k: 'une', t: "Si je n'en gardais qu'une", d: 'Ta préférée avec la couronne', dur: 2.4, say: (d, p) => { const it = (p.items || []).find(z => z.sym === p.une); return it ? `Si je ne devais en garder qu'une : ${it.name}.` : ''; }, ok: (d, p) => (p.items || []).some(z => z.sym === p.une) }, FIN]) }
+          { k: 'une', t: "Si je n'en gardais qu'une", d: 'Ta préférée avec la couronne', dur: 2.4, say: (d, p) => { const it = (p.items || []).find(z => z.sym === p.une); return it ? `Si je ne devais en garder qu'une : ${it.name}.` : ''; }, ok: (d, p) => (p.items || []).some(z => z.sym === p.une) }, FIN]) },
+    programme: { name: '🗓 Au programme', desc: 'Les entreprises de ton analyse hebdo, une par une', manual: true, p: { prog: '', fin: 'Analyse complète ce samedi' },
+      scenes: [{ k: 'titre', t: 'Titre', d: 'Au programme + semaine', dur: 2, say: d => `Cette semaine dans l'analyse hebdo : ${d.watch.length + d.port.length} entreprises.` }]
+        .concat([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => ({ k: 'w' + i, t: 'Watchlist ' + i, d: 'Une entreprise de la watchlist de plus', dur: 0.9, say: d => { const z = d.watch[i - 1]; return z ? z.name + (z.tag && PROG.TAGS[z.tag] && PROG.TAGS[z.tag][1] ? ' : ' + PROG.TAGS[z.tag][0].toLowerCase() : '') : ''; }, ok: d => d && d.watch.length >= i })))
+        .concat([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => ({ k: 'q' + i, t: 'Portefeuille ' + i, d: 'Une entreprise du portefeuille de plus', dur: 0.9, say: d => { const z = d.port[i - 1]; return z ? z.name + (z.tag && PROG.TAGS[z.tag] && PROG.TAGS[z.tag][1] ? ' : ' + PROG.TAGS[z.tag][0].toLowerCase() : '') : ''; }, ok: d => d && d.port.length >= i })))
+        .concat([FIN]) }
   };
   const FMT_KEYS = Object.keys(FMT);
   const money = (v, ccy) => { if (!isNum(v)) return '—'; const s = { EUR: '€', USD: '$', GBP: '£', CHF: 'CHF', JPY: '¥', DKK: 'kr', SEK: 'kr', NOK: 'kr', CAD: '$ CA' }[ccy] || ccy || '€'; return fr(v, Math.abs(v) < 100 ? 2 : 0) + ' ' + s; };
@@ -715,7 +722,7 @@ const SHORT = (() => {
 
   /* --- données --- */
   async function loadData(){
-    const f = getCfg().fmt, o = fc(); DATA = null; dataErr = null; const sig = f + JSON.stringify(f === 'hebdo' ? getCfg().per : [o.p.co, o.p.yrs, o.p.nom, o.p.op, o.p.gyrs, o.p.a, o.p.b, (o.p.items || []).map(z => z.sym)]); dataFor = sig;
+    const f = getCfg().fmt, o = fc(); DATA = null; dataErr = null; const sig = f + JSON.stringify(f === 'hebdo' ? getCfg().per : [o.p.co, o.p.yrs, o.p.nom, o.p.op, o.p.gyrs, o.p.a, o.p.b, (o.p.items || []).map(z => z.sym), o.p.prog]); dataFor = sig;
     let d = null;
     try { d = await LOAD[f](o.p); } catch(e){ if (dataFor === sig) dataErr = e.message || String(e); return; }
     if (dataFor !== sig) return;
@@ -839,6 +846,11 @@ const SHORT = (() => {
       const compo = L.map(l => Object.assign(l, { w: l.val / F0.value * 100 })).sort((a, b) => b.w - a.w), byP = compo.filter(l => isNum(l.perf)).sort((a, b) => b.perf - a.perf);
       await Promise.all(compo.map(it => img(tvLogo(it.logoid))));
       return { compo, cashW: F0.cashW, since: F0.since, best: byP[0], worst: byP[byP.length - 1], n: compo.length };
+    },
+    async programme(p){
+      const L = PROG.list(), prog = (p.prog && PROG.get(p.prog)) || L[0]; if (!prog) throw new Error('aucun programme : crée-le dans l’onglet « 🗓 Sommaire hebdo »');
+      if (!p.prog) p.prog = prog.id; await PROG.preload(prog);
+      return { prog, watch: (prog.watch || []).slice(0, 10), port: (prog.port || []).slice(0, 10) };
     },
     async garde(p){
       const its = (p.items || []).slice(0, 8); if (!its.length) throw new Error('ajoute des entreprises dans les réglages (recherche TradingView)');
@@ -1063,6 +1075,19 @@ const SHORT = (() => {
       sx.fillStyle = C.track; R2(cxx - 110, top, 220, H, 22); sx.fill(); sx.fillStyle = color; R2(cxx - 110, base - h, 220, h, 22); sx.fill();
       T2(lab, cxx, base + 54 * k, 38 * k, C.ink2, 'center', BF, 800); sx.save(); sx.globalAlpha *= a; T2(txt0, cxx, base - h - 20, fit2(txt0, 64 * k, 400), C.ink); sx.restore(); }); return base; }
   const DRAW2 = {
+    programme(k0, p, Rg, pp, d){
+      const k = Rg.k, Yf = q => Rg.y + Rg.h * q, pr = d.prog || {};
+      if (k0 === 'titre'){ const im = imgNow('data/wolf-tete.png'), b = back(segp(p, 0, 0.35)); if (im){ sx.save(); sx.translate(540, Yf(0.2)); sx.scale(b, b); sx.drawImage(im, -130 * k, -130 * k, 260 * k, 260 * k); sx.restore(); }
+        sx.save(); sx.globalAlpha *= ease(segp(p, 0.2, 0.45)); T2('AU PROGRAMME', 540, Yf(0.48), fit2('AU PROGRAMME', 130 * k, 980), C.ink); hl2(pr.sem || 'Cette semaine', 540, Yf(0.59), 76 * k);
+        T2(pr.titre || 'Analyse hebdo', 540, Yf(0.69), 46 * k, C.ink2, 'center', BF, 800); sx.restore(); return; }
+      const isW = k0[0] === 'w', i = +k0.slice(1), ALL = isW ? d.watch : d.port, L = ALL.slice(0, i), N = ALL.length;
+      hl2(isW ? 'Ma watchlist' : 'Mon portefeuille', 540, Yf(0.07), 70 * k);
+      const cols = N <= 4 ? 2 : 3, rows = Math.ceil(N / cols), cw = 960 / cols, ch = Rg.h * 0.82 / rows, r = Math.min(cw, ch) * 0.26;
+      L.forEach((it, j) => { const cx = 60 + cw * (j % cols) + cw / 2, cy = Yf(0.15) + ch * Math.floor(j / cols) + ch * 0.38, a = j === L.length - 1 ? back(segp(p, 0, 0.45)) : 1; if (a <= 0) return;
+        sx.save(); sx.translate(cx, cy); sx.scale(a, a); logo2(it, 0, 0, r, true); sx.restore();
+        sx.save(); sx.globalAlpha *= Math.min(1, a); T2(it.name || '', cx, cy + r + 46 * k, fit2(it.name || '', 38 * k, cw - 30, BF, 800), C.ink, 'center', BF, 800);
+        const tg = PROG.TAGS[it.tag || '']; if (tg && tg[1]) chipD(up(tg[0]), cx, cy + r + 88 * k, 24 * k, tg[1], tg[2], 'center'); sx.restore(); });
+    },
     resultats(k0, p, Rg, pp, d){
       const k = Rg.k, Yf = q => Rg.y + Rg.h * q, R = resV(d, pp), cc = d.ccyF;
       if (k0 === 'hook'){ const b = back(segp(p, 0, 0.3)); sx.save(); sx.translate(540, Yf(0.15)); sx.scale(b, b); logo2(d.co, 0, 0, 115 * k, true); sx.restore();
@@ -1288,6 +1313,8 @@ const SHORT = (() => {
     if (f === 'duel') return coPick('Action A (jaune)', 'a') + txtIn('na', 'Nom affiché A (raccourci)', (p.a && p.a.name) || '') + coPick('Action B (bleue)', 'b') + txtIn('nb', 'Nom affiché B (raccourci)', (p.b && p.b.name) || '') + yrsSel('yrs', 'Période', [1, 2, 3, 5, 10, 15, 20]) + txtIn('fin', 'Encadré de fin', 'Pour la suite');
     if (f === 'dividende') return coPick('Entreprise', 'co') + txtIn('nomA', 'Nom affiché (raccourci, vide = nom TradingView)', '') + txtIn('montant', 'Montant investi pour l’exemple (€)', '10000') + stkSel('sticker', 'Loup') + txtIn('fin', 'Encadré de fin', 'Pour la suite');
     if (f === 'investi') return coPick('Entreprise', 'co') + txtIn('nomA', 'Nom affiché (raccourci, vide = nom TradingView)', '') + txtIn('montant', 'Montant de départ (€)', '1000') + yrsSel('yrs', 'Il y a', [1, 2, 3, 5, 10, 15, 20]) + txtIn('fin', 'Encadré de fin', 'Pour la suite');
+    if (f === 'programme') return `<label class="sd-f">Programme<select data-sd-p="prog">${PROG.list().map(q => `<option value="${esc(q.id)}" ${p.prog === q.id ? 'selected' : ''}>${esc((q.sem || '') + ' · ' + ((q.watch || []).length + (q.port || []).length) + ' entreprises')}</option>`).join('') || '<option value="">Aucun programme</option>'}</select></label>
+      <p class="sd-sub">Le programme se compose dans l’onglet « 🗓 Sommaire hebdo » (watchlist + portefeuille, étiquettes). Une entreprise apparaît à chaque →.</p>` + txtIn('fin', 'Encadré de fin', 'Analyse complète ce samedi');
     if (f === 'portef') return `<p class="sd-sub">Wolf Portfolio uniquement (jamais le PEA ni le CTO) : performance depuis le lancement, composition, plus grosses lignes, meilleure et pire ligne. Aucun montant en euros.</p>` + txtIn('fin', 'Encadré de fin', 'Pour la suite');
     if (f === 'garde'){ const its = p.items || [];
       return txtIn('titre', 'Titre', 'Je garde ou je jette ?') + coPick('Ajouter une entreprise (8 au plus)', 'add')
@@ -1409,6 +1436,9 @@ const SHORT = (() => {
       `💸 ${fr(m)} € dans ${d.name} il y a ${yTxt2(d.yrs)} = ${fr(Math.round(m * d.mult / 10) * 10)} € aujourd'hui.`, tag(d.name) + ' #investir'); }
     if (f === 'portef') return pack('Mon portefeuille en 30 secondes', `Depuis le lancement : ${pr(d.since.wolf)} (CAC 40 : ${pr(d.since.cac)}, S&P 500 en € : ${pr(d.since.spx)}).\n${d.n} lignes, ${fr(d.cashW)} % de liquidités.${d.best ? `\nMeilleure ligne : ${d.best.name} (${sgn(d.best.perf, 0)}).` : ''}`,
       `🐺 Mon portefeuille en 30 secondes : ${pr(d.since.wolf)} depuis le lancement, ${d.n} lignes.`, '#wolfportfolio #portefeuille');
+    if (f === 'programme'){ const pr = d.prog || {}, nm = z => z.name + (z.tag && PROG.TAGS[z.tag] && PROG.TAGS[z.tag][1] ? ' (' + PROG.TAGS[z.tag][0].toLowerCase() + ')' : '');
+      return pack(`Au programme de l'analyse hebdo · ${pr.sem || ''}`, `Dans l'analyse hebdo de cette semaine :\n\n👀 Ma watchlist\n${d.watch.map(z => '• ' + nm(z)).join('\n') || '—'}\n\n🐺 Mon portefeuille\n${d.port.map(z => '• ' + nm(z)).join('\n') || '—'}\n\nL'analyse complète arrive samedi.`,
+        `🗓 Au programme de l'analyse hebdo (${pr.sem || ''}) : ${d.watch.concat(d.port).map(z => z.name).join(', ')}.\n\nRendez-vous samedi sur YouTube !`, d.watch.concat(d.port).slice(0, 3).map(z => tag(z.name)).join(' ') + ' #analysehebdo'); }
     if (f === 'garde'){ const its = pp.items || [], une = its.find(z => z.sym === pp.une); return pack(pp.titre || 'Je garde ou je jette ?', its.map(it => `${it.name} : ${VERD[it.v || 'garde'][1]}${it.why ? ' (' + it.why + ')' : ''}`).join('\n') + (une ? `\n\nSi je ne devais en garder qu'une : ${une.name}.` : ''),
       `🗑 ${pp.titre || 'Je garde ou je jette ?'}\n\n${its.map(it => (it.v === 'poubelle' ? '❌ ' : it.v === 'surveille' ? '👀 ' : '✅ ') + it.name).join('\n')}`, its.slice(0, 3).map(it => tag(it.name)).join(' ')); }
     return '';
@@ -1417,9 +1447,10 @@ const SHORT = (() => {
     try { await navigator.clipboard.writeText(ta.value); } catch(e){ ta.select(); document.execCommand('copy'); }
     if (msg){ msg.textContent = (k === 'yt' ? 'Texte YouTube' : 'Texte Facebook') + ' copié ✔'; setTimeout(() => { if (msg.isConnected) msg.textContent = ''; }, 2500); } }
 
-  const DATA_KEYS = ['co', 'yrs', 'nom', 'op', 'gyrs'];   // « une », montants, verdicts : redessinés sans recharger
+  const DATA_KEYS = ['co', 'yrs', 'nom', 'op', 'gyrs', 'prog'];   // « une », montants, verdicts : redessinés sans recharger
   return {
     view,
+    openProgramme(id){ if (recording) return; const c = getCfg(); c.fmt = 'programme'; const o = fc(); o.p.prog = id; persist(); playing = false; pubOv = { yt: null, fb: null }; DATA = null; dataErr = null; tt = 0; ui.tab = 'short'; shell(); },
     _seek(i, q){ const a = active(), s = a[Math.min(i, a.length - 1)]; let acc = 0; for (const z of a){ if (z === s) break; acc += +z.dur || 3; } tt = acc + (+s.dur || 3) * Math.min(q, 0.999); playing = false; frame(); return $('sdShortCv').toDataURL('image/jpeg', 0.6); },
     _n: () => active().length,
     stop(){ playing = false; if (recording) stopRec(); stopCam(); stopScreen(); cancelAnimationFrame(raf); raf = 0; },
@@ -1460,6 +1491,120 @@ const SHORT = (() => {
       if (t.dataset && t.dataset.sdSc){ c[t.dataset.sdSc] = t.value; persist(); if (t.dataset.sdSc === 'per' && !recording) reload(); return; }
       if (t.dataset && t.dataset.sdOn != null){ o.scenes[+t.dataset.sdOn].on = t.checked; persist(); tt = Math.min(tt, Math.max(0, total() - 0.01)); return; }
       if (t.id === 'sdCamSel' || t.id === 'sdMicSel'){ if (cam) startCam(); } }
+  };
+})();
+
+/* ======================= SOMMAIRE DE L'ANALYSE HEBDO (2026-11-13) =======================
+   Deux colonnes (watchlist / portefeuille), jusqu'à 10 entreprises chacune, étiquette facultative.
+   Image 1920×1080 pour l'ouverture de la vidéo, programmes gardés dans studio.json (D.progs), short « Au programme ». */
+const PROG = (() => {
+  const TAGS = { '': ['Sans étiquette'], achat: ['Achetée', '#1B9660', '#fff'], vente: ['Vendue', '#CF3E48', '#fff'], renfo: ['Renforcée', '#3DDC97', '#111'], allege: ['Allégée', '#E07A3A', '#fff'],
+    res: ['Résultats', '#4A9FE0', '#fff'], div: ['Dividende', '#B06BD0', '#fff'], valo: ['Valorisation', '#F2B33D', '#111'], surv: ['Sous surveillance', '#9AA1AB', '#111'], nouv: ['Nouveau', '#EEFF41', '#111'] };
+  const THM = {
+    nuit: { bg: '#0B0D10', glow: 'rgba(242,179,61,0.16)', b1: '#161A20', b1s: 'rgba(255,255,255,0.07)', b2: '#1C1810', b2s: 'rgba(242,179,61,0.35)', ink: '#FFFFFF', dim: '#8B93A0', c1: ['#E9EBEE', '#111111'], c2: ['#F2B33D', '#111111'], gold: '#F2B33D' },
+    beige: { bg: '#F3ECDF', glow: 'rgba(242,179,61,0.25)', b1: '#E8DDC9', b1s: 'rgba(0,0,0,0.06)', b2: '#1C1813', b2s: 'rgba(0,0,0,0)', ink: '#1C1813', dim: '#7A6E5E', c1: ['#1C1813', '#F3ECDF'], c2: ['#F2B33D', '#111111'], gold: '#B07A00', ink2: '#F3ECDF' },
+    or: { bg: '#F2B33D', glow: 'rgba(255,255,255,0.25)', b1: 'rgba(18,19,22,0.10)', b1s: 'rgba(0,0,0,0)', b2: '#121316', b2s: 'rgba(0,0,0,0)', ink: '#121316', dim: '#5E4A1E', c1: ['#121316', '#F2B33D'], c2: ['#FFFFFF', '#111111'], gold: '#121316', ink2: '#FFFFFF' }
+  };
+  const MAXN = 10;
+  let curId = null, sugg = {}, msgT = 0;
+  const weekNo = () => { const d = new Date(), j = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); j.setUTCDate(j.getUTCDate() + 4 - (j.getUTCDay() || 7)); const y0 = new Date(Date.UTC(j.getUTCFullYear(), 0, 1)); return Math.ceil(((j - y0) / 864e5 + 1) / 7); };
+  const all = () => { if (!D) return {}; D.progs = D.progs || {}; D.progTrash = D.progTrash || []; return D.progs; };
+  const list = () => Object.values(all()).sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)));
+  function cur(){ const P = all(); if (curId && P[curId]) return P[curId]; const l = list(); if (l.length){ curId = l[0].id; return l[0]; }
+    const n = { id: 'p' + Date.now().toString(36), titre: 'Analyse hebdo', sem: 'Semaine ' + weekNo(), watch: [], port: [], theme: 'nuit', createdAt: new Date().toISOString() }; if (D){ P[n.id] = n; curId = n.id; } return n; }
+  const touch = p => { p.updatedAt = new Date().toISOString(); if (D) markDirty(); };
+  const symOf = nom => { const h = (typeof companies !== 'undefined' && companies[nom]) || [], l = h[h.length - 1] || {}; return l.tvSymbol || (String(l.ticker || '').includes(':') ? l.ticker : null); };
+
+  /* --- image 1920×1080 --- */
+  let x2;
+  function R(Xx, Yy, w, h, r){ x2.beginPath(); x2.moveTo(Xx + r, Yy); x2.arcTo(Xx + w, Yy, Xx + w, Yy + h, r); x2.arcTo(Xx + w, Yy + h, Xx, Yy + h, r); x2.arcTo(Xx, Yy + h, Xx, Yy, r); x2.arcTo(Xx, Yy, Xx + w, Yy, r); x2.closePath(); }
+  function T(s, Xx, Yy, size, color, align = 'left', font = AF, w = 400, max = 0){ x2.font = `${w} ${size}px ${font}`; let z = size; if (max) while (x2.measureText(s).width > max && z > 10){ z -= 1; x2.font = `${w} ${z}px ${font}`; } x2.fillStyle = color; x2.textAlign = align; x2.textBaseline = 'alphabetic'; x2.fillText(s, Xx, Yy); x2.textAlign = 'left'; }
+  function chip(s, Xx, Yy, size, bg, fg){ x2.font = `400 ${size}px ${AF}`; const w = x2.measureText(s).width + size * 0.7, h = size * 1.3; R(Xx, Yy, w, h, size * 0.18); x2.fillStyle = bg; x2.fill(); T(s, Xx + size * 0.35, Yy + h * 0.78, size, fg); return w; }
+  function logoTile(it, Xx, Yy, s){
+    x2.save(); x2.shadowColor = 'rgba(0,0,0,0.35)'; x2.shadowBlur = 14; x2.shadowOffsetY = 4; R(Xx, Yy, s, s, s * 0.22); x2.fillStyle = '#fff'; x2.fill(); x2.restore();
+    const im = it.logoid ? imgNow(tvLogo(it.logoid)) : null; x2.save(); R(Xx + s * 0.08, Yy + s * 0.08, s * 0.84, s * 0.84, s * 0.16); x2.clip();
+    if (im) x2.drawImage(im, Xx + s * 0.08, Yy + s * 0.08, s * 0.84, s * 0.84); else { x2.fillStyle = '#20252C'; x2.fillRect(Xx, Yy, s, s); T(up(it.name || '?').slice(0, 2), Xx + s / 2, Yy + s * 0.64, s * 0.42, '#F2B33D', 'center'); }
+    x2.restore(); }
+  function box(items, Xx, Yy, W, H, label, colors, bg, stroke, th, light){
+    x2.save(); R(Xx, Yy, W, H, 40); x2.fillStyle = bg; x2.fill(); if (stroke && stroke !== 'rgba(0,0,0,0)'){ x2.lineWidth = 2; x2.strokeStyle = stroke; x2.stroke(); } x2.restore();
+    chip(up(label), Xx + 36, Yy + 30, 40, colors[0], colors[1]);
+    const ink = light ? (th.ink2 || '#fff') : th.ink, n = items.length;
+    if (!n){ T('Aucune entreprise', Xx + W / 2, Yy + H / 2 + 10, 34, th.dim, 'center', BF, 700); return; }
+    const cols = n <= 2 ? n : n <= 6 ? 3 : n <= 8 ? 4 : 5, rows = Math.ceil(n / cols), gx = 26, top = Yy + 120, aw = W - 72, ah = H - 150;
+    const s = Math.min(190, (aw - gx * (cols - 1)) / cols * 0.78, (ah - rows * 86) / rows), cw = aw / cols, rh = ah / rows;
+    items.forEach((it, i) => { const c = i % cols, r = Math.floor(i / cols), cx = Xx + 36 + cw * c + cw / 2, ty = top + rh * r + (rh - s - 80) / 2;
+      logoTile(it, cx - s / 2, ty, s); T(it.name || '', cx, ty + s + 38, Math.min(30, s * 0.2), ink, 'center', BF, 800, cw - 16);
+      const tg = TAGS[it.tag || '']; if (tg && tg[1]){ x2.font = `800 ${Math.min(20, s * 0.13)}px ${BF}`; const lab = up(tg[0]), w = x2.measureText(lab).width + 20, h = Math.min(30, s * 0.19);
+        R(cx - w / 2, ty + s + 50, w, h, 7); x2.fillStyle = tg[1]; x2.fill(); T(lab, cx, ty + s + 50 + h * 0.74, Math.min(20, s * 0.13), tg[2], 'center', BF, 800); } }); }
+  function render(cv, p){
+    x2 = cv.getContext('2d'); x2.setTransform(cv.width / 1920, 0, 0, cv.height / 1080, 0, 0); const th = THM[p.theme] || THM.nuit;
+    x2.fillStyle = th.bg; x2.fillRect(0, 0, 1920, 1080); const g = x2.createRadialGradient(1700, -100, 50, 1700, -100, 900); g.addColorStop(0, th.glow); g.addColorStop(1, 'rgba(0,0,0,0)'); x2.fillStyle = g; x2.fillRect(0, 0, 1920, 1080);
+    const w = imgNow('data/wolf-tete.png'); if (w) x2.drawImage(w, 90, 62, 110, 110);
+    T('AU PROGRAMME', 222, 140, 86, th.ink); T(up((p.titre || 'Analyse hebdo') + ' · ' + (p.sem || '')), 226, 186, 32, th.gold, 'left', BF, 800, 1200);
+    T('Wolf Academy Invest', 1830, 140, 30, th.dim, 'right', BF, 800);
+    box(p.watch || [], 90, 240, 855, 770, 'Ma watchlist', th.c1, th.b1, th.b1s, th, false);
+    box(p.port || [], 975, 240, 855, 770, 'Mon portefeuille', th.c2, th.b2, th.b2s, th, p.theme !== 'nuit');
+  }
+  async function preload(p){ const its = (p.watch || []).concat(p.port || []);
+    await Promise.all(its.map(async it => { if (!it.logoid && it.sym){ try { await ensureLogo(it); } catch(e){} } if (it.logoid) await img(tvLogo(it.logoid)); }).concat([img('data/wolf-tete.png')])); }
+  async function draw(){ const p = cur(), cv = $('pgCv'); if (!cv) return; await preload(p); if ($('pgCv') === cv) render(cv, p); }
+
+  /* --- interface --- */
+  function chips(p, col){ return (p[col] || []).map((it, i) => `<span class="pg-chip">${it.logoid ? `<img src="${esc(tvLogo(it.logoid))}" alt="">` : '<i></i>'}<b>${esc(it.name)}</b>
+      <select data-pg-tag="${col}|${i}" aria-label="Étiquette de ${esc(it.name)}">${Object.entries(TAGS).map(([k, v]) => `<option value="${k}" ${(it.tag || '') === k ? 'selected' : ''}>${esc(v[0])}</option>`).join('')}</select>
+      <button type="button" data-pg-up="${col}|${i}" aria-label="Avancer">‹</button><button type="button" data-pg-rm="${col}|${i}" aria-label="Retirer">✕</button></span>`).join('') || '<p class="sd-sub">Aucune entreprise pour l’instant.</p>'; }
+  async function picks(col){
+    if (col === 'watch'){ const st = (typeof watchlistStore !== 'undefined' && watchlistStore) || {}, names = [...new Set(Object.values(st).flat())].slice(0, 40);
+      return names.map(n => ({ name: n, sym: symOf(n) })).filter(z => z.sym); }
+    try { const v = await wolfFacts(); return (v.weekOps || []).concat(v.items || []).filter((z, i, a) => a.findIndex(y => y.sym === z.sym) === i).map(z => ({ name: z.name, sym: z.sym, logoid: z.logoid || null })); } catch(e){ return []; } }
+  function view(){
+    const b = $('sdBody'); if (!b) return; const p = cur(), P = list();
+    b.innerHTML = `<div class="pg-wrap">
+      <aside class="sd-card pg-side"><h3>Programme de la semaine</h3>
+        <label class="sd-f">Titre<input data-pg="titre" value="${esc(p.titre || '')}"></label>
+        <label class="sd-f">Semaine<input data-pg="sem" value="${esc(p.sem || '')}"></label>
+        ${['watch', 'port'].map(col => `<div class="pg-col"><div class="pg-colh"><b>${col === 'watch' ? '👀 Ma watchlist' : '🐺 Mon portefeuille'}</b><span>${(p[col] || []).length} / ${MAXN}</span></div>
+          <div class="pg-chips">${chips(p, col)}</div>
+          <input class="sd-search" data-pg-q="${col}" placeholder="Chercher une action ou un ETF (TradingView)…" autocomplete="off"><div class="sd-sugg" id="pgSugg_${col}"></div>
+          <div class="pg-picks" id="pgPicks_${col}"><span class="sd-sub">${col === 'watch' ? 'Depuis ton onglet Watchlist :' : 'Depuis le Wolf Portfolio :'}</span></div></div>`).join('')}
+        <div class="sd-vars">${[['nuit', 'Nuit'], ['beige', 'Beige'], ['or', 'Or']].map(([k, l]) => `<button type="button" data-pg-theme="${k}" class="${p.theme === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      </aside>
+      <div class="pg-main">
+        <canvas id="pgCv" width="1920" height="1080" aria-label="Aperçu du programme"></canvas>
+        <div class="sd-btns"><button type="button" class="sd-main" data-pg-act="save">💾 Enregistrer le programme</button><button type="button" data-pg-act="png">⬇ Image 1920×1080</button><button type="button" data-pg-act="short">🎬 En faire un short</button><button type="button" data-pg-act="chap">📋 Chapitres YouTube</button><button type="button" data-pg-act="new">＋ Nouveau programme</button><span id="pgMsg" class="sd-time"></span></div>
+        <div class="sd-card"><h3>Mes programmes</h3><div class="pg-hist">${P.map(q => `<div class="pg-it ${q.id === p.id ? 'on' : ''}"><button type="button" data-pg-open="${esc(q.id)}">${q.preview ? `<img src="${esc(q.preview)}" alt="">` : '<i></i>'}<b>${esc(q.sem || '')}</b><span>${(q.watch || []).length + (q.port || []).length} entreprises · ${new Date(q.updatedAt || q.createdAt).toLocaleDateString('fr-FR')}</span></button><button type="button" class="sd-del" data-pg-del="${esc(q.id)}" aria-label="Mettre à la corbeille">🗑</button></div>`).join('')}</div>
+          ${D && D.progTrash && D.progTrash.length ? `<details class="sd-trash"><summary>Corbeille (${D.progTrash.length})</summary>${D.progTrash.slice().reverse().map((q, i) => `<div><span>${esc(q.sem || 'Programme')} · supprimé le ${new Date(q.deletedAt).toLocaleDateString('fr-FR')}</span><button type="button" data-pg-restore="${D.progTrash.length - 1 - i}">↶ Restaurer</button></div>`).join('')}</details>` : ''}</div>
+      </div></div>`;
+    draw(); ['watch', 'port'].forEach(async col => { const L = await picks(col), box = $('pgPicks_' + col); if (!box) return; const have = new Set((cur()[col] || []).map(z => z.sym));
+      box.innerHTML = '<span class="sd-sub">' + (col === 'watch' ? 'Depuis ton onglet Watchlist :' : 'Depuis le Wolf Portfolio :') + '</span>' + (L.filter(z => !have.has(z.sym)).slice(0, 24).map((z, i) => `<button type="button" data-pg-pick="${col}|${esc(z.sym)}|${esc(z.name)}|${esc(z.logoid || '')}">＋ ${esc(z.name)}</button>`).join('') || ' <span class="sd-sub">rien à proposer</span>'); });
+  }
+  function msg(t){ const m = $('pgMsg'); if (m){ m.textContent = t; clearTimeout(msgT); msgT = setTimeout(() => { if (m.isConnected) m.textContent = ''; }, 2600); } }
+  function add(col, it){ const p = cur(); p[col] = p[col] || []; if (p[col].length >= MAXN){ msg('10 entreprises au plus par colonne'); return; } if (p[col].some(z => z.sym === it.sym)) return; p[col].push(Object.assign({ tag: '' }, it)); touch(p); view(); }
+  function savePreview(p){ const cv = $('pgCv'); if (!cv) return; const c = document.createElement('canvas'); c.width = 320; c.height = 180; c.getContext('2d').drawImage(cv, 0, 0, 320, 180); try { p.preview = c.toDataURL('image/jpeg', 0.7); } catch(e){} }
+  async function search(col, q){ const box = $('pgSugg_' + col); if (!box) return; if (q.trim().length < 2){ box.innerHTML = ''; return; }
+    try { const r = await fetch('/api/tv/search?all=1&q=' + encodeURIComponent(q.trim().slice(0, 50)), { cache: 'no-store' }); const j = await r.json(); sugg[col] = j.ok ? (j.results || []).slice(0, 8) : []; } catch(e){ sugg[col] = []; }
+    box.innerHTML = (sugg[col] || []).map((r, i) => `<button type="button" data-pg-sug="${col}|${i}">${r.logoid ? `<img src="${esc(tvLogo(r.logoid))}" alt="">` : '<i></i>'}<b>${esc(r.name)}</b><span>${esc(r.symbol)}</span></button>`).join('') || '<p class="sd-sub">Aucun résultat (serveur local ?).</p>'; }
+  return {
+    view, render, preload, list: () => list(), get: id => all()[id] || null, TAGS,
+    click(b){ const ds = b.dataset; if (!Object.keys(ds).some(k => k.startsWith('pg'))) return false; const p = cur();
+      if (ds.pgTheme){ p.theme = ds.pgTheme; touch(p); view(); return true; }
+      if (ds.pgRm){ const [c, i] = ds.pgRm.split('|'); p[c].splice(+i, 1); touch(p); view(); return true; }
+      if (ds.pgUp){ const [c, i0] = ds.pgUp.split('|'), i = +i0; if (i > 0){ [p[c][i - 1], p[c][i]] = [p[c][i], p[c][i - 1]]; touch(p); view(); } return true; }
+      if (ds.pgSug){ const [c, i] = ds.pgSug.split('|'), r = (sugg[c] || [])[+i]; if (r) add(c, { sym: r.symbol, name: r.name, logoid: r.logoid || null }); return true; }
+      if (ds.pgPick){ const [c, sym, name, logoid] = ds.pgPick.split('|'); add(c, { sym, name, logoid: logoid || null }); return true; }
+      if (ds.pgOpen){ curId = ds.pgOpen; view(); return true; }
+      if (ds.pgDel){ const P = all(), q = P[ds.pgDel]; if (q){ D.progTrash.push(Object.assign({}, q, { deletedAt: new Date().toISOString() })); delete P[ds.pgDel]; if (curId === ds.pgDel) curId = null; markDirty(); view(); } return true; }
+      if (ds.pgRestore != null){ const q = D.progTrash.splice(+ds.pgRestore, 1)[0]; if (q){ delete q.deletedAt; all()[q.id] = q; curId = q.id; markDirty(); view(); } return true; }
+      if (ds.pgAct === 'save'){ if (!D){ msg('Serveur local absent : rien n’est enregistré'); return true; } savePreview(p); touch(p); msg('Programme enregistré ✔'); view(); return true; }
+      if (ds.pgAct === 'new'){ const n = { id: 'p' + Date.now().toString(36), titre: p.titre || 'Analyse hebdo', sem: 'Semaine ' + weekNo(), watch: [], port: [], theme: p.theme || 'nuit', createdAt: new Date().toISOString() }; all()[n.id] = n; curId = n.id; touch(n); view(); return true; }
+      if (ds.pgAct === 'png'){ const cv = $('pgCv'); if (!cv) return true; try { cv.toBlob(bl => { const a = document.createElement('a'); a.href = URL.createObjectURL(bl); a.download = 'programme-' + String(p.sem || 'semaine').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w]+/g, '-').toLowerCase() + '.png'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 3000); }, 'image/png'); } catch(e){ msg('Export impossible : ' + e.message); } return true; }
+      if (ds.pgAct === 'chap'){ const L = ['0:00 Introduction'].concat((p.watch || []).map(z => '0:00 ' + z.name + ' (watchlist)')).concat((p.port || []).map(z => '0:00 ' + z.name + (z.tag && TAGS[z.tag] && TAGS[z.tag][1] ? ' · ' + TAGS[z.tag][0].toLowerCase() : ''))).concat(['0:00 Conclusion']).join('\n');
+        (navigator.clipboard ? navigator.clipboard.writeText(L) : Promise.reject()).then(() => msg('Chapitres copiés (mets les minutes)'), () => msg('Copie impossible')); return true; }
+      if (ds.pgAct === 'short'){ savePreview(p); touch(p); SHORT.openProgramme(p.id); return true; }
+      return false; },
+    input(e){ const t = e.target; if (t.dataset.pg){ const p = cur(); p[t.dataset.pg] = t.value; touch(p); draw(); return true; }
+      if (t.dataset.pgQ){ clearTimeout(t._tm); t._tm = setTimeout(() => search(t.dataset.pgQ, t.value), 250); return true; } return false; },
+    change(e){ const t = e.target; if (t.dataset && t.dataset.pgTag){ const [c, i] = t.dataset.pgTag.split('|'), p = cur(); if (p[c] && p[c][+i]){ p[c][+i].tag = t.value; touch(p); draw(); } return true; } return false; }
   };
 })();
 
