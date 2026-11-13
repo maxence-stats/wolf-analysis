@@ -12298,14 +12298,18 @@ function renderFcfNorm(nom){
     <p class="valo-intro">Free cash-flow par action de chaque exercice, relevé sur TradingView (${Object.keys(tv).length ? Object.keys(tv).length + ' années' : 'lecture en cours…'}). Corrige une case si un chiffre te paraît faux : ta valeur (en or) remplace celle de TradingView. Les années négatives comptent. Enregistré automatiquement.</p>
     <div class="ev-hist-grid">${cells}</div>
     <div class="ratio-grid ev-hist-stats">
-      ${choices.map(c => `<div class="ratio-card${c[0] === pick ? ' ev-hist-now' : ''}"><div class="k">${c[1]}</div><div class="v">${fx(c[2])}</div><div class="sub">${c[0] === pick ? 'retenu' : '&nbsp;'}</div></div>`).join('')}
+      ${choices.map(c => `<button type="button" class="ratio-card fcfn-pick${c[0] === pick ? ' ev-hist-now' : ''}" data-fcfn-pick="${c[0]}" ${c[2] == null ? 'disabled' : ''} title="Retenir ce FCF normalisé"><div class="k">${c[1]}</div><div class="v">${fx(c[2])}</div><div class="sub">${c[0] === pick ? '✓ retenu' : 'cliquer pour retenir'}</div></button>`).join('')}
     </div>
-    <div class="ev-hist-actions">
-      <label>FCF normalisé retenu <select id="fcfNormPick">${choices.map(c => `<option value="${c[0]}" ${c[0] === pick ? 'selected' : ''} ${c[2] == null ? 'disabled' : ''}>${c[1]}</option>`).join('')}</select></label>
-      ${Object.keys(mine).length ? '<button class="zoom-btn" id="fcfNormFill" title="Efface tes corrections et revient aux valeurs TradingView">↺ Revenir aux valeurs TradingView</button>' : ''}
-      <button class="refresh-btn" id="fcfNormApply" ${chosen == null ? 'disabled' : ''}>Utiliser ${fx(chosen)} comme FCF des 3 scénarios</button>
-      <span class="ev-hist-msg" id="fcfNormMsg">${st.count ? st.count + ' années (' + st.first + ' → ' + st.last + ')' + (Object.keys(mine).length ? ', dont ' + Object.keys(mine).length + ' corrigée' + (Object.keys(mine).length > 1 ? 's' : '') + ' à la main' : '') : ''}</span>
+    <div class="fcfn-bar">
+      <label class="fcfn-label">FCF normalisé retenu <select id="fcfNormPick" class="fcfn-select">${choices.map(c => `<option value="${c[0]}" ${c[0] === pick ? 'selected' : ''} ${c[2] == null ? 'disabled' : ''}>${c[1]}</option>`).join('')}</select></label>
+      <span class="ev-hist-msg fcfn-msg" id="fcfNormMsg">${st.count ? st.count + ' années (' + st.first + ' → ' + st.last + ')' + (Object.keys(mine).length ? ', dont ' + Object.keys(mine).length + ' corrigée' + (Object.keys(mine).length > 1 ? 's' : '') + ' à la main' : '') : ''}</span>
+      <span class="fcfn-btns">
+        ${Object.keys(mine).length ? '<button type="button" class="fcfn-ghost" id="fcfNormFill" title="Efface tes corrections et revient aux valeurs TradingView">↺ Revenir aux valeurs TradingView</button>' : ''}
+        <button type="button" class="fcfn-apply" id="fcfNormApply" ${chosen == null ? 'disabled' : ''}>Utiliser ${fx(chosen)} comme FCF des 3 scénarios</button>
+      </span>
     </div></div>`;
+  // cliquer une carte = la retenir (même effet que la liste déroulante)
+  box.querySelectorAll('[data-fcfn-pick]').forEach(b => b.addEventListener('click', () => { const sel = document.getElementById('fcfNormPick'); if (!sel || sel.value === b.dataset.fcfnPick) return; sel.value = b.dataset.fcfnPick; sel.dispatchEvent(new Event('change')); }));
   wireFcfNorm(nom);
 }
 function readFcfNormInputs(){

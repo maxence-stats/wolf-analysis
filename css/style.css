@@ -3623,3 +3623,21 @@
 .mx-rate-grid b{font-size:16px;}
 @media (max-width:1100px){ .mx-flows{grid-template-columns:1fr;} .mx-verdict{grid-template-columns:1fr;} .mx-v-wolf{display:none;} }
 @media (max-width:720px){ .mx-v-title{font-size:32px;} .mx-rrg-holder{height:340px;} .mx-v-tiles{margin-left:0;} }
+
+/* FCF normalisé (onglet Valorisation) : barre d'actions refaite (2026-11-13, retour « bouton mal positionné ») */
+.fcf-norm-card .fcfn-pick{font:inherit;color:inherit;text-align:left;cursor:pointer;}
+.fcf-norm-card .fcfn-pick:hover:not(:disabled){border-color:rgba(217,164,65,0.45);}
+.fcf-norm-card .fcfn-pick:disabled{opacity:.45;cursor:default;}
+.fcf-norm-card .fcfn-pick .sub{color:var(--text-faint);}
+.fcf-norm-card .fcfn-pick.ev-hist-now .sub{color:var(--gold);font-weight:800;}
+.fcfn-bar{display:flex;align-items:center;gap:12px 16px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.06);}
+.fcfn-label{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:700;color:var(--text);}
+.fcfn-select{font:600 13px var(--font-body);color:var(--text);background:var(--panel-2);border:1px solid var(--hair);border-radius:10px;padding:8px 30px 8px 12px;cursor:pointer;}
+.fcfn-select:focus{outline:none;border-color:var(--gold);}
+.fcfn-msg{font-size:12px;color:var(--text-dim);}
+.fcfn-btns{margin-left:auto;display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+.fcfn-ghost{font:700 13px var(--font-body);color:var(--text-dim);background:transparent;border:1px solid var(--hair);border-radius:12px;padding:10px 14px;cursor:pointer;white-space:nowrap;}
+.fcfn-ghost:hover{color:var(--text);border-color:var(--gold);}
+.fcfn-apply{font:800 14px var(--font-body);color:#111;background:linear-gradient(180deg,#F0C877,#D9A441);border:0;border-radius:12px;padding:11px 18px;cursor:pointer;white-space:nowrap;}
+.fcfn-apply:disabled{opacity:.45;cursor:default;}
+@media (max-width:720px){ .fcfn-btns{margin-left:0;} }
