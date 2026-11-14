@@ -227,6 +227,8 @@ function Handle-IaSave($req, $res){
 
 function Handle-IaRefresh($req, $res){
   if (-not (Test-WriteGuards $req $res)){ return }
+  # 2026-11-13 : plus aucune donnee FMP. Le Portefeuille IA lit TradingView (/api/tv/history) : ce script n'est plus lance.
+  Send-Json $res 410 @{ ok = $false; error = "actualisation FMP retiree : les cours viennent de TradingView" }; return
   # Refuse si un rafraichissement tourne deja (ou vient de finir).
   if (Test-Path $iaStatus -PathType Leaf){
     try {
@@ -749,8 +751,9 @@ function Handle-TvHistory($req, $res){
   $cache = Join-Path $storeDirPath "cache-prix"
   $ttl = "1800"; if ($req.QueryString["fresh"] -eq "1"){ $ttl = "0" }
   $adj = "none"; if ($req.QueryString["adj"] -eq "1"){ $adj = "splits" }
+  $extra = @(); if ($req.QueryString["ohlc"] -eq "1"){ $extra = @("--ohlc") }
   try {
-    $out = & $python $script --symbols ($list -join ',') --from $from --cache $cache --ttl $ttl --adjust $adj 2>$null | Out-String
+    $out = & $python $script --symbols ($list -join ',') --from $from --cache $cache --ttl $ttl --adjust $adj @extra 2>$null | Out-String
     $out = $out.Trim()
     if (-not $out.StartsWith("{")){ Send-Json $res 502 @{ ok = $false; error = "historique TradingView indisponible" }; return }
     Send-RawJsonString $res $out
@@ -844,7 +847,7 @@ while ($listener.IsListening) {
     $path = [System.Uri]::UnescapeDataString($req.Url.AbsolutePath)
     if ($path -eq "/api/ia/ping") {
       New-Item -ItemType Directory -Force -Path $iaDirPath | Out-Null
-      Send-Json $res 200 @{ ok = $true; writable = $true; v = 21; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
+      Send-Json $res 200 @{ ok = $true; writable = $true; v = 22; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
     } elseif ($path -eq "/api/ia/save") {
       Handle-IaSave $req $res
     } elseif ($path -eq "/api/ia/refresh") {

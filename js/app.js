@@ -592,7 +592,7 @@ let tvPublishedLogos = {};
 // (data/public/prices/) sur le site en ligne. Renvoie { dates:['AAAA-MM-JJ'], closes:[], ccy } ou null.
 async function loadTvWeeklyPrices(nom){
   const hist = companies[nom]; const last = hist && hist[hist.length - 1];
-  const sym = last ? (String(last.ticker || '').includes(':') ? last.ticker : last.tvSymbol) : null;
+  const sym = (last ? (String(last.ticker || '').includes(':') ? last.ticker : last.tvSymbol) : null) || ((typeof rankingByName !== 'undefined' && rankingByName[nom]) || {}).symbol || null;
   if (!sym) return null;
   const iso = ts => new Date(ts * 1000).toISOString().slice(0, 10);
   try{
@@ -696,7 +696,9 @@ function tvRowsFromSnapshot(tv, d){
   return [row];
 }
 function tvOnDemandDisplayName(d, fallback){
-  return String(d.description || fallback || '').replace(/\s+(Class [A-Z]|Sponsored ADR.*|Ltd\.?|Inc\.?|Corporation|Corp\.?|plc|SA|SE|NV|AG)\s*$/i, '').trim() || fallback;
+  let n = String(d.description || fallback || '').trim(), prev;
+  do { prev = n; n = n.replace(/[\s,]+(Class [A-Z]|Sponsored ADR.*|Ltd\.?|Limited|Inc\.?|Corporation|Corp\.?|plc|PLC|SA|S\.A\.|SE|NV|N\.V\.|AG|L\.P\.|Holdings? Corp\.?)\s*$/i, '').replace(/[\s,]+$/, '').trim(); } while (n !== prev && n);
+  return n || fallback;
 }
 // Le serveur public de TradingView renvoie les COMPTES (BPA, FCF, dividende, CA, cash, dette...) dans une devise
 // « fondamentale » (souvent l'USD) alors que le COURS est dans la devise de cotation (EUR, SEK, HKD...). Sans
@@ -805,24 +807,20 @@ function tvOnDemandRestore(){
    (le symbole TradingView est trouvé par une recherche par nom, puis mémorisé). Au plus une fois / 30 s
    par entreprise ; si TradingView ne répond pas, les données déjà affichées sont conservées. ------------ */
 const TV_SYMBOL_MAP_LS = 'wolfTvSymbolMap';
-const TV_FMP_SUFFIX_EXCHANGES = { PA: ['EURONEXT'], AS: ['EURONEXT'], BR: ['EURONEXT'], LS: ['EURONEXT'], DE: ['XETR'], F: ['FWB', 'XETR'],
-  MI: ['MIL'], SW: ['SIX'], MC: ['BME'], L: ['LSE'], ST: ['OMXSTO'], CO: ['OMXCOP'], HE: ['OMXHEX'], OL: ['OSL'], TO: ['TSX'], HK: ['HKEX'],
-  T: ['TSE'], AX: ['ASX'], KS: ['KRX'], SS: ['SSE'], SZ: ['SZSE'], NS: ['NSE'], BO: ['BSE'], SI: ['SGX'], TW: ['TWSE'] };
 let tvLiveLast = {};
 function tvSymbolMapRead(){ try{ return JSON.parse(localStorage.getItem(TV_SYMBOL_MAP_LS) || '{}') || {}; }catch(e){ return {}; } }
 function tvSymbolMapWrite(m){ try{ localStorage.setItem(TV_SYMBOL_MAP_LS, JSON.stringify(m)); }catch(e){ /* stockage indisponible */ } tvMemoPushSoon(); }
 async function tvResolveSymbol(nom){
   const cached = tvSymbolMapRead()[nom];
   if (cached) return cached;
-  const fmp = fmpSymbols[nom] || '';
-  const suffix = fmp.includes('.') ? fmp.split('.').pop().toUpperCase() : '';
-  const preferred = suffix ? (TV_FMP_SUFFIX_EXCHANGES[suffix] || []) : ['NASDAQ', 'NYSE', 'AMEX'];
-  const res = await fetch('/api/tv/search?q=' + encodeURIComponent(fmpDisplayName(nom)), { cache: 'no-store' });
+  const u = rankingByName[nom];
+  if (u && u.symbol){ const m = tvSymbolMapRead(); m[nom] = u.symbol; tvSymbolMapWrite(m); return u.symbol; }
+  const res = await fetch('/api/tv/search?q=' + encodeURIComponent(nom), { cache: 'no-store' });
   if (!(res.headers.get('content-type') || '').includes('json')) return null;
   const j = await res.json();
   const list = (j.ok && j.results) ? j.results.filter(r => r.type === 'stock' || r.type === 'dr') : [];
   if (!list.length) return null;
-  const pick = list.find(r => preferred.includes(String(r.symbol).split(':')[0])) || list[0];
+  const pick = list[0];
   const m = tvSymbolMapRead(); m[nom] = pick.symbol; tvSymbolMapWrite(m);
   return pick.symbol;
 }
@@ -927,6 +925,7 @@ function finishCompaniesLoad(){
   document.getElementById('errorScreen').style.display = 'none';
   document.getElementById('dashboard').style.display = 'block';
   setSync('ok');
+  if (typeof tvUniverseRelink === 'function') tvUniverseRelink();   // univers TradingView : noms des entreprises suivies
 
   // Les sources secondaires (Portfolio, historique de prix, macro...) ne sont PLUS
   // déclenchées ici — voir loadAllDataFromAppsScript() : un seul appel réseau les
@@ -3650,20 +3649,17 @@ function printImagesRowHtml(images){
 // rapatriée en local (ou pour une entreprise ajoutée au Sheet après coup, tant que
 // download_sheet_logos.py n'a pas encore tourné dessus).
 let logosManifest = {};
-async function loadLogosManifest(){
-  try{
-    const res = await fetch('data/logos-manifest.json', { cache:'no-store' });
-    if (res.ok) logosManifest = await res.json();
-  }catch(e){ /* fichier absent (pas encore généré) ou fetch bloqué (file://) — non bloquant */ }
-}
+async function loadLogosManifest(){ /* 2026-11-13 : plus de manifeste de logos FMP — logos TradingView uniquement */ }
 function companyLogoUrl(nom){
   if (!nom) return null;
-  const match = Object.keys(companies).find(n => stripAccents(n.toLowerCase()) === stripAccents(nom.toLowerCase()));
-  const symbol = fmpSymbols[nom] || (match && fmpSymbols[match]);
-  if (symbol && logosManifest[symbol]) return `data/logos/${logosManifest[symbol]}`;
-  const sheetUrl = match ? companies[match][companies[match].length - 1].lienImage : null;
-  if (sheetUrl) return sheetUrl;
-  return symbol ? `data/logos/${symbol}.png` : null;
+  const match = companies[nom] ? nom : Object.keys(companies).find(n => stripAccents(n.toLowerCase()) === stripAccents(nom.toLowerCase()));
+  const row = match ? companies[match][companies[match].length - 1] : null;
+  if (row && row.lienImage) return row.lienImage;
+  const tk = row && (String(row.ticker || '').includes(':') ? row.ticker : row.tvSymbol);
+  if (tk && tvPublishedLogos[tk]) return tvPublishedLogos[tk];
+  if (tk && rankingBySymbol[tk] && rankingBySymbol[tk].logo) return rankingBySymbol[tk].logo;
+  const e = rankingByName[nom];
+  return e && e.logo ? e.logo : null;
 }
 
 // Bug remonté : sur un export à PLUSIEURS graphiques (page Analyse/Macro complète),
@@ -4829,8 +4825,8 @@ function normalizeSector(raw){
 const WATCHLIST_LIST_COLOR = { qualite:'#F0C877', achat:'#4FD1A5', idee:'#D9A441', surveiller:'#4A9FE0', analyser:'#8B7FE8' };
 function sectorEntrySecteurRaw(nom){
   const hist = companies[nom];
-  if (hist) return hist[hist.length - 1].secteur;
-  const r = rankingSummaryData.find(e => e.nom === nom);
+  if (hist) return hist[hist.length - 1].secteur || (rankingByName[nom] || {}).secteur || null;
+  const r = rankingByName[nom];
   return r ? r.secteur : null;
 }
 // Filtre par liste Watchlist (défaut : toutes) — remplace l'ancien anneau de couleur
@@ -4901,7 +4897,7 @@ function renderSectorView(){
   const names = sectorShowFullUniverse ? mergeFmpUniverseNames(baseNames) : baseNames;
   const introEl = document.getElementById('sectorIntroText');
   if (introEl) introEl.textContent = sectorShowFullUniverse
-    ? 'Toute la base FMP (~1670 entreprises) — clic sur un logo → fiche entreprise.'
+    ? `Tout l'univers TradingView (${rankingSummaryData.length} actions : États-Unis et Europe, plus de 2 Md$ de capitalisation) — clic sur un logo → fiche entreprise.`
     : 'Les entreprises du Sheet + toute entreprise que tu as ajoutée à ta Watchlist. Clic sur un logo → fiche entreprise.';
 
   const filteredNames = sectorWatchlistFilter
@@ -4922,20 +4918,19 @@ function renderSectorView(){
    affichée (pas une case à cocher ici, contrairement à Secteur : c'est le
    principe même d'un screener).
    ============================================================ */
-const SCREENER_RATIOS = [
+const SCREENER_RATIOS = [   // champs du scanner TradingView (voir loadRankingSummary)
   { key:'rendementDiv', label:'Rendement du dividende', unit:'%' },
-  { key:'cagrDiv10', label:'CAGR dividende (10 ans)', unit:'%' },
-  { key:'medianePFCF', label:'Médiane P/FCF (10 ans)', unit:'x' },
-  { key:'fcfBase', label:'FCF / action', unit:'€' },
+  { key:'anneesHausseDiv', label:'Années de hausse du dividende', unit:'ans' },
+  { key:'payoutRatio', label:'Payout ratio', unit:'%' },
+  { key:'per', label:'PER', unit:'x' },
+  { key:'pFcf', label:'P/FCF', unit:'x' },
+  { key:'pOcf', label:'P/OCF', unit:'x' },
+  { key:'medianePFCF', label:'Médiane P/FCF 10 ans (entreprises suivies)', unit:'x' },
   { key:'margeOp', label:'Marge opérationnelle', unit:'%' },
   { key:'roic', label:'ROIC', unit:'%' },
-  { key:'payoutRatio', label:'Payout ratio', unit:'%' },
   { key:'detteOCF', label:'Dette nette / OCF', unit:'x' },
-  { key:'cagrCA10', label:"CAGR chiffre d'affaires (10 ans)", unit:'%' },
-  { key:'cagrFcf10', label:'CAGR FCF (10 ans)', unit:'%' },
-  { key:'pOcf', label:'P/OCF', unit:'x' },
-  { key:'per', label:'PER', unit:'x' },
-  { key:'prixActuel', label:'Prix actuel', unit:'€' },
+  { key:'cagrCA5', label:"Croissance annuelle du chiffre d'affaires (5 ans)", unit:'%' },
+  { key:'cagrFcf5', label:'Croissance annuelle du FCF (5 ans)', unit:'%' },
   { key:'ecartValeur', label:'Écart de valeur (vs Prix Juste)', unit:'%' }
 ];
 const SCREENER_OPERATORS = [
@@ -5154,24 +5149,129 @@ function populateClassementWatchlistFilter(){
 // importées en FMP (507 aujourd'hui, pas seulement les 72 du Sheet) — demande
 // explicite ("il faut trouver un moyen d'afficher toutes les entreprises... top cent,
 // top cinquante"), avec un sélecteur Top N pour ne pas noyer l'écran.
+// 2026-11-13 : l'univers élargi vient du SCANNER TRADINGVIEW (appelé depuis le navigateur, comme l'onglet
+// « Listes TradingView ») — plus aucun fichier FMP (data/ranking-summary.json n'est plus lu). Actions cotées aux
+// États-Unis et en Europe de plus de 2 Md$ de capitalisation (cotation principale), + les entreprises suivies.
+// Mêmes noms de champs qu'avant pour Classement, Filtres, Secteur, Comparaison, Watchlist… Les champs sans
+// équivalent public chez TradingView (CAGR 10 ans, médiane P/FCF hors entreprises suivies) restent vides.
+const TV_UNIVERSE_MARKETS = ['america','france','germany','uk','netherlands','italy','spain','switzerland','sweden','belgium','denmark','finland','norway','portugal','ireland','austria'];
+const TV_UNIVERSE_COLS = ['name','description','close','currency','sector','industry','country','logoid','market_cap_basic','dividends_yield_current',
+  'free_cash_flow_per_share_ttm','operating_margin_ttm','return_on_invested_capital_fq','dividend_payout_ratio_ttm','price_earnings_ttm',
+  'price_free_cash_flow_ttm','net_debt_fq','cash_f_operating_activities_ttm','total_revenue_cagr_5y','free_cash_flow_cagr_5y',
+  'continuous_dividend_growth','price_to_cash_f_operating_activities_ttm'];
+const TV_COUNTRY_CODES = { 'United States':'US', 'France':'FR', 'Germany':'DE', 'United Kingdom':'GB', 'Netherlands':'NL', 'Italy':'IT', 'Spain':'ES',
+  'Switzerland':'CH', 'Sweden':'SE', 'Belgium':'BE', 'Denmark':'DK', 'Finland':'FI', 'Norway':'NO', 'Portugal':'PT', 'Ireland':'IE', 'Austria':'AT',
+  'Luxembourg':'LU', 'Greece':'GR', 'Poland':'PL', 'Czech Republic':'CZ', 'Czechia':'CZ', 'Hungary':'HU', 'Iceland':'IS', 'Cyprus':'CY', 'Malta':'MT',
+  'Liechtenstein':'LI', 'Estonia':'EE', 'Latvia':'LV', 'Lithuania':'LT', 'Slovenia':'SI', 'Slovakia':'SK', 'Croatia':'HR', 'Romania':'RO', 'Bulgaria':'BG',
+  'Canada':'CA', 'Bermuda':'BM', 'Jersey':'JE', 'Guernsey':'GG', 'Isle of Man':'IM', 'Cayman Islands':'KY', 'Israel':'IL', 'Japan':'JP', 'China':'CN',
+  'Taiwan':'TW', 'Australia':'AU', 'Brazil':'BR', 'Mexico':'MX', 'India':'IN', 'South Korea':'KR', 'Singapore':'SG', 'Hong Kong':'HK', 'Uruguay':'UY',
+  'Argentina':'AR', 'Chile':'CL', 'Colombia':'CO', 'Peru':'PE', 'South Africa':'ZA', 'Panama':'PA', 'Monaco':'MC', 'Puerto Rico':'PR' };
+// Secteurs TradingView (20 secteurs « FactSet ») -> 11 secteurs GICS, affinés par l'industrie (ex. Airbus est dans
+// « Electronic Technology » chez TradingView, Alphabet dans « Technology Services »). Libellés anglais : normalizeSector() les range.
+function tvSectorToGics(sector, industry){
+  const s = String(sector || ''), i = String(industry || '');
+  if (/Real Estate/i.test(i)) return 'Real Estate';
+  if (/Aerospace|Defense/i.test(i)) return 'Industrials';
+  if (/Internet Software|Telecommunications(?! Equipment)|Wireless|Cable|Broadcasting|Movies|Entertainment|Publishing|Advertising|Media/i.test(i)) return 'Communication Services';
+  if (/Oil|Gas Pipelines|Contract Drilling|Coal|Integrated Oil/i.test(i)) return 'Energy';
+  if (/Medical|Pharmaceutical|Biotech|Hospital|Managed Health|Health/i.test(i)) return 'Healthcare';
+  if (/Food Retail|Drugstore|Discount Stores|Food Distributors|Food:|Beverages|Tobacco|Household|Personal Care|Agricultural Commodities/i.test(i)) return 'Consumer Defensive';
+  if (/Apparel|Footwear|Hotels|Restaurants|Casinos|Recreational|Motor Vehicles|Auto Parts|Homebuilding|Home Furnishings|Electronics\/Appliances|Specialty Stores|Department Stores|Internet Retail|Catalog/i.test(i)) return 'Consumer Cyclical';
+  const bySector = {
+    'Electronic Technology':'Technology', 'Technology Services':'Technology', 'Utilities':'Utilities', 'Energy Minerals':'Energy', 'Finance':'Financial Services',
+    'Health Technology':'Healthcare', 'Health Services':'Healthcare', 'Non-Energy Minerals':'Basic Materials', 'Process Industries':'Basic Materials',
+    'Producer Manufacturing':'Industrials', 'Industrial Services':'Industrials', 'Transportation':'Industrials', 'Commercial Services':'Industrials',
+    'Distribution Services':'Industrials', 'Consumer Non-Durables':'Consumer Defensive', 'Consumer Durables':'Consumer Cyclical',
+    'Consumer Services':'Consumer Cyclical', 'Retail Trade':'Consumer Cyclical', 'Communications':'Communication Services', 'Miscellaneous':'Financial Services'
+  };
+  return bySector[s] || s || null;
+}
 let rankingSummaryData = [];
 let rankingBySymbol = {};
+let rankingByName = {};
+let tvUniverseStatus = { state:'idle', at:null, error:null };
+// Nom d'une entreprise DÉJÀ présente dans l'appli (fiche suivie, ou fiche TradingView à la volée) pour un symbole TradingView.
+function tvTrackedNameFor(sym){
+  if (!sym) return null;
+  let partial = null;
+  for (const n of Object.keys(companies)){
+    const h = companies[n], l = h && h[h.length - 1];
+    if (!l || (l.ticker !== sym && l.tvSymbol !== sym)) continue;
+    if (!l.tvPartial) return n;
+    partial = partial || n;
+  }
+  return partial;
+}
+function tvUniverseEntry(sym, o){
+  const num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
+  const tracked = tvTrackedNameFor(sym);
+  const hist = tracked && companies[tracked], last = hist && hist[hist.length - 1];
+  const close = num(o.close), pfcf = num(o.price_free_cash_flow_ttm), yld = num(o.dividends_yield_current);
+  const ocf = num(o.cash_f_operating_activities_ttm), nd = num(o.net_debt_fq);
+  // FCF/action et dividende recalculés dans la DEVISE DU COURS (cours ÷ P/FCF, cours × rendement) : les comptes
+  // TradingView sont souvent dans une autre devise (USD) que le cours (EUR, GBX…).
+  const fcfQ = (close != null && pfcf) ? close / pfcf : null;
+  const name = tracked || (typeof tvOnDemandDisplayName === 'function' ? tvOnDemandDisplayName(o, o.name) : (o.description || o.name));
+  return {
+    nom: name, symbol: sym, tracked: !!(last && !last.tvPartial),
+    secteur: tvSectorToGics(o.sector, o.industry), secteurTv: o.sector || null, industrie: o.industry || null,
+    pays: TV_COUNTRY_CODES[o.country] || o.country || null, devise: o.currency || null,
+    logo: o.logoid ? 'https://s3-symbol-logo.tradingview.com/' + o.logoid + '--big.svg' : null,
+    capi: num(o.market_cap_basic), prixActuel: close,
+    dividende: (close != null && yld != null) ? close * yld / 100 : null, rendementDiv: yld,
+    cagrDiv10: null, anneesHausseDiv: num(o.continuous_dividend_growth),
+    fcfParAction: fcfQ, fcfBase: fcfQ,
+    medianePFCF: last && num(last.medianePFCF) != null ? last.medianePFCF : null,
+    margeOp: num(o.operating_margin_ttm), roic: num(o.return_on_invested_capital_fq), payoutRatio: num(o.dividend_payout_ratio_ttm),
+    detteOCF: (nd != null && ocf) ? nd / ocf : null, pOcf: num(o.price_to_cash_f_operating_activities_ttm),
+    per: num(o.price_earnings_ttm), pFcf: pfcf,
+    cagrCA5: num(o.total_revenue_cagr_5y), cagrFcf5: num(o.free_cash_flow_cagr_5y), cagrCA10: null, cagrFcf10: null
+  };
+}
+let tvUniverseRaw = null;
+function tvUniverseBuild(){
+  if (!tvUniverseRaw) return;
+  const seen = {};
+  rankingSummaryData = tvUniverseRaw.map(([sym, o]) => tvUniverseEntry(sym, o)).map(e => {
+    if (seen[e.nom] && !e.tracked){ e.nom = e.nom + ' (' + e.symbol.split(':')[1] + ')'; }
+    seen[e.nom] = true;
+    return e;
+  });
+  rankingBySymbol = {}; rankingByName = {};
+  rankingSummaryData.forEach(e => { if (e.symbol) rankingBySymbol[e.symbol] = e; rankingByName[e.nom] = e; });
+}
+// Appelée quand la liste suivie (companies) est chargée : les noms et médianes P/FCF des entreprises suivies sont recalés.
+function tvUniverseRelink(){ if (tvUniverseRaw){ tvUniverseBuild(); try{ renderScreenerGrid(); }catch(e){} } }
+async function tvScan(body){
+  const r = await fetch('https://scanner.tradingview.com/global/scan', { method:'POST', headers:{ 'Content-Type':'text/plain;charset=UTF-8' }, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error('scanner TradingView : HTTP ' + r.status);
+  const j = await r.json();
+  return (j.data || []).map(row => { const o = {}; TV_UNIVERSE_COLS.forEach((c, k) => { o[c] = row.d[k]; }); return [row.s, o]; });
+}
 async function loadRankingSummary(){
+  tvUniverseStatus = { state:'loading', at:null, error:null };
   try{
-    const res = await fetch('data/ranking-summary.json', { cache:'no-store' });
-    if (res.ok) rankingSummaryData = await res.json();
-    // Étend fmpSymbols (jusqu'ici limité aux 72 du Sheet, voir loadFmpSymbols()) à toute
-    // la base FMP élargie — condition nécessaire pour que l'onglet Analyse et tout ce qui
-    // en dépend (Documents financiers, cours de bourse, clic Classement...) fonctionnent
-    // au-delà des 72 (demande explicite, voir ensureSyntheticCompanyData()). Fusion
-    // seulement (jamais d'écrasement) : une résolution Sheet déjà en place reste
-    // prioritaire sur le symbole brut FMP pour le même nom.
-    rankingSummaryData.forEach(e => { if (e.symbol && !fmpSymbols[e.nom]) fmpSymbols[e.nom] = e.symbol; });
-    // Index par ticker (2026-09-08) pour fmpDisplayName() — reconstruit à chaque
-    // (re)chargement du fichier, jamais fusionné, purement dérivé de rankingSummaryData.
-    rankingBySymbol = {};
-    rankingSummaryData.forEach(e => { if (e.symbol) rankingBySymbol[e.symbol] = e; });
-  }catch(e){ /* pas encore généré — non bloquant, page vide en attendant */ }
+    const rows = await tvScan({ markets: TV_UNIVERSE_MARKETS, columns: TV_UNIVERSE_COLS, range: [0, 5000],
+      filter: [{ left:'type', operation:'equal', right:'stock' }, { left:'is_primary', operation:'equal', right:true }, { left:'market_cap_basic', operation:'greater', right:2e9 }],
+      sort: { sortBy:'market_cap_basic', sortOrder:'desc' } });
+    const got = new Set(rows.map(r => r[0]));
+    // entreprises suivies hors de ce filtre (petite capitalisation, autre bourse) : demandées par leur symbole
+    const missing = [...new Set(Object.keys(companies).map(n => { const h = companies[n], l = h && h[h.length - 1]; return l && (String(l.ticker || '').includes(':') ? l.ticker : l.tvSymbol); }).filter(t => t && !got.has(t)))];
+    if (missing.length){ try{ (await tvScan({ symbols:{ tickers: missing }, columns: TV_UNIVERSE_COLS })).forEach(r => rows.push(r)); }catch(e){ /* facultatif */ } }
+    tvUniverseRaw = rows;
+    tvUniverseBuild();
+    tvUniverseStatus = { state:'ok', at: Date.now(), error:null };
+  }catch(e){
+    tvUniverseStatus = { state:'error', at:null, error: e.message || String(e) };
+    // repli : au moins les entreprises déjà dans l'appli
+    rankingSummaryData = Object.keys(companies).map(n => { const h = companies[n], l = h[h.length - 1];
+      return { nom:n, symbol: String(l.ticker || '').includes(':') ? l.ticker : (l.tvSymbol || null), tracked: !l.tvPartial, secteur: l.secteur, pays:null, devise: l.devise || null,
+        logo: l.lienImage || null, prixActuel: l.prixActuel, dividende: l.dividende, rendementDiv: l.rendementDiv, fcfParAction: l.fcfParAction, fcfBase: l.fcfParAction,
+        medianePFCF: l.medianePFCF, margeOp: l.margeOp, roic: l.roic, payoutRatio: l.payoutRatio, detteOCF: l.detteOCF, pOcf: l.pOcf, per: l.per, pFcf: l.pFcf,
+        cagrCA5: l.cagrCA5, cagrFcf5: l.cagrFcf5 }; });
+  }
+  rankingBySymbol = {}; rankingByName = {};
+  rankingSummaryData.forEach(e => { if (e.symbol) rankingBySymbol[e.symbol] = e; rankingByName[e.nom] = e; });
   if (document.getElementById('pageClassement') && document.getElementById('pageClassement').classList.contains('active')) renderClassement();
   renderScreenerGrid();
 }
@@ -5200,10 +5300,8 @@ async function loadRankingSummary(){
 // enregistré (Watchlist, Objectifs, notes Cerveau) — d'où purement cosmétique :
 // change UNIQUEMENT le texte affiché, jamais `data-nom`/la clé passée à
 // selectCompany()/companies[nom].
-function fmpDisplayName(nom){
-  const symbol = fmpSymbols[nom];
-  const entry = symbol && rankingBySymbol[symbol];
-  return entry ? entry.nom : nom;
+function fmpDisplayName(nom){   // nom historique conservé (appelé partout) : plus de « nom officiel FMP », le nom est affiché tel quel
+  return nom;
 }
 // Redirige un nom vers l'entreprise DÉJÀ suivie sous un autre nom, si les deux
 // partagent le même ticker FMP (ex. "Coca-Cola", nom officiel FMP renvoyé par le
@@ -5216,15 +5314,14 @@ function fmpDisplayName(nom){
 // Renvoie `nom` inchangé si déjà suivi ou si aucune correspondance trouvée.
 function canonicalCompanyName(nom){
   if (companies[nom]) return nom;
-  const symbol = fmpSymbols[nom];
-  if (!symbol) return nom;
-  const match = Object.keys(companies).find(k => fmpSymbols[k] === symbol);
-  return match || nom;
+  const e = rankingByName[nom];
+  return (e && e.symbol && tvTrackedNameFor(e.symbol)) || nom;
 }
+// Union des noms déjà connus et de l'univers TradingView, dédupliquée par SYMBOLE TradingView (jamais par ressemblance de nom).
 function mergeFmpUniverseNames(baseNames){
   const names = new Set(baseNames);
   const seenSymbols = new Set();
-  names.forEach(nom => { const sym = fmpSymbols[nom]; if (sym) seenSymbols.add(sym); });
+  names.forEach(nom => { const h = companies[nom], l = h && h[h.length - 1]; const sym = l ? (String(l.ticker || '').includes(':') ? l.ticker : l.tvSymbol) : (rankingByName[nom] || {}).symbol; if (sym) seenSymbols.add(sym); });
   rankingSummaryData.forEach(e => {
     if (names.has(e.nom)) return;
     if (e.symbol && seenSymbols.has(e.symbol)) return;
@@ -5323,54 +5420,34 @@ function classementValuationFor(e){
 // Champs non disponibles pour une entreprise FMP-only (CAGR 10/20 ans, dette nette/OCF,
 // trésorerie...) restés `null`/absents plutôt qu'inventés — l'affichage existant gère
 // déjà proprement l'absence de donnée (tirets/N-D) partout où c'est utilisé.
-function buildSyntheticCompanyRows(nom, rankingEntry){
-  const real = documentsRealData[nom];
-  const ch = real && real.chartsHistory;
-  const rows = ch && ch.years && ch.years.length ? chartsHistoryToRows(ch) : [{ annee: new Date().getFullYear() }];
-  const v = classementValuationFor(rankingEntry);
-  const logo = companyLogoUrl(nom) || (rankingEntry.symbol ? `data/logos/${rankingEntry.symbol}.png` : null);
-  const growthCagr5 = (label) => {
-    const g = real && real.growth && real.growth.find(x => x.label === label);
-    return g && g.cagr != null ? g.cagr * 100 : null;
-  };
-  const medPfcf10 = medianOfLastYears(rows, 'pFcf', 10);
-  const medPfcf20 = medianOfLastYears(rows, 'pFcf', 20);
-  const medPocf10 = medianOfLastYears(rows, 'pOcf', 10);
-  const medPocf20 = medianOfLastYears(rows, 'pOcf', 20);
-  rows.forEach(r => {
-    r.nom = nom;
-    r.ticker = rankingEntry.symbol || '';
-    r.secteur = rankingEntry.secteur || '';
-    r.sousSecteur = '';
-    r.lienImage = logo;
-    r.medianePFCF = medPfcf10;
-    r.medianePFCF20 = medPfcf20;
-    r.medianePOcf = medPocf10;
-    r.medianePOcf20 = medPocf20;
-  });
-  const latest = rows[rows.length - 1];
-  latest.prixActuel = rankingEntry.prixActuel;
-  latest.prixJuste = v.prixJuste;
-  latest.prixCible = v.prixJuste != null ? v.prixJuste * 0.8 : null;
-  latest.ecartValeur = (v.prixJuste != null && latest.prixCible) ? (v.prixJuste / latest.prixCible) - 1 : null;
-  latest.rendementDiv = rankingEntry.rendementDiv;
-  latest.cagrDiv5 = growthCagr5('Dividende par action');
-  latest.cagrCA5 = growthCagr5("Chiffre d'affaires");
-  latest.cagrFcf5 = growthCagr5('Free Cash Flow');
-  return rows;
+// Fiche minimale tirée d'une ligne du scanner (site en ligne sans serveur local, ou TradingView injoignable).
+function buildSyntheticCompanyRows(nom, e){
+  const row = {};
+  TV_ROW_FIELDS.forEach(k => { row[k] = null; });
+  Object.assign(row, { annee: new Date().getFullYear(), nom, ticker: e.symbol || '', secteur: e.secteur || '', sousSecteur: e.industrie || '',
+    lienImage: e.logo || '', prixActuel: e.prixActuel, per: e.per, pFcf: e.pFcf, fcfParAction: e.fcfParAction, dividende: e.dividende,
+    rendementDiv: e.rendementDiv, roic: e.roic, margeOp: e.margeOp, payoutRatio: e.payoutRatio, detteOCF: e.detteOCF, pOcf: e.pOcf,
+    cagrCA5: e.cagrCA5, cagrFcf5: e.cagrFcf5, devise: e.devise, tvSource: true, tvPartial: true, tvSymbol: e.symbol || null });
+  return [row];
 }
 // true si companies[nom] est prêt à être utilisé (déjà réel, ou synthèse réussie) ;
 // false si nom est vraiment inconnu (ni Sheet, ni base FMP élargie). Idempotent —
 // n'écrase jamais une entrée déjà là (Sheet réelle, ou synthèse déjà construite).
+// Entreprise de l'univers TradingView pas encore ouverte : fiche TradingView à la volée (ratios actuels, comme la recherche).
 async function ensureSyntheticCompanyData(nom){
   if (companies[nom]) return true;
   const canonical = canonicalCompanyName(nom);
   if (companies[canonical]){ companies[nom] = companies[canonical]; return true; }
-  const rankingEntry = rankingSummaryData.find(e => e.nom === nom);
-  if (!rankingEntry) return false;
-  try{ await ensureDocumentsRealData(nom); }catch(e){ /* export FMP absent pour cette entreprise — non bloquant, synthèse partielle */ }
-  if (companies[nom]) return true; // race : une autre navigation a déjà rempli entre-temps
-  companies[nom] = buildSyntheticCompanyRows(nom, rankingEntry);
+  const e = rankingByName[nom];
+  if (!e || !e.symbol) return false;
+  try{
+    const snap = await tvFetchSnapshot(e.symbol);
+    if (companies[nom]) return true;   // une autre navigation a déjà rempli entre-temps
+    companies[nom] = tvRowsFromSnapshot(e.symbol, snap);
+    const store = tvOnDemandRead(); store[nom] = { tv: e.symbol, snap, at: Date.now() }; tvOnDemandWrite(store);
+  }catch(err){
+    if (!companies[nom]) companies[nom] = buildSyntheticCompanyRows(nom, e);
+  }
   return true;
 }
 
@@ -5417,7 +5494,7 @@ function classementRankingRows(secteurFiltre){
     const v = classementValuationFor(e);
     return {
       nom: e.nom, symbol: e.symbol,
-      logo: companyLogoUrl(e.nom) || (e.symbol ? `data/logos/${e.symbol}.png` : null),
+      logo: companyLogoUrl(e.nom) || e.logo || null,
       rendementDiv: e.rendementDiv, ecartPrix: v.ecartPrix, valuationSource: v.source,
       inSheet: !!companies[e.nom],
       secteurKey: normalizeSector(e.secteur) || 'autre',
@@ -5449,8 +5526,8 @@ function renderClassement(){
   const rows = classementRankingRows(secteurFiltre);
   const coverageNote = document.getElementById('classementCoverageNote');
   if (coverageNote) coverageNote.textContent = rankingSummaryData.length
-    ? `${rankingSummaryData.length} entreprises couvertes (base locale FMP), classement recalculé depuis le prix et le dividende les plus récents.`
-    : '';
+    ? `${rankingSummaryData.length} entreprises couvertes (scanner TradingView en direct : États-Unis et Europe, plus de 2 Md$ de capitalisation, + tes entreprises suivies). Valorisation : entreprises suivies (médiane P/FCF 10 ans) ou objectif que tu as enregistré.`
+    : (tvUniverseStatus.state === 'error' ? 'Scanner TradingView injoignable : ' + tvUniverseStatus.error : 'Lecture du scanner TradingView…');
 
   const byDiv = classementApplyTopN(rows.filter(r => r.rendementDiv != null).sort((a, b) => b.rendementDiv - a.rendementDiv));
   const half = Math.ceil(byDiv.length / 2);
@@ -8965,16 +9042,7 @@ function setStockSourceNote(text){
    l'utilisateur, à reconstruire dans un second temps si besoin).
    ============================================================ */
 let fmpSymbols = {}; // nom Sheet -> symbole FMP, voir data/fmp-symbols.json (généré par fmp-database/resolve_tickers.py)
-async function loadFmpSymbols(){
-  try{
-    const res = await fetch('data/fmp-symbols.json', { cache:'no-store' });
-    // Fusion (jamais réaffectation) : loadRankingSummary() peut avoir déjà commencé à
-    // peupler fmpSymbols avant que CETTE requête ne revienne — l'ordre des deux fetch
-    // n'est pas garanti, une réaffectation aurait pu effacer ce que l'autre venait
-    // d'ajouter selon qui répond en dernier.
-    if (res.ok) Object.assign(fmpSymbols, await res.json());
-  }catch(e){ /* absent en local, non bloquant — toutes les entreprises retombent sur l'ancien système */ }
-}
+async function loadFmpSymbols(){ /* 2026-11-13 : plus de symboles FMP (data/fmp-symbols.json n'est plus lu) — fmpSymbols reste vide */ }
 
 let stockUsesCandleFmp = false;
 let stockCandleChart = null, stockCandleSeries = null, stockLineSeries = null;
@@ -9017,11 +9085,9 @@ function buildStockOverlayCatalog(){
     if (!label) return; // dépendances internes pures (aaa10y, mktCapRaw, fedAssets...), jamais superposables seules
     catalog.push({ type:'macro', key:s.key, label, group:'Macroéconomie' });
   });
-  const ratioFields = { margeOp:'Marge opérationnelle (%)', roic:'ROIC (%)', fcfParAction:'FCF / action (€)', pFcf:'P/FCF (x)', ocfParAction:'OCF / action (€)', pOcf:'P/OCF (x)', per:'PER (x)', detteOCF:'Dette / OCF (x)', dividende:'Dividende / action (€)', payoutRatio:'Payout ratio (%)', actions:'Actions en circulation (M)', ca:'Chiffre d\'affaires (Md€)', cash:'Trésorerie (M€)', cashInvesti:'Placements (M€)' };
-  Object.keys(ratioFields).forEach(key => catalog.push({ type:'chartsHistory', key, label: ratioFields[key], group:'Cette entreprise — ratios' }));
-  DOCUMENTS_IS_ROWS.forEach(r => catalog.push({ type:'statement', statement:'incomeStatement', key:r.label, label:r.label, group:'Cette entreprise — compte de résultat' }));
-  DOCUMENTS_BS_ROWS.forEach(r => catalog.push({ type:'statement', statement:'balanceSheet', key:r.label, label:r.label, group:'Cette entreprise — bilan' }));
-  DOCUMENTS_CF_ROWS.forEach(r => catalog.push({ type:'statement', statement:'cashFlow', key:r.label, label:r.label, group:'Cette entreprise — flux de trésorerie' }));
+  // historique annuel TradingView de la fiche (séries publiées par TradingView)
+  const ratioFields = { ca:'Chiffre d\'affaires', ebitda:'EBITDA', resultatNet:'Résultat net', margeBrute:'Marge brute (%)', margeEbitda:'Marge EBITDA (%)', margeNette:'Marge nette (%)', eps:'BPA', fcfParAction:'FCF / action', pFcf:'P/FCF (x)', per:'PER (x)', dividende:'Dividende / action', payoutRatio:'Payout ratio (%)', actions:'Actions en circulation (M)', detteTotale:'Dette totale', detteEbitda:'Dette / EBITDA (x)' };
+  Object.keys(ratioFields).forEach(key => catalog.push({ type:'chartsHistory', key, label: ratioFields[key], group:'Cette entreprise — historique annuel' }));
   MACRO_ROTATION_SECTORS.forEach(s => catalog.push({ type:'sector', key:s.key, label:'Secteur : ' + s.label + ' (ETF ' + s.ticker + ')', group:'Secteurs' }));
   const contextName = stockOverlayContextCompanyName();
   Object.keys(companies).forEach(nom => {
@@ -9036,16 +9102,12 @@ async function resolveStockOverlaySeries(item){
   if (item.type === 'macro') return creditIndicatorsData[item.key] || null;
   const contextName = stockOverlayContextCompanyName();
   if (item.type === 'chartsHistory'){
-    const ch = documentsRealData[contextName] && documentsRealData[contextName].chartsHistory;
-    if (!ch || !ch[item.key]) return null;
-    return { dates: ch.years.map(y => `${String(y).slice(0,4)}-12-31`), values: ch[item.key] };
-  }
-  if (item.type === 'statement'){
-    const sd = documentsRealData[contextName] && documentsRealData[contextName][item.statement];
-    if (!sd) return null;
-    const row = sd.rows.find(r => r.label === item.key);
-    if (!row) return null;
-    return { dates: sd.years.map(y => `${String(y).slice(0,4)}-12-31`), values: row.values };
+    // historique annuel TradingView de la fiche (companies[nom])
+    const hist = companies[contextName];
+    if (!hist || !hist.length) return null;
+    const pts = hist.filter(r => r[item.key] != null && r.annee);
+    if (!pts.length) return null;
+    return { dates: pts.map(r => `${String(r.annee).slice(0,4)}-12-31`), values: pts.map(r => r[item.key]) };
   }
   if (item.type === 'sector'){
     // Demande explicite : "je veux juste... que ça affiche l'ETF sectoriel [brut]" — pas
@@ -9060,18 +9122,11 @@ async function resolveStockOverlaySeries(item){
     return (raw && raw.dates && raw.dates.length) ? raw : null;
   }
   if (item.type === 'company'){
-    const symbol = fmpSymbols[item.key];
-    if (!symbol) return null;
-    if (!stockOverlayCompanyCache[symbol]){
-      try{
-        const res = await fetch(`data/prices-${symbol}.json`, { cache:'no-store' });
-        if (res.ok){
-          const raw = await res.json();
-          stockOverlayCompanyCache[symbol] = { dates: raw.map(p => p.t), values: raw.map(p => p.c) };
-        }
-      }catch(e){ /* pas encore exportée — non bloquant */ }
+    if (!stockOverlayCompanyCache[item.key]){
+      const w = await loadTvWeeklyPrices(item.key);   // cours TradingView hebdomadaires
+      if (w && w.dates && w.dates.length) stockOverlayCompanyCache[item.key] = { dates: w.dates, values: w.closes };
     }
-    return stockOverlayCompanyCache[symbol] || null;
+    return stockOverlayCompanyCache[item.key] || null;
   }
   return null;
 }
@@ -9140,6 +9195,7 @@ function mergeDailyTopUp(baseline, topUp){
 }
 
 async function loadStockChartCandle(nom, ticker){
+  return false;   // 2026-11-13 : chandeliers FMP retirés (cours TradingView uniquement) — code ci-dessous inactif
   const symbol = fmpSymbols[nom];
   if (!symbol) return false;
   let baseline;
@@ -10219,40 +10275,11 @@ function computeMetricCagr(nom, key, years){
 // Même chaîne de repli que loadStockChart() (Sheet dédié → Yahoo → Stooq), mais
 // paramétrable par entreprise et mise en cache — sert d'axe hebdomadaire même quand
 // "Prix" est désactivé (voir plus haut).
+// Cours hebdomadaires TradingView (ajustés des divisions d'actions) — plus de Sheet, Yahoo, Stooq ni FMP.
 async function ensureComparaisonPriceData(nom){
   if (comparaisonPriceCache[nom]) return comparaisonPriceCache[nom];
-  const sheetSeries = fetchPriceHistorySeries(nom);
-  if (sheetSeries){ comparaisonPriceCache[nom] = sheetSeries; return sheetSeries; }
-  const rows = companies[nom];
-  const ticker = rows && rows[rows.length - 1].ticker;
-  if (ticker){
-    try{
-      const r = await fetchYahooWeekly(mapTickerToYahoo(ticker));
-      comparaisonPriceCache[nom] = r;
-      return r;
-    }catch(e){}
-    try{
-      const r = await fetchStooqWeekly(mapTickerToStooq(ticker));
-      comparaisonPriceCache[nom] = r;
-      return r;
-    }catch(e){}
-  }
-  // Entreprise hors des 72 du Sheet (base FMP élargie, ~500 entreprises) : repli sur
-  // l'historique de prix FMP déjà exporté (data/prices-{symbole}.json, même fichier que
-  // la superposition "Comparer une entreprise" du cours de bourse) — demande explicite :
-  // "ça me met toutes les entreprises qui ont été enregistrées avec FMP".
-  const symbol = fmpSymbols[nom];
-  if (symbol){
-    try{
-      const res = await fetch(`data/prices-${symbol}.json`, { cache:'no-store' });
-      if (res.ok){
-        const raw = await res.json();
-        const r = resampleWeekly(raw.map(p => p.t), raw.map(p => p.c));
-        comparaisonPriceCache[nom] = r;
-        return r;
-      }
-    }catch(e){}
-  }
+  const r = await loadTvWeeklyPrices(nom);
+  if (r && r.dates && r.dates.length){ comparaisonPriceCache[nom] = r; return r; }
   return null;
 }
 
@@ -11394,7 +11421,7 @@ let activeFcfActuel = null;
    relancer ingest.py + export_to_app.py sur son ticker et ajouter son nom/URL au
    dictionnaire DOCUMENTS_REAL_DATA_SOURCES.
    ============================================================ */
-let documentsView = 'income';
+let documentsView = 'annual';   // 'annual' (historique TradingView) | 'ttm' (12 derniers mois, en direct)
 // Listes complètes (tous les postes utiles renvoyés par FMP, pas juste un sous-ensemble
 // — retour utilisateur explicite : "mes trois états financiers ne sont pas complets").
 // Chaque label doit correspondre EXACTEMENT à une clé de FIELD_MAP_IS/BS/CF côté
@@ -11571,26 +11598,7 @@ const DOCUMENTS_PERIOD_PLACEHOLDERS = ['—', '—', '—', '—', '—'];
 let documentsRealData = {}; // { [nomEntreprise]: {symbol, incomeStatement, balanceSheet, cashFlow, growth} }
 let documentsRealDataLoading = {};
 
-async function ensureDocumentsRealData(name){
-  const symbol = fmpSymbols[name];
-  const url = symbol ? `data/documents-${symbol}.json` : null;
-  if (!url || documentsRealData[name] || documentsRealDataLoading[name]) return;
-  documentsRealDataLoading[name] = true;
-  try{
-    const res = await fetch(url, { cache:'no-store' });
-    if (res.ok) documentsRealData[name] = await res.json();
-  }catch(e){ /* fichier absent en local ou fetch bloqué (ex. file://) — non bloquant, tirets */ }
-  documentsRealDataLoading[name] = false;
-  if (documentsRealData[name] && activeCompany === name){
-    renderDocumentsPage(name);
-    renderRevenusPage(name);
-    renderDcfTiles(name);
-    const hist = companies[name];
-    if (hist && hist.length) renderHistoricalCharts(name, hist, hist.map(r => r.annee), hist[hist.length - 1]);
-    applyFmpRatioOverrides(name);
-    renderValoMetricHistory(name);
-  }
-}
+async function ensureDocumentsRealData(name){ /* 2026-11-13 : plus d'états financiers FMP (data/documents-*.json n'est plus lu) */ }
 
 // value en unité brute FMP (pershare/money), dans la devise de reporting RÉELLE de
 // l'entreprise (champ "currency" de data/documents-{symbole}.json, extrait de
@@ -12032,6 +12040,74 @@ function documentsStatisticsHtml(growthData, statsData, growthYears, secteurRaw,
     <div class="section-label" style="margin-top:14px;">Indicateurs 100% propres au secteur</div>
     <div class="documents-empty-banner">🏦 Certains ratios sont propres à un modèle d'affaires et n'existent dans aucun autre secteur (ex. NIM et ratio Tier 1 pour une banque, FFO pour une foncière) — ceux-ci ne sont pas encore dans l'export FMP local, contrairement aux ratios mis en avant ci-dessus qui, eux, sont déjà calculés pour toutes les entreprises et simplement sélectionnés/priorisés par secteur. Nécessiterait un nouveau mapping de données pour être ajouté.</div>`;
 }
+// 2026-11-13 : Documents financiers = données TradingView uniquement (plus d'états financiers FMP).
+// « Historique annuel » = séries que TradingView publie (jusqu'à 20 exercices, fiche companies[nom]) ;
+// « 12 derniers mois » = chiffres actuels relus en direct (scanner TradingView via le serveur local).
+// TradingView ne publie PAS en accès public le bilan ni les flux de trésorerie détaillés année par année.
+const DOC_TV_GROUPS = [
+  ['Compte de résultat', [['ca', "Chiffre d'affaires", 'm'], ['ebitda', 'EBITDA', 'm'], ['margeBrute', 'Marge brute', '%'], ['margeEbitda', 'Marge EBITDA', '%'],
+    ['resultatNet', 'Résultat net', 'm'], ['margeNette', 'Marge nette', '%'], ['eps', 'BPA (dilué)', 'ps']]],
+  ['Trésorerie et dividende', [['fcfParAction', 'FCF par action', 'ps'], ['dividende', 'Dividende par action', 'ps'], ['payoutRatio', 'Payout ratio', '%']]],
+  ['Dette et actions', [['detteTotale', 'Dette totale', 'm'], ['detteEbitda', 'Dette / EBITDA', 'x'], ['actions', 'Actions en circulation (millions)', 'n']]],
+  ['Valorisation', [['prixActuel', "Cours (fin d'exercice)", 'ps'], ['per', 'PER', 'x'], ['pFcf', 'P/FCF', 'x'], ['rendementDiv', 'Rendement du dividende', '%']]]
+];
+let documentsYears = 10;
+function docFmt(v, kind, cur){
+  if (v == null || !isFinite(v)) return '—';
+  const n = (x, d) => x.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d });
+  if (kind === '%') return n(v, 1) + ' %';
+  if (kind === 'x') return n(v, 1) + 'x';
+  if (kind === 'n') return n(v, v >= 100 ? 0 : 1);
+  if (kind === 'ps') return n(v, 2) + ' ' + cur;
+  if (kind === 'm') return Math.abs(v) >= 1e4 ? n(v / 1000, 1) + ' Md' + cur : n(v, 0) + ' M' + cur;
+  return n(v, 2);
+}
+function documentsAnnualHtml(hist, cur){
+  const all = hist.filter(r => r.annee);
+  const rows = documentsYears === 'all' ? all : all.slice(-documentsYears);
+  if (!rows.length) return '<div class="documents-empty-banner">📭 Pas d\'historique annuel TradingView pour cette entreprise.</div>';
+  const partial = all.length <= 1;
+  const head = `<tr><th></th>${rows.map(r => `<th>${r.annee}</th>`).join('')}</tr>`;
+  const body = DOC_TV_GROUPS.map(([title, lines]) => {
+    const kept = lines.filter(([k]) => rows.some(r => r[k] != null));
+    if (!kept.length) return '';
+    return `<tr class="documents-group-row"><td colspan="${rows.length + 1}">${title}</td></tr>` +
+      kept.map(([k, label, kind]) => `<tr><td>${label}</td>${rows.map(r => `<td>${docFmt(r[k], kind, cur)}</td>`).join('')}</tr>`).join('');
+  }).join('');
+  return `<div class="documents-period-toggle">${[[5, '5 ans'], [10, '10 ans'], ['all', 'Tout']].map(([v, l]) => `<button type="button" data-doc-years="${v}" class="${String(documentsYears) === String(v) ? 'active' : ''}">${l}</button>`).join('')}</div>
+    ${partial ? '<div class="documents-empty-banner">ℹ️ Fiche ouverte à la volée : TradingView ne donne ici que l\'année en cours. Pour l\'historique complet, ajoute l\'entreprise à ta liste suivie (demande à Claude « mets à jour TradingView »).</div>' : ''}
+    <div class="documents-table-wrap"><table class="documents-table">${head}${body}</table></div>
+    <p class="chart-hint">Source : TradingView (exercices annuels, devise de cotation). Le bilan et les flux de trésorerie détaillés ne sont pas publiés en accès public par TradingView.</p>`;
+}
+const docTtmCache = {};
+function documentsTtmHtml(name, d, cur, meta){
+  if (!d) return '<div class="documents-empty-banner">⏳ Lecture des chiffres TradingView…</div>';
+  const num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
+  const gbx = cur === 'p';
+  const big = v => num(v) == null ? null : (gbx ? v / 100 : v) / 1e6;   // montants en millions, livres pour une cotation en pence
+  const curBig = gbx ? '£' : cur;
+  const ocf = num(d.cash_f_operating_activities_ttm);
+  const capex = num(d.neg_capital_expenditures_ttm);
+  const cards = [
+    ['Activité (12 mois)', [["Chiffre d'affaires", docFmt(big(d.total_revenue_ttm), 'm', curBig)], ['EBITDA', docFmt(big(d.ebitda_ttm), 'm', curBig)],
+      ['Marge opérationnelle', docFmt(num(d.operating_margin_ttm != null ? d.operating_margin_ttm : d.operating_margin), '%')], ['Marge nette', docFmt(num(d.net_margin_ttm), '%')],
+      ['Croissance du CA (1 an)', docFmt(num(d.total_revenue_yoy_growth_ttm), '%')], ['BPA dilué', docFmt(num(d.earnings_per_share_diluted_ttm), 'ps', cur)]]],
+    ['Flux de trésorerie (12 mois)', [['Flux opérationnel (OCF)', docFmt(big(ocf), 'm', curBig)], ['Investissements (capex)', docFmt(big(capex != null ? -Math.abs(capex) : null), 'm', curBig)],
+      ['Free cash flow', docFmt(big(d.free_cash_flow_ttm), 'm', curBig)], ['FCF par action', docFmt(num(d.free_cash_flow_per_share_ttm), 'ps', cur)],
+      ['Dividende par action (dernier exercice)', docFmt(num(d.dps_common_stock_prim_issue_fy), 'ps', cur)], ['Rendement', docFmt(num(d.dividends_yield_current != null ? d.dividends_yield_current : d.dividends_yield), '%')]]],
+    ['Bilan (dernier trimestre)', [['Trésorerie et placements', docFmt(big(d.cash_n_short_term_invest_fq), 'm', curBig)], ['Dette totale', docFmt(big(d.total_debt_fq), 'm', curBig)],
+      ['Dette nette', docFmt(big(d.net_debt_fq), 'm', curBig)], ['Actif net par action', docFmt(num(d.book_value_per_share_fq), 'ps', cur)],
+      ['Actions en circulation', docFmt(num(d.total_shares_outstanding_fundamental) != null ? d.total_shares_outstanding_fundamental / 1e6 : null, 'n') + ' M']]],
+    ['Rentabilité et valorisation', [['ROIC', docFmt(num(d.return_on_invested_capital_fq != null ? d.return_on_invested_capital_fq : d.return_on_invested_capital_fy), '%')],
+      ['PER', docFmt(num(d.price_earnings_ttm), 'x')], ['P/FCF', docFmt(num(d.price_free_cash_flow_ttm), 'x')],
+      ['EV/EBITDA', docFmt(num(d.enterprise_value_ebitda_current != null ? d.enterprise_value_ebitda_current : d.enterprise_value_ebitda_ttm), 'x')], ['P/B', docFmt(num(d.price_book_fq), 'x')],
+      ['Capitalisation', docFmt(big(num(d.close) != null && num(d.total_shares_outstanding_fundamental) != null ? d.close * d.total_shares_outstanding_fundamental : null), 'm', curBig)]]]
+  ];
+  const when = meta && meta.at ? ' · chiffres gardés du ' + new Date(meta.at).toLocaleDateString('fr-FR') : ' · en direct';
+  return `<div class="documents-ttm-grid">${cards.map(([t, items]) => `<div class="ratio-card documents-ttm-card"><div class="k">${t}</div>
+      ${items.map(([l, v]) => `<div class="documents-ttm-row"><span>${l}</span><b>${v}</b></div>`).join('')}</div>`).join('')}</div>
+    <p class="chart-hint">Source : TradingView${escapeHtml(when)} (montants dans la devise de cotation).</p>`;
+}
 function renderDocumentsPage(nom){
   const name = nom || activeCompany;
   const content = document.getElementById('documentsContent');
@@ -12039,20 +12115,22 @@ function renderDocumentsPage(nom){
   const hist = companies[name];
   const latest = hist[hist.length - 1];
   const logo = document.getElementById('documentsLogo');
-  if (logo) logo.src = latest.lienImage || '';
+  if (logo) logo.src = latest.lienImage || companyLogoUrl(name) || '';
   const nameEl = document.getElementById('documentsCompanyName');
   if (nameEl) nameEl.textContent = name;
   const tickerEl = document.getElementById('documentsTicker');
-  if (tickerEl) tickerEl.textContent = (latest.ticker || '—') + ' · ' + (latest.secteur || '—');
-
-  const real = documentsRealData[name];
-  if (!real) ensureDocumentsRealData(name);
-
-  const currency = real && real.currency;
-  if (documentsView === 'income') content.innerHTML = documentsStatementSectionHtml('income', 'Income Statement', DOCUMENTS_IS_ROWS, real && real.incomeStatement, real && real.incomeStatementQ, currency);
-  else if (documentsView === 'balance') content.innerHTML = documentsStatementSectionHtml('balance', 'Balance Sheet', DOCUMENTS_BS_ROWS, real && real.balanceSheet, real && real.balanceSheetQ, currency);
-  else if (documentsView === 'cashflow') content.innerHTML = documentsStatementSectionHtml('cashflow', 'Cash Flow', DOCUMENTS_CF_ROWS, real && real.cashFlow, real && real.cashFlowQ, currency);
-  else content.innerHTML = documentsStatisticsHtml(real && real.growth, real && real.stats, real && real.growthYears, latest.secteur, real, name);
+  const tv = String(latest.ticker || '').includes(':') ? latest.ticker : latest.tvSymbol;
+  if (tickerEl) tickerEl.textContent = (tv || latest.ticker || '—') + ' · ' + (latest.secteur || '—');
+  const cur = latest.devise ? (latest.devise === 'GBX' || latest.devise === 'GBp' ? 'p' : fmpCurrencySymbol(latest.devise)) : '€';
+  if (documentsView !== 'ttm'){ content.innerHTML = documentsAnnualHtml(hist, cur); return; }
+  const c = tv && docTtmCache[tv];
+  content.innerHTML = tv ? documentsTtmHtml(name, c && c.d, cur, c && c.meta) : '<div class="documents-empty-banner">Symbole TradingView inconnu pour cette entreprise.</div>';
+  if (tv && (!c || Date.now() - c.at > 60000)){
+    tvFetchSnapshot(tv, !c).then(d => {
+      docTtmCache[tv] = { d, at: Date.now(), meta: tvSnapMeta[tv] && tvSnapMeta[tv].cached ? tvSnapMeta[tv] : null };
+      if (activeCompany === name && documentsView === 'ttm') content.innerHTML = documentsTtmHtml(name, d, cur, docTtmCache[tv].meta);
+    }).catch(e => { if (activeCompany === name && documentsView === 'ttm') content.innerHTML = '<div class="documents-empty-banner">⚠ TradingView injoignable (' + escapeHtml(e.message || 'erreur') + '). Relance le raccourci « Wolf Analysis ».</div>'; });
+  }
 }
 function initDocumentsTabbar(){
   const bar = document.getElementById('documentsSubnav');
@@ -12067,9 +12145,9 @@ function initDocumentsTabbar(){
   // Annuel/Trimestriel — délégué sur le conteneur (le bouton est recréé à chaque
   // renderDocumentsPage(), un addEventListener direct dessus serait perdu au re-rendu).
   document.getElementById('documentsContent').addEventListener('click', e => {
-    const btn = e.target.closest('button[data-period]');
+    const btn = e.target.closest('button[data-doc-years]');
     if (!btn) return;
-    documentsPeriod = btn.dataset.period;
+    documentsYears = btn.dataset.docYears === 'all' ? 'all' : +btn.dataset.docYears;
     renderDocumentsPage();
   });
 }
@@ -12356,14 +12434,14 @@ function renderValoMetricHistory(nom){
   const multipleLabel = valorisationMetric === 'per' ? 'PER' : 'P/' + f.metricName;
   if (voMetricChart){ voMetricChart.destroy(); voMetricChart = null; }
   const tvRows = isTvCompany(nom) ? (companies[nom] || []).filter(r => r.annee < new Date().getFullYear()) : null;
-  label.textContent = `Historique ${f.metricName} (${tvRows ? 'TradingView' : 'FMP'})`;
+  label.textContent = `Historique ${f.metricName} (TradingView)`;
   if (tvRows && valorisationMetric === 'ocf'){
     content.innerHTML = `<div class="documents-empty-banner">TradingView ne publie pas l'historique de l'OCF (cash-flow opérationnel) : seule la valeur actuelle est connue. Pour une médiane et un CAGR sur 5 à 20 ans, valorise avec le FCF ou le PER.</div>`;
     return;
   }
   const real = tvRows ? { chartsHistory: { years: tvRows.map(r => r.annee) }, _rows: tvRows } : documentsRealData[nom];
   if (!real || !real.chartsHistory){
-    content.innerHTML = `<div class="documents-empty-banner">📭 En attente de l'import FMP pour cette entreprise — l'historique ${f.metricName}, les médianes ${multipleLabel} et le CAGR sur 5/10/20/30 ans s'afficheront automatiquement une fois disponibles.</div>`;
+    content.innerHTML = `<div class="documents-empty-banner">📭 Pas d'historique TradingView pour cette entreprise — l'historique ${f.metricName}, les médianes ${multipleLabel} et le CAGR sur 5/10/20/30 ans s'afficheront automatiquement une fois disponibles.</div>`;
     return;
   }
   const rows = real._rows || chartsHistoryToRows(real.chartsHistory);
@@ -12379,7 +12457,7 @@ function renderValoMetricHistory(nom){
   }).join('');
   content.innerHTML = `
     <div class="chart-card wide">
-      <div class="chart-card-head"><div><h3>${f.chartLabel}</h3><p>Historique complet, données ${real._rows ? 'TradingView' : 'FMP'}</p></div></div>
+      <div class="chart-card-head"><div><h3>${f.chartLabel}</h3><p>Historique complet, données TradingView</p></div></div>
       <div class="chart-holder" style="height:200px;"><canvas id="voMetricChart"></canvas></div>
     </div>
     <div class="section-label" style="margin-top:10px;">Médianes ${multipleLabel}</div>
@@ -13796,7 +13874,7 @@ function renderWatchlistSuggestions(query){
   box.innerHTML = matches.map(e => {
     const current = watchlistLocationOf(e.nom);
     const pending = watchlistSearchPendingAdd === e.nom;
-    const logo = companyLogoUrl(e.nom) || (e.symbol ? `data/logos/${e.symbol}.png` : null);
+    const logo = companyLogoUrl(e.nom) || e.logo || null;
     const addRow = pending
       ? `<div class="watchlist-suggestion-addrow">${allWatchlistKeys().map(key => `<button type="button" data-watchlist-add="${key}" data-nom="${escapeHtml(e.nom)}">${escapeHtml(watchlistLabel(key))}</button>`).join('')}</div>`
       : '';
@@ -14070,11 +14148,10 @@ function tierListSafeLogoUrl(nom){
   const tl = tierLogoUrl(nom);
   if (tl && /s3-symbol-logo\.tradingview\.com/.test(tl)) return tl;              // servi avec CORS : canvas exportable
   if (tl && !/^https?:/i.test(tl)) return new URL(tl, location.href).href;       // fichier local, même origine
-  const match = Object.keys(companies).find(n => stripAccents(n.toLowerCase()) === stripAccents(nom.toLowerCase()));
-  const symbol = fmpSymbols[nom] || (match && fmpSymbols[match]);
-  if (!symbol) return null;
-  const file = logosManifest[symbol] || (symbol + '.png');
-  return location.origin + '/data/logos/' + file;
+  const u = companyLogoUrl(nom);
+  if (u && /s3-symbol-logo\.tradingview\.com/.test(u)) return u;
+  if (u && !/^https?:/i.test(u)) return new URL(u, location.href).href;
+  return null;
 }
 function tierListThumbnailCanvas(){
   return new Promise(resolve => {
@@ -14333,7 +14410,7 @@ function renderTierListSuggestions(query){
   }
   box.innerHTML = matches.map(e => {
     const current = tierListLocationOf(e.nom);
-    const logo = companyLogoUrl(e.nom) || (e.symbol ? `data/logos/${e.symbol}.png` : null);
+    const logo = companyLogoUrl(e.nom) || e.logo || null;
     return `<div class="search-suggestion watchlist-suggestion" data-tierlist-suggestion="${escapeHtml(e.nom)}">
       <img class="search-suggestion-logo" src="${logo || ''}" alt="">
       <span>${escapeHtml(e.nom)}</span>
@@ -20600,17 +20677,28 @@ function removeWolfLaboListEntry(catKey, symbol){
 // Résolu par NOM d'entreprise via fmpSymbols (le "symbol" reçu ici est souvent le
 // ticker Sheet brut, ex. "EPA:TTE", jamais le symbole FMP réel) plutôt que par le
 // ticker passé, sinon la résolution échoue pour toute entreprise hors bourse US.
-async function loadWolfLaboRealSymbol(fmpSymbol, name){
+// Bougies quotidiennes TradingView (ouverture / plus haut / plus bas / clôture, ajustées des divisions d'actions),
+// via le serveur local (/api/tv/history&ohlc=1). Plus de fichiers prices-*.json FMP.
+function wolfLaboTvSymbolFor(symbol, name){
+  if (symbol && String(symbol).includes(':')) return symbol;
+  const h = name && companies[name], l = h && h[h.length - 1];
+  const fromRow = l ? (String(l.ticker || '').includes(':') ? l.ticker : l.tvSymbol) : null;
+  return fromRow || (name && rankingByName[name] && rankingByName[name].symbol) || (symbol === 'KO' ? 'NYSE:KO' : null);
+}
+async function loadWolfLaboRealSymbol(symbol, name){
+  const tv = wolfLaboTvSymbolFor(symbol, name);
+  if (!tv) return false;
   try{
-    const res = await fetch(`data/prices-${fmpSymbol}.json`, { cache:'no-store' });
-    if (!res.ok) return false;
-    const raw = await res.json();
-    if (!raw || !raw.length) return false;
-    wolfLaboSampleData = {
-      symbol: fmpSymbol, name: name || fmpSymbol, source: 'FMP (historique quotidien)',
-      candles: raw.map(p => ({ time:p.t, open:p.o, high:p.h, low:p.l, close:p.c, volume:0 }))
-    };
-    document.getElementById('wolfLaboChartTitle').textContent = `${name || fmpSymbol} (${fmpSymbol})`;
+    const res = await fetch('/api/tv/history?symbols=' + encodeURIComponent(tv) + '&from=2000-01-01&adj=1&ohlc=1', { cache:'no-store' });
+    const j = await res.json();
+    const d = j && j.ok && j.data && j.data[tv];
+    if (!d || !d.bars || d.bars.length < 20 || d.bars[0].length < 5) return false;
+    const iso = t => new Date(t * 1000).toISOString().slice(0, 10);
+    const seen = new Set();
+    const candles = d.bars.filter(b => { const k = iso(b[0]); if (seen.has(k)) return false; seen.add(k); return true; })
+      .map(b => ({ time: iso(b[0]), open: b[1], high: b[2], low: b[3], close: b[4], volume: 0 }));
+    wolfLaboSampleData = { symbol: tv, name: name || d.name || tv, source: 'TradingView (historique quotidien)', candles };
+    document.getElementById('wolfLaboChartTitle').textContent = `${name || d.name || tv} (${tv})`;
     renderWolfLaboChart();
     return true;
   }catch(e){ return false; }
@@ -20623,18 +20711,15 @@ async function loadWolfLaboRealSymbol(fmpSymbol, name){
 // FMP complet" — juste jamais branché avant que l'export de prix n'existe).
 async function selectWolfLaboSymbol(symbol, name){
   const status = document.getElementById('wolfLaboStatus');
-  const fmpSymbol = (name && fmpSymbols[name]) || symbol;
   if (status){ status.textContent = `Chargement de ${name || symbol}…`; status.style.display = 'block'; }
   // Précharge les comptes/ratios de l'entreprise (idempotent, voir ensureDocumentsRealData)
   // pour que les groupes "Cette entreprise — ratios/comptes" du menu Superposer/
   // Indicateurs macro aient une donnée à proposer sans avoir dû visiter Documents
   // financiers au préalable.
-  if (name && companies[name]) ensureDocumentsRealData(name);
-  const ok = await loadWolfLaboRealSymbol(fmpSymbol, name);
+  const ok = await loadWolfLaboRealSymbol(symbol, name);
   if (ok){ if (status) status.style.display = 'none'; return; }
-  if (symbol === 'KO'){ loadWolfLaboSample(); return; }
   document.getElementById('wolfLaboChartTitle').textContent = `${name || symbol} (${symbol})`;
-  if (status){ status.textContent = `Pas encore de données pour ${name || symbol} — disponible après l'import FMP complet. Affichage de l'échantillon Coca-Cola en attendant.`; status.style.display = 'block'; }
+  if (status){ status.textContent = `Cours TradingView indisponibles pour ${name || symbol} (serveur local arrêté, ou symbole inconnu de TradingView).`; status.style.display = 'block'; }
 }
 // entries d'une catégorie 'watchlist'/'portfolio' : dérivées à la volée de
 // watchlistStore/portfolioData (mêmes sources que l'onglet Watchlist/Classement), pas
@@ -20643,12 +20728,12 @@ async function selectWolfLaboSymbol(symbol, name){
 function wolfLaboCategoryEntries(cat){
   if (cat.kind === 'watchlist'){
     const listKey = cat.key.slice(3);
-    return (watchlistStore[listKey] || []).map(nom => ({ symbol: fmpSymbols[nom] || nom, name: nom }));
+    return (watchlistStore[listKey] || []).map(nom => ({ symbol: wolfLaboTvSymbolFor(null, nom) || nom, name: nom }));
   }
   if (cat.kind === 'portfolio'){
     return (portfolioData.holdings || [])
       .filter(h => h.nom && stripAccents(h.nom.toLowerCase()) !== 'cash')
-      .map(h => ({ symbol: fmpSymbols[h.nom] || h.nom, name: h.nom }));
+      .map(h => ({ symbol: wolfLaboTvSymbolFor(null, h.nom) || h.nom, name: h.nom }));
   }
   return wolfLaboLists[cat.key] || [];
 }
@@ -21238,19 +21323,14 @@ function renderWolfLaboAddToListMenu(){
     }).join('');
 }
 
+// Exemple par défaut : Coca-Cola, cours TradingView (plus de fichier échantillon FMP).
 async function loadWolfLaboSample(){
-  document.getElementById('wolfLaboChartTitle').textContent = 'Coca-Cola (KO)';
-  try{
-    if (!wolfLaboSampleData){
-      const res = await fetch('data/labo-sample-ko.json', { cache:'no-store' });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      wolfLaboSampleData = await res.json();
-    }
-    renderWolfLaboChart();
-  }catch(e){
-    console.error("Erreur de chargement de l'échantillon Wolf Labo :", e);
+  document.getElementById('wolfLaboChartTitle').textContent = 'Coca-Cola (NYSE:KO)';
+  if (wolfLaboSampleData){ renderWolfLaboChart(); return; }
+  const ok = await loadWolfLaboRealSymbol('NYSE:KO', 'Coca-Cola');
+  if (!ok){
     const status = document.getElementById('wolfLaboStatus');
-    if (status){ status.textContent = 'Échantillon de test indisponible pour le moment.'; status.style.display = 'block'; }
+    if (status){ status.textContent = 'Cours TradingView indisponibles (serveur local arrêté ?). Relance le raccourci « Wolf Analysis ».'; status.style.display = 'block'; }
   }
 }
 

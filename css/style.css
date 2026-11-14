@@ -3696,3 +3696,15 @@
 .tierlist-dropzone{gap:12px;min-height:82px;align-items:center;}
 .tierlist-row-label{width:72px;font:400 34px/1 Anton,'Space Grotesk',sans-serif;}
 .tierlist-sector-item img{border-radius:50%;object-fit:cover;background:#fff;}
+
+/* ===== Documents financiers TradingView (2026-11-13) ===== */
+.documents-table tr.documents-group-row td{font-family:var(--font-display);font-weight:700;color:var(--gold);text-align:left;padding-top:16px;background:transparent;position:static;}
+.documents-period-toggle{display:flex;gap:6px;margin:4px 0 12px;}
+.documents-period-toggle button{background:var(--panel-2);border:1px solid var(--hair);color:var(--text-dim);border-radius:8px;padding:5px 12px;font:inherit;font-size:12px;cursor:pointer;}
+.documents-period-toggle button.active{background:linear-gradient(135deg,var(--gold),var(--gold-2));color:#111;border-color:transparent;font-weight:700;}
+.documents-ttm-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;}
+.documents-ttm-card .k{margin-bottom:8px;}
+.documents-ttm-row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--hair);font-size:13px;}
+.documents-ttm-row:last-child{border-bottom:0;}
+.documents-ttm-row span{color:var(--text-dim);}
+.documents-ttm-row b{color:var(--text);font-weight:700;white-space:nowrap;}

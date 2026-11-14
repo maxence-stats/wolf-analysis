@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Anton&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<link rel="stylesheet" href="css/style.css?v=20261113j">
+<link rel="stylesheet" href="css/style.css?v=20261113k">
 </head>
 <body>
 <div class="wrap">
@@ -111,7 +111,7 @@
       <button class="page-subnav-btn active" data-page="pageAnalyse">Vue d'ensemble</button>
       <button class="page-subnav-btn" data-page="pageValorisation">Valorisation</button>
       <button class="page-subnav-btn" data-page="pageDocuments">Documents financiers</button>
-      <button class="page-subnav-btn" data-page="pageRevenus">Revenus</button>
+      <button class="page-subnav-btn" data-page="pageRevenus" style="display:none" title="TradingView ne publie pas la répartition des revenus par zone ou par activité">Revenus</button>
     </div>
 
     <div class="page-subnav" id="macroSubnav" style="display:none;">
@@ -500,7 +500,7 @@
            Cashflow... le CAGR du Free Cashflow... exactement pareil qu'avec l'OCF... et
            pareil pour le PER". Toujours FMP ("avec les données de FMP toujours") — pas
            de repli Sheet, bandeau explicite si l'entreprise n'a pas encore été exportée. -->
-      <div class="section-label" style="margin-top:14px;" id="voMetricHistoryLabel">Historique FCF (FMP)</div>
+      <div class="section-label" style="margin-top:14px;" id="voMetricHistoryLabel">Historique FCF (TradingView)</div>
       <div id="voMetricHistoryContent"></div>
       <div id="voFcfNorm"></div>
 
@@ -571,15 +571,11 @@
       </div>
     </div>
 
-    <!-- Documents financiers : compte de résultat / bilan / flux de trésorerie / synthèse
-         de ratios, alimentés par l'export FMP local (data/documents-{symbol}.json, voir
-         ensureDocumentsRealData() dans app.js) pour toute entreprise déjà exportée par
-         fmp-database/export_to_app.py --batch ; retombe silencieusement sur des tirets
-         sinon (entreprise pas encore exportée). Les libellés de lignes reprennent le
-         mapping documenté dans fmp-database/endpoints.py. -->
+    <!-- Documents financiers (2026-11-13) : données TradingView uniquement — historique annuel publié par TradingView
+         (companies[nom]) et chiffres des 12 derniers mois en direct (renderDocumentsPage() dans app.js). -->
     <div id="pageDocuments" class="page">
       <div class="section-label">🧾 Documents financiers</div>
-      <p class="valo-intro">Compte de résultat, bilan et flux de trésorerie — données FMP (import local), secteur par secteur au fil des exports.</p>
+      <p class="valo-intro">Les comptes de l'entreprise selon TradingView : historique annuel (jusqu'à 20 exercices) et chiffres des 12 derniers mois, relus en direct.</p>
 
       <div class="documents-header">
         <img id="documentsLogo" alt="">
@@ -590,10 +586,8 @@
       </div>
 
       <div class="documents-tabbar" id="documentsSubnav">
-        <button type="button" class="documents-tab-btn active" data-doc-view="income">Income Statement</button>
-        <button type="button" class="documents-tab-btn" data-doc-view="balance">Balance Sheet</button>
-        <button type="button" class="documents-tab-btn" data-doc-view="cashflow">Cash Flow</button>
-        <button type="button" class="documents-tab-btn" data-doc-view="statistics">Statistics</button>
+        <button type="button" class="documents-tab-btn active" data-doc-view="annual">Historique annuel</button>
+        <button type="button" class="documents-tab-btn" data-doc-view="ttm">12 derniers mois</button>
       </div>
 
       <div id="documentsContent"></div>
@@ -601,7 +595,7 @@
 
     <div id="pageRevenus" class="page">
       <div class="section-label">🌍 Répartition des revenus</div>
-      <p class="valo-intro">D'où viennent les revenus de l'entreprise — par zone géographique et par segment d'activité — et comment cette répartition évolue dans le temps (croissance, réduction, stagnation d'une zone/d'un segment). Données FMP, tirées des dépôts annuels ; certaines entreprises (notamment hors États-Unis) ne détaillent pas ce niveau, la page l'indique alors clairement.</p>
+      <p class="valo-intro">D'où viennent les revenus de l'entreprise — par zone géographique et par segment d'activité — et comment cette répartition évolue dans le temps (croissance, réduction, stagnation d'une zone/d'un segment). TradingView ne publie pas cette répartition : onglet masqué (saisie manuelle possible dans l'Atelier, carte « Carte du monde »).</p>
 
       <div class="documents-header">
         <img id="revenusLogo" alt="">
@@ -878,7 +872,7 @@
         </select>
         <label class="sector-full-universe-toggle" for="sectorFullUniverseToggle">
           <input type="checkbox" id="sectorFullUniverseToggle">
-          Afficher toute la base FMP (~1670 entreprises)
+          Afficher tout l'univers TradingView (~2 600 actions)
         </label>
       </div>
       <div class="sector-grid" id="sectorGrid"></div>
@@ -886,7 +880,7 @@
 
     <div id="pageFiltres" class="page">
       <div class="section-label">Filtres (screener)</div>
-      <p class="valo-intro">Combine des critères sur toute la base FMP (~1670 entreprises) — seules les entreprises qui répondent à TOUS les filtres actifs restent affichées, classées dans les 11 secteurs. Clic sur un logo → fiche entreprise.</p>
+      <p class="valo-intro">Combine des critères sur l'univers TradingView en direct (~2 600 actions : États-Unis et Europe, plus de 2 Md$ de capitalisation, + tes entreprises suivies) — seules les entreprises qui répondent à TOUS les filtres actifs restent affichées, classées dans les 11 secteurs. Clic sur un logo → fiche entreprise.</p>
       <div class="screener-filter-list" id="screenerFilterList"></div>
       <div class="screener-filter-toolbar">
         <button class="zoom-btn objectifs-export" id="screenerAddFilterBtn">+ Ajouter un filtre</button>
@@ -914,7 +908,7 @@
           <button type="button" data-topn="all">Tout</button>
         </div>
         <button type="button" class="labo-toggle-btn active" id="classementCapMultipleBtn" title="Plafonne le multiple P/FCF utilisé pour le Prix Juste à 25x quand la médiane historique le dépasse — jamais appliqué à un objectif que tu as toi-même enregistré en Valorisation">🧢 Plafonner à 25x</button>
-        <div class="range-buttons" id="classementPeaButtons" title="Domiciliation réelle de l'entreprise (profil FMP), pas la place de cotation du ticker — approximation UE/EEE pour l'éligibilité PEA, à vérifier au cas par cas avant un ordre réel">
+        <div class="range-buttons" id="classementPeaButtons" title="Pays de l'entreprise selon TradingView, pas la place de cotation du ticker — approximation UE/EEE pour l'éligibilité PEA, à vérifier au cas par cas avant un ordre réel">
           <button type="button" data-pea="all" class="active">Tous les pays</button>
           <button type="button" data-pea="pea">🇪🇺 Éligible PEA</button>
           <button type="button" data-pea="france">🇫🇷 France</button>
@@ -953,7 +947,7 @@
       <div class="watchlist-toprow">
         <div class="search-wrap watchlist-search-wrap">
           <span class="search-icon">⌕</span>
-          <input type="text" id="watchlistSearch" class="search-input" placeholder="Chercher une entreprise (toute la base FMP)…" autocomplete="off">
+          <input type="text" id="watchlistSearch" class="search-input" placeholder="Chercher une entreprise (univers TradingView)…" autocomplete="off">
           <div class="search-suggestions" id="watchlistSuggestions"></div>
         </div>
         <button class="zoom-btn objectifs-export" id="watchlistExportBtn">⭳ Exporter</button>
@@ -1503,7 +1497,7 @@
          dans app.js. -->
     <div id="pageWolfLabo" class="page">
       <div class="section-label">🧪 Wolf Labo</div>
-      <p class="valo-intro">Laboratoire d'expérimentation financière — dashboard graphique (fonctionnel, données FMP quotidiennes pour toute entreprise déjà exportée localement) et, à terme, un moteur de backtest par règles (motifs de prix, seuils macro) pour tester des hypothèses sur plusieurs décennies et formaliser les résultats en PDF — voir le bloc "Backtest" plus bas, pas encore construit. <strong>Comparer plusieurs entreprises entre elles (ou avec un indice) se fait dans l'onglet dédié</strong> : <button type="button" class="tag tag-link" id="wolfLaboGoToComparaisonBtn">📊 Ouvrir Comparaison</button></p>
+      <p class="valo-intro">Laboratoire d'expérimentation financière — dashboard graphique (fonctionnel, cours quotidiens TradingView pour toute entreprise) et, à terme, un moteur de backtest par règles (motifs de prix, seuils macro) pour tester des hypothèses sur plusieurs décennies et formaliser les résultats en PDF — voir le bloc "Backtest" plus bas, pas encore construit. <strong>Comparer plusieurs entreprises entre elles (ou avec un indice) se fait dans l'onglet dédié</strong> : <button type="button" class="tag tag-link" id="wolfLaboGoToComparaisonBtn">📊 Ouvrir Comparaison</button></p>
 
       <div class="section-label" style="margin-top:8px;">Dashboard graphique</div>
       <div class="labo-layout" id="woflLaboLayout">
@@ -1511,7 +1505,7 @@
           <div class="chart-card-head">
             <div class="labo-chart-title-row">
               <img id="wolfLaboChartLogo" class="labo-chart-logo" alt="" style="display:none;">
-              <div><h3 id="wolfLaboChartTitle">Coca-Cola (KO)</h3><p class="chart-subtitle">lightweight-charts (librairie open-source TradingView, pas le widget public). Fonctionne pour toute entreprise déjà exportée en local (données FMP quotidiennes) — Coca-Cola sert d'exemple par défaut au chargement.</p></div>
+              <div><h3 id="wolfLaboChartTitle">Coca-Cola (NYSE:KO)</h3><p class="chart-subtitle">lightweight-charts (librairie open-source TradingView, pas le widget public). Cours quotidiens TradingView (serveur local) pour toute entreprise — Coca-Cola sert d'exemple par défaut au chargement.</p></div>
             </div>
             <div class="chart-card-actions">
               <div class="search-wrap labo-symbol-search">
@@ -1651,7 +1645,7 @@
         <div class="chart-card-head">
           <div><h3>Bientôt disponible</h3><p class="chart-subtitle">Définir une condition (motif de prix ou seuil macro), voir combien de fois elle s'est produite et ce qui a statistiquement suivi.</p></div>
         </div>
-        <p class="chart-hint">Exemples visés : "quand une action/un secteur monte de X% sur une semaine" (motif de prix) ou "quand le taux 10 ans dépasse X%" (seuil macro) — un seul moteur pour les deux, pas construit séparément. Les règles basées sur les fondamentaux (ex. "entreprises à dividendes pendant une hausse de taux") s'activeront une fois l'import FMP complet fait — squelette pour l'instant, en attendant.</p>
+        <p class="chart-hint">Exemples visés : "quand une action/un secteur monte de X% sur une semaine" (motif de prix) ou "quand le taux 10 ans dépasse X%" (seuil macro) — un seul moteur pour les deux, pas construit séparément. Les règles basées sur les fondamentaux (ex. "entreprises à dividendes pendant une hausse de taux") ne sont pas encore construites — squelette pour l'instant.</p>
       </div>
 
     </div>
@@ -1883,8 +1877,8 @@
   </div>
 </div>
 
-<script src="js/app.js?v=20261113n"></script>
-<script src="js/portefeuille-ia.js?v=20260920g"></script>
+<script src="js/app.js?v=20261113o"></script>
+<script src="js/portefeuille-ia.js?v=20261113a"></script>
 <script src="js/mes-portefeuilles.js?v=20261112i"></script>
 <script src="js/valo-multiples.js?v=20261111b"></script>
 <script src="js/liste-prix.js?v=20261111h"></script>

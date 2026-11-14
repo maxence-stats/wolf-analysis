@@ -45,6 +45,21 @@ onglet Analyse...) sur le Google Sheet, jugé périmé. **Le Sheet ne sert plus 
 (Wolf Portfolio, Perso PEA/CTO) et la macro. Le chargement de l'onglet Analyse lit `data/tv-analyse.json`
 (`loadTvAnalyse()` dans `js/app.js`, appelé depuis `loadAllDataFromAppsScript()` ; `handleCsvRows()` ne sert plus à rien pour les
 entreprises). Détails, sources, formules et procédure de mise à jour hebdomadaire : **`tv-data/README.md`**.
+- **PLUS AUCUN FMP NULLE PART (2026-11-13)** — l'appli ne lit plus aucun fichier FMP (`fmp-symbols.json`, `ranking-summary.json`,
+  `documents-*.json`, `prices-*.json`, `events-*`, `fx-*`, `bench-*`, `symbols-meta.json`, `labo-sample-ko.json`, `logos-manifest.json`) ;
+  `fmpSymbols` reste vide, `fmpDisplayName(nom)` renvoie `nom` (nom gardé car appelé partout), `ensureDocumentsRealData` ne fait rien,
+  la route serveur `/api/ia/refresh` (script FMP) renvoie 410. Les anciennes sections qui parlent de FMP plus bas sont HISTORIQUES.
+  - **Univers élargi** (Classement, Filtres, Secteur « tout l'univers », Comparaison, Watchlist) = scanner public TradingView appelé
+    depuis le navigateur (`loadRankingSummary()` → `rankingSummaryData`, mêmes noms de champs ; `tvSectorToGics()` range les 20 secteurs
+    TradingView dans les 11 GICS ; `TV_COUNTRY_CODES` pour le filtre PEA) : actions US + Europe > 2 Md$, cotation principale (~2 600)
+    + les entreprises suivies. Sans équivalent TradingView : CAGR 10 ans (remplacés par 5 ans), médiane P/FCF hors entreprises suivies.
+    `tvUniverseRelink()` recale les noms quand `companies` est chargé. Clic sur une entreprise non suivie = fiche TradingView à la volée.
+  - **Documents financiers** refaits : « Historique annuel » (séries TradingView de la fiche) + « 12 derniers mois » (snapshot en direct).
+    Onglet **Revenus masqué** (TradingView ne publie pas la répartition géographique / par activité).
+  - **Wolf Labo** : bougies `/api/tv/history?...&adj=1&ohlc=1` (option `--ohlc` de `tv_history.py`, serveur v=22).
+  - **Portefeuille IA** : cours TradingView (ajustés des divisions), divisions déduites de l'écart cours réel / cours ajusté, change
+    `FX_IDC:EUR<CCY>`, S&P `SP:SPX`, cours en direct `/api/tv/snapshot`, recherche `/api/tv/search?all=1`. Les anciens symboles du journal
+    (« AIR.PA », « ADBE ») sont traduits à la lecture (`tvOf`, mémo localStorage `wolfIaTvMap`) — le fichier n'est JAMAIS réécrit.
 - Les lignes TradingView portent `tvSource:true` : `applyFmpRatioOverrides()` ne les écrase jamais (`isTvCompany()`).
 - **Temps réel** : à CHAQUE affichage d'une entreprise (`renderCompany` -> `tvLiveRefresh`, 1 fois/30 s/entreprise), cours et ratios
   ACTUELS sont relus sur TradingView via le serveur local, y compris pour les entreprises de la base FMP (symbole TradingView trouvé
@@ -465,7 +480,7 @@ en intensité si retour utilisateur, mais **ne pas revenir à des opacités ~0.0
   limitée aux fiches TradingView + recherche TradingView (plus la base FMP élargie). Cartes changées faute d'historique public
   TradingView : « Marges brute, EBITDA & nette » (+ ROIC et marge op. ACTUELS en badges), « BPA », « P/FCF vs PER »,
   « Dette / EBITDA », « EBITDA & résultat net ». Traits 2,25 px / barres larges, et nettement plus épais en grand (`renderZoomChart`).
-  Reste FMP ailleurs : Documents financiers, Revenus, Classement, Comparaison, Portefeuille IA, Wolf Labo (à traiter).
+  Plus de FMP nulle part depuis le 2026-11-13 (voir la RÈGLE ABSOLUE en tête).
 - Header entreprise (logo, nom, ticker, secteur/sous-secteur, prix actuel)
 - Jauge de valorisation + verdict (Survalorisée / Équitable / Zone d'achat)
 - 8 ratios clés (prix juste, prix cible, écart, rendement dividende, rendement estimé
@@ -669,7 +684,9 @@ Les anciennes pages Sheet (Wolf Portfolio, Perso) sont conservées telles quelle
   de SECOURS (dossier `secours/`, sans contrôle de révision) écrit par `window.wolfRescue()` quand un enregistrement est refusé
   (atelier, portefeuilles, prix, objectifs, multiples) ; `GET /api/store/backups` + `GET /api/store/backup` + panneau « 🛟 Sauvegardes »
   (liste, résumé de chaque copie, « Revenir à cette copie » en 2 clics). Limite restante : tout est sur le disque C: (OneDrive présent
-  mais vide, D: vide) — une copie hors du PC reste à décider avec l'utilisateur.
+  mais vide, D: vide). **Copie hors du PC (2026-11-14) : Google Drive pour ordinateur synchronise `Documents\Wolf Analysis - sauvegardes`**
+  (portefeuilles, objectifs, multiples, atelier + images, studio, prix, Portefeuille IA). Ce qui ne vit que dans le navigateur
+  (localStorage / IndexedDB : Watchlist, Tier list, Alertes, Idées, Revue, Dividende, Construction, Wolf Labo, Cerveau) n'y est PAS.
 - Cash PEA vérifié (11/11) : 8 352,22 € = solde réel donné par l'utilisateur, au centime. Le cash négatif de février à mai vient du
   départ au 01/01/2026 (2,16 € déduits) : il manque des liquidités de départ ET autant de sortie plus tard (ou un versement est daté
   trop tard) ; relevé du 31/12/2025 demandé à l'utilisateur. Rien n'a été modifié.

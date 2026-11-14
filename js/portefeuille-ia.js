@@ -8,16 +8,12 @@
    localStorage/IndexedDB, cloisonnés par origine (le port du serveur change : c'est ce qui
    a fait "disparaître" les fiches VINCI). Le journal est APPEND-ONLY : une opération
    annulée reçoit void:true, elle n'est jamais retirée (le serveur refuse tout retrait).
-   Les dividendes ne sont PAS stockés : ils sont dérivés du calendrier FMP à chaque calcul.
+   Les dividendes ne sont pas comptés (décision de l'utilisateur).
 
-   CONVENTIONS DE CALCUL (vérifiées sur les données FMP, voir fmp-database/export_events.py) :
-     - cours data/prices-*.json = ajustés des splits, pas des dividendes ;
-     - dividendes = adjDividend (par action COURANTE, mêmes unités que le cours) ;
-     => toute quantité est ramenée en actions "courantes" (× splits POSTÉRIEURS à l'opération),
-        ainsi valeur = quantité × cours ajusté et dividende = quantité × adjDividend restent
-        cohérents à n'importe quelle date.
-     - devise de cotation = data/symbols-meta.json (c = devise de base, d = diviseur de
-       sous-unité : pence, cents, fils) ; change = data/fx-{CCY}.json (unités de CCY pour 1 €).
+   COURS (2026-11-13) : TradingView uniquement, plus aucun fichier FMP (voir « données de marché ») :
+     - clôtures quotidiennes ajustées des divisions d'actions, pas des dividendes ;
+     => toute quantité est ramenée en actions "courantes" (× divisions POSTÉRIEURES à l'opération) ;
+     - devise de cotation = celle de TradingView (GBX = pence, ÷ 100) ; change = FX_IDC:EUR<CCY>.
    ============================================================ */
 (function(){
 'use strict';
@@ -103,7 +99,7 @@ function splitFactorAfter(ev, date){
   if (ev && ev.spl) for (const s of ev.spl) if (s.d > date) f *= s.n / s.m;
   return f;
 }
-// Taux : unités de ccy pour 1 EUR à une date (série FMP, sinon change live, sinon null).
+// Taux : unités de ccy pour 1 EUR à une date (série TradingView, sinon change live, sinon null).
 function fxAt(ctx, ccy, date){
   if (!ccy || ccy === 'EUR') return 1;
   const s = ctx.fx && ctx.fx[ccy];
@@ -208,7 +204,7 @@ function replay(pf, cfg, ctx){
       calDivs.push({ symbol: sym, nom: pos[sym].nom, exDate: d.d, payDate: creditDate, qty: q, local, ccy, fx: fxr, eur, perShare });
     }
   }
-  // Mode "auto" : dividendes du calendrier FMP. Mode "manuel" (défaut) : uniquement ceux saisis par
+  // Mode "auto" : dividendes du calendrier (inactif : plus de calendrier depuis l'abandon de FMP). Mode "manuel" (défaut) : uniquement ceux saisis par
   // l'utilisateur (type DIV) ; le calendrier ne sert alors qu'à RAPPELER ceux qui restent à saisir.
   if (cfg.dividendes !== false) {
     if (cfg.dividendesMode === 'auto') dividends = calDivs.slice();
@@ -238,7 +234,7 @@ function heldQtyAt(model, sym, date){
   for (let i = 0; i < tl.dates.length; i++) { if (tl.dates[i] <= date) q = tl.qty[i]; else break; }
   return q;
 }
-// Dividendes du calendrier FMP dont le versement est passé et qui n'ont PAS encore été saisis à la main.
+// Dividendes du calendrier (vide depuis TradingView) dont le versement est passé et qui n'ont PAS encore été saisis à la main.
 function pendingDividends(model, cfg){
   if (cfg.dividendes === false || cfg.dividendesMode === 'auto') return [];
   return model.calendarDividends.filter(d => !model.divEntries.some(e => e.symbol === d.symbol && (e.refEx === d.exDate || Math.abs(daysBetween(e.date, d.payDate)) <= 20)));
@@ -284,7 +280,7 @@ function buildSeries(model, ctx, dates){
   return out;
 }
 
-// Valorisation "maintenant" (cours live si fournis, sinon dernière clôture FMP).
+// Valorisation "maintenant" (cours live si fournis, sinon dernière clôture TradingView).
 function valueNow(model, cfg, ctx, live){
   const meta = ctx.meta || {};
   const positions = [];
@@ -491,7 +487,7 @@ let range = 'all';
 let computed = null;          // { ctx, byKey:{model,now,series,metrics}, dates, bench, warnings }
 let live = { quotes: {}, fx: {}, at: null, fetching: false, failed: 0, total: 0 };
 let ui = { buy: null, sell: null, showSettings: false, histAll: false, voidConfirm: null, msg: null };
-let refreshPoll = null, refreshInfo = null;
+let refreshInfo = null;
 const charts = {};
 const cache = { meta: null, bench: null, prices: {}, events: {}, fx: {} };
 
@@ -564,57 +560,167 @@ function iaSave(mutator, deletedIds){
   return p;
 }
 
-/* ---------- chargeurs de données de marché (cache mémoire) ---------- */
+/* ---------- données de marché : TradingView (2026-11-13, plus aucun fichier FMP) ----------
+   Un titre = son symbole TradingView « BOURSE:CODE ». Les anciennes opérations gardent leur symbole d'origine
+   (« AIR.PA », « ADBE ») : tvOf() le traduit (suffixe de place, sinon recherche TradingView) SANS jamais réécrire le
+   journal. Cours = clôtures quotidiennes TradingView ajustées des divisions d'actions (même convention qu'avant :
+   quantités ramenées en actions courantes) ; divisions déduites de l'écart entre cours ajusté et cours réel ;
+   change = FX_IDC:EUR<CCY> (unités de CCY pour 1 €) ; S&P 500 = SP:SPX. */
+const TV_SUFFIX = { PA:'EURONEXT', AS:'EURONEXT', BR:'EURONEXT', LS:'EURONEXT', IR:'EURONEXT', DE:'XETR', F:'FWB', L:'LSE', MI:'MIL', MC:'BME', SW:'SIX',
+  ST:'OMXSTO', CO:'OMXCOP', HE:'OMXHEX', OL:'OSL', VI:'VIE', WA:'GPW', T:'TSE', HK:'HKEX', TO:'TSX', AX:'ASX', SI:'SGX', KS:'KRX', TW:'TWSE' };
+const US_EX = ['NASDAQ', 'NYSE', 'AMEX', 'CBOE', 'BATS'];
+const SYM_OK = /^[A-Za-z0-9_.!&-]{1,24}:[A-Za-z0-9_.!&-]{1,24}$/;
+let tvMap = {}, tvLogos = {};
+try { tvMap = JSON.parse(localStorage.getItem('wolfIaTvMap') || '{}'); tvLogos = JSON.parse(localStorage.getItem('wolfIaTvLogos') || '{}'); } catch (e) { /* confort seulement */ }
+const saveTvMemo = () => { try { localStorage.setItem('wolfIaTvMap', JSON.stringify(tvMap)); localStorage.setItem('wolfIaTvLogos', JSON.stringify(tvLogos)); } catch (e) { /* confort */ } };
+let histErrors = [];
 async function fetchJson(url){
   try { const r = await fetch(url, { cache: 'no-store' }); return r.ok ? await r.json() : null; } catch (e) { return null; }
 }
-const loadMeta = () => cache.meta || (cache.meta = fetchJson('data/symbols-meta.json').then(m => m || {}));
-// Indice de référence : dividendes réinvestis (^SP500TR) si les dividendes des IA sont comptés, cours seuls
-// (^GSPC) sinon — la comparaison reste équitable dans les deux cas. Repli sur l'autre fichier si absent.
-const loadBench = withDiv => {
-  const key = withDiv ? 'tr' : 'px';
-  if (!cache.bench) cache.bench = {};
-  if (!cache.bench[key]) {
-    const first = withDiv ? 'data/bench-sp500tr.json' : 'data/bench-sp500.json', second = withDiv ? 'data/bench-sp500.json' : 'data/bench-sp500tr.json';
-    cache.bench[key] = fetchJson(first).then(r => r || fetchJson(second)).then(r => r && r.length ? seriesFromRows(r) : null);
+async function tvSearch(q, all){
+  const j = await fetchJson('/api/tv/search?' + (all ? 'all=1&' : '') + 'q=' + encodeURIComponent(q));
+  return j && j.ok ? (j.results || []) : [];
+}
+async function tvOf(sym){
+  if (!sym) return null;
+  if (sym.includes(':')) return SYM_OK.test(sym) ? sym : null;
+  if (tvMap[sym]) return tvMap[sym];
+  let out = null;
+  const m = sym.match(/^(.+)\.([A-Z]{1,3})$/);
+  if (m && TV_SUFFIX[m[2]]) {
+    let code = m[1].replace(/-/g, '.');
+    if (m[2] === 'HK') code = code.replace(/^0+/, '');
+    out = TV_SUFFIX[m[2]] + ':' + code;
+  } else {
+    const res = await tvSearch(sym, true);
+    const same = r => r.symbol.split(':')[1] === sym;
+    const hit = res.find(r => same(r) && US_EX.includes(r.symbol.split(':')[0])) || res.find(same);
+    if (hit) { out = hit.symbol; if (hit.logoid) tvLogos[sym] = hit.logoid; }
   }
-  return cache.bench[key];
-};
-const loadPrices = s => cache.prices[s] || (cache.prices[s] = fetchJson('data/prices-' + encodeURIComponent(s) + '.json').then(r => r && r.length ? seriesFromRows(r) : null));
-const loadEvents = s => cache.events[s] || (cache.events[s] = fetchJson('data/events-' + encodeURIComponent(s) + '.json'));
-const loadFx = c => cache.fx[c] || (cache.fx[c] = fetchJson('data/fx-' + c + '.json').then(r => r && r.length ? seriesFromRows(r) : null));
-function clearMarketCache(){ cache.bench = null; cache.prices = {}; cache.events = {}; cache.fx = {}; }
-
-/* ---------- cours en direct (Yahoo via relais CORS, repli sur la dernière clôture) ---------- */
-async function fetchYahooMeta(ySymbol){
-  // 1) le serveur local interroge Yahoo lui-même (rapide, sans relais tiers) ;
-  // 2) repli sur les relais CORS gratuits du navigateur (instables).
+  if (out && SYM_OK.test(out)) { tvMap[sym] = out; saveTvMemo(); return out; }
+  return null;
+}
+const isoOfTs = t => new Date(t * 1000).toISOString().slice(0, 10);
+function seriesFromBars(bars){
+  const by = new Map();
+  (bars || []).forEach(b => { const c = b[b.length - 1]; if (typeof c === 'number' && isFinite(c)) by.set(isoOfTs(b[0]), c); });
+  const t = [...by.keys()].sort();
+  return t.length ? { t, c: t.map(d => by.get(d)) } : null;
+}
+// Divisions d'actions : rapport cours réel / cours ajusté (= produit des divisions POSTÉRIEURES). Un saut de ce
+// rapport entre deux séances = une division ce jour-là (n:m, ex. 10:1 -> n = 10, m = 1 ; regroupement -> n = 1).
+function splitsFromBars(adj, raw){
+  if (!adj || !raw) return [];
+  const rawBy = new Map(raw.map(b => [isoOfTs(b[0]), b[b.length - 1]]));
+  const out = []; let prev = null;
+  adj.forEach(b => {
+    const d = isoOfTs(b[0]), rc = rawBy.get(d), ac = b[b.length - 1];
+    if (!(rc > 0) || !(ac > 0)) return;
+    const f = rc / ac;
+    if (prev && Math.abs(f / prev - 1) > 0.03) {
+      const r = prev / f, nice = x => Math.round(x * 1000) / 1000;
+      out.push(r >= 1 ? { d, n: nice(r), m: 1 } : { d, n: 1, m: nice(1 / r) });
+    }
+    prev = f;
+  });
+  return out;
+}
+function histFrom(){
+  const dep = (S && S.config && S.config.dateDepart) || isoToday(), lim = addDays(isoToday(), -200);
+  return addDays(dep < lim ? dep : lim, -30);
+}
+async function tvHistory(tvs, adj, fresh){
+  const j = await fetchJson('/api/tv/history?symbols=' + encodeURIComponent(tvs.join(',')) + '&from=' + histFrom() + (adj ? '&adj=1' : '') + (fresh ? '&fresh=1' : ''));
+  if (!j || !j.ok) throw new Error((j && j.error) || 'historique TradingView indisponible (serveur local ?)');
+  Object.keys(j.errors || {}).forEach(k => histErrors.push(k + ' : ' + j.errors[k]));
+  return j.data || {};
+}
+const inflight = {};
+// Charge (une fois) cours, divisions et devise de plusieurs titres du journal, en DEUX appels groupés.
+async function ensureSyms(syms, fresh){
+  if (!cache.meta) cache.meta = {};
+  const list = [...new Set(syms.filter(Boolean))].filter(s => fresh || !(s in cache.prices));
+  const waiting = list.filter(s => inflight[s] && !fresh);
+  const todo = list.filter(s => !inflight[s] || fresh);
+  if (todo.length) {
+    const job = (async () => {
+      const pairs = [];
+      for (const s of todo) { const tv = await tvOf(s); if (tv) pairs.push([s, tv]); else { cache.prices[s] = null; cache.events[s] = null; histErrors.push(s + ' : introuvable sur TradingView'); } }
+      for (let i = 0; i < pairs.length; i += 40) {
+        const part = pairs.slice(i, i + 40), tvs = [...new Set(part.map(p => p[1]))];
+        let adj = {}, raw = {};
+        try { [adj, raw] = await Promise.all([tvHistory(tvs, true, fresh), tvHistory(tvs, false, fresh)]); } catch (e) { histErrors.push(e.message); }
+        part.forEach(([s, tv]) => {
+          const a = adj[tv], b = raw[tv];
+          if (!a || !a.bars || !a.bars.length) { if (!cache.prices[s]) { cache.prices[s] = null; cache.events[s] = null; } return; }
+          cache.prices[s] = seriesFromBars(a.bars);
+          cache.events[s] = { div: [], spl: splitsFromBars(a.bars, b && b.bars) };
+          const [c, d] = normCcy(a.ccy || (b && b.ccy));
+          cache.meta[s] = Object.assign({}, cache.meta[s], { c, d, n: (cache.meta[s] && cache.meta[s].n) || a.name || s, tv, x: tv.split(':')[0] });
+        });
+      }
+      await fetchLogos(pairs.filter(([s]) => !tvLogos[s]));
+    })();
+    todo.forEach(s => { inflight[s] = job; });
+    try { await job; } finally { todo.forEach(s => { if (inflight[s] === job) delete inflight[s]; }); }
+  }
+  if (waiting.length) await Promise.all(waiting.map(s => inflight[s]));
+}
+// Logos TradingView (scanner public, appelé depuis le navigateur comme l'onglet « Listes TradingView »).
+async function fetchLogos(pairs){
+  if (!pairs.length) return;
   try {
-    const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 10000);
-    const r = await fetch('/api/ia/quote?symbol=' + encodeURIComponent(ySymbol), { cache: 'no-store', signal: ctl.signal });
-    clearTimeout(to);
-    if (r.ok) { const j = await r.json(); if (j && j.ok && j.price > 0) return { regularMarketPrice: j.price, currency: j.currency, regularMarketTime: j.time }; }
-  } catch (e) { /* repli ci-dessous */ }
-  const fwr = g('fetchWithRetry');
-  if (!fwr) throw new Error('relais indisponible');
-  const url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(ySymbol) + '?range=5d&interval=1d';
-  const res = await fwr(url, { cache: 'no-store' }, 12000);
-  const json = await res.json();
-  const m = json && json.chart && json.chart.result && json.chart.result[0] && json.chart.result[0].meta;
-  if (!m || !(m.regularMarketPrice > 0)) throw new Error('réponse invalide');
-  return m;
+    const r = await fetch('https://scanner.tradingview.com/global/scan', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+      body: JSON.stringify({ symbols: { tickers: [...new Set(pairs.map(p => p[1]))] }, columns: ['logoid', 'description'] }) });
+    const j = await r.json();
+    const by = {}; (j.data || []).forEach(row => { by[row.s] = row.d; });
+    pairs.forEach(([s, tv]) => { const d = by[tv]; if (d && d[0]) tvLogos[s] = d[0]; if (d && d[1] && cache.meta[s] && cache.meta[s].n === s) cache.meta[s].n = d[1]; });
+    saveTvMemo();
+  } catch (e) { /* logos facultatifs */ }
+}
+const loadMeta = async () => cache.meta || (cache.meta = {});
+async function tvSeriesMany(tvs, fresh){
+  if (!cache.tvs) cache.tvs = {};
+  const todo = tvs.filter(t => fresh || !(t in cache.tvs));
+  if (todo.length) {
+    try { const d = await tvHistory(todo, false, fresh); todo.forEach(t => { cache.tvs[t] = d[t] ? seriesFromBars(d[t].bars) : (cache.tvs[t] || null); }); }
+    catch (e) { histErrors.push(e.message); todo.forEach(t => { if (!(t in cache.tvs)) cache.tvs[t] = null; }); }
+  }
+  return tvs.map(t => cache.tvs[t] || null);
+}
+// Indice de référence : S&P 500 (cours seuls, SP:SPX) — les dividendes ne sont pas comptés.
+const loadBench = async () => (await tvSeriesMany(['SP:SPX']))[0];
+const loadPrices = async s => { await ensureSyms([s]); return cache.prices[s] || null; };
+const loadEvents = async s => { await ensureSyms([s]); return cache.events[s] || null; };
+const loadFx = async c => (!c || c === 'EUR') ? null : (await tvSeriesMany(['FX_IDC:EUR' + c]))[0];
+const loadFxMany = (ccys, fresh) => tvSeriesMany(ccys.filter(c => c && c !== 'EUR').map(c => 'FX_IDC:EUR' + c), fresh);
+function clearMarketCache(){ cache.prices = {}; cache.events = {}; cache.tvs = {}; histErrors = []; }
+
+/* ---------- cours en direct : TradingView (serveur local) ---------- */
+async function tvQuote(tv){
+  const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 10000);
+  try {
+    const r = await fetch('/api/tv/snapshot?symbol=' + encodeURIComponent(tv), { cache: 'no-store', signal: ctl.signal });
+    const j = await r.json();
+    if (!j || !j.ok || !j.data || !(j.data.close > 0)) throw new Error((j && j.error) || 'cours indisponible');
+    if (j.stale) throw new Error('TradingView injoignable (dernier cours connu du ' + (j.at || '?') + ')');
+    return j.data;
+  } finally { clearTimeout(to); }
 }
 async function fetchLiveQuote(sym, meta){
   const c = live.quotes[sym];
   if (c && Date.now() - c.fetchedAt < LIVE_TTL_MS) return c;
-  const m = await fetchYahooMeta(sym);
-  const [base, div] = normCcy(m.currency);
-  const q = { price: m.regularMarketPrice / div, ccy: base, time: m.regularMarketTime ? new Date(m.regularMarketTime * 1000).toISOString().slice(0, 10) : isoToday(), fetchedAt: Date.now(), suspect: false };
+  const tv = await tvOf(sym);
+  if (!tv) throw new Error('titre introuvable sur TradingView');
+  const d = await tvQuote(tv);
+  const [base, div] = normCcy(d.currency);
+  if (d.logoid && !tvLogos[sym]) { tvLogos[sym] = d.logoid; saveTvMemo(); }
+  const q = { price: d.close / div, ccy: base, time: isoToday(), fetchedAt: Date.now(), suspect: false };
   const s = await loadPrices(sym);
   const dv = (meta[sym] && meta[sym].d) || 1;
   if (s && s.t.length) {
     const last = s.c[s.c.length - 1] / dv;
-    if (last > 0 && (q.price / last > 1.7 || q.price / last < 0.55)) q.suspect = true;   // split probable
+    if (last > 0 && (q.price / last > 1.7 || q.price / last < 0.55)) q.suspect = true;   // division d'actions probable
   }
   live.quotes[sym] = q;
   return q;
@@ -623,10 +729,10 @@ async function fetchLiveFx(ccy){
   if (!ccy || ccy === 'EUR') return 1;
   const c = live.fx['_t_' + ccy];
   if (c && Date.now() - c.at < LIVE_TTL_MS) return c.v;
-  const m = await fetchYahooMeta('EUR' + ccy + '=X');
-  live.fx['_t_' + ccy] = { v: m.regularMarketPrice, at: Date.now() };
-  live.fx[ccy] = m.regularMarketPrice;
-  return m.regularMarketPrice;
+  const d = await tvQuote('FX_IDC:EUR' + ccy);
+  live.fx['_t_' + ccy] = { v: d.close, at: Date.now() };
+  live.fx[ccy] = d.close;
+  return d.close;
 }
 function heldSymbols(){
   const set = new Set();
@@ -658,14 +764,16 @@ async function refreshLive(){
 
 /* ---------- calcul ---------- */
 async function buildCtx(){
+  const syms = new Set();
+  PF_KEYS.forEach(k => trades(k).forEach(t => { if (!t.void) syms.add(t.symbol); }));
+  await ensureSyms([...syms]);
   const meta = await loadMeta();
-  const syms = new Set(), ccys = new Set(['USD']);
-  PF_KEYS.forEach(k => trades(k).forEach(t => { if (!t.void) { syms.add(t.symbol); const c = (meta[t.symbol] && meta[t.symbol].c) || t.ccy; if (c && c !== 'EUR') ccys.add(c); } }));
+  const ccys = new Set(['USD']);
+  PF_KEYS.forEach(k => trades(k).forEach(t => { if (!t.void) { const c = (meta[t.symbol] && meta[t.symbol].c) || t.ccy; if (c && c !== 'EUR') ccys.add(c); } }));
+  await loadFxMany([...ccys]);
   const ctx = { meta, prices: {}, events: {}, fx: {}, liveFx: {}, today: isoToday() };
-  await Promise.all([
-    ...[...syms].map(async s => { ctx.prices[s] = await loadPrices(s); ctx.events[s] = await loadEvents(s); }),
-    ...[...ccys].map(async c => { ctx.fx[c] = await loadFx(c); })
-  ]);
+  syms.forEach(s => { ctx.prices[s] = cache.prices[s] || null; ctx.events[s] = cache.events[s] || null; });
+  ccys.forEach(c => { ctx.fx[c] = (cache.tvs && cache.tvs['FX_IDC:EUR' + c]) || null; });
   Object.keys(live.fx).forEach(k => { if (k.indexOf('_t_') !== 0) ctx.liveFx[k] = live.fx[k]; });
   return ctx;
 }
@@ -687,7 +795,7 @@ async function recompute(){
   const ctx = await buildCtx();
   const c = cfg();
   const withDiv = c.dividendes !== false;
-  const bench = await loadBench(withDiv);
+  const bench = await loadBench();
   // Grille de jours ouvrés : depuis le début de l'expérience, prolongée jusqu'à 90 jours en arrière
   // pour que le S&P 500 soit tracé dès le premier jour (les IA n'existent qu'à partir de la date de départ).
   const preStart = addDays(ctx.today, -90);
@@ -728,52 +836,22 @@ async function recompute(){
   computed = { ctx, byKey, dates, startIdx, originIdx, hasTrades, bench: benchVals, dca, dcaPerf, benchPerf, withDiv, warnings: [...new Set(warnings)] };
 }
 
-/* ---------- univers de titres (sélecteur) ---------- */
-let universe = null;
-async function getUniverse(){
-  if (universe) return universe;
-  const meta = await loadMeta();
-  const strip = g('stripAccents') || (s => s);
-  const sheetName = {};
-  try { (typeof rankingSummaryData !== 'undefined' ? rankingSummaryData : []).forEach(e => { if (e.symbol && e.nom) sheetName[e.symbol] = e.nom; }); } catch (e) { /* facultatif */ }
-  // Devises réellement supportées = celles pour lesquelles un fichier de change existe (~28 lectures
-  // locales, mises en cache : elles servent ensuite aux valorisations).
-  const ccys = [...new Set(Object.values(meta).map(m => m.c).filter(c => c && c !== 'EUR'))];
-  const ok = new Set(['EUR']);
-  await Promise.all(ccys.map(async c => { if (await loadFx(c)) ok.add(c); }));
-  universe = Object.keys(meta).filter(s => meta[s].on !== 0 && ok.has(meta[s].c)).map(s => {
-    const m = meta[s], alias = sheetName[s] || '';
-    return { sym: s, name: m.n || alias || s, alias, ccy: m.c, x: m.x || '', hay: strip(((m.n || '') + ' ' + alias).toLowerCase()), symLow: s.toLowerCase() };
-  });
-  return universe;
-}
+/* ---------- recherche de titres (sélecteur) : TradingView, actions ET ETF ---------- */
 async function searchUniverse(q){
-  const strip = g('stripAccents') || (s => s);
-  const n = strip(q.trim().toLowerCase());
+  const n = (q || '').trim();
   if (n.length < 1) return [];
-  const u = await getUniverse();
-  const scored = [];
-  for (const e of u) {
-    let sc = -1;
-    if (e.symLow === n) sc = 0;
-    else if (e.symLow.startsWith(n)) sc = 1;
-    else if (e.hay.startsWith(n)) sc = 2;
-    else if (n.length >= 2 && e.hay.includes(n)) sc = 3;
-    else if (n.length >= 2 && e.symLow.includes(n)) sc = 4;
-    if (sc >= 0) scored.push([sc, e]);
-  }
-  scored.sort((a, b) => a[0] - b[0] || a[1].name.length - b[1].name.length);
-  return scored.slice(0, 12).map(x => x[1]);
+  const res = await tvSearch(n, true);
+  return res.filter(r => SYM_OK.test(r.symbol)).map(r => {
+    if (r.logoid && !tvLogos[r.symbol]) tvLogos[r.symbol] = r.logoid;
+    const [c] = normCcy(r.currency);
+    return { sym: r.symbol, name: r.name || r.symbol, ccy: c || r.currency || '', x: r.exchange || r.symbol.split(':')[0] };
+  });
 }
 function logoHtml(sym, name){
-  let url = null;
-  try {
-    const sheet = (typeof rankingSummaryData !== 'undefined' ? rankingSummaryData : []).find(e => e.symbol === sym);
-    if (sheet && g('companyLogoUrl')) url = g('companyLogoUrl')(sheet.nom);
-  } catch (e) { /* repli ci-dessous */ }
-  url = url || ('data/logos/' + encodeURIComponent(sym) + '.png');
+  const id = tvLogos[sym];
+  const url = id ? 'https://s3-symbol-logo.tradingview.com/' + id + '--big.svg' : null;
   const initial = esc((name || sym || '?').trim().charAt(0).toUpperCase());
-  return `<span class="ia-logo"><span class="ia-logo-i">${initial}</span><img src="${esc(url)}" alt="" onerror="this.remove()"></span>`;
+  return `<span class="ia-logo"><span class="ia-logo-i">${initial}</span>${url ? `<img src="${esc(url)}" alt="" onerror="this.remove()">` : ''}</span>`;
 }
 function aiLogoHtml(key, size){
   return `<span class="ia-ai-logo" style="width:${size}px;height:${size}px;"><img src="${AI_INFO[key].logo}" alt="${esc(AI_INFO[key].label)}"></span>`;
@@ -781,9 +859,10 @@ function aiLogoHtml(key, size){
 
 /* ---------- prix & change d'une opération ---------- */
 async function resolveQuote(sym, date){
+  await ensureSyms([sym]);
   const meta = await loadMeta();
   const m = meta[sym];
-  if (!m) return { error: 'Titre inconnu dans la base.' };
+  if (!m) return { error: 'Titre introuvable sur TradingView (ou TradingView injoignable).' };
   const ccy = m.c, dv = m.d || 1, today = isoToday();
   const [s, ev] = await Promise.all([loadPrices(sym), loadEvents(sym)]);
   let px = null, source = null, asOf = null, warn = null, error = null;
@@ -799,7 +878,7 @@ async function resolveQuote(sym, date){
     if (px == null && s) {
       const i = s.t.length - 1;
       if (s.t[i] < addDays(today, -4)) {
-        // Fichier FMP ancien : un achat "aujourd'hui" à un prix de plusieurs jours fausserait tout de suite la
+        // Dernière clôture ancienne : un achat "aujourd'hui" à un prix de plusieurs jours fausserait tout de suite la
         // performance (constaté : -10 % affiché sur un achat neuf). On force la saisie du prix du jour.
         asOf = s.t[i];
         if (!warn) warn = 'Cours en direct indisponible et dernière clôture trop ancienne (' + fmtDate(asOf) + ') : saisis le prix du jour, ou clique « Actualiser les données » puis recommence.';
@@ -995,7 +1074,7 @@ async function renderSuggestions(){
   if (!f.q || !f.q.trim()) { box.innerHTML = ''; return; }
   box.innerHTML = list.length ? list.map(e => `<button type="button" class="ia-suggest-row" data-ia-action="buy-pick" data-sym="${esc(e.sym)}" data-name="${esc(e.name)}">
       ${logoHtml(e.sym, e.name)}<span class="ia-suggest-name">${esc(e.name)}</span><span class="ia-dim">${esc(e.sym)} · ${esc(e.x)} · ${esc(e.ccy)}</span></button>`).join('')
-    : '<div class="ia-dim ia-suggest-empty">Aucun résultat (titres inactifs ou devises non gérées exclus).</div>';
+    : '<div class="ia-dim ia-suggest-empty">Aucun résultat sur TradingView.</div>';
 }
 async function submitForm(stash){
   const f = ui.form;
@@ -1041,12 +1120,6 @@ async function submitForm(stash){
   await recompute();
   render();
   refreshLive();
-  // Fichiers de cours FMP anciens pour ce titre (dernière clôture > 5 jours) : on lance l'actualisation
-  // des titres détenus tout de suite, sinon dividendes et splits récents manqueraient dans les calculs.
-  const sp = vctx.prices[f.sym], lastClose = sp && sp.t.length ? sp.t[sp.t.length - 1] : null;
-  if (!orig && f.type === 'BUY' && (!lastClose || lastClose < addDays(isoToday(), -5)) && !(refreshInfo && refreshInfo.state === 'running')) {
-    await startRefresh(doneMsg + ' Données FMP de ce titre anciennes (' + (lastClose ? 'dernière clôture du ' + fmtDate(lastClose) : 'aucun cours') + ').');
-  }
 }
 // Suppression DÉFINITIVE d'une opération (achat, vente ou dividende), par exemple des tests. Refusée si
 // d'autres opérations en dépendent (ex. vente ultérieure). Le serveur exige que l'id soit déclaré et
@@ -1142,13 +1215,13 @@ function positionsHtml(key){
     </div>`;
   }).join('');
 }
-// Rappel : dividendes du calendrier FMP déjà versés (d'après tes actions) et pas encore saisis.
+// Rappel : dividendes du calendrier déjà versés (d'après tes actions) et pas encore saisis.
 function pendingHtml(key){
   const list = pendingDividends(computed.byKey[key].model, cfg());
   if (!list.length) return '';
   const canEdit = serverOk && !loadError;
   return `<div class="ia-pending"><div class="ia-pending-title">🔔 ${list.length} dividende${list.length > 1 ? 's' : ''} à saisir</div>
-    <p class="ia-dim">D'après le calendrier FMP et tes achats. Vérifie le montant sur ton relevé ou sur le site de l'entreprise, puis clique « Saisir » (préremplit la date et le dividende par action).</p>
+    <p class="ia-dim">D'après tes achats. Vérifie le montant sur ton relevé ou sur le site de l'entreprise, puis clique « Saisir » (préremplit la date et le dividende par action).</p>
     ${list.map(d => `<div class="ia-pending-row"><span><b>${esc(d.nom)}</b> · ${numFr(d.perShare, 4)} ${esc(d.ccy)}/action · détaché le ${fmtDate(d.exDate)}, versé le ${fmtDate(d.payDate)}</span><span class="ia-dim">${fmtQty(d.qty)} action(s) ≈ ${eur(d.eur)}</span>
       <button type="button" class="ia-btn ia-btn-small ia-btn-primary" data-ia-action="div-fill" data-sym="${esc(d.symbol)}" data-date="${esc(d.payDate)}" data-ps="${esc(String(+d.perShare.toFixed(6)))}" data-ex="${esc(d.exDate)}" ${canEdit ? '' : 'disabled'}>Saisir</button></div>`).join('')}</div>`;
 }
@@ -1613,56 +1686,32 @@ async function drawDonut(key){
   });
 }
 
-/* ---------- actualisation des données FMP (bouton) ---------- */
-async function readRefreshStatus(){ return await fetchJson('data/portefeuille-ia/refresh-status.json'); }
+/* ---------- actualisation (bouton) : relit TradingView sans attendre le cache de 30 min ---------- */
 function setRefreshStatusUi(){
   const el = document.getElementById('iaRefreshStatus');
   if (el) el.innerHTML = refreshStatusHtml();
 }
-async function pollRefresh(){
-  clearTimeout(refreshPoll);
-  const st = await readRefreshStatus();
-  if (st) { refreshInfo = st; setRefreshStatusUi(); }
-  if (st && st.state === 'running') { refreshPoll = setTimeout(pollRefresh, 3000); return; }
-  if (st && (st.state === 'ok' || st.state === 'error')) {
-    if (st.state === 'ok') { clearMarketCache(); await recompute(); }
-    softRender();
-  }
-}
 async function startRefresh(prefix){
-  if (!serverOk || loadError) return;
-  let res, j = {};
-  try {
-    res = await fetch('/api/ia/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Wolf-IA': '1' }, body: '{}' });
-    j = await res.json().catch(() => ({}));
-  } catch (e) { setMsg('Serveur local injoignable : actualisation impossible.', 'err'); render(); return; }
-  if (res.status === 409) { setMsg('Une actualisation est déjà en cours.', 'ok'); }
-  else if (res.status === 429) { setMsg((prefix ? prefix + ' ' : '') + 'Une actualisation vient de se terminer : patiente une minute avant de relancer.', prefix ? 'ok' : 'err'); render(); return; }
-  else if (!res.ok) { setMsg('Actualisation refusée : ' + (j.error || ('HTTP ' + res.status)), 'err'); render(); return; }
-  else setMsg((prefix ? prefix + ' ' : '') + 'Actualisation lancée : cours, splits, changes et S&P 500 des titres détenus.', 'ok');
-  refreshInfo = { state: 'running', done: 0, total: 0 };
+  if (!serverOk || loadError || (refreshInfo && refreshInfo.state === 'running')) return;
+  refreshInfo = { state: 'running', done: 0, total: 1, current: 'TradingView' };
   render();
-  refreshPoll = setTimeout(pollRefresh, 1500);
+  histErrors = [];
+  try {
+    const syms = new Set();
+    PF_KEYS.forEach(k => trades(k).forEach(t => { if (!t.void) syms.add(t.symbol); }));
+    live.quotes = {}; live.fx = {};
+    await ensureSyms([...syms], true);
+    await tvSeriesMany(['SP:SPX'].concat(Object.keys(cache.tvs || {}).filter(t => t.startsWith('FX_IDC:'))), true);
+    refreshInfo = { state: 'ok', finishedAt: new Date().toISOString(), errors: histErrors.slice(0, 5) };
+    if (prefix) setMsg(prefix + ' Cours TradingView relus.', 'ok');
+  } catch (e) { refreshInfo = { state: 'error', message: e.message }; }
+  await recompute();
+  render();
+  refreshLive();
 }
-// Les dividendes ne sont connus que via les fichiers FMP : à l'ouverture de l'onglet, si des titres sont
-// détenus et que la dernière actualisation réussie a plus de 24 h, on la relance automatiquement.
-let autoRefreshChecked = false;
-async function maybeAutoRefresh(){
-  if (autoRefreshChecked || !serverOk || loadError || !computed) return;
-  autoRefreshChecked = true;
-  const st = await readRefreshStatus();
-  if (st && st.state === 'running') return;
-  const last = st && st.state === 'ok' && st.finishedAt ? new Date(st.finishedAt).getTime() : 0;
-  if (Date.now() - last > 24 * 3600 * 1000) await startRefresh('Actualisation quotidienne automatique (cours, splits, S&P 500).');
-}
-async function checkRefreshStatus(){
-  const st = await readRefreshStatus();
-  if (!st) return;
-  refreshInfo = st;
-  const age = st.updatedAt ? Date.now() - new Date(st.updatedAt).getTime() : Infinity;
-  if (st.state === 'running' && age < 15 * 60 * 1000) refreshPoll = setTimeout(pollRefresh, 2000);
-  else if (st.state === 'running') refreshInfo = null;   // reste d'un processus interrompu
-}
+// TradingView est relu automatiquement (cache serveur de 30 min) : plus d'actualisation quotidienne à lancer.
+async function maybeAutoRefresh(){ /* inutile depuis TradingView */ }
+async function checkRefreshStatus(){ /* inutile depuis TradingView */ }
 
 /* ---------- export image (classement + graphique) pour les vidéos ---------- */
 function loadImg(src){ return new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; }); }
