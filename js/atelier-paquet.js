@@ -59,7 +59,7 @@ function check(pkg){
   pkg.hypotheses.forEach(h => { hyp[h.id] = h; count[h.id] = (count[h.id] || 0) + 1; });
   pkg.affirmations.forEach(a => { aff[a.id] = a; count[a.id] = (count[a.id] || 0) + 1; });
   Object.keys(count).forEach(i => { if (count[i] > 1) E.push('Identifiant en double : ' + i + ' (' + count[i] + ' fois)'); });
-  if (!pkg.meta.entreprise) E.push('meta.entreprise manquant');
+  if (!pkg.meta.entreprise && pkg.type !== 'images') E.push('meta.entreprise manquant');   // un paquet d'images vise la version affichée
 
   const point = (ctx, d, pt) => {
     const o = Object.assign({}, d, pt || {}), st = o.statut, v = o.valeur;
@@ -193,6 +193,9 @@ function check(pkg){
         const maxD = ['repartition', 'comparaison'].includes(m.visuel) ? 6 : 3;
         if ((m.donnees || []).length > maxD) W.push(ctx + ' : ' + m.donnees.length + ' données (' + maxD + ' au plus)');
         (m.donnees || []).forEach(x => ref(ctx, x)); (m.affirmations || []).forEach(x => ref(ctx, x));
+        (m.risques || []).forEach(r => { if (!riskIds.has(r)) E.push(ctx + ' : risque « ' + r + ' » inconnu'); });
+        (m.marches || []).forEach(k => { if (!pkg.marches.some(x => x.id === k)) E.push(ctx + ' : marché « ' + k + ' » inconnu'); });
+        if (m.acquisition && !pkg.acquisitions.some(x => x.id === m.acquisition)) E.push(ctx + ' : acquisition « ' + m.acquisition + ' » inconnue');
         if ((m.explication || []).length > 3) W.push(ctx + ' : ' + m.explication.length + ' phrases d\'explication (3 au plus)');
         (m.explication || []).forEach(t => { textRefs(ctx, t); if (words(t) > 20) W.push(ctx + ' : explication de ' + words(t) + ' mots'); });
         if (m.visuel === 'image' && !m.image_voulue) W.push(ctx + ' : image sans « image_voulue »');

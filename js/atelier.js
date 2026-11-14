@@ -1688,14 +1688,82 @@ function scrFoot(x){
   const img = x.c && (x.c.imgs || [])[0];
   return '<div class="sc-foot">' + (x.model.hyp ? '<span class="sc-pill">Hypothèse d\'analyste</span>' : '') + '<span>' + (src || '') + (img && img.leg ? (src ? ' · ' : '') + 'Image : ' + esc(img.leg) : '') + '</span></div>';
 }
+/* Blocs d'analyse rattachés à un écran (2026-11-14, après le retour « écrans vides ») : un message peut nommer
+   risques:[ids], marches:[ids], acquisition:id, score:true, valo_modules:true, etapes:[…], libelles:{id: nom affiché}.
+   Ils passent AVANT le visuel : un écran n'affiche jamais « données non fournies » quand le paquet a de quoi le remplir. */
+function scrLabel(x, it){ const L = x.m.libelles || {}; return L[it.id] || it.item.libelle; }
+// « 2026-09-15 » → « 15/09/2026 », « TTM2026-09-30 » → « 12 mois au 30/09/2026 », « FY2025 » → « 2025 »
+function scrPeriod(p){
+  const s = PQ().periodLabel(p), d = s.match(/^(TTM)?(\d{4})-(\d{2})-(\d{2})$/);
+  return d ? (d[1] ? '12 mois au ' : '') + d[4] + '/' + d[3] + '/' + d[2] : s;
+}
+function scrKpis(x, items, cls){
+  const P = PQ(), ok = (items || []).map(it => ({ it, l: P.regLast(it.item) })).filter(o => o.l && o.l.valeur != null);
+  if (!ok.length) return '';
+  return '<div class="sc-kpis ' + (cls || '') + ' n' + Math.min(ok.length, 4) + '">' + ok.map(o => { const t = nb(P.fmtItem(o.it.item, o.l)), lab = scrLabel(x, o.it), per = o.l.periode ? scrPeriod(o.l.periode) : '';
+    return '<div><b class="sc-num' + (t.length > 11 ? ' longer' : t.length > 8 ? ' long' : '') + '">' + esc(t) + '</b><span>' + esc(lab) + (per && !lab.includes(per) ? ' · ' + esc(per) : '') + '</span></div>'; }).join('') + '</div>';
+}
+const LV_L = { faible: 'faible', moyenne: 'moyenne', forte: 'forte' };
+function scrBlocks(x){
+  const m = x.m, b = (x.reg && x.reg.blocs) || {}, P = PQ();
+  if (m.acquisition){
+    const a = (b.acquisitions || []).find(k => k.id === m.acquisition);
+    if (a){
+      const yr = String(a.date || '').slice(0, 4);
+      return '<div class="sc-acq"><div class="sc-acq-id"><b class="sc-num">' + esc(yr) + '</b><span>' + esc(a.cible || '') + '</span><small>' + esc(a.statut_operation === 'realisee' ? 'opération réalisée' : 'intégrée au groupe') + '</small></div>' +
+        '<div class="sc-acq-body"><p class="sc-acq-log">' + esc(a.logique || '') + '</p>' + scrKpis(x, x.model.items, 'sm') + '</div></div>';
+    }
+  }
+  if ((m.risques || []).length){
+    const rs = m.risques.map(id => (b.risques || []).find(r => r.id === id)).filter(Boolean);
+    if (rs.length) return '<div class="sc-cards n' + rs.length + '">' + rs.map(r => '<div class="sc-card"><b>' + esc(r.titre || '') + '</b><div class="sc-badges"><span class="sc-lv l-' + esc(r.probabilite || '') + '">probabilité ' + esc(LV_L[r.probabilite] || '?') + '</span><span class="sc-lv l-' + esc(r.gravite || '') + '">gravité ' + esc(LV_L[r.gravite] || '?') + '</span></div>' +
+      '<p><em>Comment</em>' + esc(r.mecanisme || '') + '</p><p><em>Effet</em>' + esc(r.impact || '') + '</p>' + ((r.indicateurs || []).length ? '<p><em>À surveiller</em>' + esc(r.indicateurs.join(' · ')) + '</p>' : '') + '</div>').join('') + '</div>' + scrKpis(x, x.model.items, 'sm');
+  }
+  if ((m.marches || []).length){
+    const ms = m.marches.map(id => (b.marches || []).find(k => k.id === id)).filter(Boolean);
+    const cyc = { faible: 'cycle faible', moyenne: 'cycle moyen', forte: 'très cyclique' };
+    if (ms.length) return '<div class="sc-cards n' + ms.length + '">' + ms.map(k => '<div class="sc-card"><b>' + esc(k.nom || '') + '</b><div class="sc-badges"><span class="sc-lv l-' + esc(k.cyclicite === 'forte' ? 'forte' : k.cyclicite === 'faible' ? 'faible' : 'moyenne') + '">' + esc(cyc[k.cyclicite] || 'cycle ?') + '</span>' + (k.pole ? '<span class="sc-lv">' + esc(P.poleName(x.reg, k.pole)) + '</span>' : '') + '</div>' +
+      '<p><em>Moteurs</em>' + esc((k.moteurs || []).join(' · ')) + '</p><p><em>Capacité</em>' + esc(k.capacite || '') + '</p><p><em>Ce qui peut ralentir</em>' + esc(k.risque_ralentissement || '') + '</p></div>').join('') + '</div>';
+  }
+  if (m.score && b.score && (b.score.criteres || []).length){
+    const cs = b.score.criteres, tot = cs.reduce((t, c) => t + (+c.note || 0), 0);
+    return '<div class="sc-score"><div class="sc-score-l">' + cs.map(c => '<div><span>' + esc(c.nom) + '</span><div class="sc-track"><div style="width:' + Math.round((+c.note || 0) * 10) + '%;background:' + ((+c.note || 0) >= 7 ? '#4FD1A5' : (+c.note || 0) >= 5 ? '#F2C43D' : '#E5636B') + '"></div></div><b>' + esc(String(c.note)) + '/10</b><small>' + esc(c.justification || '') + '</small></div>').join('') + '</div>' +
+      '<div class="sc-side"><b class="sc-num">' + esc(fr(tot / cs.length, 1)) + '</b><span>note moyenne sur 10</span><small>Score éditorial, pas une mesure comptable</small></div></div>';
+  }
+  if (m.valo_rendement){
+    const vc = Object.values(ver().cards).find(k => k.type === 'valorisation'), r = vc ? valoRes(vc) : null, cr = coursNow();
+    if (r && !r.incomplete && cr.v != null){
+      const sc = [['Pessimiste', r.A.pessimiste], ['Réaliste', r.A.realiste], ['Optimiste', r.A.optimiste]].filter(s => s[1] && s[1].R != null);
+      return '<div class="sc-kpis n' + sc.length + '">' + sc.map(([l, s]) => '<div><b class="sc-num ' + (s.R >= r.r ? 'pos' : s.R >= 0 ? '' : 'neg') + '">' + esc(nb((s.R >= 0 ? '+' : '') + fr(s.R, 1) + ' %')) + '</b><span>par an pendant 5 ans · scénario ' + esc(l.toLowerCase()) + ' (' + esc(nb(fr(s.P5, 0) + ' €')) + ' dans 5 ans)</span></div>').join('') + '</div>' +
+        '<p class="sc-ref">Si j\'achète au cours de ' + esc(nb(fr(cr.v, 2) + ' ' + curSym(cr.ccy))) + (cr.at ? ' (' + esc(frDate(cr.at)) + ')' : '') + ', hors dividendes · objectif : ' + esc(String(r.r)) + ' % par an</p>';
+    }
+  }
+  if (m.valo_modules){
+    const vc = Object.values(ver().cards).find(k => k.type === 'valorisation'), r = vc ? valoRes(vc) : null;
+    if (r && !r.incomplete){
+      const e = v => v == null || !isFinite(v) ? '—' : nb(fr(v, 0) + ' €');
+      const row = (l, s, hl) => s ? '<tr' + (hl ? ' class="hl"' : '') + '><td>' + l + '</td><td>' + esc(nb((s.g >= 0 ? '+' : '') + fr(s.g, 0) + ' %')) + '</td><td>' + esc(nb(fr(s.M, 0) + 'x')) + '</td><td>' + esc(e(s.P5)) + '</td><td><b>' + esc(e(s.Pmax)) + '</b></td></tr>' : '';
+      return '<div class="sc-valo"><table><thead><tr><th>Test</th><th>Croissance du FCF/action</th><th>Multiple P/FCF</th><th>Prix dans 5 ans</th><th>Prix max. aujourd\'hui (' + esc(String(r.r)) + ' %/an)</th></tr></thead><tbody>' +
+        '<tr class="grp"><td colspan="5">A · on fait varier la croissance</td></tr>' + row('Pessimiste', r.A.pessimiste) + row('Réaliste', r.A.realiste, 1) + row('Optimiste', r.A.optimiste) +
+        '<tr class="grp"><td colspan="5">B · on fait varier le multiple</td></tr>' + row('Multiple bas', r.B.bas) + row('Multiple central', r.B.central, 1) + row('Multiple haut', r.B.haut) + '</tbody></table></div>';
+    }
+  }
+  return '';
+}
 function scrVisual(x){
   const md = x.model, m = x.m, gold = '#D9A441';
+  const blk = scrBlocks(x); if (blk) return blk;
   switch (m.visuel){
-    case 'chiffre': return '<div class="sc-big"><b class="sc-num">' + esc(nb(md.big || 'non disponible')) + '</b><span>' + esc(md.bigLabel || '') + (md.period ? ' · ' + esc(md.period) : '') + '</span></div>';
+    case 'chiffre': {
+      const P = PQ(), ok = md.items.filter(it => P.regLast(it.item));
+      if (ok.length > 1) return scrKpis(x, ok);
+      if (!ok.length) return (m.explication || []).length ? '' : '<p class="sc-nd">Chiffre non publié</p>';
+      return '<div class="sc-big"><b class="sc-num">' + esc(nb(md.big || '')) + '</b><span>' + esc(scrLabel(x, ok[0])) + (md.period ? ' · ' + esc(md.period) : '') + '</span></div>';
+    }
     case 'evolution': {
       if (!md.bars || !md.bars.length) return '<p class="sc-nd">Données non disponibles</p>';
       return '<div class="sc-evo"><div class="sc-bars">' + md.bars.map((b, i) => '<div class="sc-bar"><span class="sc-sub">' + esc(b.sub ? nb(b.sub) : '') + '</span><b>' + esc(nb(b.txt)) + '</b><i style="height:' + Math.round(b.h * 330) + 'px;opacity:' + (0.45 + 0.55 * (i + 1) / md.bars.length).toFixed(2) + '"></i><span class="sc-lab">' + esc(b.label) + (b.rupture ? ' ⚠' : '') + '</span></div>').join('') + '</div>' +
-        (md.growth ? '<div class="sc-side"><b class="sc-num ' + (md.growth.pct >= 0 ? 'pos' : 'neg') + '">' + esc(nb((md.growth.pct >= 0 ? '+' : '') + fr(md.growth.pct, 0) + ' %')) + '</b><span>entre ' + esc(md.growth.from) + ' et ' + esc(md.growth.to) + '</span>' + (md.subLabel ? '<small>au-dessus des barres : ' + esc(md.subLabel) + '</small>' : '') + '</div>' : '') + '</div>';
+        (md.growth ? '<div class="sc-side"><b class="sc-num ' + (md.growth.pct >= 0 ? 'pos' : 'neg') + '">' + esc(nb((md.growth.pct >= 0 ? '+' : '') + fr(md.growth.pct, 0) + ' %')) + '</b><span>entre ' + esc(md.growth.from) + ' et ' + esc(md.growth.to) + '</span>' + (md.subLabel ? '<small>au-dessus des barres : ' + esc((() => { const s = md.items.find((it, i) => i > 0 && it.item.unite === '%'); return s ? scrLabel(x, s) : md.subLabel; })()) + '</small>' : '') + '</div>' : '') + '</div>';
     }
     case 'repartition': {
       const ok = (md.parts || []).filter(p => p.share != null);
@@ -1706,7 +1774,7 @@ function scrVisual(x){
     case 'comparaison': {
       const ps = md.parts || [];
       if (!ps.length) return '<p class="sc-nd">Données non disponibles</p>';
-      return '<div class="sc-cmp">' + ps.map((p, i) => '<span class="sc-cl">' + esc(p.label) + '</span><div class="sc-track">' + (p.v == null ? '<div class="sc-empty"></div>' : '<div style="width:' + Math.round(p.w * 100) + '%;background:' + (i ? SERIES_COLORS[i % SERIES_COLORS.length] : gold) + '"></div>') + '</div><b>' + esc(p.v == null ? 'non fourni' : nb(p.txt)) + '</b>').join('') + '</div>';
+      return '<div class="sc-cmp">' + ps.map((p, i) => '<span class="sc-cl">' + esc((m.libelles || {})[(md.items[i] || {}).id] || p.label) + '</span><div class="sc-track">' + (p.v == null ? '<div class="sc-empty"></div>' : '<div style="width:' + Math.round(p.w * 100) + '%;background:' + (i ? SERIES_COLORS[i % SERIES_COLORS.length] : gold) + '"></div>') + '</div><b>' + esc(p.v == null ? 'non fourni' : nb(p.txt)) + '</b>').join('') + '</div>';
     }
     case 'echelle_prix': {
       const vc = Object.values(ver().cards).find(k => k.type === 'valorisation');
@@ -1731,7 +1799,10 @@ function scrVisual(x){
       }
       return '';
     }
-    case 'schema': return '<div class="sc-flow">' + (m.explication || []).map((t, i) => (i ? '<span class="sc-arrow">→</span>' : '') + '<div>' + esc(t) + '</div>').join('') + '</div>';
+    case 'schema': {
+      const st = (m.etapes || []).length ? m.etapes : (m.explication || []);
+      return (st.length ? '<div class="sc-flow n' + Math.min(st.length, 4) + '">' + st.map((t, i) => (i ? '<span class="sc-arrow">→</span>' : '') + '<div>' + esc(nb(t)) + '</div>').join('') + '</div>' : '') + scrKpis(x, md.items, 'sm');
+    }
   }
   return '';
 }
@@ -1745,11 +1816,14 @@ function scrHtml(c){
   let inner;
   if (m.visuel === 'image'){
     inner = '<div class="sc-split"><div class="sc-txt">' + head + '<h1 class="sc-h1">' + esc(nb(m.phrase)) + '</h1>' +
-      (expl.length ? '<ol class="sc-pts">' + expl.map((t, i) => '<li><b>' + (i + 1) + '</b><span>' + esc(nb(t)) + '</span></li>').join('') + '</ol>' : '') + scrFoot(x) + '</div><div class="sc-media">' + media + '</div></div>';
+      (expl.length ? '<ol class="sc-pts">' + expl.map((t, i) => '<li><b>' + (i + 1) + '</b><span>' + esc(nb(t)) + '</span></li>').join('') + '</ol>' : '') + scrKpis(x, x.model.items, 'sm') + scrFoot(x) + '</div><div class="sc-media">' + media + '</div></div>';
   } else {
-    const vis = scrVisual(x), side = m.visuel === 'liste' && !vis;
+    const vis = scrVisual(x), side = !vis;
+    // l'explication sert d'étapes au schéma seulement quand le message n'a pas d'« etapes » propres
+    const hasBlock = !!(m.acquisition || (m.risques || []).length || (m.marches || []).length || m.score || m.valo_modules || m.valo_rendement);
+    const showExpl = expl.length && !(m.visuel === 'schema' && !(m.etapes || []).length && !hasBlock);
     inner = '<div class="sc-col">' + head + '<h1 class="sc-h1">' + esc(nb(m.phrase)) + '</h1>' +
-      (side ? '<ol class="sc-pts big">' + expl.map((t, i) => '<li><b>' + (i + 1) + '</b><span>' + esc(nb(t)) + '</span></li>').join('') + '</ol>' : '<div class="sc-vis">' + vis + '</div>' + (expl.length && m.visuel !== 'schema' ? '<p class="sc-expl">' + expl.map(t => esc(nb(t))).join(' ') + '</p>' : '')) + scrFoot(x) + '</div>';
+      (side ? '<ol class="sc-pts big">' + expl.map((t, i) => '<li><b>' + (i + 1) + '</b><span>' + esc(nb(t)) + '</span></li>').join('') + '</ol>' : '<div class="sc-vis">' + vis + '</div>' + (showExpl ? '<p class="sc-expl">' + expl.map(t => esc(nb(t))).join(' ') + '</p>' : '')) + scrFoot(x) + '</div>';
   }
   return '<div class="aw-scr v-' + esc(m.visuel || '') + '"><div class="sc-in">' + inner + '</div></div>';
 }

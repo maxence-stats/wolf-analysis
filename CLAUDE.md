@@ -839,6 +839,14 @@ sources officielles et les livre en paquet `{"contrat":"wolf-atelier/3","type":"
 par le même bouton (« Ajouter les images à cette version » : téléchargées par /api/atelier/fetch, posées sur l'écran visé) ; sans image,
 pictogramme (`PICTOS` / `pictoFor`) + « Image à trouver : … » (masqué en mode vidéo). Contrôles v3 dans `check()`. Tests : 31 cas dans
 `tests/atelier-paquet.test.html`. Testé sur instance jetable avec un paquet v3 d'essai tiré des lots Prysmian.
+**Écrans jamais vides (2026-11-14, après « tu m'as fait de la merde »)** : le paquet ChatGPT Prysmian v3 avait 39 écrans sur 41
+SANS explication et des schémas / listes sans donnée → écrans vides ou répétés. Règle : Claude CONTRÔLE ÉCRAN PAR ÉCRAN (planches
+photographiées par Edge sans fenêtre) avant de dire que c'est fait, complète le récit lui-même (chiffres du paquet + recherches
+sourcées) et cherche les images lui-même (prysmian.com : le serveur les télécharge sans blocage). Champs facultatifs d'un message,
+lus par `scrBlocks` (atelier.js) : `risques:[ids]`, `marches:[ids]`, `acquisition:id`, `score:true`, `valo_modules:true`,
+`valo_rendement:true` (rendement annuel en achetant au cours), `etapes:[…]` (schéma, l'explication reste affichée), `libelles:{id:nom}`.
+`chiffre` affiche toutes ses données en tuiles. Un paquet `type:"images"` n'exige plus `meta.entreprise`. Édition complétée Prysmian
+(lots 1-5 + images + script `enrich.py`) : `Téléchargements\Prysmian_Atelier_v3_complete_par_Claude\` ; version « Import ChatGPT + Claude ».
 Le texte ci-dessous décrit l'ancienne carte mentale (historique).
 
 Nouvel onglet principal (`#pageAtelier`, `js/atelier.js`, CSS `.at-*` en fin de `style.css`), À CÔTÉ du Cerveau numérique (qui

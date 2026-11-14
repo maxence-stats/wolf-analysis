@@ -3892,6 +3892,63 @@
 .sc-flow{display:flex;align-items:center;gap:22px;flex-wrap:wrap}
 .sc-flow > div{background:#151A1F;border-radius:18px;padding:26px 30px;font-size:26px;line-height:1.35;max-width:420px}
 .sc-arrow{font-size:48px;color:#D9A441}
+/* écrans : blocs rattachés (risques, marchés, acquisition, score, tests de valorisation) et rangée de chiffres */
+.sc-flow.n3,.sc-flow.n4{flex-wrap:nowrap;align-items:stretch}
+.sc-flow.n3 > div,.sc-flow.n4 > div{flex:1 1 0;max-width:none;display:flex;align-items:center}
+.sc-flow.n3 .sc-arrow,.sc-flow.n4 .sc-arrow{align-self:center}
+.sc-kpis .sc-num.long{font-size:62px}
+.sc-kpis.sm .sc-num.long{font-size:36px}
+.sc-kpis .sc-num.longer{font-size:48px}
+.sc-kpis.sm .sc-num.longer{font-size:30px}
+.sc-vis{justify-content:safe center}
+.sc-cards.n2 + .sc-kpis.sm{margin-top:16px}
+.sc-cards.n2:has(+ .sc-kpis) .sc-card{padding:22px 30px;gap:10px}
+.sc-cards.n2:has(+ .sc-kpis) .sc-card p{font-size:23px}
+.sc-valo table{font-size:23px}
+.sc-valo td{padding:7px 14px}
+.sc-ref{margin:22px 0 0;font-size:22px;color:#B4BAC4}
+.sc-cards.n1 .sc-card,.sc-cards.n2 .sc-card{padding:32px 36px;gap:16px}
+.sc-cards.n1 .sc-card > b,.sc-cards.n2 .sc-card > b{font-size:36px}
+.sc-cards.n1 .sc-card p,.sc-cards.n2 .sc-card p{font-size:26px}
+.sc-cards.n1 .sc-card p em,.sc-cards.n2 .sc-card p em{font-size:17px}
+.sc-cards.n1 .sc-lv,.sc-cards.n2 .sc-lv{font-size:21px}
+.sc-kpis{display:grid;gap:22px 30px;grid-template-columns:repeat(var(--k,3),minmax(0,1fr))}
+.sc-kpis.n1{--k:1}.sc-kpis.n2{--k:2}.sc-kpis.n3{--k:3}.sc-kpis.n4{--k:4}
+.sc-kpis > div{background:#151A1F;border-radius:20px;padding:26px 30px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.sc-kpis .sc-num{font-size:84px}
+.sc-kpis span{font-size:22px;color:#B4BAC4;line-height:1.3}
+.sc-kpis.sm{margin-top:22px}
+.sc-kpis.sm > div{padding:16px 22px}
+.sc-kpis.sm .sc-num{font-size:46px}
+.sc-kpis.sm span{font-size:18px}
+.sc-txt .sc-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+.sc-cards{display:grid;gap:22px;grid-template-columns:repeat(var(--k,3),minmax(0,1fr))}
+.sc-cards.n1{--k:1}.sc-cards.n2{--k:2}.sc-cards.n3{--k:3}.sc-cards.n4{--k:4}
+.sc-card{background:#151A1F;border-radius:20px;padding:24px 26px;display:flex;flex-direction:column;gap:12px;border-top:4px solid #D9A441;min-width:0}
+.sc-card > b{font-family:'Space Grotesk',sans-serif;font-size:29px;line-height:1.15}
+.sc-cards.n4 .sc-card > b{font-size:25px}
+.sc-badges{display:flex;flex-wrap:wrap;gap:8px}
+.sc-card p{margin:0;font-size:21px;line-height:1.35;color:#D5D9DF}
+.sc-card p em{display:block;font-style:normal;font-size:15px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#D9A441;margin-bottom:2px}
+.sc-cards.n4 .sc-card p{font-size:19px}
+.sc-acq{display:flex;gap:60px;align-items:center}
+.sc-acq-id{width:380px;flex-shrink:0;display:flex;flex-direction:column;gap:10px}
+.sc-acq-id span{font-family:'Space Grotesk',sans-serif;font-size:52px;font-weight:700;line-height:1.05}
+.sc-acq-id small{font-size:20px;color:#8B93A0}
+.sc-acq-body{flex-grow:1;min-width:0}
+.sc-acq-log{margin:0;font-size:32px;line-height:1.35;border-left:5px solid #D9A441;padding-left:26px}
+.sc-score{display:flex;gap:60px;align-items:center}
+.sc-score-l{flex-grow:1;display:flex;flex-direction:column;gap:20px}
+.sc-score-l > div{display:grid;grid-template-columns:300px 1fr 90px;gap:4px 22px;align-items:center;font-size:26px}
+.sc-score-l .sc-track{height:34px}
+.sc-score-l small{grid-column:2 / 4;font-size:18px;color:#8B93A0}
+.sc-valo table{width:100%;border-collapse:collapse;font-size:25px}
+.sc-valo th{font-size:17px;font-weight:700;color:#8B93A0;text-align:right;padding:8px 14px}
+.sc-valo td{text-align:right;padding:9px 14px;border-top:1px solid rgba(255,255,255,0.06)}
+.sc-valo th:first-child,.sc-valo td:first-child{text-align:left}
+.sc-valo tr.grp td{color:#D9A441;font-size:17px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding-top:18px}
+.sc-valo tr.hl td{background:rgba(217,164,65,0.08)}
+.sc-valo td b{color:#F0C877}
 .aw-card.t-ecran:not(.sz-z){grid-column:span 2;grid-row:span 3;padding:10px}
 .aw-card.t-ecran .aw-cbody{overflow:hidden}
 .aw-ecrans{display:flex;flex-direction:column;gap:16px}
