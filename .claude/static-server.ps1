@@ -72,7 +72,8 @@ else { $extBackup = "" }
 # « Mes portefeuilles » : un fichier JSON par nom autorise, memes protections que le Portefeuille IA
 # (revision, ecriture atomique, copies datees, copie hors projet, aucune operation effacee sans declaration).
 if ($StoreDir -ne ""){ $storeDirPath = [System.IO.Path]::GetFullPath($StoreDir) } else { $storeDirPath = Join-Path $root "data\mes-portefeuilles" }
-$storeNames = @("portefeuilles", "multiples", "objectifs", "atelier", "prix", "studio")
+# navigateur (2026-11-14) : donnees que l'appli gardait seulement dans le navigateur (Watchlist, Tier list, Alertes, Idees...)
+$storeNames = @("portefeuilles", "multiples", "objectifs", "atelier", "prix", "studio", "navigateur")
 # Publication en ligne (2026-11-10) : copies en LECTURE SEULE servies par le site public (GitHub Pages) quand il n'y a pas de
 # serveur local. Une instance de test ecrit dans son propre dossier et ne lance JAMAIS git.
 if ($testInstance){ $publicDir = Join-Path $storeDirPath "public-test" } else { $publicDir = Join-Path $root "data\public" }
@@ -614,13 +615,14 @@ function Handle-StoreLoad($req, $res){
 function Handle-StoreSave($req, $res){
   if (-not (Test-WriteGuards $req $res)){ return }
   $n = Get-StoreName $req $res; if (-not $n){ return }
-  $lim = 0; if ($n -eq "atelier"){ $lim = $maxBodyAtelier }
+  $lim = 0; if ($n -eq "atelier" -or $n -eq "navigateur"){ $lim = $maxBodyAtelier }
   $bytes = Read-BodyBytes $req $res $lim
   if ($null -eq $bytes){ return }
   try { $text = (New-Object System.Text.UTF8Encoding($false, $true)).GetString($bytes) } catch { Send-Json $res 400 @{ ok = $false; error = "encodage UTF-8 invalide" }; return }
   try { $b = $text | ConvertFrom-Json } catch { Send-Json $res 400 @{ ok = $false; error = "JSON invalide" }; return }
   if (-not $b -or $b.version -ne 1){ Send-Json $res 400 @{ ok = $false; error = "schema inconnu" }; return }
   if ($n -eq "atelier" -and $null -eq $b.docs){ Send-Json $res 400 @{ ok = $false; error = "schema inconnu" }; return }
+  if ($n -eq "navigateur" -and $null -eq $b.keys){ Send-Json $res 400 @{ ok = $false; error = "schema inconnu" }; return }
   $f = Join-Path $storeDirPath ($n + ".json")
   $bk = Join-Path $storeDirPath "backups"
   $cur = $null; $curRevision = 0
@@ -656,6 +658,15 @@ function Handle-StoreSave($req, $res){
     $missing = @($cur.items.PSObject.Properties | ForEach-Object { $_.Name } | Where-Object { $newIds -notcontains $_ })
     $undeclared = @($missing | Where-Object { $declared -notcontains $_ })
     if ($undeclared.Count -gt 0){ Send-Json $res 400 @{ ok = $false; error = "miniature(s) supprimee(s) non declaree(s)" }; return }
+    if ($missing.Count -gt 0){ $removedAny = $true }
+  }
+  # Donnees du navigateur : aucune rubrique (keys.<nom>) ne disparait sans etre declaree.
+  if ($cur -and $n -eq "navigateur" -and $cur.keys){
+    $declared = @($b.deleted | ForEach-Object { [string]$_ })
+    $newIds = @($b.keys.PSObject.Properties | ForEach-Object { $_.Name })
+    $missing = @($cur.keys.PSObject.Properties | ForEach-Object { $_.Name } | Where-Object { $newIds -notcontains $_ })
+    $undeclared = @($missing | Where-Object { $declared -notcontains $_ })
+    if ($undeclared.Count -gt 0){ Send-Json $res 400 @{ ok = $false; error = "rubrique(s) supprimee(s) non declaree(s)" }; return }
     if ($missing.Count -gt 0){ $removedAny = $true }
   }
   New-Item -ItemType Directory -Force -Path $storeDirPath | Out-Null
@@ -847,7 +858,7 @@ while ($listener.IsListening) {
     $path = [System.Uri]::UnescapeDataString($req.Url.AbsolutePath)
     if ($path -eq "/api/ia/ping") {
       New-Item -ItemType Directory -Force -Path $iaDirPath | Out-Null
-      Send-Json $res 200 @{ ok = $true; writable = $true; v = 22; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
+      Send-Json $res 200 @{ ok = $true; writable = $true; v = 23; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
     } elseif ($path -eq "/api/ia/save") {
       Handle-IaSave $req $res
     } elseif ($path -eq "/api/ia/refresh") {

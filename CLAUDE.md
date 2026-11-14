@@ -686,7 +686,14 @@ Les anciennes pages Sheet (Wolf Portfolio, Perso) sont conservées telles quelle
   (liste, résumé de chaque copie, « Revenir à cette copie » en 2 clics). Limite restante : tout est sur le disque C: (OneDrive présent
   mais vide, D: vide). **Copie hors du PC (2026-11-14) : Google Drive pour ordinateur synchronise `Documents\Wolf Analysis - sauvegardes`**
   (portefeuilles, objectifs, multiples, atelier + images, studio, prix, Portefeuille IA). Ce qui ne vit que dans le navigateur
-  (localStorage / IndexedDB : Watchlist, Tier list, Alertes, Idées, Revue, Dividende, Construction, Wolf Labo, Cerveau) n'y est PAS.
+  **Données du navigateur dans un fichier (2026-11-14, serveur v=23, `js/stockage-fichier.js`, chargé AVANT app.js)** : les rubriques
+  localStorage de Watchlist, Tier list, Alertes, Idées, Revue, Dividende, Construction, Concurrents, scores, Wolf Labo, réglages Valorisation,
+  achats IA en attente… (liste `KEYS`) sont recopiées dans le store `navigateur` (`data/mes-portefeuilles/navigateur.json`,
+  `{version, revision, keys:{rubrique:{v: texte localStorage, at: ms}}}`), donc aussi dans Documents → Google Drive. `Storage.prototype.setItem`
+  est intercepté (envoi 1,5 s après). Au démarrage, une rubrique plus récente dans le fichier (autre navigateur / port / navigateur vidé)
+  est remise dans localStorage puis la page se recharge UNE fois. Le plus récent gagne, rubrique par rubrique (`wolfFichierSyncMeta`).
+  Le serveur refuse toute rubrique disparue non déclarée. Toute NOUVELLE rubrique localStorage de données utilisateur doit être ajoutée à `KEYS`.
+  Seul le Cerveau numérique (IndexedDB, non utilisé pour l'instant) reste hors fichier.
 - Cash PEA vérifié (11/11) : 8 352,22 € = solde réel donné par l'utilisateur, au centime. Le cash négatif de février à mai vient du
   départ au 01/01/2026 (2,16 € déduits) : il manque des liquidités de départ ET autant de sortie plus tard (ou un versement est daté
   trop tard) ; relevé du 31/12/2025 demandé à l'utilisateur. Rien n'a été modifié.

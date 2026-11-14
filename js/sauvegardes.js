@@ -23,6 +23,7 @@ const STORES = [
   ['multiples', 'EV/EBITDA historiques'],
   ['prix', 'Prix par secteur'],
   ['studio', 'Wolf Studio (miniatures, short)'],
+  ['navigateur', 'Watchlist, Tier list, Alertes, Idées, Revue, Dividende, Wolf Labo…'],
 ];
 const KIND = { backups: 'Copie automatique', mensuel: 'Copie mensuelle', secours: 'Secours (enregistrement refusé)' };
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -54,6 +55,7 @@ function summary(name, d){
       return docs.length + ' dossiers, ' + cards + ' cartes';
     }
     if (name === 'studio') return Object.keys(d.items || {}).length + ' miniatures enregistrées';
+    if (name === 'navigateur') return Object.values(d.keys || {}).filter(x => x && x.v != null).length + ' rubriques';
     if (name === 'objectifs') return Object.keys(d.objectifs || {}).length + ' entreprises avec objectifs';
     if (name === 'prix'){ const n = Object.values(d).filter(Array.isArray).reduce((s, x) => s + x.length, 0); return n ? n + ' lignes' : Object.keys(d).length + ' rubriques'; }
     return Object.keys(d).filter(k => !/^(version|revision|baseRevision|savedAt|deleted)$/.test(k)).length + ' rubriques';
@@ -133,6 +135,10 @@ async function restore(){
       const keep = new Set(Object.keys(data.docs || {})); deleted = Object.keys(cur.docs || {}).filter(x => !keep.has(x));
     } else if (p.name === 'studio'){
       const keep = new Set(Object.keys(data.items || {})); deleted = Object.keys(cur.items || {}).filter(x => !keep.has(x));
+    } else if (p.name === 'navigateur'){
+      const keep = new Set(Object.keys(data.keys || {})); deleted = Object.keys(cur.keys || {}).filter(x => !keep.has(x));
+      // la copie restaurée doit l'emporter sur ce navigateur : ses rubriques sont redatées maintenant
+      const now = Date.now(); data.keys = Object.fromEntries(Object.entries(data.keys || {}).map(([k, x]) => [k, Object.assign({}, x, { at: now })]));
     }
     const body = Object.assign({}, data, { version: 1, revision: rev + 1, baseRevision: rev, deleted, savedAt: new Date().toISOString(), restoredFrom: p.dir + '/' + p.file });
     const r = await fetch('/api/store/save?name=' + p.name, { method: 'POST', headers: Object.assign({ 'X-Wolf-Restore': '1' }, H), body: JSON.stringify(body) });
