@@ -930,6 +930,11 @@ https://claude.ai/artifact/B4bfYADeVQL6G83Q4kJ6WX (17 modèles, 45 mises en page
   anciennes pages. `history()` garde les dates (`histD`). Miniature **« Analyse hebdo »** (`hebdoW`, 1re de la galerie) : loup au
   casque DORÉ si le Wolf monte cette semaine, ROUGE s'il baisse (`poseOf`, réglage « Ambiance »), semaine, performance vs CAC 40,
   logos = opérations de la semaine (`wolfFacts().week/wk/weekOps`). Jusqu'à 6 entreprises (mise en page C en grille).
+  **2026-11-14** : le champ Entreprises de l'Analyse hebdo = 6 CASES numérotées (champ `L` avec option `{slots:1}`, une recherche
+  par case) + « ⇩ Remplir avec le Sommaire hebdo » (`{fromProg:1}`, programme + watchlist/portefeuille). 3 modèles nourris par le
+  programme du Sommaire hebdo (`t.prog`, `progOf`/`progItems`/`progOps`, champ de type `prog` = choix du programme, vide = le plus
+  récent ; étiquettes en pastilles `tagChip`) : « Au programme » (grille / Watchlist | Portefeuille / question + « ? »), « Mes
+  mouvements de la semaine » (lignes étiquetées Achetée / Vendue / Renforcée / Allégée, logos cochés / barrés), « X actions à la loupe ».
 - **6 nouveaux shorts (2026-11-13)**, tracés dans `DRAW2` : Résultats trimestriels (snapshot TradingView FRAIS : `earnings_release_date`,
   `earnings_per_share_fq` / `_forecast_fq`, `revenue_fq` / `_forecast_fq`, chaque chiffre corrigeable à la main `p.epsA…` via `resV`,
   tampon Battu / Manqué / Conforme à ±1 %, réaction du cours depuis la publication), Duel (base 100, couronne), Dividende (rendement,

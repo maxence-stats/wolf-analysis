@@ -3708,3 +3708,16 @@
 .documents-ttm-row:last-child{border-bottom:0;}
 .documents-ttm-row span{color:var(--text-dim);}
 .documents-ttm-row b{color:var(--text);font-weight:700;white-space:nowrap;}
+
+/* Studio : cases numérotées des entreprises (miniature Analyse hebdo) + remplissage depuis le Sommaire hebdo (2026-11-14) */
+.sd-slots{display:flex;flex-direction:column;gap:6px}
+.sd-slot{display:grid;grid-template-columns:24px 1fr;gap:4px 8px;align-items:center}
+.sd-slot em{font:400 15px Anton,Impact,sans-serif;font-style:normal;color:#111;background:#EEFF41;border-radius:6px;width:24px;height:24px;display:grid;place-items:center}
+.sd-slot .sd-sugg{grid-column:2}
+.sd-slot .sd-search{padding:6px 9px;font-size:13px}
+.sd-slot.full .sd-chip{justify-self:start}
+.sd-fromprog{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px;padding:8px;border:1px dashed var(--hair);border-radius:10px}
+.sd-fromprog select{font:600 13px var(--font-body);color:var(--text);background:var(--bg);border:1px solid var(--hair);border-radius:8px;padding:6px 8px;flex:1 1 140px;min-width:0}
+.sd-fromprog button,.sd-wrap .sd-clear{border:1px solid var(--gold);background:var(--panel-2);color:var(--gold);font:700 13px var(--font-body);padding:7px 12px;border-radius:999px;cursor:pointer}
+.sd-wrap .sd-clear{border-color:var(--hair);color:var(--text-dim);align-self:flex-start;margin-top:4px;font-weight:600}
+.sd-fromprog button:disabled{opacity:.5;cursor:not-allowed}

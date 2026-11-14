@@ -328,7 +328,7 @@ const T = [
  { id: 'hebdoW', name: 'Analyse hebdo', vid: 'Analyse hebdo (samedi)', pose: 'casque', need: [NEED.wolf], note: 'Loup au casque : version DORÉE si le Wolf monte cette semaine, ROUGE s’il baisse (réglage « Ambiance »). Chiffres de la semaine en cours.',
   auto: { sem: (s, c) => c.wolf ? 'Semaine ' + c.wolf.wk : 'Semaine', p: (s, c) => c.wolf && c.wolf.week ? sgn(c.wolf.week.wolf, 1) : '—', cac: (s, c) => c.wolf && c.wolf.week ? 'CAC 40 : ' + sgn(c.wolf.week.cac, 1) : '' },
   poseOf: (s, c) => { if (s.pose !== 'casque' && s.pose !== 'casque_rouge') return s.pose; if (s.amb === 'or') return 'casque'; if (s.amb === 'rouge') return 'casque_rouge'; const v = c.wolf && c.wolf.week ? c.wolf.week.wolf : 0; return v >= 0 ? 'casque' : 'casque_rouge'; },
-  f: [['l1', 'Titre', 't'], ['sem', 'Encadré jaune (semaine)', 'ov'], ['p', 'Performance de la semaine', 'ov'], ['cac', 'Ligne de l’indice', 'ov'], ['q', 'Question (mise en page C)', 'y'], ['logos', 'Entreprises (vide = opérations de la semaine)', 'L', 6], ['amb', 'Ambiance du loup', 'sel', [['auto', 'Selon la semaine (or / rouge)'], ['or', 'Toujours dorée'], ['rouge', 'Toujours rouge']]]],
+  f: [['l1', 'Titre', 't'], ['sem', 'Encadré jaune (semaine)', 'ov'], ['p', 'Performance de la semaine', 'ov'], ['cac', 'Ligne de l’indice', 'ov'], ['q', 'Question (mise en page C)', 'y'], ['logos', 'Entreprises (cases vides = opérations de la semaine)', 'L', 6, { slots: 1, fromProg: 1 }], ['amb', 'Ambiance du loup', 'sel', [['auto', 'Selon la semaine (or / rouge)'], ['or', 'Toujours dorée'], ['rouge', 'Toujours rouge']]]],
   d: { l1: 'Analyse hebdo', sem: '', p: '', cac: '', q: "J'achète ?", logos: [], amb: 'auto' },
   v: [['A', 'Semaine + performance', (s, c) => { const H = T.find(z => z.id === 'hebdoW'), L = hebdoLogos(s, c);
         txt(s.l1, 40, 105, 92); ybox(OV(s, 'sem', H.auto.sem(s, c)), 40, 205, 76); pct(OV(s, 'p', H.auto.p(s, c)), 40, 420, 200, { max: 580 }); txt(OV(s, 'cac', H.auto.cac(s, c)), 40, 495, 46, { color: '#C9CED6', max: 580 });
@@ -341,8 +341,56 @@ const T = [
         txt(OV(s, 'sem', H.auto.sem(s, c)), 40, 100, 74); ybox(s.q, 40, 230, 120);
         const nC = Math.min(L.length, 6), cols = nC <= 2 ? nC : nC <= 4 ? 2 : 3, rows = Math.ceil(nC / Math.max(1, cols)), tC = nC <= 2 ? 190 : nC <= 4 ? 170 : 160, gC = tC + 22;
         L.slice(0, 6).forEach((k, i) => tile(k, 40 + (i % cols) * gC, 285 + Math.floor(i / cols) * (rows > 1 ? (700 - 285 - tC) / Math.max(1, rows - 1) : 0) , tC, { q: 1 }));
-        if (!L.length) pct(OV(s, 'p', H.auto.p(s, c)), 40, 470, 180, { max: 560 }); }]] }
+        if (!L.length) pct(OV(s, 'p', H.auto.p(s, c)), 40, 470, 180, { max: 560 }); }]] },
+ /* --- Modèles nourris par le « 🗓 Sommaire hebdo » (programme de la vidéo) --- */
+ { id: 'progW', name: 'Au programme', vid: 'Analyse hebdo (Sommaire)', pose: 'jumelles', prog: 1, note: 'Les entreprises viennent du programme composé dans l’onglet « 🗓 Sommaire hebdo » (étiquettes comprises).',
+  auto: { sem: (s, c) => (c.prog && c.prog.sem) || '' },
+  f: [['prog', 'Programme', 'prog'], ['src', 'Entreprises', 'sel', [['all', 'Watchlist + portefeuille'], ['watch', 'Watchlist seulement'], ['port', 'Portefeuille seulement']]], ['n', 'Combien (mises en page A et C)', 'sel', [[3, '3'], [4, '4'], [5, '5'], [6, '6']]],
+      ['l1', 'Titre', 't'], ['sem', 'Encadré jaune (semaine)', 'ov'], ['q', 'Question (mise en page C)', 'y'], ['tags', 'Étiquettes', 'sel', [['on', 'Afficher'], ['off', 'Masquer']]]],
+  d: { prog: '', src: 'all', n: 6, l1: 'Au programme', sem: '', q: "J'achete ?", tags: 'on' },
+  v: [['A', 'Grille + étiquettes', (s, c) => { const L = progItems(s, c), n = L.length, t = n <= 3 ? 180 : 160, g = 26, tg = s.tags !== 'off';
+        txt(s.l1, 40, 100, 88); ybox(OV(s, 'sem', T.find(z => z.id === 'progW').auto.sem(s, c)), 40, 195, 70);
+        L.forEach((k, i) => { const X = 40 + (i % 3) * (t + g), Yy = 240 + Math.floor(i / 3) * (t + (tg ? 56 : 22)); tile(k, X, Yy, t); if (tg) tagChip(k.tag, X + t / 2, Yy + t + 8, 30); }); }],
+     ['B', 'Watchlist | Portefeuille', (s, c) => { const pr = c.prog, W = ((pr && pr.watch) || []).slice(0, 4), P = ((pr && pr.port) || []).slice(0, 4), t = 130, tg = s.tags !== 'off';
+        txt(s.l1, 40, 95, 84); txt(OV(s, 'sem', T.find(z => z.id === 'progW').auto.sem(s, c)), 40, 165, 54, { color: Y });
+        [[W, 'Watchlist', 40], [P, 'Portefeuille', 365]].forEach(([arr, lab, X0]) => { ybox(lab, X0, 245, 46, { max: 300 });
+          arr.forEach((k, i) => { const X = X0 + (i % 2) * (t + 20), Yy = 275 + Math.floor(i / 2) * (t + (tg ? 48 : 20)); tile(k, X, Yy, t); if (tg) tagChip(k.tag, X + t / 2, Yy + t + 6, 24); }); });
+        x.save(); x.strokeStyle = 'rgba(255,255,255,.35)'; x.lineWidth = 3; x.setLineDash([10, 8]); x.beginPath(); x.moveTo(345, 215); x.lineTo(345, 650); x.stroke(); x.restore(); }],
+     ['C', 'Question + logos « ? »', (s, c) => { const L = progItems(s, c), n = L.length, cols = n <= 2 ? Math.max(1, n) : n <= 4 ? 2 : 3, rows = Math.ceil(n / cols), t = n <= 2 ? 190 : n <= 4 ? 165 : 155, g = t + 24, tg = s.tags !== 'off';
+        txt(OV(s, 'sem', T.find(z => z.id === 'progW').auto.sem(s, c)), 40, 100, 74); ybox(s.q, 40, 230, 120);
+        L.forEach((k, i) => { const X = 40 + (i % cols) * g, Yy = 280 + Math.floor(i / cols) * (rows > 1 ? (690 - 280 - t) / (rows - 1) : 0); tile(k, X, Yy, t, { q: !tg || !k.tag }); if (tg) tagChip(k.tag, X + t / 2, Yy + t - 18, 26); }); }]] },
+ { id: 'progOps', name: 'Mes mouvements de la semaine', vid: 'Analyse hebdo (Sommaire) · Portefeuille', pose: 'portefeuille', prog: 1, note: 'Lignes du portefeuille étiquetées Achetée / Vendue / Renforcée / Allégée dans le « 🗓 Sommaire hebdo ».',
+  auto: { sem: (s, c) => (c.prog && c.prog.sem) || '' },
+  f: [['prog', 'Programme', 'prog'], ['l1', 'Titre', 't'], ['l2', 'Encadré jaune', 'y'], ['sem', 'Semaine', 'ov']],
+  d: { prog: '', l1: 'Cette semaine', l2: "J'ai bouge !", sem: '' },
+  v: [['A', 'Une ligne par mouvement', (s, c) => { const L = progOps(c).slice(0, 4);
+        txt(s.l1, 40, 95, 84); L.forEach((k, i) => { const Yy = 128 + i * 124, tg = PROG.TAGS[k.tag || ''] || []; tile(k, 40, Yy, 108); txt(tg[1] ? tg[0] : nameOf(k), 172, Yy + 80, 70, { color: tg[1] || '#fff', max: 430 }); });
+        ybox(s.l2, 40, 700, 70); }],
+     ['B', 'Logos cochés / barrés', (s, c) => { const L = progOps(c).slice(0, 6), n = L.length, t = n <= 3 ? 175 : 150, g = t + 26;
+        txt(OV(s, 'sem', T.find(z => z.id === 'progOps').auto.sem(s, c)) || s.l1, 40, 100, 80); ybox(s.l2, 40, 220, 100);
+        L.forEach((k, i) => { const X = 40 + (i % 3) * g, Yy = 265 + Math.floor(i / 3) * (t + 40); tile(k, X, Yy, t, { cross: k.tag === 'vente' }); if (k.tag === 'achat' || k.tag === 'renfo') check(X + t - t * 0.32, Yy - t * 0.1, t * 0.42); tagChip(k.tag, X + t / 2, Yy + t + 6, 24); }); }]] },
+ { id: 'progCount', name: 'X actions à la loupe', vid: 'Analyse hebdo (Sommaire)', pose: 'loupe', prog: 1, note: 'Le nombre et les logos viennent du programme du « 🗓 Sommaire hebdo ».',
+  auto: { l0: (s, c) => progItems(s, c).length + ' actions', sem: (s, c) => (c.prog && c.prog.sem) || '' },
+  f: [['prog', 'Programme', 'prog'], ['src', 'Entreprises', 'sel', [['all', 'Watchlist + portefeuille'], ['watch', 'Watchlist seulement'], ['port', 'Portefeuille seulement']]], ['n', 'Combien', 'sel', [[3, '3'], [4, '4'], [5, '5'], [6, '6']]],
+      ['l0', 'Encadré jaune', 'ov'], ['l1', 'Ligne blanche', 't'], ['sem', 'Semaine', 'ov']],
+  d: { prog: '', src: 'all', n: 6, l0: '', l1: 'A la loupe', sem: '' },
+  v: [['A', 'Chiffre en haut, logos dessous', (s, c) => { const H = T.find(z => z.id === 'progCount'), L = progItems(s, c), t = L.length <= 3 ? 170 : 150;
+        ybox(OV(s, 'l0', H.auto.l0(s, c)), 40, 160, 140); txt(s.l1, 40, 290, 110);
+        L.forEach((k, i) => tile(k, 40 + (i % 3) * (t + 24), 330 + Math.floor(i / 3) * (t + 14), t)); }],
+     ['B', 'Logos en haut, chiffre dessous', (s, c) => { const H = T.find(z => z.id === 'progCount'), L = progItems(s, c), t = 125;
+        L.forEach((k, i) => tile(k, 40 + (i % 3) * (t + 22), 30 + Math.floor(i / 3) * (t + 16), t));
+        ybox(OV(s, 'l0', H.auto.l0(s, c)), 40, 470, 125); txt(s.l1, 40, 590, 100); txt(OV(s, 'sem', H.auto.sem(s, c)), 40, 680, 58, { color: '#C9CED6' }); }]] }
 ];
+
+// programme du « 🗓 Sommaire hebdo » choisi (vide = le plus récent) et ses entreprises
+const progOf = s => (typeof PROG === 'undefined' ? null : (s.prog && PROG.get(s.prog)) || PROG.list()[0] || null);
+function progItems(s, c){ const pr = c.prog; if (!pr) return []; const w = pr.watch || [], p = pr.port || [];
+  return (s.src === 'watch' ? w : s.src === 'port' ? p : w.concat(p)).slice(0, Math.min(6, +s.n || 6)); }
+function progOps(c){ const p = (c.prog && c.prog.port) || [], m = p.filter(z => ['achat', 'vente', 'renfo', 'allege'].includes(z.tag)); return m.length ? m : p; }
+// étiquette du programme (Achetée, Vendue…) en pastille sous un logo
+function tagChip(tag, cx, Yy, size){ const tg = PROG.TAGS[tag || '']; if (!tg || !tg[1]) return; const s = up(tg[0]); x.font = `400 ${size}px ${AF}`;
+  const w = x.measureText(s).width + size * 0.6, h = size * 1.15; rr(cx - w / 2, Yy, w, h, size * 0.18); x.fillStyle = tg[1]; x.fill(); x.lineWidth = 3; x.strokeStyle = '#000'; x.stroke();
+  x.fillStyle = tg[2]; x.textAlign = 'center'; x.fillText(s, cx, Yy + h * 0.8); x.textAlign = 'left'; }
 
 // logos de la miniature hebdo : ceux choisis, sinon les opérations de la semaine, sinon les 3 plus grosses lignes
 function hebdoLogos(s, c){ if (s.logos && s.logos.length) return s.logos.slice(0, 6); const w = c.wolf; if (!w) return []; return (w.weekOps && w.weekOps.length ? w.weekOps : w.items.slice(0, 3)).slice(0, 6); }
@@ -353,6 +401,7 @@ async function prep(t, s){
   const items = [];
   t.f.forEach(([k, , ty]) => { if (ty === 'L' && Array.isArray(s[k])) items.push(...s[k]); });
   if (t.id === 'resultat' || t.id === 'portefeuille') items.push(K_('WOLF'));
+  if (t.prog){ const pr = progOf(s); ctx.prog = pr; if (!pr || !((pr.watch || []).length + (pr.port || []).length)) ctx.err = 'Programme vide : compose-le dans l’onglet « 🗓 Sommaire hebdo » (watchlist + portefeuille).'; else items.push(...(pr.watch || []), ...(pr.port || [])); }
   if ((t.need || []).includes(NEED.tier)){ ctx.tier = tierData(); ctx.tier.forEach(r => items.push(...r[1])); if (!ctx.tier.some(r => r[1].length)) ctx.err = 'Ta Tier list est vide : classe tes entreprises dans Screener > Tier List, elles apparaîtront ici.'; }
   await Promise.all(items.map(it => ensureLogo(it).catch(() => {})));
   items.forEach(it => { const u = logoUrl(it); if (u) jobs.push(img(u)); });
@@ -455,7 +504,7 @@ function thumbView(){
     <div class="sd-panel" id="sdPanel"></div>
    </div>
    <div class="sd-gal" id="sdGal"><h3>Tous les modèles <small>clique sur un modèle pour l'ouvrir</small></h3>
-    <div class="sd-tplgrid">${T.map((t, i) => [t, i]).sort((a, b) => (b[0].id === 'hebdoW') - (a[0].id === 'hebdoW')).map(([t, i]) => `<button type="button" data-sd-tpl="${i}" class="${i === ui.cur ? 'on' : ''}"><canvas data-sd-th="${i}" width="320" height="180"></canvas><b>${esc(t.name)}</b><small>${esc(t.vid)} · ${t.v.length} mise${t.v.length > 1 ? 's' : ''} en page</small></button>`).join('')}</div></div>
+    <div class="sd-tplgrid">${T.map((t, i) => [t, i]).sort((a, b) => { const r = t => t.id === 'hebdoW' ? 0 : t.prog ? 1 : 2; return r(a[0]) - r(b[0]) || a[1] - b[1]; }).map(([t, i]) => `<button type="button" data-sd-tpl="${i}" class="${i === ui.cur ? 'on' : ''}"><canvas data-sd-th="${i}" width="320" height="180"></canvas><b>${esc(t.name)}</b><small>${esc(t.vid)} · ${t.v.length} mise${t.v.length > 1 ? 's' : ''} en page</small></button>`).join('')}</div></div>
    <div class="sd-lib"><h3>Ma bibliothèque de miniatures</h3><div id="sdLib"></div></div>`;
   panel(); lib(); draw(); galThumbs();
 }
@@ -475,7 +524,16 @@ async function galThumbs(){
     THUMBS[i] = sm; put(i);
   }
 }
-function fieldHtml(t, s, [k, l, ty, n]){
+function fieldHtml(t, s, [k, l, ty, n, o]){
+  if (ty === 'prog'){ const L = typeof PROG !== 'undefined' ? PROG.list() : [], lab = q => (q.sem || q.titre || 'Programme') + ' · ' + ((q.watch || []).length + (q.port || []).length) + ' entreprises';
+    return `<label class="sd-f">${esc(l)} (onglet « 🗓 Sommaire hebdo »)<select id="sdf_${k}" data-sd-k="${k}"><option value="">Le plus récent${L[0] ? ' (' + esc(lab(L[0])) + ')' : ' (aucun)'}</option>${L.map(q => `<option value="${esc(q.id)}" ${s[k] === q.id ? 'selected' : ''}>${esc(lab(q))}</option>`).join('')}</select></label>`; }
+  if (ty === 'L' && o && o.slots){ const list = s[k] || [], L = typeof PROG !== 'undefined' ? PROG.list() : [];
+    return `<div class="sd-grp"><span>${esc(l)} · ${n} au plus</span>
+      <div class="sd-slots">${Array.from({ length: n }, (_, i) => { const it = list[i];
+        return it ? `<div class="sd-slot full"><em>${i + 1}</em><span class="sd-chip">${logoUrl(it) ? `<img src="${esc(logoUrl(it))}" alt="">` : '<i>' + esc(up(nameOf(it)).slice(0, 1)) + '</i>'}${esc(nameOf(it))}<button type="button" data-sd-mv="${k}|${i}|-1" aria-label="Avancer">‹</button><button type="button" data-sd-mv="${k}|${i}|1" aria-label="Reculer">›</button><button type="button" data-sd-rm="${k}|${i}" aria-label="Retirer">✕</button></span></div>`
+          : `<div class="sd-slot"><em>${i + 1}</em><input class="sd-search" data-sd-q="${k}" data-sd-slot="${i}" placeholder="Entreprise ${i + 1} : chercher (TradingView)…" autocomplete="off"><div class="sd-sugg" id="sdSugg_${k}_${i}"></div></div>`; }).join('')}</div>
+      ${o.fromProg ? `<div class="sd-fromprog"><select id="sdProgPick_${k}">${L.map(q => `<option value="${esc(q.id)}">${esc((q.sem || q.titre || 'Programme') + ' · ' + ((q.watch || []).length + (q.port || []).length) + ' entreprises')}</option>`).join('') || '<option value="">Aucun programme</option>'}</select><select id="sdProgSrc_${k}"><option value="all">Watchlist + portefeuille</option><option value="port">Portefeuille</option><option value="watch">Watchlist</option></select><button type="button" data-sd-fromprog="${k}" ${L.length ? '' : 'disabled'}>⇩ Remplir avec le Sommaire hebdo</button></div>` : ''}
+      ${list.length ? `<button type="button" class="sd-clear" data-sd-clear="${k}">Vider les cases</button>` : ''}</div>`; }
   if (ty === 't' || ty === 'y') return `<label class="sd-f">${ty === 'y' ? '<span><i class="sd-y"></i>' + esc(l) + '</span>' : esc(l)}<input id="sdf_${k}" data-sd-k="${k}" value="${esc(s[k])}"></label>`;
   if (ty === 'ov') return `<label class="sd-f">${esc(l)} · calculé, modifiable<input id="sdf_${k}" data-sd-k="${k}" value="${esc(s[k])}" placeholder="Auto : …"></label>`;
   if (ty === 'sel') return `<label class="sd-f">${esc(l)}<select id="sdf_${k}" data-sd-k="${k}">${n.map(o => { const [v, lab] = Array.isArray(o) ? o : [o, o + ' an' + (o > 1 ? 's' : '')]; return `<option value="${esc(v)}" ${String(s[k]) === String(v) ? 'selected' : ''}>${esc(lab)}</option>`; }).join('')}</select></label>`;
@@ -543,8 +601,9 @@ async function uploadImage(file){
   } catch(e){ alertMsg('Image non enregistrée : ' + e.message); }
 }
 let suggTimer = null;
-async function search(k, q){
-  const box = $('sdSugg_' + k); if (!box) return;
+async function search(k, q, slot){
+  const bk = slot != null && slot !== '' ? k + '_' + slot : k; k = bk;
+  const box = $('sdSugg_' + bk); if (!box) return;
   if (q.trim().length < 2){ box.innerHTML = ''; return; }
   try { const r = await fetch('/api/tv/search?all=1&q=' + encodeURIComponent(q.trim().slice(0, 50)), { cache: 'no-store' }); const j = await r.json(); ui.sugg[k] = j.ok ? (j.results || []).slice(0, 8) : []; }
   catch(e){ ui.sugg[k] = []; }
@@ -570,7 +629,13 @@ document.addEventListener('click', e => {
   if (ds.sdRm){ const [k, i] = ds.sdRm.split('|'); ui.st[k].splice(+i, 1); panel(); draw(); return; }
   if (ds.sdMv){ const [k, i, d] = ds.sdMv.split('|'), a = ui.st[k], j = +i + +d; if (j < 0 || j >= a.length) return; [a[i], a[j]] = [a[j], a[i]]; panel(); draw(); return; }
   if (ds.sdPre){ const [k, p] = ds.sdPre.split('|'); addItem(k, K_(p)); return; }
-  if (ds.sdPick){ const [k, i] = ds.sdPick.split('|'), r = (ui.sugg[k] || [])[+i]; if (r) addItem(k, S_(r.symbol, r.name, r.logoid)); return; }
+  if (ds.sdPick){ const [bk, i] = ds.sdPick.split('|'), r = (ui.sugg[bk] || [])[+i], k = bk.replace(/_\d+$/, ''); if (r) addItem(k, S_(r.symbol, r.name, r.logoid)); return; }
+  if (ds.sdClear){ ui.st[ds.sdClear] = []; panel(); draw(); return; }
+  if (ds.sdFromprog){ const k = ds.sdFromprog, f = T[ui.cur].f.find(z => z[0] === k), n = f ? f[3] : 6, pr = PROG.get(($('sdProgPick_' + k) || {}).value || ''), src = ($('sdProgSrc_' + k) || {}).value || 'all';
+    if (!pr){ alertMsg('Aucun programme : compose-le dans l’onglet « 🗓 Sommaire hebdo ».'); return; }
+    const w = pr.watch || [], p = pr.port || [], L = (src === 'watch' ? w : src === 'port' ? p : w.concat(p)).filter(z => z && z.sym).slice(0, n);
+    if (!L.length){ alertMsg('Ce programme n’a pas d’entreprise dans cette partie.'); return; }
+    ui.st[k] = L.map(z => S_(z.sym, z.name, z.logoid)); panel(); draw(); return; }
   if (ds.sdAct === 'save'){ saveItem(false); return; }
   if (ds.sdAct === 'saveas'){ saveItem(true); return; }
   if (ds.sdAct === 'png'){ downloadPng(); return; }
@@ -586,7 +651,7 @@ document.addEventListener('input', e => {
   if (PROG.input(e)) return;
   const k = e.target.dataset.sdK;
   if (k){ const v = e.target.value; ui.st[k] = e.target.tagName === 'SELECT' && v !== '' && !isNaN(+v) ? +v : v; draw(); return; }
-  if (e.target.dataset.sdQ){ const kk = e.target.dataset.sdQ, q = e.target.value; clearTimeout(suggTimer); suggTimer = setTimeout(() => search(kk, q), 250); return; }
+  if (e.target.dataset.sdQ){ const kk = e.target.dataset.sdQ, sl = e.target.dataset.sdSlot, q = e.target.value; clearTimeout(suggTimer); suggTimer = setTimeout(() => search(kk, q, sl), 250); return; }
   if (e.target.id === 'sdBankQ'){ ui.bankQ = e.target.value; clearTimeout(suggTimer); suggTimer = setTimeout(bankGrid, 200); return; }
   if (e.target.id === 'sdZone'){ draw(); return; }
   SHORT.input(e);
