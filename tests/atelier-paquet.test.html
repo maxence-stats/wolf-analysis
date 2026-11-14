@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><title>Tests — import Atelier (wolf-atelier/2.1)</title>
+<style>body{font:14px/1.5 system-ui,sans-serif;background:#0D1013;color:#E9EBEE;padding:20px}.ok{color:#4FD1A5}.ko{color:#E5636B;font-weight:700}</style></head>
+<body><h1>Tests de js/atelier-paquet.js</h1><p>À ouvrir via le serveur local : <code>http://localhost:&lt;port&gt;/tests/atelier-paquet.test.html</code></p><ol id="out"></ol>
+<script src="../js/atelier-paquet.js"></script>
+<script>
+const P = window.ATELIER_PAQUET, out = document.getElementById('out');
+let n = 0, ko = 0;
+const t = (name, cond, info) => { n++; if (!cond) ko++; const li = document.createElement('li'); li.className = cond ? 'ok' : 'ko'; li.textContent = (cond ? '✓ ' : '✗ ') + name + (info ? ' — ' + info : ''); out.appendChild(li); };
+const near = (a, b, e) => a != null && Math.abs(a - b) < (e || 0.01);
+
+// 1. Valorisation : formules du contrat (F₅, P₅, P_max à 12 %, rendement, marge de sécurité)
+const s = P.valoScenario(5.5, 5, 16, 12, 5, 107.65);
+t('F₅ = 5,50 × 1,05^5', near(s.F5, 7.0195, 0.001), s.F5);
+t('P₅ = F₅ × 16', near(s.P5, 112.31), s.P5);
+t('P_max = P₅ ÷ 1,12^5', near(s.Pmax, 63.73), s.Pmax);
+t('Rendement annuel au cours', near(s.R, 0.85, 0.02), s.R);
+t('Marge de sécurité = (P_max − cours) ÷ P_max', near(s.marge, (63.73 - 107.65) / 63.73 * 100, 0.05), s.marge);
+t('Entrée manquante → aucun résultat', P.valoScenario(null, 5, 16, 12, 5, 100) === null);
+
+// 2. Modules A et B à partir d'une carte
+const H = { f0: 5.5, gp: -2, gr: 5, go: 10, mb: 13, mc: 16, mh: 19 };
+const card = { base: 'f0', horizon: 5, rendement_cible: 12, module_a: { cagr: { pessimiste: 'gp', realiste: 'gr', optimiste: 'go' }, multiple: 'mc' }, module_b: { cagr: 'gr', multiples: { bas: 'mb', central: 'mc', haut: 'mh' } } };
+const R = P.valoCompute(card, id => H[id], 107.65);
+t('Module A optimiste : P_max ≈ 80,42 €', near(R.A.optimiste.Pmax, 80.42), R.A.optimiste.Pmax);
+t('Module B multiple bas : P_max ≈ 51,78 €', near(R.B.bas.Pmax, 51.78), R.B.bas.Pmax);
+t('Résultat nommé valo:prix_max_realiste', near(R.named.prix_max_realiste, 63.73));
+
+// 3. Pont d'acquisition : incomplet tant qu'une entrée manque, jamais de valeur inventée
+const V = { a: 1434, c: 300, oi: 20, ni: 60, cx: 10, bfr: 5, cr: 15, sr: 0, ch: 52, av: 301.84, em: 7.02, sh: 100 };
+const acq = { pont: { fcf_acquereur: 'a', fcf_cible: 'c', anciens_interets_cible: 'oi', nouveaux_interets: 'ni', capex_supplementaire: 'cx', bfr_normalise: 'bfr', couts_integration_recurrents: 'cr', synergies_realisees: 'sr', coupons_hybrides: 'ch', actions_avant: 'av', actions_emises: 'em', synergies_hypothetiques: 'sh' }, inclus_dans_fcf_retenu: { coupons_hybrides: false } };
+const p1 = P.pontCompute(acq, id => V[id]);
+t('Pont complet : FCF = 1434 + 300 + 20 − 60 − 10 − 5 − 15 + 0 − 52', p1.complete && near(p1.fcf, 1612), p1.fcf);
+t('FCF/action prouvé', near(p1.fcfParAction, 1612 / 308.86, 0.001), p1.fcfParAction);
+t('Avec synergies hypothétiques', near(p1.fcfParActionHypo, 1712 / 308.86, 0.001));
+t('Dilution = émises ÷ avant', near(p1.dilution, 7.02 / 301.84 * 100, 0.001));
+const p2 = P.pontCompute(acq, id => id === 'c' ? null : V[id]);
+t('Entrée manquante → incomplet, aucune valeur', !p2.complete && p2.fcf === null && p2.missing.includes('FCF de la cible'));
+const p3 = P.pontCompute(acq, id => id === 'c' ? null : V[id], true);
+t('« Calculer quand même » → marqué forcé', p3.forced && near(p3.fcf, 1312));
+const p4 = P.pontCompute(Object.assign({}, acq, { inclus_dans_fcf_retenu: { coupons_hybrides: true } }), id => V[id]);
+t('Coupons déjà dans le FCF retenu : pas déduits deux fois', near(p4.fcf, 1664));
+
+// 4. Contrôle d'un paquet minimal
+const lot = { contrat: 'wolf-atelier/2.1', type: 'dossier', lot: 1, meta: { entreprise: 'Test' },
+  sources: [{ id: 'src_a', titre: 'Rapport', url: 'https://example.com', type: 'rapport_annuel' }],
+  donnees: [{ id: 'ca', libelle: 'CA', unite: 'M', devise: 'EUR', statut: 'publie', source: 'src_a', definition: 'CA', perimetre: 'Groupe', serie: [{ periode: 'FY2024', valeur: 100, page: '3' }, { periode: 'FY2025', valeur: null, statut: 'non_disponible' }] },
+    { id: 'x0', libelle: 'Zéro', unite: '%', statut: 'publie', source: 'src_a', page: '4', definition: 'd', perimetre: 'p', periode: 'FY2025', valeur: 0 }],
+  hypotheses: [{ id: 'h', libelle: 'H', valeur: 5, unite: '%', statut: 'hypothese', justification: 'j', date_revision: '2026-11-14', confiance: 'faible' }],
+  affirmations: [], presentation: { sections: [{ id: 's1', titre: 'S', cartes: [{ id: 'k', type: 'chiffre', taille: 'petite', donnee: 'ca' }, { id: 'k2', type: 'texte', contenu: 'Voir {{d:ca}} et [[src_inconnue]]' }] }] }, notes: [{ cible: 's1', texte: 'à dire' }] };
+const m = P.merge([{ name: 'lot1.json', data: lot }]), ck = P.check(m.pkg);
+t('Renvoi vers une source inconnue = erreur', ck.errors.some(e => /src_inconnue/.test(e)), ck.errors.join(' / '));
+t('Valeur 0 signalée', ck.warnings.some(w => /x0.*0/.test(w)));
+const ok = JSON.parse(JSON.stringify(lot)); ok.presentation.sections[0].cartes[1].contenu = 'Voir {{d:ca}}';
+const ck2 = P.check(P.merge([{ name: 'l', data: ok }]).pkg);
+t('Paquet propre : aucune erreur', !ck2.errors.length, ck2.errors.join(' / '));
+const cv = P.convert(P.merge([{ name: 'l', data: ok }]).pkg, { docName: 'Test' });
+const kc = Object.values(cv.version.cards).find(c => c.pid === 'k');
+t('« chiffre » devient un indicateur lié au registre', kc && kc.type === 'kpi' && kc.bind === 'r:ca');
+t('Registre gardé dans la version', !!(cv.version.reg && cv.version.reg.donnees.ca));
+t('Note « À dire » rattachée à la section importée', cv.version.reg.notes[0].cible === cv.version.sections[0].id);
+t('Texte : renvoi résolu avec la dernière valeur connue', /100 M€/.test(Object.values(cv.version.cards).find(c => c.pid === 'k2').html));
+
+const h = document.createElement('h2'); h.className = ko ? 'ko' : 'ok'; h.textContent = ko ? ko + ' échec(s) sur ' + n : 'Tous les tests passent (' + n + ')'; document.body.insertBefore(h, out);
+</script></body></html>

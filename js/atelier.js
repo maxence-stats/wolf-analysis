@@ -49,8 +49,17 @@ const TYPES = {
   profil:     { l: 'Dirigeant',    c: '#F08A4B', size: 'v', cat: 'Entreprises et personnes', d: 'Photo, poste, parcours, actions détenues' },
   these:      { l: 'Thèse',        c: '#D9A441', size: 'h', cat: 'Thèse', d: 'Tes 7 questions, au départ ou à la fin de l\'analyse' },
   thesecmp:   { l: 'Thèse : avant / après', c: '#D9A441', size: 'h', cat: 'Thèse', d: 'Départ et fin côte à côte, avec un verdict' },
-  source:     { l: 'Source',       c: '#8FA3B8', size: 's', cat: 'Documents',  d: 'PDF, site, article, avec tes notes' }
+  source:     { l: 'Source',       c: '#8FA3B8', size: 's', cat: 'Documents',  d: 'PDF, site, article, avec tes notes' },
+  // Cartes d'une analyse IMPORTÉE (contrat wolf-atelier/2.1, js/atelier-paquet.js) : remplies par le paquet, pas dans la bibliothèque.
+  valorisation: { l: 'Valorisation', c: '#D9A441', size: 'h', cat: 'Import', d: 'Modules A (risque opérationnel) et B (risque de valorisation), curseurs et formules' },
+  risque:     { l: 'Risque',       c: '#E5636B', size: 'h', cat: 'Import', d: 'Mécanisme, probabilité, gravité, horizon, indicateurs, impact' },
+  marche:     { l: 'Marché',       c: '#4FD1A5', size: 'h', cat: 'Import', d: 'Taille, croissance, moteurs, cyclicité, capacité, risque' },
+  acquisition: { l: 'Acquisition', c: '#F08A4B', size: 'h', cat: 'Import', d: 'Prix, financement, pont de FCF pro forma, dilution' },
+  chronologie: { l: 'Chronologie', c: '#8FA3B8', size: 'h', cat: 'Import', d: 'Événements datés, faits et échéances' },
+  decision:   { l: 'Décision',     c: '#D9A441', size: 'h', cat: 'Import', d: 'Verdict, prix d\'entrée, conditions, invalidation' },
+  score:      { l: 'Wolf Score',   c: '#D9A441', size: 'h', cat: 'Import', d: 'Notes par critère, synthèse éditoriale' }
 };
+const PQ = () => window.ATELIER_PAQUET || null;
 const THESE_Q = ['Pourquoi cette entreprise est-elle intéressante ?', 'Quels sont ses principaux avantages concurrentiels ?', 'Quels sont ses moteurs de croissance futurs ?',
   'Pourquoi peut-elle créer de la valeur à long terme ?', 'Qu\'est-ce que le marché pourrait sous-estimer ?', 'Quels risques pourraient invalider la thèse ?', 'Que dois-je surveiller pour vérifier que la thèse reste valable ?'];
 const THESE_SHORT = ['Pourquoi elle', 'Avantages', 'Croissance', 'Création de valeur', 'Sous-estimé', 'Risques', 'À surveiller'];
@@ -331,6 +340,15 @@ function resolveBind(doc, bind){
     const key = bind.slice(3), f = TVF[key]; if (!f) return null;
     const s = getSeries(null, key), n = s.values.length, t = ver() && ver().tvData;
     return { v: n ? s.values[n - 1] : null, prev: n > 1 ? s.values[n - 2] : null, label: f.l, u: f.u, d: f.d, devise: deviseOf(null), src: 'TradingView' + (t && t.at ? ' · ' + frDate(t.at) : ''), period: n ? String(s.labels[n - 1]) : '', series: s, low: !!f.low, known: knownData(null) };
+  }
+  // donnée d'une analyse importée (registre de la version, v.reg) : série ou valeur unique, avec sa traçabilité
+  if (bind.startsWith('r:')){
+    const v = ver(), P = PQ(), r = P && v && v.reg ? P.regItem(v.reg, bind.slice(2)) : null; if (!r) return null;
+    const it = r.item, uo = P.unitOf(it), m = uo.mult || 1, pts = P.regPoints(it).filter(p => P.isNum(p.valeur));
+    const last = pts[pts.length - 1] || null, prev = pts.length > 1 && !last.rupture ? pts[pts.length - 2] : null;
+    const s = v.reg.sources[(last && last.source) || it.source];
+    return { v: last ? last.valeur * m : null, prev: prev ? prev.valeur * m : null, label: it.libelle, u: uo.u, d: null, devise: uo.devise, src: s ? s.titre + (last && last.page ? ' · p. ' + last.page : '') : (it.statut === 'calcule' ? 'calculé : ' + (it.formule || '') : ''),
+      period: last ? String(last.periode) : String(it.periode || ''), series: pts.length > 1 ? { labels: pts.map(p => p.periode), values: pts.map(p => p.valeur * m) } : null, reg: { item: it, kind: r.kind, pt: last } };
   }
   if (bind.startsWith('f:')){
     const f = (doc.facts || {})[bind.slice(2)]; if (!f) return null;
@@ -737,7 +755,8 @@ function docHtml(d){
     '<div class="aw-bar">' +
       '<span class="at-seg"><button type="button" class="' + (ui.view === 'grid' ? 'on' : '') + '" data-view="grid">Grille</button><button type="button" class="' + (ui.view === 'tour' ? 'on' : '') + '" data-view="tour">Parcours</button></span>' +
       (ui.video ? '' : '<select class="at-sel" id="atVer" title="Version affichée">' + d.versions.map(x => '<option value="' + x.id + '"' + (x.id === v.id ? ' selected' : '') + '>' + esc(x.label) + '</option>').join('') + '</select>') +
-      (isRo() ? '' : '<button type="button" class="at-btn sm" data-newver title="Copie complète de cette version, l\'ancienne reste intacte">＋ Version</button><button type="button" class="at-btn sm" data-facts title="Les chiffres du dossier, utilisés par les cartes">📊 Données</button><button type="button" class="at-btn sm" data-savetpl title="Garder cette structure pour la réutiliser">💾 Modèle</button><button type="button" class="at-btn sm" data-props title="Nom, secteur, logo, version">⚙</button>') +
+      (isRo() ? '' : '<button type="button" class="at-btn sm" data-newver title="Copie complète de cette version, l\'ancienne reste intacte">＋ Version</button><button type="button" class="at-btn sm" data-import title="Importer une analyse (lots JSON du contrat wolf-atelier/2.1) dans une NOUVELLE version">📥 Importer</button><button type="button" class="at-btn sm" data-facts title="Les chiffres du dossier, utilisés par les cartes">📊 Données</button><button type="button" class="at-btn sm" data-savetpl title="Garder cette structure pour la réutiliser">💾 Modèle</button><button type="button" class="at-btn sm" data-props title="Nom, secteur, logo, version">⚙</button>') +
+      (v.reg && (v.reg.notes || []).length && !RO ? '<button type="button" class="at-btn sm" data-prompteur title="Ouvre les notes « À dire » dans une fenêtre séparée (pas dans la page filmée)">🗒 À dire (' + v.reg.notes.length + ')</button>' : '') +
       '<span style="flex:1"></span>' +
       (ui.view === 'grid' ? '<button type="button" class="at-btn sm" data-allsec="0">Tout replier</button><button type="button" class="at-btn sm" data-allsec="1">Tout déplier</button>' : '') +
       (isRo() ? '' : '<button type="button" class="at-btn sm" data-addsec>＋ Section</button>') +
@@ -757,6 +776,9 @@ function cardTitle(c){
   if (c.type === 'kpi'){ const d = doc(); return c.bind ? bindLabel(d, c.bind) : (c.label || ''); }
   if (c.type === 'concurrent') return c.nom || '';
   if (c.type === 'vchain') return c.cname || 'Chaîne de valeur';
+  if (c.type === 'marche') return c.nom || 'Marché';
+  if (c.type === 'acquisition') return c.cible ? 'Acquisition : ' + c.cible : 'Acquisition';
+  if (TYPES[c.type] && TYPES[c.type].cat === 'Import') return TYPES[c.type].l;
   return '';
 }
 const sourceOf = (v, c) => c.srcId && v.cards[c.srcId] ? v.cards[c.srcId] : null;
@@ -788,6 +810,11 @@ function keyFigure(c){
   if (c.type === 'profil') return [c.nom, c.poste].filter(Boolean).join(' · ');
   if (c.type === 'these') return c.phase === 'finale' ? 'Thèse finale' : 'Thèse de départ';
   if (c.type === 'thesecmp') return Object.values(c.verdicts || {}).filter(Boolean).length + ' / 7 verdicts';
+  if (c.type === 'valorisation'){ const r = valoRes(c); const x = r.A.realiste; return x ? 'Prix max (réaliste) ' + fmtVal(x.Pmax, 'cur', coursNow().ccy) : 'incomplet'; }
+  if (c.type === 'risque') return [RISK_L[c.probabilite], RISK_L[c.gravite]].filter(Boolean).map((x, i) => (i ? 'gravité ' : 'probabilité ') + x).join(' · ');
+  if (c.type === 'decision') return (VERDICT_L[c.verdict] || [c.verdict || ''])[0];
+  if (c.type === 'score'){ const n = (c.criteres || []).filter(k => isFinite(k.note)); return n.length ? fr(n.reduce((t, k) => t + k.note, 0) / n.length, 1) + ' / 10' : ''; }
+  if (c.type === 'chronologie') return (c.evenements || []).length + ' événements';
   return plain(c.html).slice(0, 60);
 }
 function kpiData(c){
@@ -832,6 +859,7 @@ function cardHtml(c){
         '<div class="aw-kpi-d">' + deltaHtml(r) + (r.prev != null ? '<span class="at-faint">avant : ' + fmtVal(r.prev, r.u, r.devise, r.d) + '</span>' : '') + '</div>' + (r.series ? sparkSvg(r.series.values.slice(-10), '#D9A441', 40) : '');
       foot = c.bind ? '' : (r.src ? '<span>' + esc(r.src) + '</span>' : '');
       if (c.bind && r.known === false) foot = '<span class="aw-warn">' + (ver().tvData ? 'pas de chiffre TradingView' : 'chiffres TradingView pas encore relevés') + '</span>';
+      if (r.reg){ if (r.v == null) body = body.replace('<div class="aw-kpi-v">—</div>', '<div class="aw-kpi-v nd">non disponible</div>'); foot = pastille(r.reg.item, r.reg.kind, r.reg.pt) + (r.src ? '<span>' + esc(r.src) + '</span>' : ''); }
       break;
     }
     case 'donut': {
@@ -844,8 +872,15 @@ function cardHtml(c){
     case 'barres': case 'courbes': {
       const s = seriesData(c, d);
       body = s.labels.length ? yrsSeg(c) + '<div class="aw-chart"><canvas data-chart="' + c.id + '"></canvas></div>' : '<p class="at-faint">' + (c.mode === 'tv' ? (ver().tvData ? 'Pas d\'historique TradingView pour ce chiffre.' : 'Chiffres TradingView en cours de relevé…') : 'Saisis les années et les valeurs (⋯ › Modifier).') + '</p>';
-      foot = srcFoot; break;
+      foot = srcFoot + regSeriesFoot(c); break;
     }
+    case 'valorisation': body = valoHtml(c, false); break;
+    case 'risque': body = riskHtml(c, false); break;
+    case 'marche': body = marcheHtml(c, false); break;
+    case 'acquisition': body = acqHtml(c, false); break;
+    case 'chronologie': body = chronoHtml(c, false); break;
+    case 'decision': body = decisionHtml(c, false); break;
+    case 'score': body = scoreHtml(c, false); break;
     case 'comparatif': body = compTableHtml(c, false); foot = srcFoot; break;
     case 'bourse': body = bourseHtml(c, false); break;
     case 'multicours': body = mcHtml(c, false); break;
@@ -1089,7 +1124,7 @@ function seriesData(c, d){
     return { labels, sets: keys.map((k, i) => ({ name: TVF[k].l, u: TVF[k].u, devise: deviseOf(name), color: SERIES_COLORS[i % SERIES_COLORS.length], values: labels.map(y => { const j = per[i].labels.indexOf(y); return j >= 0 ? per[i].values[j] : null; }) })) };
   }
   const labels = (c.labels || []).map(String);
-  return { labels, sets: (c.series || []).map((s, i) => ({ name: s.name || 'Série ' + (i + 1), u: c.unit || '', devise: '', color: s.color || SERIES_COLORS[i % SERIES_COLORS.length], values: labels.map((_, j) => num((s.values || [])[j])) })) };
+  return { labels, sets: (c.series || []).map((s, i) => ({ name: s.name || 'Série ' + (i + 1), u: c.unit || '', devise: c.devise || '', color: s.color || SERIES_COLORS[i % SERIES_COLORS.length], values: labels.map((_, j) => num((s.values || [])[j])) })) };
 }
 // ---------- Cours de bourse (relevé TradingView figé : clôtures hebdomadaires) ----------
 const YRS = [[5, '5 ans'], [10, '10 ans'], [20, '20 ans'], [99, 'Max']];
@@ -1404,6 +1439,283 @@ function drawCharts(root, list, big){
   });
 }
 
+/* ====================== ANALYSE IMPORTÉE (contrat wolf-atelier/2.1, 2026-11-14) ======================
+   Le paquet de ChatGPT est gardé dans la version (v.reg : sources, données, hypothèses, affirmations, notes). Les cartes
+   affichent l'origine et le statut de chaque chiffre (pastille + infobulle : source, page, définition, périmètre, formule).
+   Valorisation : moteur pur ATELIER_PAQUET.valoCompute ; les curseurs modifient une copie de travail (c.work), les
+   hypothèses de ChatGPT restent affichées et « ↺ » y revient. Pont d'acquisition : ATELIER_PAQUET.pontCompute, résultat
+   « incomplet » sans valeur tant qu'une entrée manque. */
+const RISK_L = { faible: 'faible', moyenne: 'moyenne', forte: 'forte' };
+const VERDICT_L = { acheter: ['Acheter', '#4FD1A5'], renforcer: ['Renforcer', '#4FD1A5'], attendre: ['Attendre', '#D9A441'], alleger: ['Alléger', '#F08A4B'], eviter: ['Éviter', '#E5636B'] };
+const regOf = () => { const v = ver(); return v && v.reg ? v.reg : null; };
+function traceTxt(item, kind, pt){
+  const P = PQ(), reg = regOf(); if (!item || !P) return '';
+  const p = pt || P.regLast(item) || item, s = reg && reg.sources[p.source || item.source];
+  const st = kind === 'hypothese' ? 'hypothèse d\'analyste' : (P.STATUT_L[p.statut || item.statut] || p.statut || item.statut || '');
+  return [item.libelle + (p.periode ? ' (' + p.periode + ')' : ''), 'Statut : ' + st, s ? 'Source : ' + s.titre + (s.editeur ? ', ' + s.editeur : '') + (p.page ? ' — p. ' + p.page : '') : '',
+    (p.definition || item.definition) ? 'Définition : ' + (p.definition || item.definition) : '', (p.perimetre || item.perimetre) ? 'Périmètre : ' + (p.perimetre || item.perimetre) : '',
+    item.formule ? 'Formule : ' + item.formule : '', item.denominateur ? 'Dénominateur : FCF ' + item.denominateur + (item.fenetre ? ' · fenêtre ' + item.fenetre : '') + (item.methode_calcul ? ' · ' + item.methode_calcul : '') : '',
+    kind === 'hypothese' ? 'Justification : ' + (item.justification || '—') + '\nRévisée le ' + frDate(item.date_revision) + (item.confiance ? ' · confiance ' + item.confiance : '') : ''].filter(Boolean).join('\n');
+}
+// Pastille d'origine : CG (ChatGPT), Document (recopié tel quel du document source), Hyp. (hypothèse d'analyste) + statut.
+function pastille(item, kind, pt){
+  if (!item) return '';
+  const st = kind === 'hypothese' ? 'hypothese' : ((pt && pt.statut) || item.statut || '');
+  const org = kind === 'hypothese' ? 'Hyp.' : item.origine === 'societe' ? 'Document' : 'CG';   // Document = recopié tel quel du document source
+  const P = PQ();
+  return '<span class="aw-orig s-' + esc(st) + '" title="' + esc(traceTxt(item, kind, pt)) + '">' + esc(org) + ' · ' + esc(kind === 'hypothese' ? 'hypothèse' + (item.confiance ? ' ' + item.confiance : '') : (P ? P.STATUT_L[st] || st : st)) + '</span>';
+}
+// Valeur affichée d'un identifiant du registre (dernier point connu), avec sa pastille.
+function regCell(id){
+  const P = PQ(), reg = regOf(), r = P && reg ? P.regItem(reg, id) : null;
+  if (!r) return { txt: '—', html: '<span class="at-faint">—</span>', v: null };
+  const last = P.regLast(r.item), txt = P.fmtItem(r.item);
+  return { txt, v: last ? last.valeur : null, item: r.item, kind: r.kind, html: '<b class="' + (last ? '' : 'nd') + '" title="' + esc(traceTxt(r.item, r.kind, last)) + '">' + esc(txt) + '</b>' + (last && last.periode ? ' <small class="at-faint">' + esc(last.periode) + '</small>' : '') };
+}
+function regSeriesFoot(c, big){
+  if (!c.refs || !regOf()) return '';
+  const P = PQ(), reg = regOf();
+  const items = c.refs.map(id => P.regItem(reg, id)).filter(Boolean);
+  const rup = (c.ruptures || []).map(x => '<span class="aw-warn" title="' + esc(x.texte) + '">⚠ Rupture (' + esc({ perimetre: 'périmètre', methode_comptable: 'méthode comptable', definition: 'définition' }[x.type] || x.type) + ') en ' + esc(x.periode) + (big && x.texte ? ' : ' + esc(x.texte) : '') + '</span>');
+  const seen = new Set();
+  return items.slice(0, big ? 99 : 1).map(r => pastille(r.item, r.kind)).join('') + (!big && items.length > 1 ? '<span class="at-faint">+' + (items.length - 1) + ' séries</span>' : '') + rup.filter(x => { if (seen.has(x)) return false; seen.add(x); return true; }).slice(0, big ? 20 : 1).join('');
+}
+// Cours retenu : celui du relevé TradingView de la version (figé à sa date).
+function coursNow(){
+  const v = ver(), t = v && v.tvData, ttm = t && t.self && t.self.ttm, p = t && t.prices;
+  const val = ttm && isFinite(ttm.prixActuel) ? ttm.prixActuel : p && p.closes.length ? p.closes[p.closes.length - 1] : null;
+  return { v: val, at: t ? t.at : null, ccy: (p && p.ccy) || (t && t.self && t.self.devise) || 'EUR' };
+}
+// Valeur courante d'une hypothèse / donnée pour la carte (curseur compris).
+function workVal(c, id){
+  if (!id) return null;
+  if (c.work && c.work[id] != null && isFinite(c.work[id])) return c.work[id];
+  const P = PQ(), reg = regOf(), r = P && reg ? P.regItem(reg, id) : null; if (!r) return null;
+  const l = P.regLast(r.item); return l ? l.valeur : null;
+}
+function valoRes(c){ const P = PQ(); if (!P) return { A: {}, B: {}, named: {}, incomplete: true }; return P.valoCompute(c, id => workVal(c, id), (c.cours === 'auto' || c.cours == null) ? coursNow().v : workVal(c, c.cours)); }
+function valoHyps(c){
+  const a = c.module_a || {}, b = c.module_b || {}, ids = [];
+  [c.base, (a.cagr || {}).pessimiste, (a.cagr || {}).realiste, (a.cagr || {}).optimiste, a.multiple, b.cagr, (b.multiples || {}).bas, (b.multiples || {}).central, (b.multiples || {}).haut].forEach(x => { if (x && !ids.includes(x)) ids.push(x); });
+  return ids;
+}
+function valoRoles(c){
+  const a = c.module_a || {}, b = c.module_b || {}, ca = a.cagr || {}, mb = b.multiples || {}, r = {};
+  const put = (id, l) => { if (id && !r[id]) r[id] = l; };
+  put(c.base, 'FCF/action de départ (F₀)'); put(ca.pessimiste, 'CAGR — pessimiste'); put(ca.realiste, 'CAGR — réaliste'); put(ca.optimiste, 'CAGR — optimiste');
+  put(a.multiple, a.multiple === mb.central ? 'Multiple commun (A) = central (B)' : 'Multiple P/FCF commun (module A)'); put(b.cagr, 'CAGR — réaliste'); put(mb.bas, 'Multiple bas (module B)'); put(mb.central, 'Multiple central (module B)'); put(mb.haut, 'Multiple haut (module B)');
+  return r;
+}
+function valoSliders(c){
+  const P = PQ(), reg = regOf(), roles = valoRoles(c);
+  return '<div class="aw-valo-sl">' + valoHyps(c).map(id => {
+    const r = P.regItem(reg, id); if (!r) return '<div class="aw-valo-h"><span>' + esc(id) + '</span><b class="nd">inconnu</b></div>';
+    const it = r.item, base = P.regLast(it), cur = workVal(c, id), mod = c.work && c.work[id] != null && base && c.work[id] !== base.valeur;
+    const u = it.unite, step = u === '%' || u === 'x' ? 0.5 : 0.05, mn = isFinite(it.min) ? it.min : (base ? base.valeur / 2 : 0), mx = isFinite(it.max) ? it.max : (base ? base.valeur * 2 : 10);
+    const show = x => u === '%' ? fr(x, 1) + ' %' : u === 'x' ? fr(x, 1) + 'x' : fr(x, 2) + ' ' + curSym(it.devise || 'EUR');
+    return '<label class="aw-valo-h' + (mod ? ' mod' : '') + '" title="' + esc(traceTxt(it, r.kind)) + '"><span>' + esc(roles[id] || it.libelle) + '</span><b data-vlab="' + esc(id) + '">' + (cur == null ? 'non disponible' : show(cur)) + '</b>' +
+      (cur == null ? '' : '<input type="range" min="' + mn + '" max="' + mx + '" step="' + step + '" value="' + cur + '" data-vw="' + esc(id) + '" data-vc="' + c.id + '">') +
+      '<small>' + (r.kind === 'hypothese' ? 'Hypothèse d\'analyste' + (it.confiance ? ' · confiance ' + esc(it.confiance) : '') + ' · ChatGPT : ' + (base ? show(base.valeur) : '—') : 'Donnée ' + esc(P.STATUT_L[it.statut] || '')) + '</small></label>';
+  }).join('') + (c.work && Object.keys(c.work).length ? '<button type="button" class="at-btn sm" data-vreset="' + c.id + '">↺ Revenir aux hypothèses de ChatGPT</button>' : '') + '</div>';
+}
+function valoResHtml(c, big){
+  const r = valoRes(c), cr = coursNow(), cur = cr.ccy, P = PQ(), reg = regOf();
+  if (r.incomplete) return '<p class="aw-warn">Calcul incomplet : le FCF par action de départ n\'est pas disponible.</p>';
+  const m = x => x == null || !isFinite(x) ? '<span class="nd">—</span>' : fmtVal(x, 'cur', cur);
+  const pc = (x, sign) => x == null || !isFinite(x) ? '<span class="nd">—</span>' : '<span class="' + (x >= 0 ? 'pos' : 'neg') + '">' + (sign && x > 0 ? '+' : '') + fr(x, 1) + ' %</span>';
+  const A = r.A, B = r.B, sc = [['pessimiste', 'Pessimiste'], ['realiste', 'Réaliste'], ['optimiste', 'Optimiste']], mu = [['bas', 'Multiple bas'], ['central', 'Multiple central'], ['haut', 'Multiple haut']];
+  const row = (l, f, list, obj) => '<tr><td class="lb">' + l + '</td>' + list.map(([k]) => '<td>' + f(obj[k]) + '</td>').join('') + '</tr>';
+  const tabA = '<table class="aw-table aw-valo-t"><thead><tr><th>Module A — risque opérationnel<small>un seul multiple : ' + (A.realiste ? fr(A.realiste.M, 1) + 'x' : '—') + '</small></th>' + sc.map(([k, l]) => '<th class="sc-' + k + '">' + l + '</th>').join('') + '</tr></thead><tbody>' +
+    row('CAGR du FCF/action', x => x ? pc(x.g, true) : '—', sc, A) + row('FCF/action dans ' + r.n + ' ans', x => x ? m(x.F5) : '—', sc, A) + row('Prix théorique dans ' + r.n + ' ans', x => x ? m(x.P5) : '—', sc, A) +
+    row('<b>Prix maximal aujourd\'hui</b> (' + fr(r.r, 0) + ' %/an)', x => x ? '<b>' + m(x.Pmax) + '</b>' : '—', sc, A) + row('Rendement annuel au cours', x => x ? pc(x.R, true) : '—', sc, A) + row('Marge de sécurité', x => x ? pc(x.marge, true) : '—', sc, A) + '</tbody></table>';
+  const tabB = '<table class="aw-table aw-valo-t"><thead><tr><th>Module B — risque de valorisation<small>CAGR réaliste : ' + (B.central ? fr(B.central.g, 1) + ' %' : '—') + '</small></th>' + mu.map(([k, l]) => '<th>' + l + '</th>').join('') + '</tr></thead><tbody>' +
+    row('Multiple P/FCF', x => x ? fr(x.M, 1) + 'x' : '—', mu, B) + row('Prix théorique dans ' + r.n + ' ans', x => x ? m(x.P5) : '—', mu, B) + row('<b>Prix maximal aujourd\'hui</b>', x => x ? '<b>' + m(x.Pmax) + '</b>' : '—', mu, B) + row('Rendement annuel au cours', x => x ? pc(x.R, true) : '—', mu, B) + row('Marge de sécurité', x => x ? pc(x.marge, true) : '—', mu, B) + '</tbody></table>';
+  // cohérence des multiples : dénominateur de la base vs celui des multiples de référence
+  const baseIt = P.regItem(reg, c.base), dn = baseIt && (baseIt.item.denominateur || (/normalis/.test(norm(baseIt.item.libelle + ' ' + baseIt.item.id)) ? 'normalise' : null));
+  const refs = (c.references_multiple || []).map(id => P.regItem(reg, id)).filter(Boolean);
+  const warn = [];
+  if (!refs.length) warn.push('Aucun multiple historique de référence n\'est rattaché à cette valorisation : les multiples testés ne sont ancrés sur rien de mesuré.');
+  refs.forEach(x => { if (dn && x.item.denominateur && x.item.denominateur !== dn) warn.push('« ' + x.item.libelle + ' » (' + P.fmtItem(x.item) + ', ' + (x.item.fenetre || '') + ') est calculé sur un FCF ' + x.item.denominateur + ' et appliqué ici à un FCF ' + dn + ' : comparaison indicative.'); });
+  const hypBad = valoHyps(c).map(id => P.regItem(reg, id)).filter(x => x && x.kind === 'hypothese' && x.item.confiance === 'faible').length;
+  const s = r.A.realiste;
+  const formulas = '<details class="aw-valo-f"' + (big ? ' open' : '') + '><summary>Formules' + (s ? ' (scénario réaliste)' : '') + '</summary><ul>' +
+    '<li>F₅ = F₀ × (1 + g)^' + r.n + (s ? ' = ' + fr(s.F0, 2) + ' × (1 + ' + fr(s.g, 1) + ' %)^' + r.n + ' = <b>' + fr(s.F5, 2) + '</b>' : '') + '</li>' +
+    '<li>P₅ = F₅ × M' + (s ? ' = ' + fr(s.F5, 2) + ' × ' + fr(s.M, 1) + ' = <b>' + fr(s.P5, 2) + '</b>' : '') + '</li>' +
+    '<li>P_max = P₅ ÷ (1 + r)^' + r.n + (s ? ' = ' + fr(s.P5, 2) + ' ÷ ' + fr(Math.pow(1 + r.r / 100, r.n), 4) + ' = <b>' + fr(s.Pmax, 2) + '</b>' : '') + '</li>' +
+    '<li>Rendement annuel au cours = (P₅ ÷ cours)^(1/' + r.n + ') − 1' + (s && s.R != null ? ' = <b>' + fr(s.R, 1) + ' %</b>' : '') + '</li>' +
+    '<li>Marge de sécurité = (P_max − cours) ÷ P_max' + (s && s.marge != null ? ' = <b>' + fr(s.marge, 1) + ' %</b>' : '') + ' — positive : cours sous le prix d\'entrée.</li></ul></details>';
+  return '<div class="aw-valo-cours">Cours : <b>' + (cr.v == null ? 'non relevé' : fmtVal(cr.v, 'cur', cur)) + '</b>' + (cr.at ? ' <span class="at-faint">TradingView, ' + frDate(cr.at) + '</span>' : '') + ' · F₀ = <b>' + fmtVal(r.F0, 'cur', cur) + '</b> ' + (baseIt ? pastille(baseIt.item, baseIt.kind) : '') + '</div>' +
+    '<div class="aw-tscroll">' + tabA + '</div><div class="aw-tscroll">' + tabB + '</div>' +
+    (warn.length || hypBad ? '<div class="aw-valo-w">' + warn.map(w => '<p>⚠ ' + esc(w) + '</p>').join('') + (hypBad ? '<p>⚠ ' + hypBad + ' hypothèse' + (hypBad > 1 ? 's' : '') + ' en confiance « faible ».</p>' : '') + '</div>' : '') +
+    formulas + '<p class="aw-valo-m">P_max est un prix d\'entrée pour viser ' + fr(r.r, 0) + ' % par an hors dividendes, pas une valeur intrinsèque certaine. Dividendes exclus. Hypothèses d\'analyste : jamais des prévisions de la société.</p>';
+}
+function valoHtml(c, big){
+  if (!PQ() || !regOf()) return '<p class="at-faint">Carte d\'une analyse importée : le module js/atelier-paquet.js n\'est pas chargé.</p>';
+  return '<div class="aw-valo' + (big ? ' big' : '') + '">' + valoSliders(c) + '<div class="aw-valo-r" data-vres="' + c.id + '">' + valoResHtml(c, big) + '</div></div>';
+}
+function riskHtml(c, big){
+  const v = ver(), seg = c.segment && v.sections.find(s => s.pid === c.segment), lv = x => '<span class="aw-lvl l-' + esc(x || '') + '">' + esc(RISK_L[x] || x || '—') + '</span>';
+  return '<div class="aw-risk' + (big ? ' big' : '') + '"><div class="aw-risk-h"><span class="aw-chip ' + (c.nature === 'valorisation' ? 'gold' : '') + '">' + (c.nature === 'valorisation' ? 'Risque de valorisation' : 'Risque économique') + '</span>' + (seg ? '<span class="aw-chip">' + esc(seg.titre) + '</span>' : '') + (c.horizon ? '<span class="aw-chip">' + esc(c.horizon) + '</span>' : '') + '</div>' +
+    '<div class="aw-risk-l"><div><small>Probabilité</small>' + lv(c.probabilite) + '</div><div><small>Gravité</small>' + lv(c.gravite) + '</div></div>' +
+    (c.mecanisme ? '<p><b>Mécanisme.</b> ' + esc(c.mecanisme) + '</p>' : '') + (c.impact ? '<p><b>Impact.</b> ' + esc(c.impact) + (c.impact_statut ? ' <span class="aw-orig s-' + esc(c.impact_statut) + '">' + esc(PQ() ? PQ().STATUT_L[c.impact_statut] || c.impact_statut : c.impact_statut) + '</span>' : '') + '</p>' : '') +
+    ((c.indicateurs || []).length ? '<div class="aw-tags"><b>À surveiller :</b> ' + c.indicateurs.map(x => '<span>' + esc(x) + '</span>').join('') + '</div>' : '') + srcLinks(c.sources) + '</div>';
+}
+function srcLinks(ids){
+  const reg = regOf(); if (!reg || !(ids || []).length) return '';
+  return '<div class="aw-srcs">' + ids.map(id => { const s = reg.sources[id], a = reg.affirmations[id]; if (s) return s.url ? '<a href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.titre) + '</a>' : '<span>' + esc(s.titre) + '</span>'; if (a) return '<span title="' + esc(a.texte) + '">' + esc(a.texte.slice(0, 60)) + '</span>'; return ''; }).join('') + '</div>';
+}
+function affList(ids){
+  const reg = regOf(); if (!reg || !(ids || []).length) return '';
+  return '<ul class="aw-affs">' + ids.map(id => { const a = reg.affirmations[id]; if (!a) return ''; return '<li>' + esc(a.texte) + ' <span class="aw-orig s-' + (a.nature === 'fait' ? 'publie' : 'estimation') + '">' + esc({ fait: 'fait', interpretation: 'interprétation', consensus: 'consensus' }[a.nature] || a.nature) + '</span>' + srcLinks(a.sources) + '</li>'; }).join('') + '</ul>';
+}
+function marcheHtml(c, big){
+  const v = ver(), segs = (c.segments_concernes || []).map(id => v.sections.find(s => s.pid === id)).filter(Boolean);
+  const st = (l, id) => { const x = regCell(id); return '<div><small>' + l + '</small>' + (id ? x.html : '<span class="at-faint">—</span>') + '</div>'; };
+  return '<div class="aw-mkt' + (big ? ' big' : '') + '"><div class="aw-mkt-n">' + esc(c.nom || '') + (c.horizon ? ' <span class="at-faint">· ' + esc(c.horizon) + '</span>' : '') + '</div>' +
+    '<div class="aw-mkt-s">' + st('Taille', c.taille_marche) + st('Croissance', c.croissance) + st('Part de l\'entreprise', c.part_entreprise) + '<div><small>Cyclicité</small><span class="aw-lvl l-' + esc(c.cyclicite || '') + '">' + esc(c.cyclicite || '—') + '</span></div></div>' +
+    ((c.moteurs || []).length ? '<div class="aw-tags"><b>Moteurs :</b> ' + c.moteurs.map(x => '<span>' + esc(x) + '</span>').join('') + '</div>' : '') +
+    (c.capacite ? '<p><b>Capacité.</b> ' + esc(c.capacite) + '</p>' : '') + (c.risque_ralentissement ? '<p><b>Risque de ralentissement.</b> ' + esc(c.risque_ralentissement) + '</p>' : '') +
+    (segs.length ? '<div class="aw-tags"><b>Segments :</b> ' + segs.map(s => '<span>' + esc(s.titre) + '</span>').join('') + '</div>' : '') + (big ? affList(c.affirmations) : '') + '</div>';
+}
+function acqHtml(c, big){
+  const P = PQ(); if (!P || !regOf()) return '<p class="at-faint">Carte d\'une analyse importée.</p>';
+  const val = id => { const x = regCell(id); return x.v; };
+  const R = P.pontCompute(c, val, !!c.force);
+  const cell = id => id ? regCell(id).html : '<span class="at-faint">non fourni</span>';
+  const fin = (c.financement || []).map(f => '<div><small>' + esc({ actions: 'Actions', dette: 'Dette', hybride: 'Hybride' }[f.mode] || f.mode) + '</small>' + cell(f.donnee) + '</div>').join('');
+  const lines = R.lines.map(x => '<tr class="' + (x.skip ? 'skip' : x.missing ? 'miss' : '') + '"><td class="lb">' + (x.sign > 0 ? '+ ' : '− ') + esc(x.l) + (x.skip ? ' <small>(déjà dans le FCF retenu)</small>' : '') + '</td><td>' + (x.absent ? '<span class="at-faint">—</span>' : cell(x.id)) + '</td></tr>').join('');
+  const res = R.complete || R.forced
+    ? '<div class="aw-acq-res' + (R.forced ? ' forced' : '') + '">' + (R.forced ? '<p class="aw-warn">Hors éléments manquants : ' + esc(R.missing.join(', ')) + '</p>' : '') +
+      '<div><small>FCF pro forma « prouvé »</small><b>' + fmtVal(R.fcf, 'Mcur', 'EUR') + '</b></div><div><small>FCF/action prouvé</small><b>' + fmtVal(R.fcfParAction, 'cur', 'EUR') + '</b></div>' +
+      '<div><small>Avec synergies hypothétiques</small><b>' + (R.fcfParActionHypo == null ? '—' : fmtVal(R.fcfParActionHypo, 'cur', 'EUR')) + '</b></div></div>'
+    : '<div class="aw-acq-inc"><b>Pont incomplet</b> : aucun FCF/action pro forma n\'est calculé. Manque : ' + esc(R.missing.join(', ')) + '.' + (isRo() ? '' : ' <button type="button" class="at-btn sm" data-pforce="' + c.id + '">Calculer quand même (manquants = 0)</button>') + '</div>';
+  return '<div class="aw-acq' + (big ? ' big' : '') + '"><div class="aw-risk-h"><span class="aw-chip gold">' + esc(c.cible || '') + '</span>' + (c.date ? '<span class="aw-chip">' + esc(c.date) + '</span>' : '') + (c.statut_operation ? '<span class="aw-chip">' + esc({ annoncee: 'annoncée', realisee: 'réalisée', integree: 'intégrée' }[c.statut_operation] || c.statut_operation) + '</span>' : '') + '</div>' +
+    (c.logique ? '<p>' + esc(c.logique) + '</p>' : '') +
+    '<div class="aw-mkt-s"><div><small>Prix</small>' + cell(c.prix) + '</div>' + fin + '<div><small>Dette reprise</small>' + cell(c.dette_reprise) + '</div><div><small>Dilution</small><b>' + (R.dilution == null ? '—' : fr(R.dilution, 2) + ' %') + '</b></div></div>' +
+    (big || true ? '<div class="aw-tscroll"><table class="aw-table aw-acq-t"><tbody>' + lines + '<tr><td class="lb">Coûts d\'intégration ponctuels (hors FCF normalisé)</td><td>' + cell((c.pont || {}).couts_integration_ponctuels) + '</td></tr><tr><td class="lb">Synergies hypothétiques</td><td>' + cell((c.pont || {}).synergies_hypothetiques) + '</td></tr><tr><td class="lb">Actions avant / émises</td><td>' + cell((c.pont || {}).actions_avant) + ' / ' + cell((c.pont || {}).actions_emises) + '</td></tr></tbody></table></div>' : '') +
+    res + (c.force && !isRo() ? '<button type="button" class="at-btn sm" data-pforce="' + c.id + '">Revenir au calcul strict</button>' : '') + '</div>';
+}
+function chronoHtml(c, big){
+  const ev = (c.evenements || []).slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  return '<ol class="aw-chrono' + (big ? ' big' : '') + '">' + ev.map(e => '<li class="' + (e.nature === 'prevu' ? 'prevu' : '') + '"><span class="d">' + esc(e.date || '') + '</span><div><b>' + esc(e.titre || '') + '</b>' + (e.nature === 'prevu' ? ' <span class="aw-chip">prévu</span>' : '') + (e.texte ? '<p>' + esc(e.texte) + '</p>' : '') + (e.source ? srcLinks([e.source]) : '') + '</div></li>').join('') + '</ol>';
+}
+function decisionHtml(c, big){
+  const v = ver(), vd = VERDICT_L[c.verdict], missing = ['verdict', 'hypotheses', 'prix_entree', 'risques', 'invalidation'].filter(k => !c[k] || (Array.isArray(c[k]) && !c[k].length));
+  let pe = '—';
+  if (c.prix_entree && String(c.prix_entree).startsWith('valo:')){ const vc = Object.values(v.cards).find(x => x.type === 'valorisation' && x.pid === 'valo') || Object.values(v.cards).find(x => x.type === 'valorisation'); const r = vc ? valoRes(vc) : null; const x = r && r.named[c.prix_entree.slice(5)]; pe = x == null ? '—' : fmtVal(x, 'cur', coursNow().ccy) + ' <small class="at-faint">(suit les curseurs de la valorisation)</small>'; }
+  else if (c.prix_entree) pe = regCell(c.prix_entree).html;
+  const cr = coursNow();
+  const list = (t, a, cls) => (a || []).length ? '<div class="aw-dec-l ' + (cls || '') + '"><b>' + t + '</b><ul>' + a.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '';
+  const risks = (c.risques || []).map(id => v.cards[id]).filter(Boolean);
+  const hyps = (c.hypotheses || []).map(id => regCell(id));
+  return '<div class="aw-dec' + (big ? ' big' : '') + '">' + (missing.length ? '<p class="aw-warn">Décision incomplète : manque ' + esc(missing.join(', ')) + '.</p>' : '') +
+    '<div class="aw-dec-top"><span class="aw-verdict big" style="--vc:' + (vd ? vd[1] : '#8FA3B8') + '">' + esc(missing.length ? 'Incomplète' : (vd ? vd[0] : c.verdict || '?')) + '</span><div><small>Prix d\'entrée</small><b>' + pe + '</b></div><div><small>Cours</small><b>' + (cr.v == null ? '—' : fmtVal(cr.v, 'cur', cr.ccy)) + '</b></div>' + (c.date ? '<div><small>Date</small><b>' + frDate(c.date) + '</b></div>' : '') + '</div>' +
+    (c.resume ? '<p>' + esc(c.resume) + '</p>' : '') +
+    '<div class="aw-dec-g">' + list('Conditions d\'achat', c.conditions_achat) + list('Invalidation', c.invalidation, 'neg') + list('À surveiller', c.a_surveiller) +
+    (risks.length ? '<div class="aw-dec-l"><b>Risques</b><ul>' + risks.map(r => '<li>' + esc(r.titre || '') + ' <small class="at-faint">' + esc([RISK_L[r.probabilite], RISK_L[r.gravite]].filter(Boolean).join(' / ')) + '</small></li>').join('') + '</ul></div>' : '') +
+    (hyps.length ? '<div class="aw-dec-l"><b>Hypothèses</b><ul>' + hyps.map(h => '<li>' + esc(h.item ? h.item.libelle : '?') + ' : ' + h.html + '</li>').join('') + '</ul></div>' : '') + '</div></div>';
+}
+function scoreHtml(c, big){
+  const k = (c.criteres || []), n = k.filter(x => isFinite(x.note)), avg = n.length ? n.reduce((t, x) => t + x.note, 0) / n.length : null;
+  return '<div class="aw-score' + (big ? ' big' : '') + '">' + (avg != null ? '<div class="aw-score-avg"><b>' + fr(avg, 1) + '</b><span>/ 10</span></div>' : '') +
+    k.map(x => '<div class="aw-score-r"><span class="lb">' + esc(x.nom) + '</span><span class="bar"><i style="width:' + Math.max(0, Math.min(100, (x.note || 0) * 10)) + '%"></i></span><b>' + (isFinite(x.note) ? fr(x.note, 0) : '—') + '</b>' + (x.justification ? '<small>' + esc(x.justification) + '</small>' : '') + '</div>').join('') +
+    '<p class="aw-valo-m">Synthèse éditoriale de l\'analyste — ni une mesure statistique, ni un signal d\'achat.</p></div>';
+}
+// Curseurs de la valorisation : mise à jour des résultats SANS reconstruire la carte (le curseur garde la main).
+document.addEventListener('input', e => {
+  const t = e.target.closest && e.target.closest('[data-vw]'); if (!t) return;
+  const v = ver(), c = v && v.cards[t.dataset.vc]; if (!c) return;
+  c.work = c.work || {}; c.work[t.dataset.vw] = Number(t.value);
+  document.querySelectorAll('[data-vres="' + c.id + '"]').forEach(el => { el.innerHTML = valoResHtml(c, !!el.closest('.aw-valo.big')); });
+  const it = PQ().regItem(v.reg, t.dataset.vw); document.querySelectorAll('[data-vlab="' + CSS.escape(t.dataset.vw) + '"]').forEach(el => { const u = it && it.item.unite, x = Number(t.value); el.textContent = u === '%' ? fr(x, 1) + ' %' : u === 'x' ? fr(x, 1) + 'x' : fr(x, 2) + ' ' + curSym((it && it.item.devise) || 'EUR'); });
+  if (!RO) touch();
+});
+document.addEventListener('change', e => {
+  const t = e.target.closest && e.target.closest('[data-vw]'); if (!t) return;
+  const v = ver(); if (!v) return; Object.values(v.cards).filter(x => x.type === 'decision').forEach(refreshCard);
+  const c = v.cards[t.dataset.vc]; if (c && !document.querySelector('[data-vreset="' + c.id + '"]')) refreshCard(c);
+});
+document.addEventListener('click', e => {
+  const b = e.target.closest && e.target.closest('[data-vreset],[data-pforce]'); if (!b) return;
+  const v = ver(), c = v && v.cards[b.dataset.vreset || b.dataset.pforce]; if (!c) return;
+  if (b.dataset.vreset) delete c.work; else c.force = !c.force;
+  if (!RO) touch(); refreshCard(c); Object.values(v.cards).filter(x => x.type === 'decision').forEach(refreshCard);
+  if (ui.big === c.id) openBig(c.id);
+});
+
+/* ---------- Fenêtre « 📥 Importer » : lots JSON → contrôle → nouvelle version (rien n'est remplacé) ---------- */
+const KEEP_TYPES = ['image', 'profil', 'source', 'multicours'];
+function renderImport(){
+  let host = $('awImport');
+  if (!ui.imp){ if (host) host.remove(); return; }
+  if (!host){ host = document.createElement('div'); host.id = 'awImport'; host.className = 'at-modal-bg'; document.body.appendChild(host); }
+  const P = PQ(), d = doc(), v = ver(), m = ui.imp;
+  let rep = '';
+  if (!P) rep = '<p class="aw-warn">Le module js/atelier-paquet.js n\'est pas chargé (recharge la page).</p>';
+  else if (m.lots.length){
+    const mg = P.merge(m.lots), ck = P.check(mg.pkg), errs = mg.errs.concat(ck.errors);
+    const ent = mg.pkg.meta.entreprise || '', okName = !ent || firstWord(ent) === firstWord(d.titre) || firstWord(ent) === firstWord(d.nom);
+    if (!okName) errs.unshift('Ce paquet concerne « ' + ent + ' », pas « ' + d.titre + ' » : ouvre le bon dossier.');
+    m.res = { pkg: mg.pkg, errs, warns: ck.warnings, stats: ck.stats };
+    const s = ck.stats;
+    rep = '<div class="aw-imp-stats"><span><b>' + s.sources + '</b> sources</span><span><b>' + s.donnees + '</b> données (' + s.nonDisponibles + ' non disponibles)</span><span><b>' + s.hypotheses + '</b> hypothèses</span><span><b>' + s.affirmations + '</b> affirmations</span><span><b>' + s.sections + '</b> sections</span><span><b>' + s.cartes + '</b> cartes</span><span><b>' + s.notes + '</b> notes</span></div>' +
+      (errs.length ? '<div class="aw-imp-err"><b>' + errs.length + ' erreur' + (errs.length > 1 ? 's' : '') + ' bloquante' + (errs.length > 1 ? 's' : '') + '</b><ul>' + errs.slice(0, 60).map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '<p class="aw-imp-ok">✓ Aucune erreur bloquante.</p>') +
+      (ck.warnings.length ? '<details class="aw-imp-warn"><summary>' + ck.warnings.length + ' point' + (ck.warnings.length > 1 ? 's' : '') + ' à corriger plus tard (n\'empêche' + (ck.warnings.length > 1 ? 'nt' : '') + ' pas l\'import)</summary><ul>' + ck.warnings.slice(0, 120).map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></details>' : '');
+  }
+  const keepN = Object.values(v.cards).filter(c => KEEP_TYPES.includes(c.type)).length;
+  host.innerHTML = '<div class="at-modal aw-imp"><div class="aw-lib-h"><h3>📥 Importer une analyse</h3><span class="at-faint">contrat ' + esc(P ? P.CONTRAT : '') + '</span><span style="flex:1"></span><button type="button" class="aw-kb" data-imp-close aria-label="Fermer">' + ICO.close + '</button></div>' +
+    '<p class="at-faint">Choisis tous les lots JSON en même temps (ou colle un lot). L\'import crée une <b>nouvelle version</b> de « ' + esc(d.titre) + ' » : la version actuelle reste intacte dans la liste des versions.</p>' +
+    '<div class="aw-ed-row"><button type="button" class="at-btn gold" data-imp-files>Choisir les fichiers .json</button>' + (m.lots.length ? '<button type="button" class="at-btn sm" data-imp-clear>Tout retirer</button>' : '') + '</div>' +
+    (m.lots.length ? '<div class="aw-imp-lots">' + m.lots.map((l, i) => '<span>' + esc(l.name) + (l.data && l.data.lot != null ? ' · lot ' + esc(l.data.lot) : '') + '<button type="button" class="at-x" data-imp-del="' + i + '">✕</button></span>').join('') + '</div>' : '') +
+    '<details' + (m.lots.length ? '' : ' open') + '><summary>Coller le JSON d\'un lot</summary><textarea class="at-in" rows="5" id="awImpTxt" placeholder="{ &quot;contrat&quot;: &quot;wolf-atelier/2.1&quot;, … }"></textarea><button type="button" class="at-btn sm" data-imp-paste>Ajouter ce lot</button></details>' +
+    (m.msg ? '<p class="aw-warn">' + esc(m.msg) + '</p>' : '') + rep +
+    (m.res ? '<label class="aw-ed-check"><input type="checkbox" data-imp-keep' + (m.keep ? ' checked' : '') + '> Reprendre de la version actuelle ses images, dirigeants, sources et cours comparés (' + keepN + ' carte' + (keepN > 1 ? 's' : '') + ')</label>' : '') +
+    '<div class="at-mbtns"><button type="button" class="at-btn" data-imp-close>Annuler</button><button type="button" class="at-btn gold" data-imp-go' + (m.res && !m.res.errs.length ? '' : ' disabled') + '>Créer la nouvelle version</button></div></div>';
+  const addLot = (name, text) => { try { const data = JSON.parse(text); const i = m.lots.findIndex(l => l.name === name); if (i >= 0) m.lots[i] = { name, data }; else m.lots.push({ name, data }); m.msg = ''; } catch(e){ m.msg = name + ' : JSON illisible (' + e.message + ')'; } };
+  host.onclick = async e => {
+    if (e.target === host || e.target.closest('[data-imp-close]')){ ui.imp = null; return renderImport(); }
+    const b = e.target.closest('button'); if (!b) return; const ds = b.dataset;
+    if (ds.impFiles !== undefined) return pick('.json,application/json', true, async files => { for (const f of files) addLot(f.name, await f.text()); m.lots.sort((a, b) => String(a.name).localeCompare(String(b.name), 'fr', { numeric: true })); renderImport(); });
+    if (ds.impPaste !== undefined){ const t = $('awImpTxt').value.trim(); if (t){ let n = 'collé ' + (m.lots.length + 1); try { const j = JSON.parse(t); if (j.lot != null) n = 'lot ' + j.lot + ' (collé)'; } catch(err){} addLot(n, t); } return renderImport(); }
+    if (ds.impDel !== undefined){ m.lots.splice(+ds.impDel, 1); m.res = null; return renderImport(); }
+    if (ds.impClear !== undefined){ m.lots = []; m.res = null; return renderImport(); }
+    if (ds.impGo !== undefined && m.res && !m.res.errs.length) return importCreate(m);
+  };
+  host.onchange = e => { if (e.target.dataset.impKeep !== undefined){ m.keep = e.target.checked; } };
+}
+function importCreate(m){
+  const P = PQ(), d = doc(), v0 = ver();
+  const keep = m.keep ? Object.values(v0.cards).filter(c => KEEP_TYPES.includes(c.type)) : [];
+  const selfDisplay = d.nom ? (typeof fmpDisplayName === 'function' ? fmpDisplayName(d.nom) : d.nom) : d.titre;
+  const out = P.convert(m.res.pkg, { uid, docName: d.titre, selfDisplay, palette: PALETTE, seriesColors: SERIES_COLORS, keep, fromVersion: v0.id });
+  const nv = out.version;
+  if (d.versions.some(x => x.label === nv.label)) nv.label += ' (' + (d.versions.length + 1) + ')';
+  // chaîne de valeur automatique : remplie avec la chaîne prête où figure l'entreprise
+  Object.values(nv.cards).forEach(c => { if (c.type === 'vchain' && c.autoChain){ delete c.autoChain; const k = vcChainFor(d.titre); Object.assign(c, k ? vcFromChain(k, d.titre) : { steps: [] }); } });
+  d.versions.push(nv); d.cur = nv.id; touch();
+  ui.imp = null; renderImport();
+  openDoc(d.id);   // pas de relevé TradingView dans la nouvelle version : il est fait tout de suite (cours, historique)
+  ui.toast = { text: '📥 Version « ' + nv.label + ' » créée' + (out.info.length ? ' · ' + out.info.join(' ') : '') + ' — l\'ancienne version reste dans la liste.' }; showToast();
+  // images du paquet : téléchargées par le serveur et rangées dans les fichiers de l'Atelier (jamais supprimées)
+  (async () => { for (const im of out.imagesToFetch){
+    const c = nv.cards[im.cardId]; if (!c) continue;
+    try { const r = await fetch('/api/atelier/fetch', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Wolf-IA': '1' }, body: JSON.stringify({ url: im.url }) }); const j = await r.json().catch(() => ({}));
+      if (r.ok && j.ok){ c.imgs = c.imgs || []; c.imgs.push({ f: j.file, leg: im.leg || '', from: im.url, page: im.page || '' }); touch(); refreshCard(c); }
+      else { c.imgErr = (c.imgErr || []).concat([im.url]); }
+    } catch(e){ c.imgErr = (c.imgErr || []).concat([im.url]); }
+  } })();
+}
+/* ---------- Prompteur : notes « À dire » dans une fenêtre séparée (jamais dans la page filmée) ---------- */
+function openPrompteur(){
+  const v = ver(), reg = v && v.reg; if (!reg || !(reg.notes || []).length){ ui.toast = { text: 'Aucune note « À dire » dans cette version.' }; return showToast(); }
+  const w = window.open('', 'wolfPrompteur', 'width=520,height=760'); if (!w){ ui.toast = { text: 'Fenêtre bloquée par le navigateur : autorise les fenêtres pour ce site.' }; return showToast(); }
+  const by = {}; reg.notes.forEach(n => { const s = v.sections.find(x => x.id === n.cible) || secOf(v, n.cible); const k = s ? s.id : '_'; (by[k] = by[k] || []).push(n.texte); });
+  const rows = orderedSections(v).filter(s => by[s.id]).map(s => '<h2>' + esc(secLabel(v, s)) + '</h2><ul>' + by[s.id].map(t => '<li>' + esc(t) + '</li>').join('') + '</ul>').join('') + (by._ ? '<h2>Autres</h2><ul>' + by._.map(t => '<li>' + esc(t) + '</li>').join('') + '</ul>' : '');
+  w.document.open();
+  w.document.write('<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Prompteur — ' + esc(doc().titre) + '</title><style>body{margin:0;padding:24px;background:#0D1013;color:#E9EBEE;font:20px/1.5 "Plus Jakarta Sans",system-ui,sans-serif}h1{font-size:16px;color:#8B93A0;font-weight:600;margin:0 0 12px}h2{color:#D9A441;font-size:22px;margin:24px 0 6px}li{margin:6px 0}</style></head><body><h1>À dire — ' + esc(doc().titre) + ' · ' + esc(v.label) + '</h1>' + rows + '</body></html>');
+  w.document.close();
+}
+
 /* ---------- Parcours (2026-11-11) : une étape (section) à la fois, ligne d'étapes de gauche à droite, « Suivant » ----------
    Mêmes cartes que la grille. Les sections vides, « Actualités » et « Sources » ne sont pas des étapes. */
 function tourSections(v){ return orderedSections(v).filter(s => s.cards.some(id => v.cards[id]) && !/actualite|source/.test(norm(s.titre))); }
@@ -1675,11 +1987,12 @@ function bigBody(c){
     case 'barres': case 'courbes': {
       const s = seriesData(c, d);
       if (!s.labels.length) return '<p class="at-faint">Aucune donnée.</p>';
-      const cagrs = s.sets.map(x => { const vals = x.values.filter(y => y != null); const n = vals.length; if (n < 2 || x.u === '%' || x.u === 'x' || vals[0] <= 0 || vals[n - 1] <= 0) return null; return { name: x.name, g: (Math.pow(vals[n - 1] / vals[0], 1 / (n - 1)) - 1) * 100, n: n - 1 }; }).filter(Boolean);
+      const cagrs = (c.ruptures || []).length ? [] : s.sets.map(x => { /* une rupture de série coupe les comparaisons automatiques */ const vals = x.values.filter(y => y != null); const n = vals.length; if (n < 2 || x.u === '%' || x.u === 'x' || vals[0] <= 0 || vals[n - 1] <= 0) return null; return { name: x.name, g: (Math.pow(vals[n - 1] / vals[0], 1 / (n - 1)) - 1) * 100, n: n - 1 }; }).filter(Boolean);
       return yrsSeg(c) + '<div class="aw-chart xl"><canvas data-chart="' + c.id + '"></canvas></div>' +
         (cagrs.length ? '<div class="aw-stats">' + cagrs.map(g => statBox(g.name + ' : croissance annuelle sur ' + g.n + ' ans', fr(g.g, 1) + ' %/an')).join('') + '</div>' : '') +
         '<div class="aw-tscroll"><table class="aw-table big"><thead><tr><th></th>' + s.labels.map(y => '<th>' + esc(y) + '</th>').join('') + '</tr></thead><tbody>' + s.sets.map(x => '<tr><td class="lb"><span class="aw-dot" style="background:' + x.color + '"></span> ' + esc(x.name) + '</td>' + x.values.map(y => '<td>' + fmtVal(y, x.u, x.devise) + '</td>').join('') + '</tr>' +
-          '<tr class="aw-yoy-row"><td class="lb">↳ évolution</td>' + yoyList(x.values).map(g => '<td class="' + (g == null ? '' : g >= 0 ? 'pos' : 'neg') + '">' + (g == null ? '—' : fmtPct(g)) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>';
+          ((c.ruptures || []).length ? '' : '<tr class="aw-yoy-row"><td class="lb">↳ évolution</td>' + yoyList(x.values).map(g => '<td class="' + (g == null ? '' : g >= 0 ? 'pos' : 'neg') + '">' + (g == null ? '—' : fmtPct(g)) + '</td>').join('') + '</tr>')).join('') + '</tbody></table></div>' +
+        (c.refs ? '<div class="aw-foot">' + regSeriesFoot(c, true) + '</div>' : '');
     }
     case 'comparatif': return compTableHtml(c, true) + '<p class="aw-note">' + (isRo() ? '' : 'Clique dans une case pour la remplir ; tu peux aussi coller un tableau entier (Word, Google Docs, Excel) dans une case. ') + 'Vert : la meilleure valeur de la colonne · rouge : la moins bonne.' + (c.auto ? ' Cases grises : chiffres TradingView proposés, à vérifier.' : '') + '</p>';
     case 'bourse': return bourseHtml(c, true);
@@ -1698,6 +2011,13 @@ function bigBody(c){
     case 'source': return srcHtml(c, true, v);
     case 'image': return '<div class="aw-big-imgs">' + (c.imgs || []).map(im => '<figure><img src="' + esc(mediaUrl(im.f)) + '" alt="">' + (im.leg ? '<figcaption>' + esc(im.leg) + '</figcaption>' : '') + '</figure>').join('') + '</div>' + (plain(c.html) ? '<div class="aw-text xl">' + clean(c.html) + '</div>' : '');
     case 'citation': return '<div class="aw-quote-mark xl">«</div><div class="aw-quote xl">' + clean(c.html) + '</div><div class="aw-quote-l">' + esc(c.titre || '') + (c.date ? ' · ' + frDate(c.date) : '') + '</div>';
+    case 'valorisation': return valoHtml(c, true);
+    case 'risque': return riskHtml(c, true);
+    case 'marche': return marcheHtml(c, true);
+    case 'acquisition': return acqHtml(c, true);
+    case 'chronologie': return chronoHtml(c, true);
+    case 'decision': return decisionHtml(c, true);
+    case 'score': return scoreHtml(c, true);
     default: return (c.date ? '<span class="aw-date">' + frDate(c.date) + '</span>' : '') + '<div class="aw-text xl">' + clean(c.html) + '</div>' + (c.source ? '<p class="aw-note">Source : ' + esc(c.source) + '</p>' : '') + '<div class="aw-big-imgs">' + (c.imgs || []).map(im => '<figure><img src="' + esc(mediaUrl(im.f)) + '" alt=""></figure>').join('') + '</div>';
   }
 }
@@ -2111,6 +2431,8 @@ function wireShell(){
     if (ds.addsec !== undefined){ const s = addSection(); renderBody(); setTimeout(() => { const h = document.querySelector('[data-sid="' + s.id + '"] [data-s-title]'); if (h){ h.scrollIntoView({ block: 'center' }); h.click(); } }, 30); return; }
     if (ds.newver !== undefined){ const c = JSON.parse(JSON.stringify(v)); c.id = uid('v'); c.label = 'Version du ' + frDate(today()) + (d.versions.some(x => x.label === 'Version du ' + frDate(today())) ? ' (' + (d.versions.length + 1) + ')' : ''); c.date = today(); d.versions.push(c); d.cur = c.id; touch(); openDoc(d.id); ui.toast = { text: 'Nouvelle version créée : l\'ancienne reste intacte dans la liste.' }; return showToast(); }
     if (ds.facts !== undefined){ ui.facts = true; return renderFacts(); }
+    if (ds.import !== undefined){ ui.imp = { lots: [], keep: true, res: null, msg: '' }; return renderImport(); }
+    if (ds.prompteur !== undefined) return openPrompteur();
     if (ds.tvrefresh !== undefined) return captureTv();
     if (ds.savetpl !== undefined){ ui.modal = { kind: 'tpl', nom: d.type === 'entreprise' ? 'Ma trame d\'analyse' : d.titre }; return renderModal(); }
     if (ds.props !== undefined){ ui.modal = { kind: 'props' }; return renderModal(); }
@@ -2129,6 +2451,7 @@ document.addEventListener('keydown', e => {
   }
   if (e.key === 'Escape'){
     if (ui.lib){ ui.lib = null; renderLibrary(); return; }
+    if (ui.imp){ ui.imp = null; renderImport(); return; }
     if (ui.facts){ ui.facts = false; renderFacts(); renderBody(); return; }
     if (ui.modal){ ui.modal = null; renderModal(); return; }
     if (ui.edit){ ui.edit = null; renderEditor(); return; }
@@ -2162,5 +2485,5 @@ async function snapshot(){
   }));
   return { data: { version: 1, publishedAt: new Date().toISOString(), docs: D.docs }, media: [...media] };
 }
-window.ATELIER_UI = { onShow, openFor, snapshot, tvRowsFor, addYearEndPrices, hasDoc: name => !!(D && Object.values(D.docs).some(x => x.type === 'entreprise' && norm(x.titre) === norm(name))), _state: () => ({ D, ui, RO }), _test: { migrateVersion, resolveBind, seriesData, keyFigure, addCard, openBig } };
+window.ATELIER_UI = { onShow, openFor, snapshot, tvRowsFor, addYearEndPrices, hasDoc: name => !!(D && Object.values(D.docs).some(x => x.type === 'entreprise' && norm(x.titre) === norm(name))), _state: () => ({ D, ui, RO }), _test: { migrateVersion, resolveBind, seriesData, keyFigure, addCard, openBig, valoRes, coursNow, importCreate, renderImport } };
 })();

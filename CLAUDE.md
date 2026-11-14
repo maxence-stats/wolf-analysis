@@ -804,6 +804,25 @@ cours dans sa devise) ou « Écart au plus haut » (recul vs plus haut glissant 
 propre à … / partielle / pas de baisse » (seuil −10 %, `mcVerdict`). Cours TradingView hebdo ajustés FIGÉS dans la carte (`c.px`),
 relus par « ↻ » ou tout seuls pour une entreprise ajoutée (`mcAuto`, une fois par liste). Symbole : carte Entreprise, puis carte
 Chaîne de valeur (symboles vérifiés : la recherche TradingView donnait GETTEX:NKT au lieu d'OMXCOP:NKT), puis recherche.
+**Import d'une analyse ChatGPT (2026-11-14, branche `atelier/import-chatgpt`)** : contrat d'échange **`docs/contrat-atelier-v2.md`**
+(`wolf-atelier/2.1` : lots JSON à 7 blocs meta / sources / donnees / hypotheses / affirmations / presentation / notes). Module PUR
+**`js/atelier-paquet.js`** (`window.ATELIER_PAQUET` : `merge`, `check`, `convert`, `valoCompute`, `pontCompute`, chargé AVANT atelier.js ;
+tests `tests/atelier-paquet.test.html`, 23 cas, à ouvrir via le serveur — pas de Node sur le PC). Bouton **« 📥 Importer »** d'un dossier :
+choisir tous les lots .json (ou coller un lot) → rapport de contrôle (erreurs bloquantes / points à corriger plus tard, mauvais dossier =
+bloquant) → **NOUVELLE version** « Import ChatGPT — date » (rien n'est remplacé, la version précédente reste dans la liste). Option :
+reprendre les cartes image / profil / source / multicours de la version actuelle dans une section « Repris de la version précédente ».
+La version garde tout le paquet dans **`v.reg`** (sources, données, hypothèses, affirmations, notes) ; cartes converties : `chiffre` → kpi
+lié `r:<id>` (resolveBind), barres/courbes en mode manuel avec `c.refs` et `c.ruptures` (rupture = pas de Δ % ni de CAGR), donut / geo /
+comparatif remplis depuis le registre, `auto` → bourse / barres TV / multicours / vchain. Nouveaux types (`TYPES`, cat 'Import', hors
+bibliothèque) : `valorisation` (modules A et B, curseurs = copie de travail `c.work`, « ↺ » revient à ChatGPT, formules affichées, marge de
+sécurité = (P_max − cours) ÷ P_max, cours = relevé TradingView de la version, avertissement dénominateur FCF comptable vs normalisé),
+`acquisition` (pont : « incomplet » sans valeur tant qu'une entrée manque, bouton « calculer quand même »), `risque`, `marche`, `chronologie`,
+`decision` (prix d'entrée `valo:…` suit les curseurs), `score`. Pastilles d'origine sur chaque chiffre (CG / Document / Hyp. + statut,
+infobulle : source, page, définition, périmètre, formule). « 🗒 À dire » ouvre les notes dans une fenêtre séparée (prompteur), jamais dans
+la page filmée. Contrôles des paquets reçus : `docs/controle-prysmian-*.md`. Restent à faire (contrat §5 et §7) : figer une version pour une
+vidéo (lecture seule), actualisation qui crée une version avec écarts, paquet `mise_a_jour`, matrices risques / marchés, export PNG d'une carte.
+Testé le 2026-11-14 sur instance jetable (`-StoreDir` sur une COPIE d'atelier.json) avec les 5 lots Prysmian : 71 cartes, valorisation
+identique au calcul à la main (prix d'entrée réaliste 63,73 € au cours de 107,65 €), ancienne version intacte.
 Le texte ci-dessous décrit l'ancienne carte mentale (historique).
 
 Nouvel onglet principal (`#pageAtelier`, `js/atelier.js`, CSS `.at-*` en fin de `style.css`), À CÔTÉ du Cerveau numérique (qui
