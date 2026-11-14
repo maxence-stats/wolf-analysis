@@ -61,5 +61,34 @@ t('Registre gardé dans la version', !!(cv.version.reg && cv.version.reg.donnees
 t('Note « À dire » rattachée à la section importée', cv.version.reg.notes[0].cible === cv.version.sections[0].id);
 t('Texte : renvoi résolu avec la dernière valeur connue', /100 M€/.test(Object.values(cv.version.cards).find(c => c.pid === 'k2').html));
 
+// 5. Contrat v3 : récit → écrans
+const v3 = { contrat: 'wolf-atelier/3', type: 'dossier', lot: 1, meta: { entreprise: 'Test', poles: [{ id: 'a', nom: 'Pôle A' }, { id: 'b', nom: 'Pôle B' }] },
+  sources: [{ id: 'src_a', titre: 'Rapport', url: 'https://example.com', type: 'rapport_annuel' }],
+  donnees: [
+    { id: 'ca_a', libelle: 'CA A', unite: 'M', devise: 'EUR', statut: 'publie', source: 'src_a', definition: 'd', perimetre: 'A', pole: 'a', serie: [{ periode: 'FY2023', valeur: 100, page: '1' }, { periode: 'FY2025', valeur: 154, page: '1' }] },
+    { id: 'marge_a', libelle: 'Marge A', unite: '%', statut: 'calcule', formule: 'x', definition: 'd', perimetre: 'A', pole: 'a', serie: [{ periode: 'FY2023', valeur: 12.87 }, { periode: 'FY2025', valeur: 17.84 }] },
+    { id: 'ca_b', libelle: 'CA B', unite: 'M', devise: 'EUR', statut: 'publie', source: 'src_a', page: '2', definition: 'd', perimetre: 'B', pole: 'b', periode: 'FY2025', valeur: 300 },
+    { id: 'carnet_x', libelle: 'Carnet X', unite: 'M', devise: 'EUR', statut: 'publie', source: 'src_a', page: '3', definition: 'd', perimetre: 'X', pole: 'concurrent:nkt', periode: '2025', valeur: 10200 }],
+  hypotheses: [], affirmations: [], marches: [], risques: [{ id: 'r1', titre: 'R', nature: 'economique', probabilite: 'forte', gravite: 'moyenne' }], acquisitions: [], chronologie: [],
+  valorisation: {}, decision: { verdict: 'attendre', hypotheses: ['ca_b'], prix_entree: 'ca_b', risques: ['r1'], invalidation: ['x'] }, score: {},
+  recit: { chapitres: [{ id: 'c1', titre: 'Pôle A', pole: 'a', messages: [
+    { id: 'm1', phrase: 'Ça grandit', visuel: 'evolution', donnees: ['ca_a', 'marge_a'], a_dire: 'dire ça' },
+    { id: 'm2', phrase: 'A face à NKT', visuel: 'comparaison', donnees: ['ca_a', 'carnet_x'] },
+    { id: 'm3', phrase: 'Une photo', visuel: 'image', image_voulue: 'Une usine' }] }] } };
+const m3 = P.merge([{ name: 'v3', data: v3 }]), c3 = P.check(m3.pkg);
+t('v3 : paquet propre accepté', !c3.errors.length, c3.errors.join(' / '));
+t('v3 : 3 écrans comptés', c3.stats.messages === 3);
+const bad = JSON.parse(JSON.stringify(v3)); bad.recit.chapitres[0].messages[2].image_voulue = 'https://exemple.com/photo.jpg';
+t('v3 : lien d\'image refusé', P.check(P.merge([{ name: 'b', data: bad }]).pkg).errors.some(e => /lien/.test(e)));
+const cv3 = P.convert(m3.pkg, { docName: 'Test' });
+const ecr = Object.values(cv3.version.cards).filter(c => c.type === 'ecran');
+t('v3 : une carte écran par message', ecr.length === 3 && cv3.version.mode === 'ecrans');
+t('v3 : note « À dire » rattachée à son écran', cv3.version.reg.notes[0].cible === 'pe_m1');
+const sm = P.screenModel(cv3.version.reg, v3.recit.chapitres[0].messages[0]);
+t('v3 : évolution +54 % et marge 12,9 %', near(sm.growth.pct, 54) && sm.bars[0].sub === '12,9 %', JSON.stringify(sm.bars.map(b => b.sub)));
+const sc = P.screenModel(cv3.version.reg, v3.recit.chapitres[0].messages[1]);
+t('v3 : face à un concurrent, l\'entreprise porte son nom', sc.parts[0].label === 'Test' && sc.parts[1].label === 'NKT', sc.parts.map(p => p.label).join(','));
+t('v3 : 10 200 M€ affiché 10,2 Md€', sc.parts[1].txt.replace(/\s/g, ' ') === '10,2 Md€', sc.parts[1].txt);
+
 const h = document.createElement('h2'); h.className = ko ? 'ko' : 'ok'; h.textContent = ko ? ko + ' échec(s) sur ' + n : 'Tous les tests passent (' + n + ')'; document.body.insertBefore(h, out);
 </script></body></html>

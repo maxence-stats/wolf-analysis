@@ -12,7 +12,9 @@
 (function(root){
 'use strict';
 
-const CONTRAT = 'wolf-atelier/2.1';
+const CONTRAT = 'wolf-atelier/3';              // contrat courant (docs/contrat-atelier-v3.md)
+const CONTRATS = ['wolf-atelier/2.1', 'wolf-atelier/3'];
+const VISUELS = ['image', 'chiffre', 'evolution', 'repartition', 'comparaison', 'echelle_prix', 'liste', 'schema'];
 const STATUTS = ['publie', 'ajuste', 'calcule', 'estimation', 'non_disponible'];
 const STATUT_L = { publie: 'publié', ajuste: 'ajusté', calcule: 'calculé', estimation: 'estimation', non_disponible: 'non disponible', hypothese: 'hypothèse' };
 const CARD_TYPES = ['texte', 'citation', 'chiffre', 'barres', 'courbes', 'donut', 'monde', 'comparatif', 'profil', 'image', 'these', 'auto',
@@ -28,15 +30,19 @@ const firstWord = s => norm(s).split(/[\s.,()&]+/).filter(Boolean)[0] || '';
 /* ---------------------------------------------------------------- fusion des lots */
 // lots : [{ name, data }] (data = objet JSON déjà lu). Retourne le paquet fusionné + les erreurs de fusion.
 function merge(lots){
-  const P = { contrat: null, type: null, meta: {}, sources: [], donnees: [], hypotheses: [], affirmations: [], sections: [], notes: [], lots: [] };
+  const P = { contrat: null, type: null, meta: {}, sources: [], donnees: [], hypotheses: [], affirmations: [], sections: [], notes: [], lots: [],
+    marches: [], risques: [], acquisitions: [], chronologie: [], valorisation: null, decision: null, score: null, chapitres: [], images: [] };
   const errs = [];
   (lots || []).forEach(({ name, data }) => {
     const L = data || {};
-    if (L.contrat !== CONTRAT) errs.push(name + ' : contrat « ' + (L.contrat || '?') + ' » (attendu ' + CONTRAT + ')');
+    if (!CONTRATS.includes(L.contrat)) errs.push(name + ' : contrat « ' + (L.contrat || '?') + ' » (attendu ' + CONTRAT + ')');
+    else if (P.contrat && L.contrat !== P.contrat) errs.push(name + ' : contrat « ' + L.contrat + ' » mélangé avec « ' + P.contrat + ' »');
     P.contrat = P.contrat || L.contrat; P.type = P.type || L.type;
     P.lots.push({ name, lot: L.lot });
     Object.assign(P.meta, L.meta || {});
-    ['sources', 'donnees', 'hypotheses', 'affirmations', 'notes'].forEach(k => { if (Array.isArray(L[k])) P[k] = P[k].concat(L[k]); });
+    ['sources', 'donnees', 'hypotheses', 'affirmations', 'notes', 'marches', 'risques', 'acquisitions', 'chronologie', 'images'].forEach(k => { if (Array.isArray(L[k])) P[k] = P[k].concat(L[k]); });
+    ['valorisation', 'decision', 'score'].forEach(k => { if (L[k] && typeof L[k] === 'object' && Object.keys(L[k]).length) P[k] = Object.assign(P[k] || {}, L[k]); });
+    if (L.recit && Array.isArray(L.recit.chapitres)) P.chapitres = P.chapitres.concat(L.recit.chapitres);
     const secs = L.presentation && L.presentation.sections; if (Array.isArray(secs)) P.sections = P.sections.concat(secs);
   });
   P.sections.sort((a, b) => (isNum(a.ordre) ? a.ordre : 999) - (isNum(b.ordre) ? b.ordre : 999));
@@ -117,6 +123,7 @@ function check(pkg){
   const known = id => !!(don[id] || hyp[id] || aff[id] || src[id]);
   const valoNames = new Set();
   cards.forEach(({ c }) => { if (c.type === 'valorisation') valoResultNames().forEach(n => valoNames.add(n)); });
+  if (pkg.valorisation) valoResultNames().forEach(n => valoNames.add(n));
   const textRefs = (ctx, s) => {
     String(s || '').replace(/\{\{(aff|d):([a-z0-9_]+)\}\}/g, (m, k, id) => { if (!known(id)) E.push(ctx + ' : renvoi « ' + m + ' » inconnu'); return m; })
       .replace(/\[\[([a-z0-9_]+)\]\]/g, (m, id) => { if (!src[id]) E.push(ctx + ' : source « ' + id + ' » inconnue'); return m; });
@@ -155,8 +162,49 @@ function check(pkg){
   });
   pkg.notes.forEach(n => { if (!secIds.has(n.cible) && !cardIds.has(n.cible)) E.push('Note → cible « ' + n.cible + ' » inconnue'); });
 
+  // ---- contrat v3 : blocs d'analyse et récit (un message = un écran)
+  let nMsg = 0;
+  if (pkg.type === 'images') (pkg.images || []).forEach((im, i) => { if (!im.message) E.push('Image ' + (i + 1) + ' : sans « message »'); if (!/^https:\/\//.test(im.url || '')) E.push('Image ' + (i + 1) + ' : adresse https manquante'); });
+  if (pkg.contrat === 'wolf-atelier/3' && pkg.type !== 'images'){
+    const poles = (pkg.meta.poles || []).map(p => p.id);
+    if (!poles.length) W.push('meta.poles vide : les chapitres par pôle ne pourront pas être rangés');
+    const okPole = p => !p || p === 'groupe' || p === 'marche' || /^concurrent:/.test(p) || poles.includes(p);
+    pkg.donnees.forEach(d => { if (!d.pole) W.push(d.id + ' : sans « pole »'); else if (!okPole(d.pole)) W.push(d.id + ' : pôle « ' + d.pole + ' » inconnu'); });
+    const riskIds = new Set(pkg.risques.map(r => r.id));
+    pkg.marches.forEach(m => ['taille_marche', 'croissance', 'part_entreprise'].forEach(k => ref('Marché ' + m.id, m[k])));
+    pkg.risques.forEach(r => (r.sources || []).forEach(x => ref('Risque ' + r.id, x)));
+    pkg.acquisitions.forEach(a => { const ctx = 'Acquisition ' + (a.id || a.cible); ref(ctx, a.prix); ref(ctx, a.dette_reprise); Object.values(a.pont || {}).forEach(x => ref(ctx, x)); (a.financement || []).forEach(f => ref(ctx, f.donnee)); });
+    if (pkg.valorisation){ const c = pkg.valorisation, ctx = 'Valorisation'; ref(ctx, c.base); if (c.module_a){ Object.values(c.module_a.cagr || {}).forEach(x => ref(ctx, x)); ref(ctx, c.module_a.multiple); } if (c.module_b){ ref(ctx, c.module_b.cagr); Object.values(c.module_b.multiples || {}).forEach(x => ref(ctx, x)); } (c.references_multiple || []).forEach(x => ref(ctx, x)); }
+    if (pkg.decision){ const c = pkg.decision, ctx = 'Décision';
+      ['verdict', 'hypotheses', 'prix_entree', 'risques', 'invalidation'].forEach(k => { const v = c[k]; if (!v || (Array.isArray(v) && !v.length)) E.push(ctx + ' : sans « ' + k + ' »'); });
+      (c.hypotheses || []).forEach(x => ref(ctx, x)); ref(ctx, c.prix_entree); (c.risques || []).forEach(r => { if (!riskIds.has(r)) E.push(ctx + ' : risque « ' + r + ' » inconnu'); }); }
+    const msgIds = new Set(), chIds = new Set();
+    if (!pkg.chapitres.length) W.push('Récit vide : aucun chapitre (lot 3 ou 4 manquant ?)');
+    pkg.chapitres.forEach(ch => {
+      if (!ch.id) E.push('Chapitre sans identifiant : « ' + (ch.titre || '?') + ' »'); else if (chIds.has(ch.id)) E.push('Chapitre en double : ' + ch.id); chIds.add(ch.id);
+      if (ch.pole && !okPole(ch.pole)) W.push('Chapitre ' + ch.id + ' : pôle « ' + ch.pole + ' » inconnu');
+      if (!(ch.messages || []).length) W.push('Chapitre ' + ch.id + ' sans message');
+      (ch.messages || []).forEach(m => {
+        nMsg++;
+        const ctx = 'Message ' + (m.id || '?') + ' (' + ch.id + ')', words = t => String(t || '').trim().split(/\s+/).filter(Boolean).length;
+        if (!m.id) E.push(ctx + ' : sans identifiant'); else if (msgIds.has(m.id)) E.push(ctx + ' : en double'); msgIds.add(m.id);
+        if (!m.phrase) E.push(ctx + ' : sans phrase'); else if (words(m.phrase) > 10) W.push(ctx + ' : phrase de ' + words(m.phrase) + ' mots (10 au plus)');
+        if (!VISUELS.includes(m.visuel)) E.push(ctx + ' : visuel « ' + m.visuel + ' » inconnu');
+        const maxD = ['repartition', 'comparaison'].includes(m.visuel) ? 6 : 3;
+        if ((m.donnees || []).length > maxD) W.push(ctx + ' : ' + m.donnees.length + ' données (' + maxD + ' au plus)');
+        (m.donnees || []).forEach(x => ref(ctx, x)); (m.affirmations || []).forEach(x => ref(ctx, x));
+        if ((m.explication || []).length > 3) W.push(ctx + ' : ' + m.explication.length + ' phrases d\'explication (3 au plus)');
+        (m.explication || []).forEach(t => { textRefs(ctx, t); if (words(t) > 20) W.push(ctx + ' : explication de ' + words(t) + ' mots'); });
+        if (m.visuel === 'image' && !m.image_voulue) W.push(ctx + ' : image sans « image_voulue »');
+        if (/https?:\/\//.test(JSON.stringify(m))) E.push(ctx + ' : contient un lien (interdit : décrire l\'image voulue)');
+        if (['evolution', 'repartition', 'comparaison', 'chiffre'].includes(m.visuel) && !(m.donnees || []).length) W.push(ctx + ' : visuel « ' + m.visuel + ' » sans donnée');
+        if (m.visuel === 'evolution' && (m.donnees || [])[0] && don[m.donnees[0]] && !Array.isArray(don[m.donnees[0]].serie)) W.push(ctx + ' : « evolution » attend une série en première donnée');
+      });
+    });
+  }
+
   const nd = pkg.donnees.filter(d => d.statut === 'non_disponible' || (Array.isArray(d.serie) && d.serie.every(p => p.valeur == null))).length;
-  return { errors: E, warnings: W, stats: { sources: pkg.sources.length, donnees: pkg.donnees.length, nonDisponibles: nd, hypotheses: pkg.hypotheses.length, affirmations: pkg.affirmations.length, sections: secIds.size, cartes: cards.length, notes: pkg.notes.length } };
+  return { errors: E, warnings: W, stats: { sources: pkg.sources.length, donnees: pkg.donnees.length, nonDisponibles: nd, hypotheses: pkg.hypotheses.length, affirmations: pkg.affirmations.length, sections: secIds.size || pkg.chapitres.length, cartes: cards.length, messages: nMsg, notes: pkg.notes.length } };
 }
 
 /* ---------------------------------------------------------------- registre (v.reg) */
@@ -202,10 +250,10 @@ const CUR = { EUR: '€', USD: '$', GBP: '£', CHF: 'CHF', JPY: '¥' };
 function fmtItem(item, p){
   const pt = p || regLast(item); if (!pt || !isNum(pt.valeur)) return 'non disponible';
   const v = pt.valeur, u = item.unite, cur = CUR[item.devise] || item.devise || '';
-  if (u === '%') return frN(v, Math.abs(v) < 10 ? 1 : 0) + ' %';
+  if (u === '%') return frN(v, Math.abs(v) < 100 ? 1 : 0) + ' %';
   if (u === 'x') return frN(v, 1) + 'x';
   if (u === 'par_action') return frN(v, 2) + ' ' + (cur || '€') + '/action';
-  if (u === 'M' && cur) return Math.abs(v) >= 1000 ? frN(v / 1000, 2) + ' Md' + cur : frN(v, 0) + ' M' + cur;
+  if (u === 'M' && cur) return Math.abs(v) >= 10000 ? frN(v / 1000, 1) + ' Md' + cur : Math.abs(v) >= 1000 ? frN(v / 1000, 2) + ' Md' + cur : frN(v, 0) + ' M' + cur;
   if (u === 'Md') return frN(v, Math.abs(v) < 10 ? 2 : 1) + ' Md' + cur;
   return frN(v, Math.abs(v) < 10 ? 2 : 0) + (u ? ' ' + u : '');
 }
@@ -237,6 +285,7 @@ function mdToHtml(md, reg){
 // opts : { uid(prefix), docName, palette:[couleurs], seriesColors:[couleurs], keep:[cartes de l'ancienne version à reprendre] }
 // Retourne { version, imagesToFetch:[{cardId, url, leg, page}], info:[messages] }.
 function convert(pkg, opts){
+  if (pkg.contrat === 'wolf-atelier/3') return convertV3(pkg, opts);
   const o = opts || {}, uid = o.uid || (p => p + Math.random().toString(36).slice(2, 10));
   const pal = o.palette || ['#D9A441', '#4A9FE0', '#4FD1A5', '#E5636B', '#F08A4B', '#5CC8D7', '#B8A1F0', '#8FA3B8'];
   const scol = o.seriesColors || pal;
@@ -412,7 +461,84 @@ function pontCompute(c, val, force){
   };
 }
 
-const API = { CONTRAT, STATUT_L, CARD_TYPES, merge, check, buildReg, regItem, regPoints, regLast, unitOf, fmtItem, mdToHtml, convert, valoScenario, valoCompute, valoResultNames, pontCompute, PONT, isNum };
+/* ---------------------------------------------------------------- contrat v3 : récit → écrans */
+const safeId = x => String(x || '').replace(/[^a-z0-9_]/gi, '_');
+const clone = o => JSON.parse(JSON.stringify(o || {}));
+const periodLabel = p => String(p == null ? '' : p).replace(/^FY/i, '');
+// Nom affichable d'un pôle ou d'un concurrent (« concurrent:nkt » → « NKT »).
+function poleName(reg, pole){
+  if (!pole) return '';
+  const p = ((reg && reg.poles) || []).find(x => x.id === pole); if (p) return p.nom || p.id;
+  if (/^concurrent:/.test(pole)){ const n = pole.split(':')[1] || ''; return n.length <= 4 ? n.toUpperCase() : n.charAt(0).toUpperCase() + n.slice(1); }
+  if (pole === 'groupe') return 'Groupe';
+  return pole;
+}
+// Ce qu'un écran doit montrer, calculé à partir du registre (aucune mise en page ici).
+function screenModel(reg, m){
+  const items = (m.donnees || []).map(id => { const r = regItem(reg, id); return r ? { id, item: r.item, kind: r.kind } : null; }).filter(Boolean);
+  const last = it => regLast(it.item);
+  // face à un concurrent, les chiffres de l'entreprise portent son nom ; sinon le nom du pôle
+  const vsConc = items.some(it => /^concurrent:/.test(it.item.pole || ''));
+  const label = it => vsConc && !/^concurrent:/.test(it.item.pole || '') ? (reg.meta && reg.meta.entreprise) || it.item.libelle : it.item.pole && !/^(groupe|marche)$/.test(it.item.pole) ? poleName(reg, it.item.pole) : it.item.libelle;
+  const out = { visuel: m.visuel, items, hyp: items.some(it => it.kind === 'hypothese' || it.item.statut === 'estimation'), sources: [] };
+  const seen = {};
+  items.forEach(it => regPoints(it.item).forEach(p => { if (!p.source || !reg.sources[p.source]) return; const k = p.source; seen[k] = seen[k] || { titre: reg.sources[k].titre, editeur: reg.sources[k].editeur || '', pages: [] }; if (p.page && !seen[k].pages.includes(String(p.page))) seen[k].pages.push(String(p.page)); }));
+  out.sources = Object.values(seen);
+  if (m.visuel === 'chiffre' && items[0]){ const l = last(items[0]); out.big = fmtItem(items[0].item, l); out.bigLabel = items[0].item.libelle; out.period = l ? periodLabel(l.periode) : ''; out.nd = !l; }
+  if (m.visuel === 'evolution' && items[0]){
+    const main = items[0], pts = regPoints(main.item).filter(p => isNum(p.valeur)), sub = items.find((it, i) => i > 0 && it.item.unite === '%');
+    const subPts = sub ? regPoints(sub.item) : [];
+    out.bars = pts.map(p => { const q = subPts.find(x => String(x.periode) === String(p.periode) && isNum(x.valeur)); return { label: periodLabel(p.periode), v: p.valeur, txt: fmtItem(main.item, p), sub: q ? fmtItem(sub.item, q) : '', rupture: !!p.rupture }; });
+    out.subLabel = sub ? sub.item.libelle : '';
+    const max = Math.max(...out.bars.map(b => Math.abs(b.v)), 0) || 1; out.bars.forEach(b => { b.h = Math.max(0.04, Math.abs(b.v) / max); });
+    const brk = pts.slice(1).some(p => p.rupture);
+    if (pts.length > 1 && !brk && pts[0].valeur > 0 && pts[pts.length - 1].valeur > 0) out.growth = { pct: (pts[pts.length - 1].valeur / pts[0].valeur - 1) * 100, from: periodLabel(pts[0].periode), to: periodLabel(pts[pts.length - 1].periode) };
+    out.rupture = brk;
+  }
+  if (m.visuel === 'repartition' || m.visuel === 'comparaison'){
+    out.parts = items.map(it => { const l = last(it); return { label: label(it), v: l ? l.valeur * (it.item.unite === 'Md' ? 1000 : 1) : null, txt: fmtItem(it.item, l), period: l ? periodLabel(l.periode) : '' }; });
+    const ok = out.parts.filter(x => isNum(x.v) && x.v > 0), tot = ok.reduce((t, x) => t + x.v, 0), max = Math.max(...ok.map(x => x.v), 0) || 1;
+    out.parts.forEach(x => { x.share = isNum(x.v) && tot ? x.v / tot * 100 : null; x.w = isNum(x.v) ? Math.max(0.03, x.v / max) : 0; });
+    out.total = tot;
+  }
+  return out;
+}
+function convertV3(pkg, opts){
+  const o = opts || {}, uid = o.uid || (p => p + Math.random().toString(36).slice(2, 10));
+  const pal = o.palette || ['#D9A441', '#4A9FE0', '#4FD1A5', '#E5636B', '#F08A4B', '#5CC8D7', '#B8A1F0', '#8FA3B8'];
+  const reg = buildReg(pkg), nowIso = new Date().toISOString(), today = nowIso.slice(0, 10);
+  reg.poles = pkg.meta.poles || [];
+  reg.blocs = { marches: pkg.marches, risques: pkg.risques, acquisitions: pkg.acquisitions, chronologie: pkg.chronologie, valorisation: pkg.valorisation, decision: pkg.decision, score: pkg.score };
+  reg.recit = { chapitres: pkg.chapitres };
+  const v = { id: uid('v'), label: 'Import ' + (pkg.meta.auteur || 'ChatGPT') + ' — ' + today.split('-').reverse().join('/'), date: today, kind: 'cards', mode: 'ecrans', sections: [], cards: {}, reg, importedFrom: o.fromVersion || null };
+  const chapOfPole = p => { const ch = pkg.chapitres.find(c => c.pole === p); return ch ? ch.id : null; };
+  let i = 0;
+  pkg.chapitres.forEach(ch => {
+    const sec = { id: 'ps_' + safeId(ch.id), pid: ch.id, titre: ch.titre || ch.id, hint: [], color: pal[i++ % pal.length], collapsed: false, cards: [], chapitre: true };
+    (ch.messages || []).forEach(m => { const c = { id: 'pe_' + safeId(m.id), pid: m.id, type: 'ecran', size: 'h', titre: '', chap: ch.id, msg: m.id, imgs: [], createdAt: nowIso, fromImport: true }; v.cards[c.id] = c; sec.cards.push(c.id); });
+    v.sections.push(sec);
+  });
+  const det = { id: 'ps_details', pid: 'details', titre: 'Données détaillées (hors vidéo)', hint: ['Valorisation interactive, risques, acquisitions, marchés : pour creuser, pas pour l\'écran.'], color: '#8FA3B8', collapsed: true, cards: [] };
+  const add = c => { c.createdAt = nowIso; c.fromImport = true; if (v.cards[c.id]) c.id += '_' + uid(''); v.cards[c.id] = c; det.cards.push(c.id); };
+  if (pkg.valorisation) add(Object.assign(clone(pkg.valorisation), { id: 'p_valo', pid: 'valo', type: 'valorisation', size: 'h', titre: 'Valorisation' }));
+  if (pkg.decision) add(Object.assign(clone(pkg.decision), { id: 'p_decision', pid: 'decision', type: 'decision', size: 'h', titre: 'Décision', risques: (pkg.decision.risques || []).map(r => 'p_' + safeId(r)) }));
+  pkg.risques.forEach(r => add(Object.assign(clone(r), { id: 'p_' + safeId(r.id), pid: r.id, type: 'risque', size: 'h', titre: r.titre || '', segment: r.pole && chapOfPole(r.pole) ? chapOfPole(r.pole) : (r.segment || null) })));
+  pkg.marches.forEach(m => add(Object.assign(clone(m), { id: 'p_' + safeId(m.id), pid: m.id, type: 'marche', size: 'h', titre: m.nom || '', segments_concernes: [].concat(m.pole ? [m.pole] : [], m.segments_concernes || []).map(p => chapOfPole(p)).filter(Boolean) })));
+  pkg.acquisitions.forEach(a => add(Object.assign(clone(a), { id: 'p_' + safeId(a.id || a.cible), pid: a.id || a.cible, type: 'acquisition', size: 'h', titre: 'Acquisition : ' + (a.cible || '') })));
+  if (pkg.chronologie.length) add({ id: 'p_chronologie', pid: 'chronologie', type: 'chronologie', size: 'h', titre: 'Chronologie', evenements: clone(pkg.chronologie) });
+  if (pkg.score && (pkg.score.criteres || []).length) add(Object.assign(clone(pkg.score), { id: 'p_score', pid: 'score', type: 'score', size: 'h', titre: 'Wolf Score' }));
+  if (det.cards.length) v.sections.push(det);
+  reg.notes = [];
+  pkg.chapitres.forEach(ch => (ch.messages || []).forEach(m => { if (m.a_dire) reg.notes.push({ cible: 'pe_' + safeId(m.id), texte: m.a_dire }); }));
+  return { version: v, imagesToFetch: [], info: [] };
+}
+// Message et chapitre d'une carte « écran ».
+function messageOf(reg, chapId, msgId){
+  const ch = ((reg && reg.recit && reg.recit.chapitres) || []).find(c => c.id === chapId); if (!ch) return null;
+  const m = (ch.messages || []).find(x => x.id === msgId); return m ? { ch, m } : null;
+}
+
+const API = { CONTRAT, STATUT_L, CARD_TYPES, merge, check, buildReg, regItem, regPoints, regLast, unitOf, fmtItem, mdToHtml, convert, valoScenario, valoCompute, valoResultNames, pontCompute, PONT, isNum, CONTRATS, VISUELS, screenModel, convertV3, messageOf, poleName, periodLabel };
 if (typeof module !== 'undefined' && module.exports) module.exports = API;
 root.ATELIER_PAQUET = API;
 })(typeof window !== 'undefined' ? window : globalThis);

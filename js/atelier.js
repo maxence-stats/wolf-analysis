@@ -57,7 +57,8 @@ const TYPES = {
   acquisition: { l: 'Acquisition', c: '#F08A4B', size: 'h', cat: 'Import', d: 'Prix, financement, pont de FCF pro forma, dilution' },
   chronologie: { l: 'Chronologie', c: '#8FA3B8', size: 'h', cat: 'Import', d: 'Événements datés, faits et échéances' },
   decision:   { l: 'Décision',     c: '#D9A441', size: 'h', cat: 'Import', d: 'Verdict, prix d\'entrée, conditions, invalidation' },
-  score:      { l: 'Wolf Score',   c: '#D9A441', size: 'h', cat: 'Import', d: 'Notes par critère, synthèse éditoriale' }
+  score:      { l: 'Wolf Score',   c: '#D9A441', size: 'h', cat: 'Import', d: 'Notes par critère, synthèse éditoriale' },
+  ecran:      { l: 'Écran',        c: '#D9A441', size: 'h', cat: 'Import', d: 'Un écran de la vidéo : un message du récit, mis en page' }
 };
 const PQ = () => window.ATELIER_PAQUET || null;
 const THESE_Q = ['Pourquoi cette entreprise est-elle intéressante ?', 'Quels sont ses principaux avantages concurrentiels ?', 'Quels sont ses moteurs de croissance futurs ?',
@@ -753,7 +754,7 @@ function docHtml(d){
   return '<header class="aw-head">' + (ui.video ? '' : '<button type="button" class="at-btn ico" data-side title="Afficher / masquer le répertoire">☰</button>') + docLogo(d, 54) +
     '<div class="aw-head-t"><div class="aw-chips">' + chips + chain + prix + '</div><h1>' + esc(d.titre) + '</h1>' + (ui.video ? '' : '<div class="aw-tvbar" id="awTvBar">' + tvBarHtml() + '</div>') + '</div>' + cours + '</header>' +
     '<div class="aw-bar">' +
-      '<span class="at-seg"><button type="button" class="' + (ui.view === 'grid' ? 'on' : '') + '" data-view="grid">Grille</button><button type="button" class="' + (ui.view === 'tour' ? 'on' : '') + '" data-view="tour">Parcours</button></span>' +
+      '<span class="at-seg"><button type="button" class="' + (ui.view === 'grid' ? 'on' : '') + '" data-view="grid">Grille</button><button type="button" class="' + (ui.view === 'tour' ? 'on' : '') + '" data-view="tour">Parcours</button>' + (ecranList(v).length ? '<button type="button" class="' + (ui.view === 'ecrans' ? 'on' : '') + '" data-view="ecrans" title="Les écrans de la vidéo, un par un (← →, plein écran)">🎬 Écrans</button>' : '') + '</span>' +
       (ui.video ? '' : '<select class="at-sel" id="atVer" title="Version affichée">' + d.versions.map(x => '<option value="' + x.id + '"' + (x.id === v.id ? ' selected' : '') + '>' + esc(x.label) + '</option>').join('') + '</select>') +
       (isRo() ? '' : '<button type="button" class="at-btn sm" data-newver title="Copie complète de cette version, l\'ancienne reste intacte">＋ Version</button><button type="button" class="at-btn sm" data-import title="Importer une analyse (lots JSON du contrat wolf-atelier/2.1) dans une NOUVELLE version">📥 Importer</button><button type="button" class="at-btn sm" data-facts title="Les chiffres du dossier, utilisés par les cartes">📊 Données</button><button type="button" class="at-btn sm" data-savetpl title="Garder cette structure pour la réutiliser">💾 Modèle</button><button type="button" class="at-btn sm" data-props title="Nom, secteur, logo, version">⚙</button>') +
       (v.reg && (v.reg.notes || []).length && !RO ? '<button type="button" class="at-btn sm" data-prompteur title="Ouvre les notes « À dire » dans une fenêtre séparée (pas dans la page filmée)">🗒 À dire (' + v.reg.notes.length + ')</button>' : '') +
@@ -776,6 +777,7 @@ function cardTitle(c){
   if (c.type === 'kpi'){ const d = doc(); return c.bind ? bindLabel(d, c.bind) : (c.label || ''); }
   if (c.type === 'concurrent') return c.nom || '';
   if (c.type === 'vchain') return c.cname || 'Chaîne de valeur';
+  if (c.type === 'ecran'){ const x = scrCtx(c); return x ? x.m.phrase : 'Écran'; }
   if (c.type === 'marche') return c.nom || 'Marché';
   if (c.type === 'acquisition') return c.cible ? 'Acquisition : ' + c.cible : 'Acquisition';
   if (TYPES[c.type] && TYPES[c.type].cat === 'Import') return TYPES[c.type].l;
@@ -815,6 +817,7 @@ function keyFigure(c){
   if (c.type === 'decision') return (VERDICT_L[c.verdict] || [c.verdict || ''])[0];
   if (c.type === 'score'){ const n = (c.criteres || []).filter(k => isFinite(k.note)); return n.length ? fr(n.reduce((t, k) => t + k.note, 0) / n.length, 1) + ' / 10' : ''; }
   if (c.type === 'chronologie') return (c.evenements || []).length + ' événements';
+  if (c.type === 'ecran'){ const x = scrCtx(c); return x ? x.m.visuel : ''; }
   return plain(c.html).slice(0, 60);
 }
 function kpiData(c){
@@ -881,6 +884,7 @@ function cardHtml(c){
     case 'chronologie': body = chronoHtml(c, false); break;
     case 'decision': body = decisionHtml(c, false); break;
     case 'score': body = scoreHtml(c, false); break;
+    case 'ecran': body = scrBox(c, 'card'); break;
     case 'comparatif': body = compTableHtml(c, false); foot = srcFoot; break;
     case 'bourse': body = bourseHtml(c, false); break;
     case 'multicours': body = mcHtml(c, false); break;
@@ -1643,6 +1647,172 @@ document.addEventListener('click', e => {
   if (ui.big === c.id) openBig(c.id);
 });
 
+/* ====================== ÉCRANS DE LA VIDÉO (contrat wolf-atelier/3, 2026-11-14) ======================
+   ChatGPT fournit le récit (un message = un écran), Claude/l'appli fait la mise en page. Un écran est dessiné à
+   1600×900 puis mis à l'échelle de son cadre (carte, vue agrandie, vue « Écrans », plein écran). Règle de la maquette
+   validée (https://claude.ai/artifact/MQmec4EXTTTFty1ExG27RQ) : une idée par écran, le titre dit ce qu'il faut retenir,
+   un seul visuel principal, les sources en petit en bas. Image : celle ajoutée à la carte (c.imgs), sinon un pictogramme. */
+const PICTOS = {
+  navire: '<path d="M10 40h44l-6 10H16z"/><path d="M18 40V28h20v12M38 32h8l4 8"/><path d="M26 28v-8h6v8"/><path d="M6 56c4 0 4-3 8-3s4 3 8 3 4-3 8-3 4 3 8 3 4-3 8-3 4 3 8 3 4-3 8-3"/>',
+  usine: '<path d="M8 54V30l12 8v-8l12 8v-8l12 8V14h8v40z"/><path d="M8 54h48"/><path d="M18 46h6M30 46h6M42 46h6"/>',
+  cable: '<path d="M8 20c12 0 12 24 24 24s12-24 24-24"/><path d="M8 32c12 0 12 24 24 24s12-24 24-24" opacity=".6"/><path d="M34 6l-6 12h8l-6 12"/>',
+  ville: '<path d="M6 56h52"/><path d="M10 56V30h10v26M24 56V16h12v40M40 56V26h14v30"/><path d="M28 22h4M28 30h4M28 38h4M44 32h6M44 40h6"/>',
+  fibre: '<circle cx="32" cy="32" r="6"/><path d="M32 26V8M32 38v18M26 32H8M38 32h18M27 27L14 14M37 37l13 13M37 27l13-13M27 37L14 50"/>',
+  eolien: '<path d="M32 30v28"/><circle cx="32" cy="26" r="3"/><path d="M32 23L30 6M35 28l15 8M29 28l-15 8"/><path d="M24 58h16"/>',
+  marche: '<path d="M8 52l14-14 10 8 22-24"/><path d="M42 22h12v12"/>',
+  bouclier: '<path d="M32 6l20 8v14c0 14-9 24-20 30C21 52 12 42 12 28V14z"/><path d="M32 22v14M32 42v2"/>',
+  accord: '<path d="M6 30l10-10 8 6 8-6 8 6 8-6 10 10"/><path d="M16 36l10 10c2 2 5 2 7 0l14-14"/>',
+  personne: '<circle cx="32" cy="20" r="10"/><path d="M12 56c2-12 10-18 20-18s18 6 20 18"/>',
+  balance: '<path d="M32 8v48M18 56h28M12 18h40"/><path d="M12 18l-6 16h12zM52 18l-6 16h12z"/>',
+  graphique: '<path d="M8 56h48M14 48V34M26 48V24M38 48V30M50 48V14"/>'
+};
+function pictoFor(txt){
+  const t = norm(txt);
+  const pick = [['navire', /navire|bateau|pose|mer|sous-marin|offshore/], ['eolien', /eolien|eolienne|vent|renouvel/], ['usine', /usine|fabrication|production|atelier|bobine/],
+    ['fibre', /fibre|telecom|data|donnees|internet|5g/], ['ville', /ville|batiment|immeuble|construction|urbain/], ['cable', /cable|reseau|ligne|haute tension|electri|cuivre|metal/],
+    ['accord', /acquisition|rachat|fusion|achat de/], ['bouclier', /risque|danger|menace|protection|fosse|moat/], ['personne', /dirigeant|pdg|direction|patron|ceo/],
+    ['balance', /valorisation|prix|cours|decision/], ['marche', /marche|demande|croissance|tendance/]].find(([, re]) => re.test(t));
+  return '<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + PICTOS[pick ? pick[0] : 'graphique'] + '</svg>';
+}
+const nb = s => String(s).replace(/ (?=(%|€|\$|Md|M€|M\$|x\b))/g, ' ');
+// Toutes les cartes « écran » de la version, dans l'ordre des sections.
+function ecranList(v){ v = v || ver(); return v ? orderedSections(v).flatMap(s => s.cards.map(id => v.cards[id]).filter(c => c && c.type === 'ecran')) : []; }
+function scrCtx(c){
+  const v = ver(), P = PQ(), reg = v && v.reg; if (!P || !reg) return null;
+  const mm = P.messageOf(reg, c.chap, c.msg); if (!mm) return null;
+  const chaps = (reg.recit && reg.recit.chapitres) || [], ci = chaps.indexOf(mm.ch);
+  return { reg, ch: mm.ch, m: mm.m, ci, model: P.screenModel(reg, mm.m) };
+}
+function scrFoot(x){
+  const src = x.model.sources.map(s => esc(s.titre + (s.pages.length ? ', p. ' + s.pages.join(', ') : ''))).join(' · ');
+  const img = x.c && (x.c.imgs || [])[0];
+  return '<div class="sc-foot">' + (x.model.hyp ? '<span class="sc-pill">Hypothèse d\'analyste</span>' : '') + '<span>' + (src || '') + (img && img.leg ? (src ? ' · ' : '') + 'Image : ' + esc(img.leg) : '') + '</span></div>';
+}
+function scrVisual(x){
+  const md = x.model, m = x.m, gold = '#D9A441';
+  switch (m.visuel){
+    case 'chiffre': return '<div class="sc-big"><b class="sc-num">' + esc(nb(md.big || 'non disponible')) + '</b><span>' + esc(md.bigLabel || '') + (md.period ? ' · ' + esc(md.period) : '') + '</span></div>';
+    case 'evolution': {
+      if (!md.bars || !md.bars.length) return '<p class="sc-nd">Données non disponibles</p>';
+      return '<div class="sc-evo"><div class="sc-bars">' + md.bars.map((b, i) => '<div class="sc-bar"><span class="sc-sub">' + esc(b.sub ? nb(b.sub) : '') + '</span><b>' + esc(nb(b.txt)) + '</b><i style="height:' + Math.round(b.h * 330) + 'px;opacity:' + (0.45 + 0.55 * (i + 1) / md.bars.length).toFixed(2) + '"></i><span class="sc-lab">' + esc(b.label) + (b.rupture ? ' ⚠' : '') + '</span></div>').join('') + '</div>' +
+        (md.growth ? '<div class="sc-side"><b class="sc-num ' + (md.growth.pct >= 0 ? 'pos' : 'neg') + '">' + esc(nb((md.growth.pct >= 0 ? '+' : '') + fr(md.growth.pct, 0) + ' %')) + '</b><span>entre ' + esc(md.growth.from) + ' et ' + esc(md.growth.to) + '</span>' + (md.subLabel ? '<small>au-dessus des barres : ' + esc(md.subLabel) + '</small>' : '') + '</div>' : '') + '</div>';
+    }
+    case 'repartition': {
+      const ok = (md.parts || []).filter(p => p.share != null);
+      if (!ok.length) return '<p class="sc-nd">Données non disponibles</p>';
+      return '<div class="sc-rep"><div class="sc-stack">' + ok.map((p, i) => '<div style="width:' + p.share.toFixed(2) + '%;background:' + SERIES_COLORS[i % SERIES_COLORS.length] + '">' + (p.share >= 6 ? esc(nb(fr(p.share, 0) + ' %')) : '') + '</div>').join('') + '</div>' +
+        '<div class="sc-leg">' + ok.map((p, i) => '<span><i style="background:' + SERIES_COLORS[i % SERIES_COLORS.length] + '"></i>' + esc(p.label) + ' <b>' + esc(nb(fr(p.share, 0) + ' %')) + '</b></span>').join('') + '</div></div>';
+    }
+    case 'comparaison': {
+      const ps = md.parts || [];
+      if (!ps.length) return '<p class="sc-nd">Données non disponibles</p>';
+      return '<div class="sc-cmp">' + ps.map((p, i) => '<span class="sc-cl">' + esc(p.label) + '</span><div class="sc-track">' + (p.v == null ? '<div class="sc-empty"></div>' : '<div style="width:' + Math.round(p.w * 100) + '%;background:' + (i ? SERIES_COLORS[i % SERIES_COLORS.length] : gold) + '"></div>') + '</div><b>' + esc(p.v == null ? 'non fourni' : nb(p.txt)) + '</b>').join('') + '</div>';
+    }
+    case 'echelle_prix': {
+      const vc = Object.values(ver().cards).find(k => k.type === 'valorisation');
+      const r = vc ? valoRes(vc) : null, cr = coursNow();
+      const pts = r ? [['Pessimiste', r.A.pessimiste], ['Réaliste', r.A.realiste], ['Optimiste', r.A.optimiste]].filter(p => p[1]) : [];
+      if (!pts.length || cr.v == null) return '<p class="sc-nd">Valorisation ou cours non disponible</p>';
+      const vals = pts.map(p => p[1].Pmax).concat([cr.v]), lo = Math.min(...vals) * 0.7, hi = Math.max(...vals) * 1.1, X = val => ((val - lo) / (hi - lo) * 100).toFixed(1);
+      const real = r.A.realiste ? r.A.realiste.Pmax : pts[0][1].Pmax, opt = r.A.optimiste ? r.A.optimiste.Pmax : real;
+      return '<div class="sc-scale"><div class="sc-zone" style="left:0;width:' + X(real) + '%;background:rgba(79,209,165,0.6)"></div><div class="sc-zone" style="left:' + X(real) + '%;width:' + (X(opt) - X(real)).toFixed(1) + '%;background:rgba(242,196,61,0.55)"></div><div class="sc-zone" style="left:' + X(opt) + '%;right:0;background:rgba(229,99,107,0.5)"></div>' +
+        pts.map(([l, s]) => '<div class="sc-mk" style="left:' + X(s.Pmax) + '%"><span>' + l + '</span><b>' + esc(nb(fr(s.Pmax, 0) + ' €')) + '</b><i></i></div>').join('') +
+        '<div class="sc-cours" style="left:' + X(cr.v) + '%"><i></i><b>' + esc(nb(fr(cr.v, 2) + ' ' + curSym(cr.ccy))) + '</b><span>le cours' + (cr.at ? ' au ' + frDate(cr.at) : '') + '</span></div></div>';
+    }
+    case 'liste': {
+      const dec = x.reg.blocs && x.reg.blocs.decision;
+      if (dec && /valoris|decision/.test(norm(x.ch.id + ' ' + x.ch.titre + ' ' + m.phrase)) && ((dec.conditions_achat || []).length || (dec.invalidation || []).length)){
+        const vd = VERDICT_L[dec.verdict];
+        return '<div class="sc-dec">' + (vd ? '<div class="sc-verdict" style="--vc:' + vd[1] + '">' + esc(vd[0]) + '</div>' : '') + '<div class="sc-cols"><div class="pos"><b>J\'achète si…</b>' + (dec.conditions_achat || []).slice(0, 3).map(t => '<span>' + esc(t) + '</span>').join('') + '</div><div class="neg"><b>Je change d\'avis si…</b>' + (dec.invalidation || []).slice(0, 3).map(t => '<span>' + esc(t) + '</span>').join('') + '</div></div></div>';
+      }
+      const rk = x.reg.blocs && x.reg.blocs.risques;
+      if (rk && rk.length && /risque/.test(norm(x.ch.id + ' ' + x.ch.titre))){
+        return '<div class="sc-list">' + rk.slice(0, 4).map(r => '<div><b>' + esc(r.titre || '') + '</b><span class="sc-lv l-' + esc(r.probabilite || '') + '">probabilité ' + esc(r.probabilite || '?') + '</span><span class="sc-lv l-' + esc(r.gravite || '') + '">gravité ' + esc(r.gravite || '?') + '</span></div>').join('') + '</div>';
+      }
+      return '';
+    }
+    case 'schema': return '<div class="sc-flow">' + (m.explication || []).map((t, i) => (i ? '<span class="sc-arrow">→</span>' : '') + '<div>' + esc(t) + '</div>').join('') + '</div>';
+  }
+  return '';
+}
+function scrHtml(c){
+  const x = scrCtx(c); if (!x) return '<div class="aw-scr"><div class="sc-in"><p class="sc-nd">Écran introuvable dans le récit importé.</p></div></div>';
+  x.c = c;
+  const m = x.m, kick = 'CHAPITRE ' + (x.ci + 1) + ' · ' + String(x.ch.titre || '').toUpperCase(), img = (c.imgs || [])[0];
+  const expl = (m.explication || []).filter(Boolean);
+  const head = '<div class="sc-top"><span class="sc-kick">' + esc(kick) + '</span><span style="flex:1"></span><img src="data/wolf-tete.png" alt="" class="sc-logo"></div>';
+  const media = img ? '<img src="' + esc(mediaUrl(img.f)) + '" alt="' + esc(m.image_voulue || '') + '">' : '<div class="sc-picto">' + pictoFor((m.image_voulue || '') + ' ' + m.phrase + ' ' + x.ch.titre) + (isRo() ? '' : '<span>Image à trouver : ' + esc(m.image_voulue || 'à définir') + '</span>') + '</div>';
+  let inner;
+  if (m.visuel === 'image'){
+    inner = '<div class="sc-split"><div class="sc-txt">' + head + '<h1 class="sc-h1">' + esc(nb(m.phrase)) + '</h1>' +
+      (expl.length ? '<ol class="sc-pts">' + expl.map((t, i) => '<li><b>' + (i + 1) + '</b><span>' + esc(nb(t)) + '</span></li>').join('') + '</ol>' : '') + scrFoot(x) + '</div><div class="sc-media">' + media + '</div></div>';
+  } else {
+    const vis = scrVisual(x), side = m.visuel === 'liste' && !vis;
+    inner = '<div class="sc-col">' + head + '<h1 class="sc-h1">' + esc(nb(m.phrase)) + '</h1>' +
+      (side ? '<ol class="sc-pts big">' + expl.map((t, i) => '<li><b>' + (i + 1) + '</b><span>' + esc(nb(t)) + '</span></li>').join('') + '</ol>' : '<div class="sc-vis">' + vis + '</div>' + (expl.length && m.visuel !== 'schema' ? '<p class="sc-expl">' + expl.map(t => esc(nb(t))).join(' ') + '</p>' : '')) + scrFoot(x) + '</div>';
+  }
+  return '<div class="aw-scr v-' + esc(m.visuel || '') + '"><div class="sc-in">' + inner + '</div></div>';
+}
+function scrBox(c, cls){ return '<div class="aw-scrbox ' + (cls || '') + '">' + scrHtml(c) + '</div>'; }
+function fitScreens(root){
+  (root || document).querySelectorAll('.aw-scrbox').forEach(box => {
+    const scr = box.firstElementChild; if (!scr) return;
+    const fs = box.classList.contains('fs'), W = box.clientWidth, H = fs ? box.clientHeight : 0;
+    if (!W){ watchScreen(box); return; }   // pas encore visible (onglet caché, section repliée) : refait dès qu'il a une taille
+    const k = fs && H ? Math.min(W / 1600, H / 900) : W / 1600;
+    scr.style.transform = 'scale(' + k + ')';
+    if (!fs) box.style.height = Math.round(900 * k) + 'px'; else { scr.style.left = Math.round((W - 1600 * k) / 2) + 'px'; scr.style.top = Math.round((H - 900 * k) / 2) + 'px'; }
+  });
+}
+window.addEventListener('resize', () => { if (document.querySelector('.aw-scrbox')) fitScreens(); });
+const scrRO = typeof ResizeObserver === 'function' ? new ResizeObserver(es => es.forEach(e => { if (e.contentRect.width) fitScreens(e.target.parentElement || document); })) : null;
+function watchScreen(box){ if (scrRO && !box._watched){ box._watched = true; scrRO.observe(box); } }
+document.addEventListener('fullscreenchange', () => setTimeout(() => fitScreens(), 60));
+// ---------- Vue « Écrans » : un écran à la fois, comme dans la vidéo ----------
+function renderEcrans(host){
+  const v = ver(), list = ecranList(v), d = doc();
+  if (!list.length){ host.innerHTML = '<p class="at-empty big">Cette version n\'a pas d\'écrans (import au contrat wolf-atelier/3 seulement).</p>'; return; }
+  ui.scr = ui.scr && ui.scr.doc === d.id && ui.scr.ver === v.id ? ui.scr : { doc: d.id, ver: v.id, i: 0 };
+  const i = Math.max(0, Math.min(list.length - 1, ui.scr.i)); ui.scr.i = i;
+  const c = list[i], x = scrCtx(c), chaps = (v.reg.recit && v.reg.recit.chapitres) || [];
+  const first = {}; list.forEach((k, j) => { if (first[k.chap] == null) first[k.chap] = j; });
+  host.innerHTML = '<div class="aw-ecrans">' +
+    '<div class="aw-tour-line" role="tablist">' + chaps.filter(ch => first[ch.id] != null).map((ch, k) => '<button type="button" role="tab" aria-selected="' + (x && ch.id === x.ch.id) + '" class="aw-step' + (x && ch.id === x.ch.id ? ' on' : '') + '" data-scr-go="' + first[ch.id] + '" title="' + esc(ch.titre) + '"><i>' + (k + 1) + '</i><span>' + esc(ch.titre) + '</span></button>').join('') + '</div>' +
+    '<div class="aw-ecr-stage" id="awEcrStage">' + scrBox(c, 'stage') + '</div>' +
+    '<div class="aw-tour-nav"><button type="button" class="at-btn" data-scr="-1"' + (i ? '' : ' disabled') + '>← Précédent</button><span class="at-faint">Écran ' + (i + 1) + ' sur ' + list.length + '</span>' +
+    '<button type="button" class="at-btn" data-scr-fs title="Plein écran (Échap pour sortir)">⛶ Plein écran</button>' + (isRo() ? '' : '<button type="button" class="at-btn" data-scr-edit title="Ajouter ou changer l\'image de cet écran">🖼 Image</button>') +
+    '<button type="button" class="at-btn gold" data-scr="1"' + (i < list.length - 1 ? '' : ' disabled') + '>Suivant →</button></div></div>';
+  fitScreens(host); updatePrompteur();
+  host.onclick = e => {
+    const g = e.target.closest('[data-scr-go],[data-scr]'); if (g){ scrGo(g.dataset.scrGo != null ? +g.dataset.scrGo : ui.scr.i + +g.dataset.scr); return; }
+    if (e.target.closest('[data-scr-fs]')){ const st = $('awEcrStage'); if (st && st.requestFullscreen){ st.querySelector('.aw-scrbox').classList.add('fs'); st.requestFullscreen().catch(() => {}); } return; }
+    if (e.target.closest('[data-scr-edit]')){ ui.edit = list[ui.scr.i].id; renderEditor(); return; }
+    if (document.fullscreenElement && e.target.closest('#awEcrStage')) scrGo(ui.scr.i + 1);
+  };
+}
+function scrGo(k){
+  const list = ecranList(); if (!ui.scr || k < 0 || k >= list.length) return;
+  ui.scr.i = k;
+  const st = $('awEcrStage');
+  if (document.fullscreenElement && st){ st.innerHTML = scrBox(list[k], 'stage fs'); fitScreens(st); updatePrompteur(); const host = $('awBody'); const nav = host && host.querySelector('.aw-tour-nav .at-faint'); if (nav) nav.textContent = 'Écran ' + (k + 1) + ' sur ' + list.length; return; }
+  renderEcrans($('awBody'));
+}
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement){ const st = $('awEcrStage'); if (st){ const b = st.querySelector('.aw-scrbox'); if (b){ b.classList.remove('fs'); b.style.height = ''; const s = b.firstElementChild; if (s){ s.style.left = ''; s.style.top = ''; } } setTimeout(() => fitScreens(), 60); } } });
+document.addEventListener('keydown', e => {
+  if (ui.view !== 'ecrans' || ui.big || !document.querySelector('.aw-ecrans')) return;
+  if (e.target.closest && e.target.closest('input,textarea,select,[contenteditable]')) return;
+  if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' '){ e.preventDefault(); scrGo(ui.scr.i + 1); }
+  if (e.key === 'ArrowLeft' || e.key === 'PageUp'){ e.preventDefault(); scrGo(ui.scr.i - 1); }
+});
+// ---------- Prompteur synchronisé : la note « À dire » de l'écran affiché, dans une fenêtre à part ----------
+let promptWin = null;
+function updatePrompteur(){
+  if (!promptWin || promptWin.closed || !ui.scr) return;
+  const list = ecranList(), c = list[ui.scr.i], nx = list[ui.scr.i + 1], x = c && scrCtx(c), xn = nx && scrCtx(nx);
+  const b = promptWin.document.body; if (!b || !x) return;
+  b.innerHTML = '<h1>Écran ' + (ui.scr.i + 1) + ' / ' + list.length + ' · ' + esc(x.ch.titre) + '</h1><h2>' + esc(x.m.phrase) + '</h2><p class="dire">' + esc(x.m.a_dire || '— (pas de note)') + '</p>' + (xn ? '<p class="next">Ensuite : ' + esc(xn.m.phrase) + '</p>' : '<p class="next">Dernier écran.</p>');
+}
+
 /* ---------- Fenêtre « 📥 Importer » : lots JSON → contrôle → nouvelle version (rien n'est remplacé) ---------- */
 const KEEP_TYPES = ['image', 'profil', 'source', 'multicours'];
 function renderImport(){
@@ -1658,7 +1828,11 @@ function renderImport(){
     if (!okName) errs.unshift('Ce paquet concerne « ' + ent + ' », pas « ' + d.titre + ' » : ouvre le bon dossier.');
     m.res = { pkg: mg.pkg, errs, warns: ck.warnings, stats: ck.stats };
     const s = ck.stats;
-    rep = '<div class="aw-imp-stats"><span><b>' + s.sources + '</b> sources</span><span><b>' + s.donnees + '</b> données (' + s.nonDisponibles + ' non disponibles)</span><span><b>' + s.hypotheses + '</b> hypothèses</span><span><b>' + s.affirmations + '</b> affirmations</span><span><b>' + s.sections + '</b> sections</span><span><b>' + s.cartes + '</b> cartes</span><span><b>' + s.notes + '</b> notes</span></div>' +
+    if (mg.pkg.type === 'images'){
+      const v0 = ver(), list = mg.pkg.images || [], miss = list.filter(im => !Object.values(v0.cards).some(c => c.type === 'ecran' && c.pid === im.message));
+      if (miss.length) errs.push(miss.length + ' image(s) visent un écran absent de la version affichée : ' + miss.map(im => im.message).join(', '));
+    }
+    rep = mg.pkg.type === 'images' ? '<div class="aw-imp-stats"><span><b>' + (mg.pkg.images || []).length + '</b> images pour les écrans de la version affichée</span></div>' + (errs.length ? '<div class="aw-imp-err"><ul>' + errs.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '<p class="aw-imp-ok">✓ Prêt</p>') : '<div class="aw-imp-stats"><span><b>' + s.sources + '</b> sources</span><span><b>' + s.donnees + '</b> données (' + s.nonDisponibles + ' non disponibles)</span><span><b>' + s.hypotheses + '</b> hypothèses</span><span><b>' + s.affirmations + '</b> affirmations</span>' + (s.messages != null && mg.pkg.contrat === 'wolf-atelier/3' ? '<span><b>' + s.sections + '</b> chapitres</span><span><b>' + s.messages + '</b> écrans</span>' : '<span><b>' + s.sections + '</b> sections</span><span><b>' + s.cartes + '</b> cartes</span><span><b>' + s.notes + '</b> notes</span>') + '</div>' +
       (errs.length ? '<div class="aw-imp-err"><b>' + errs.length + ' erreur' + (errs.length > 1 ? 's' : '') + ' bloquante' + (errs.length > 1 ? 's' : '') + '</b><ul>' + errs.slice(0, 60).map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '<p class="aw-imp-ok">✓ Aucune erreur bloquante.</p>') +
       (ck.warnings.length ? '<details class="aw-imp-warn"><summary>' + ck.warnings.length + ' point' + (ck.warnings.length > 1 ? 's' : '') + ' à corriger plus tard (n\'empêche' + (ck.warnings.length > 1 ? 'nt' : '') + ' pas l\'import)</summary><ul>' + ck.warnings.slice(0, 120).map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></details>' : '');
   }
@@ -1669,8 +1843,8 @@ function renderImport(){
     (m.lots.length ? '<div class="aw-imp-lots">' + m.lots.map((l, i) => '<span>' + esc(l.name) + (l.data && l.data.lot != null ? ' · lot ' + esc(l.data.lot) : '') + '<button type="button" class="at-x" data-imp-del="' + i + '">✕</button></span>').join('') + '</div>' : '') +
     '<details' + (m.lots.length ? '' : ' open') + '><summary>Coller le JSON d\'un lot</summary><textarea class="at-in" rows="5" id="awImpTxt" placeholder="{ &quot;contrat&quot;: &quot;wolf-atelier/2.1&quot;, … }"></textarea><button type="button" class="at-btn sm" data-imp-paste>Ajouter ce lot</button></details>' +
     (m.msg ? '<p class="aw-warn">' + esc(m.msg) + '</p>' : '') + rep +
-    (m.res ? '<label class="aw-ed-check"><input type="checkbox" data-imp-keep' + (m.keep ? ' checked' : '') + '> Reprendre de la version actuelle ses images, dirigeants, sources et cours comparés (' + keepN + ' carte' + (keepN > 1 ? 's' : '') + ')</label>' : '') +
-    '<div class="at-mbtns"><button type="button" class="at-btn" data-imp-close>Annuler</button><button type="button" class="at-btn gold" data-imp-go' + (m.res && !m.res.errs.length ? '' : ' disabled') + '>Créer la nouvelle version</button></div></div>';
+    (m.res && m.res.pkg.contrat !== 'wolf-atelier/3' ? '<label class="aw-ed-check"><input type="checkbox" data-imp-keep' + (m.keep ? ' checked' : '') + '> Reprendre de la version actuelle ses images, dirigeants, sources et cours comparés (' + keepN + ' carte' + (keepN > 1 ? 's' : '') + ')</label>' : '') +
+    '<div class="at-mbtns"><button type="button" class="at-btn" data-imp-close>Annuler</button><button type="button" class="at-btn gold" data-imp-go' + (m.res && !m.res.errs.length ? '' : ' disabled') + '>' + (m.res && m.res.pkg.type === 'images' ? 'Ajouter les images à cette version' : 'Créer la nouvelle version') + '</button></div></div>';
   const addLot = (name, text) => { try { const data = JSON.parse(text); const i = m.lots.findIndex(l => l.name === name); if (i >= 0) m.lots[i] = { name, data }; else m.lots.push({ name, data }); m.msg = ''; } catch(e){ m.msg = name + ' : JSON illisible (' + e.message + ')'; } };
   host.onclick = async e => {
     if (e.target === host || e.target.closest('[data-imp-close]')){ ui.imp = null; return renderImport(); }
@@ -1679,13 +1853,27 @@ function renderImport(){
     if (ds.impPaste !== undefined){ const t = $('awImpTxt').value.trim(); if (t){ let n = 'collé ' + (m.lots.length + 1); try { const j = JSON.parse(t); if (j.lot != null) n = 'lot ' + j.lot + ' (collé)'; } catch(err){} addLot(n, t); } return renderImport(); }
     if (ds.impDel !== undefined){ m.lots.splice(+ds.impDel, 1); m.res = null; return renderImport(); }
     if (ds.impClear !== undefined){ m.lots = []; m.res = null; return renderImport(); }
-    if (ds.impGo !== undefined && m.res && !m.res.errs.length) return importCreate(m);
+    if (ds.impGo !== undefined && m.res && !m.res.errs.length) return m.res.pkg.type === 'images' ? importImages(m) : importCreate(m);
   };
   host.onchange = e => { if (e.target.dataset.impKeep !== undefined){ m.keep = e.target.checked; } };
 }
+// Paquet d'images (trouvées par Claude sur les sources officielles) : chaque image est téléchargée par le serveur et rangée
+// dans les fichiers de l'Atelier, puis posée sur l'écran visé (version affichée, rien d'autre n'est modifié).
+async function importImages(m){
+  const v = ver(), list = m.res.pkg.images || []; ui.imp = null; renderImport();
+  let ok = 0; const ko = [];
+  for (const im of list){
+    const c = Object.values(v.cards).find(k => k.type === 'ecran' && k.pid === im.message); if (!c) continue;
+    try { const r = await fetch('/api/atelier/fetch', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Wolf-IA': '1' }, body: JSON.stringify({ url: im.url }) }); const j = await r.json().catch(() => ({}));
+      if (r.ok && j.ok){ c.imgs = (c.imgs || []).filter(x => x.from !== im.url); c.imgs.unshift({ f: j.file, leg: im.credit || '', from: im.url, page: im.page || '' }); ok++; touch(); refreshCard(c); } else ko.push(im.message);
+    } catch(e){ ko.push(im.message); }
+  }
+  if (ui.view === 'ecrans') renderBody();
+  ui.toast = { text: '🖼 ' + ok + ' image(s) ajoutée(s)' + (ko.length ? ' · échec : ' + ko.join(', ') : '') }; showToast();
+}
 function importCreate(m){
   const P = PQ(), d = doc(), v0 = ver();
-  const keep = m.keep ? Object.values(v0.cards).filter(c => KEEP_TYPES.includes(c.type)) : [];
+  const keep = m.keep && m.res.pkg.contrat !== 'wolf-atelier/3' ? Object.values(v0.cards).filter(c => KEEP_TYPES.includes(c.type)) : [];
   const selfDisplay = d.nom ? (typeof fmpDisplayName === 'function' ? fmpDisplayName(d.nom) : d.nom) : d.titre;
   const out = P.convert(m.res.pkg, { uid, docName: d.titre, selfDisplay, palette: PALETTE, seriesColors: SERIES_COLORS, keep, fromVersion: v0.id });
   const nv = out.version;
@@ -1707,7 +1895,12 @@ function importCreate(m){
 }
 /* ---------- Prompteur : notes « À dire » dans une fenêtre séparée (jamais dans la page filmée) ---------- */
 function openPrompteur(){
-  const v = ver(), reg = v && v.reg; if (!reg || !(reg.notes || []).length){ ui.toast = { text: 'Aucune note « À dire » dans cette version.' }; return showToast(); }
+  const v = ver(), reg = v && v.reg;
+  if (reg && ecranList(v).length){
+    const w = window.open('', 'wolfPrompteur', 'width=560,height=600'); if (!w){ ui.toast = { text: 'Fenêtre bloquée par le navigateur : autorise les fenêtres pour ce site.' }; return showToast(); }
+    w.document.open(); w.document.write('<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Prompteur — ' + esc(doc().titre) + '</title><style>body{margin:0;padding:28px;background:#0D1013;color:#E9EBEE;font:24px/1.5 "Plus Jakarta Sans",system-ui,sans-serif}h1{font-size:15px;color:#8B93A0;font-weight:600;margin:0 0 10px}h2{color:#D9A441;font-size:26px;margin:0 0 18px}.dire{font-size:30px;line-height:1.45}.next{margin-top:30px;font-size:17px;color:#8B93A0}</style></head><body></body></html>'); w.document.close();
+    promptWin = w; if (!ui.scr || ui.scr.ver !== v.id) ui.scr = { doc: doc().id, ver: v.id, i: 0 }; updatePrompteur(); return;
+  } if (!reg || !(reg.notes || []).length){ ui.toast = { text: 'Aucune note « À dire » dans cette version.' }; return showToast(); }
   const w = window.open('', 'wolfPrompteur', 'width=520,height=760'); if (!w){ ui.toast = { text: 'Fenêtre bloquée par le navigateur : autorise les fenêtres pour ce site.' }; return showToast(); }
   const by = {}; reg.notes.forEach(n => { const s = v.sections.find(x => x.id === n.cible) || secOf(v, n.cible); const k = s ? s.id : '_'; (by[k] = by[k] || []).push(n.texte); });
   const rows = orderedSections(v).filter(s => by[s.id]).map(s => '<h2>' + esc(secLabel(v, s)) + '</h2><ul>' + by[s.id].map(t => '<li>' + esc(t) + '</li>').join('') + '</ul>').join('') + (by._ ? '<h2>Autres</h2><ul>' + by._.map(t => '<li>' + esc(t) + '</li>').join('') + '</ul>' : '');
@@ -1732,7 +1925,7 @@ function renderTour(host){
     '<section class="aw-sec aw-tour-sec" data-sid="' + s.id + '" style="--sc:' + color + '"><div class="aw-grid" data-drop="' + s.id + '">' + cards.map(cardHtml).join('') + '</div></section></div>' +
     '<div class="aw-tour-nav"><button type="button" class="at-btn" data-tour="-1"' + (prev ? '' : ' disabled') + '>← ' + esc(prev ? prev.titre : 'Début') + '</button>' +
     '<button type="button" class="at-btn gold" data-tour="1"' + (next ? '' : ' disabled') + '>' + esc(next ? next.titre : 'Fin') + ' →</button></div></div>';
-  drawCharts(host, charts, false); drawGeos(host); wireBody(host);
+  drawCharts(host, charts, false); drawGeos(host); fitScreens(host); wireBody(host);
   const base = host.onclick;
   host.onclick = e => { const g = e.target.closest('[data-tour-go],[data-tour]'); if (g){ tourGo(g.dataset.tourGo != null ? +g.dataset.tourGo : ui.tour.i + +g.dataset.tour); return; } if (base) base(e); };
 }
@@ -1756,6 +1949,7 @@ function renderBody(){
   ui.menu = null; closeMenu();
   if (ui.view === 'org') ui.view = 'tour';   // l'ancien organigramme est remplacé par le parcours
   if (ui.view === 'tour') return renderTour(host);
+  if (ui.view === 'ecrans') return renderEcrans(host);
   const v = ver(), ro = isRo(), mains = mainsOf(v);
   const secHtml = (s, si, sibs, sub) => {
     const cards = s.cards.map(id => v.cards[id]).filter(Boolean), subs = sub ? [] : subsOf(v, s);
@@ -1773,6 +1967,7 @@ function renderBody(){
   host.innerHTML = mains.map((s, si) => secHtml(s, si, mains.length, false)).join('') + (v.sections.length ? '' : '<p class="at-empty big">' + (ro ? 'Dossier vide.' : 'Aucune section. « ＋ Section » pour commencer.') + '</p>');
   drawCharts(host, charts, false);
   drawGeos(host);
+  fitScreens(host);
   wireBody(host);
 }
 function wireBody(host){
@@ -2018,6 +2213,7 @@ function bigBody(c){
     case 'chronologie': return chronoHtml(c, true);
     case 'decision': return decisionHtml(c, true);
     case 'score': return scoreHtml(c, true);
+    case 'ecran': { const x = scrCtx(c); return scrBox(c, 'big') + (x && x.model.items.length ? '<div class="aw-tscroll"><table class="aw-table big"><thead><tr><th style="text-align:left">Donnée</th><th>Valeur</th><th style="text-align:left">Origine</th></tr></thead><tbody>' + x.model.items.map(it => '<tr><td class="lb">' + esc(it.item.libelle) + '</td><td>' + esc(PQ().fmtItem(it.item)) + '</td><td class="lb">' + pastille(it.item, it.kind) + '</td></tr>').join('') + '</tbody></table></div>' : '') + (x && x.m.image_voulue ? '<p class="aw-note">Image voulue : ' + esc(x.m.image_voulue) + '</p>' : ''); }
     default: return (c.date ? '<span class="aw-date">' + frDate(c.date) + '</span>' : '') + '<div class="aw-text xl">' + clean(c.html) + '</div>' + (c.source ? '<p class="aw-note">Source : ' + esc(c.source) + '</p>' : '') + '<div class="aw-big-imgs">' + (c.imgs || []).map(im => '<figure><img src="' + esc(mediaUrl(im.f)) + '" alt=""></figure>').join('') + '</div>';
   }
 }
@@ -2041,7 +2237,8 @@ function openBig(cid, fromEl){
     p.getBoundingClientRect();
     requestAnimationFrame(() => { ov.classList.add('on'); p.style.transform = ''; p.style.opacity = ''; });
   } else ov.classList.add('on');
-  setTimeout(() => { drawCharts(p, bigCharts, true); drawGeos(p); }, fresh ? 380 : 0);
+  fitScreens(p);
+  setTimeout(() => { drawCharts(p, bigCharts, true); drawGeos(p); fitScreens(p); }, fresh ? 380 : 0);
   ov.onclick = e => {
     if (e.target.closest('[data-big-close]')) return closeBig();
     const g = e.target.closest('[data-big-go]'); if (g){ const o = bigOrder(ui.big), j = (o.indexOf(ui.big) + Number(g.dataset.bigGo) + o.length) % o.length; openBig(o[j]); return; }
@@ -2081,6 +2278,7 @@ function editorFields(c, d, v){
   const rich = ph => RT + '<div class="aw-rich" contenteditable="true" data-rich data-ph="' + esc(ph) + '">' + clean(c.html) + '</div>';
   const imgs = '<div class="aw-ed-imgs">' + (c.imgs || []).map((im, k) => '<div class="aw-ed-img"><img src="' + esc(mediaUrl(im.f)) + '" alt=""><input class="at-in" data-leg="' + k + '" value="' + esc(im.leg || '') + '" placeholder="Légende"><button type="button" class="at-x" data-rmimg="' + k + '" title="Retirer (le fichier est gardé)">✕</button></div>').join('') + '<div class="aw-ed-row"><button type="button" class="at-btn sm" data-addimg>＋ Fichier (ou Ctrl+V)</button></div><div class="aw-ed-row"><input class="at-in" data-imgurl placeholder="ou colle l\'adresse d\'une image internet (https://…)"><button type="button" class="at-btn sm" data-addurl>Ajouter</button></div></div>';
   switch (c.type){
+    case 'ecran': { const x = scrCtx(c); return '<p class="at-faint">Écran du récit importé. Le texte et les chiffres viennent du paquet de ChatGPT (un nouvel import les met à jour) ; ici, tu choisis l\'image.</p>' + (x ? '<b class="aw-ed-h">' + esc(x.m.phrase) + '</b>' + (x.m.image_voulue ? '<p class="at-faint">Image voulue : ' + esc(x.m.image_voulue) + '</p>' : '') : '') + '<b class="aw-ed-h">Image de l\'écran (la première est utilisée)</b>' + imgs; }
     case 'texte': return common + dateF + rich('Écris ici… (Ctrl+V pour coller une image)') + imgs + srcSel + '<label>Source (texte libre)<input class="at-in" data-f="source" value="' + esc(c.source || '') + '"></label>';
     case 'image': return common + dateF + imgs + rich('Description (facultatif)') + srcSel;
     case 'citation': return '<label>Étiquette<input class="at-in" data-f="titre" value="' + esc(c.titre || '') + '" placeholder="ex. Thèse d\'investissement"></label>' + dateF + rich('Ta phrase clé…');
@@ -2171,6 +2369,7 @@ function refreshCard(c){
   const tmp = document.createElement('div'); tmp.innerHTML = cardHtml(c); const n = tmp.firstElementChild; el.replaceWith(n);
   drawCharts(n, charts, false);
   drawGeos(n);
+  fitScreens(n);
 }
 function wireEditor(p, c){
   const v = ver();
@@ -2245,7 +2444,7 @@ function wireEditor(p, c){
     const ci = e.target.closest && e.target.closest('.aw-cin-ed');
     if (ci && c.type === 'comparatif' && cmpPaste(c, ci, (e.clipboardData || window.clipboardData).getData('text/plain'))){ e.preventDefault(); touch(); refreshCard(c); renderEditor(); return; }
     const files = [...((e.clipboardData && e.clipboardData.files) || [])].filter(x => x.type.startsWith('image/'));
-    if (files.length && ['texte', 'image', 'profil', 'concurrent'].includes(c.type)){ e.preventDefault(); addFiles(c, files, 'img'); return; }
+    if (files.length && ['texte', 'image', 'profil', 'concurrent', 'ecran'].includes(c.type)){ e.preventDefault(); addFiles(c, files, 'img'); return; }
     if (e.target.closest && e.target.closest('[data-rich]')){ e.preventDefault(); document.execCommand('insertText', false, (e.clipboardData || window.clipboardData).getData('text/plain')); }
   });
 }
@@ -2485,5 +2684,5 @@ async function snapshot(){
   }));
   return { data: { version: 1, publishedAt: new Date().toISOString(), docs: D.docs }, media: [...media] };
 }
-window.ATELIER_UI = { onShow, openFor, snapshot, tvRowsFor, addYearEndPrices, hasDoc: name => !!(D && Object.values(D.docs).some(x => x.type === 'entreprise' && norm(x.titre) === norm(name))), _state: () => ({ D, ui, RO }), _test: { migrateVersion, resolveBind, seriesData, keyFigure, addCard, openBig, valoRes, coursNow, importCreate, renderImport } };
+window.ATELIER_UI = { onShow, openFor, snapshot, tvRowsFor, addYearEndPrices, hasDoc: name => !!(D && Object.values(D.docs).some(x => x.type === 'entreprise' && norm(x.titre) === norm(name))), _state: () => ({ D, ui, RO }), _test: { migrateVersion, resolveBind, seriesData, keyFigure, addCard, openBig, valoRes, coursNow, importCreate, renderImport, ecranList, scrGo, fitScreens } };
 })();

@@ -823,6 +823,22 @@ la page filmée. Contrôles des paquets reçus : `docs/controle-prysmian-*.md`. 
 vidéo (lecture seule), actualisation qui crée une version avec écarts, paquet `mise_a_jour`, matrices risques / marchés, export PNG d'une carte.
 Testé le 2026-11-14 sur instance jetable (`-StoreDir` sur une COPIE d'atelier.json) avec les 5 lots Prysmian : 71 cartes, valorisation
 identique au calcul à la main (prix d'entrée réaliste 63,73 € au cours de 107,65 €), ancienne version intacte.
+**Contrat v3 et écrans de la vidéo (2026-11-14, même branche)** : le premier import v2.1 a été jugé inexploitable par l'utilisateur
+(« pas de mise en page, mal rangé, chiffres avant le métier, pas d'images »). Désormais **ChatGPT fournit le fond, l'appli fait la
+forme** : contrat **`docs/contrat-atelier-v3.md`** (`wolf-atelier/3`) = données avec `pole`, blocs `marches / risques / acquisitions /
+chronologie / valorisation / decision / score`, et **`recit.chapitres[].messages[]`** (un message = un écran : `phrase` ≤ 10 mots,
+`explication` ≤ 3 phrases, `donnees` ≤ 3 (6 pour répartition / comparaison), `visuel` parmi image / chiffre / evolution / repartition /
+comparaison / echelle_prix / liste / schema, `image_voulue` = DESCRIPTION, jamais de lien, `a_dire`). Maquette validée :
+https://claude.ai/artifact/MQmec4EXTTTFty1ExG27RQ (une idée par écran, le métier avant les chiffres, sources en petit, chiffre et unité
+jamais coupés). Code : `convertV3`, `screenModel`, `messageOf` dans atelier-paquet.js ; carte **`ecran`** (1600×900 mis à l'échelle,
+`scrHtml` / `fitScreens`, ResizeObserver si le cadre n'a pas encore de taille), vue **« 🎬 Écrans »** (`renderEcrans`, ← → espace,
+« ⛶ Plein écran », clic = suivant), prompteur synchronisé (`openPrompteur` / `updatePrompteur` : note de l'écran affiché + suivant),
+section « Données détaillées (hors vidéo) » repliée (valorisation interactive, risques, acquisitions, marchés, décision, score).
+**Images** : JAMAIS celles de l'utilisateur pour un dossier importé (décision de l'utilisateur) ; Claude les cherche lui-même sur les
+sources officielles et les livre en paquet `{"contrat":"wolf-atelier/3","type":"images","images":[{message, url, page, credit}]}`, importé
+par le même bouton (« Ajouter les images à cette version » : téléchargées par /api/atelier/fetch, posées sur l'écran visé) ; sans image,
+pictogramme (`PICTOS` / `pictoFor`) + « Image à trouver : … » (masqué en mode vidéo). Contrôles v3 dans `check()`. Tests : 31 cas dans
+`tests/atelier-paquet.test.html`. Testé sur instance jetable avec un paquet v3 d'essai tiré des lots Prysmian.
 Le texte ci-dessous décrit l'ancienne carte mentale (historique).
 
 Nouvel onglet principal (`#pageAtelier`, `js/atelier.js`, CSS `.at-*` en fin de `style.css`), À CÔTÉ du Cerveau numérique (qui
