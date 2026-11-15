@@ -866,6 +866,75 @@ function tvApplySnapshotToRow(row, d, tv){
   row.tvSource = true; row.tvSymbol = tv; row.tvLiveAt = Date.now();
   if (d.currency) row.devise = d.currency;
 }
+/* 2026-11-15 — FICHE À LA DEMANDE COMPLÉTÉE : TradingView envoie déjà 20 exercices (CA, BPA, dividende, FCF, résultat net,
+   séries `_fy_h`, en devise de cotation, le plus récent en premier). On en fait une ligne par année + cours de fin d'année
+   (clôtures hebdo TradingView), d'où P/FCF, PER, rendement des années passées ; puis médiane P/FCF (10 derniers exercices),
+   CAGR 5/10/20 ans et prix juste, avec les MÊMES formules que tv-data/README.md. Sans ça, une entreprise hors liste n'avait
+   qu'une seule ligne (aujourd'hui) : prix juste / cible / écart « N/D » et graphiques historiques vides. Rien n'est enregistré
+   (refait à l'ouverture de la fiche, à partir du relevé gardé). */
+const tvHistDone = {};
+function tvHistRowsFromSnap(snap, base){
+  const fy = parseInt(snap && snap.fiscal_period_fy, 10); if (!fy) return [];
+  const H = k => Array.isArray(snap[k]) ? snap[k] : [];
+  const ok = v => typeof v === 'number' && isFinite(v);
+  const rev = H('total_revenue_fy_h'), eps = H('earnings_per_share_diluted_fy_h'), dps = H('dps_common_stock_prim_issue_fy_h'), fcf = H('free_cash_flow_fy_h'), ni = H('net_income_fy_h');
+  const n = Math.max(rev.length, eps.length, dps.length, fcf.length, ni.length), out = [];
+  for (let i = 0; i < n; i++){
+    const r = {};
+    TV_ROW_FIELDS.forEach(k => { r[k] = null; });
+    Object.assign(r, { annee: fy - i, lienImage: base.lienImage, ticker: base.ticker, secteur: base.secteur, sousSecteur: base.sousSecteur, devise: base.devise, tvSource: true, tvPartial: true, tvHistRow: true });
+    if (ok(rev[i])) r.ca = rev[i] / 1e6;
+    if (ok(eps[i])) r.eps = eps[i];
+    if (ok(dps[i])) r.dividende = dps[i];
+    if (ok(ni[i])) r.resultatNet = ni[i] / 1e6;
+    if (ok(ni[i]) && ok(rev[i]) && rev[i] > 0) r.margeNette = ni[i] / rev[i] * 100;
+    if (ok(fcf[i]) && ok(ni[i]) && ok(eps[i]) && ni[i] !== 0 && eps[i] !== 0 && ni[i] / eps[i] > 0){ r.fcfParAction = fcf[i] / (ni[i] / eps[i]); r.actions = ni[i] / eps[i] / 1e6; }
+    if (r.ca != null || r.eps != null || r.dividende != null) out.push(r);
+  }
+  return out.reverse();
+}
+async function tvEnrichPartial(nom, snap){
+  const hist = companies[nom]; if (!hist || !hist.length) return false;
+  const latest = hist[hist.length - 1];
+  if (!latest.tvPartial || tvHistDone[nom]) return false;
+  const rows = tvHistRowsFromSnap(snap, latest).filter(r => r.annee < latest.annee);
+  if (!rows.length) return false;
+  tvHistDone[nom] = true;
+  companies[nom] = rows.concat([latest]);
+  // cours de fin d'année -> ratios des années passées
+  let w = null; try{ w = await loadTvWeeklyPrices(nom); }catch(e){ w = null; }
+  if (w && w.dates){
+    const last = {}; w.dates.forEach((d, i) => { last[d.slice(0, 4)] = w.closes[i]; });
+    rows.forEach(r => {
+      const px = last[String(r.annee)]; if (px == null) return;
+      r.prixActuel = px;
+      if (r.eps > 0) r.per = px / r.eps;
+      if (r.fcfParAction > 0) r.pFcf = px / r.fcfParAction;
+      if (r.dividende != null) r.rendementDiv = r.dividende / px * 100;
+    });
+  }
+  rows.forEach(r => { if (r.dividende != null && r.eps > 0) r.payoutRatio = r.dividende / r.eps * 100; });
+  // statistiques sur les exercices clos (le plus récent en dernier)
+  const med = a => { const s = a.filter(v => v != null && isFinite(v) && v > 0).sort((x, y) => x - y); if (!s.length) return null; const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+  const cagr = (key, yrs) => {
+    if (rows.length <= yrs) return null;
+    const a = rows[rows.length - 1 - yrs][key], b = rows[rows.length - 1][key];
+    return (a > 0 && b > 0) ? (Math.pow(b / a, 1 / yrs) - 1) * 100 : null;
+  };
+  const pf = rows.map(r => r.pFcf);
+  const st = { medianePFCF: med(pf.slice(-10)), medianePFCF20: rows.length >= 15 ? med(pf.slice(-20)) : null };
+  [5, 10, 20].forEach(y => { st['cagrFcf' + y] = cagr('fcfParAction', y); st['cagrCA' + y] = cagr('ca', y); st['cagrDiv' + y] = cagr('dividende', y); st['cagrEps' + y] = cagr('eps', y); });
+  st.cagrActions = cagr('actions', Math.min(10, rows.length - 1));
+  rows.concat([latest]).forEach(r => Object.assign(r, st));
+  if (latest.pFcf > 0 && st.cagrFcf5 > 0) latest.fcfpeg = latest.pFcf / st.cagrFcf5;
+  const fcfps = latest.fcfParAction;
+  if (st.medianePFCF && fcfps > 0 && latest.prixActuel){
+    latest.prixJuste = fcfps * Math.min(st.medianePFCF, 25);
+    latest.prixCible = latest.prixJuste * 0.8;
+    latest.ecartValeur = (latest.prixActuel - latest.prixJuste) / latest.prixJuste;
+  }
+  return true;
+}
 async function tvLiveRefresh(nom){
   if (!/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) return;   // site public : pas de serveur local, on affiche la copie publiée telle quelle
   const hist = companies[nom];
@@ -897,6 +966,7 @@ async function tvLiveRefresh(nom){
     const meta = tvSnapMeta[tv] || {};
     tvApplySnapshotToRow(latest, snap, tv);
     if (latest.tvPartial){
+      try{ if (await tvEnrichPartial(nom, snap)) tvApplySnapshotToRow(latest, snap, tv); }catch(e){ /* historique indisponible : fiche du jour seulement */ }
       const store = tvOnDemandRead();
       if (store[nom]) { store[nom].snap = snap; store[nom].at = Date.now(); tvOnDemandWrite(store); }
     }
