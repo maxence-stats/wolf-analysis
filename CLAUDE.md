@@ -1243,6 +1243,12 @@ champs déjà présents dans `companies` (aucune nouvelle colonne `COL` nécessa
   explicitement après discussion des options avec l'utilisateur, voir aussi la contrainte
   "pas de backend" du projet).
 
+### Fiches thèse du loup dans l'onglet Valorisation (fait, 2026-11-15)
+Bloc « 📄 Mes fiches thèse » (`#fichesThese`, `js/fiches-these.js`, CSS `.ft-*`, appelé par `renderValorisation`) : dernière fiche en grand
+(aperçus des 2 pages, verdict, cours, 3 prix justes, décision, « 📄 Ouvrir le PDF »), versions précédentes, puces des autres entreprises.
+Données = store `fiches` (`data/mes-portefeuilles/fiches.json`, serveur v=24 : un `items.<id>` ne disparaît pas sans `deleted`), PDF et
+PNG dans `atelier-media`. Remplies par le skill `wolf-fiche-these` (`generer_fiche.py` les envoie à chaque génération). Corbeille `trash`.
+
 ### Onglet Classement (fait, fonctionnel)
 Deux cartes, chacune divisée en **2 colonnes** pour ne pas s'étirer inutilement en
 hauteur (`renderClassement()`, 4 conteneurs DOM au total) — aucune donnée nouvelle

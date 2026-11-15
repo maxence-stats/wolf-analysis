@@ -23,6 +23,7 @@ const STORES = [
   ['multiples', 'EV/EBITDA historiques'],
   ['prix', 'Prix par secteur'],
   ['studio', 'Wolf Studio (miniatures, short)'],
+  ['fiches', 'Fiches thèse du loup'],
   ['navigateur', 'Watchlist, Tier list, Alertes, Idées, Revue, Dividende, Wolf Labo…'],
 ];
 const KIND = { backups: 'Copie automatique', mensuel: 'Copie mensuelle', secours: 'Secours (enregistrement refusé)' };
@@ -55,6 +56,7 @@ function summary(name, d){
       return docs.length + ' dossiers, ' + cards + ' cartes';
     }
     if (name === 'studio') return Object.keys(d.items || {}).length + ' miniatures enregistrées';
+    if (name === 'fiches') return Object.keys(d.items || {}).length + ' fiches thèse';
     if (name === 'navigateur') return Object.values(d.keys || {}).filter(x => x && x.v != null).length + ' rubriques';
     if (name === 'objectifs') return Object.keys(d.objectifs || {}).length + ' entreprises avec objectifs';
     if (name === 'prix'){ const n = Object.values(d).filter(Array.isArray).reduce((s, x) => s + x.length, 0); return n ? n + ' lignes' : Object.keys(d).length + ' rubriques'; }
@@ -133,7 +135,7 @@ async function restore(){
       const keep = new Set(ids(data)); deleted = ids(cur).filter(x => !keep.has(x));
     } else if (p.name === 'atelier'){
       const keep = new Set(Object.keys(data.docs || {})); deleted = Object.keys(cur.docs || {}).filter(x => !keep.has(x));
-    } else if (p.name === 'studio'){
+    } else if (p.name === 'studio' || p.name === 'fiches'){
       const keep = new Set(Object.keys(data.items || {})); deleted = Object.keys(cur.items || {}).filter(x => !keep.has(x));
     } else if (p.name === 'navigateur'){
       const keep = new Set(Object.keys(data.keys || {})); deleted = Object.keys(cur.keys || {}).filter(x => !keep.has(x));

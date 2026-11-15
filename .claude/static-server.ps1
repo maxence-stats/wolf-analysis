@@ -73,7 +73,8 @@ else { $extBackup = "" }
 # (revision, ecriture atomique, copies datees, copie hors projet, aucune operation effacee sans declaration).
 if ($StoreDir -ne ""){ $storeDirPath = [System.IO.Path]::GetFullPath($StoreDir) } else { $storeDirPath = Join-Path $root "data\mes-portefeuilles" }
 # navigateur (2026-11-14) : donnees que l'appli gardait seulement dans le navigateur (Watchlist, Tier list, Alertes, Idees...)
-$storeNames = @("portefeuilles", "multiples", "objectifs", "atelier", "prix", "studio", "navigateur")
+# fiches (2026-11-15) : fiches these du loup (PDF + apercus dans atelier-media), rangees par entreprise.
+$storeNames = @("portefeuilles", "multiples", "objectifs", "atelier", "prix", "studio", "navigateur", "fiches")
 # Publication en ligne (2026-11-10) : copies en LECTURE SEULE servies par le site public (GitHub Pages) quand il n'y a pas de
 # serveur local. Une instance de test ecrit dans son propre dossier et ne lance JAMAIS git.
 if ($testInstance){ $publicDir = Join-Path $storeDirPath "public-test" } else { $publicDir = Join-Path $root "data\public" }
@@ -651,8 +652,8 @@ function Handle-StoreSave($req, $res){
     if ($undeclared.Count -gt 0){ Send-Json $res 400 @{ ok = $false; error = "dossier(s) supprime(s) non declare(s)" }; return }
     if ($missing.Count -gt 0){ $removedAny = $true }
   }
-  # Wolf Studio : aucune miniature enregistree (items.<id>) ne disparait sans etre declaree.
-  if ($cur -and $n -eq "studio" -and $cur.items){
+  # Wolf Studio / fiches these : aucun element enregistre (items.<id>) ne disparait sans etre declare.
+  if ($cur -and ($n -eq "studio" -or $n -eq "fiches") -and $cur.items){
     $declared = @($b.deleted | ForEach-Object { [string]$_ })
     $newIds = @(); if ($b.items){ $newIds = @($b.items.PSObject.Properties | ForEach-Object { $_.Name }) }
     $missing = @($cur.items.PSObject.Properties | ForEach-Object { $_.Name } | Where-Object { $newIds -notcontains $_ })
@@ -858,7 +859,7 @@ while ($listener.IsListening) {
     $path = [System.Uri]::UnescapeDataString($req.Url.AbsolutePath)
     if ($path -eq "/api/ia/ping") {
       New-Item -ItemType Directory -Force -Path $iaDirPath | Out-Null
-      Send-Json $res 200 @{ ok = $true; writable = $true; v = 23; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
+      Send-Json $res 200 @{ ok = $true; writable = $true; v = 24; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
     } elseif ($path -eq "/api/ia/save") {
       Handle-IaSave $req $res
     } elseif ($path -eq "/api/ia/refresh") {

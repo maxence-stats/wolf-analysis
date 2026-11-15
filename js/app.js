@@ -12718,6 +12718,7 @@ function wireEvHistoryCard(nom){
 function renderValorisation(nom){
   const hist = companies[nom];
   if (!hist) return;
+  if (window.FICHES_UI) window.FICHES_UI.render(nom);  // bloc « 📄 Mes fiches thèse » (js/fiches-these.js)
   // EV/EBITDA : l'historique annuel saisi est lu dans un fichier via le serveur local -> on le charge une fois.
   if ((valorisationMetric === 'ev' || valorisationMetric === 'fcf') && window.VALO_MULTIPLES && window.VALO_MULTIPLES.loadEvStore && !renderValorisation._evLoaded){
     renderValorisation._evLoaded = true;
