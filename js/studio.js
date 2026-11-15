@@ -746,7 +746,14 @@ const SHORT = (() => {
         { k: 'graph', t: 'Le graphique', d: 'La courbe se dessine', dur: 3.2, say: d => `Plus haut à ${money(d.max, d.ccy)}, aujourd'hui ${money(d.last, d.ccy)}.` },
         { k: 'raisons', t: 'Pourquoi ?', d: 'Tes raisons, une par une', dur: 3, say: (d, p) => lines(p.raisons).join(' · ') },
         { k: 'question', t: 'La question', d: 'Opportunité ou piège ?', dur: 2.4, say: (d, p) => p.verdict }, FIN] },
-    valo: { name: '🎯 Valorisation', desc: 'Tes 3 scénarios de « Prix par secteur » posés sur le cours', manual: true, p: { nom: '', sticker: '', gyrs: '2', verdictT: '', fin: '' },
+    // Pub d'une fiche thèse (skill wolf-fiche-these, store « fiches ») : tout vient de la fiche choisie + TradingView, rien de propre à une entreprise n'est écrit en dur.
+    fiche: { name: '📄 Fiche thèse', desc: 'Chute en bourse, rapports épluchés, ta fiche gratuite en lien', manual: true,
+      p: { id: '', yrs: '2', cap: '', rapports: "J'ai épluché ses rapports annuels", fcf: "J'ai calculé le free cash flow", question: 'Vraie opportunité ?', badge: 'Ma fiche analyse · 2 pages', gratuit: 'Gratuite', bonus: '+ ma newsletter privée', lien: 'Lien juste en dessous', com: '', url: 'https://masterclass.wolfacademy.fr/fiche-analyse' },
+      scenes: [{ k: 'graph', t: 'Le graphique', d: 'Le cours se dessine, tampon de la chute', dur: 3.6, say: d => `${d.name} a perdu près de ${fr(Math.abs(d.drop), 0)} % depuis ses plus hauts. Est-ce le bon moment de l'acheter ?` },
+        { k: 'etude', t: "J'ai épluché", d: 'Rapports annuels, free cash flow, « ? »', dur: 2.8, say: () => "J'ai épluché les rapports annuels, j'ai calculé les free cash flow. Alors, vraie opportunité ou non ?" },
+        { k: 'fiche', t: 'La fiche', d: 'Les 2 pages qui bougent + flèche vers le lien', dur: 3.6, say: () => "Plutôt que de te donner mon simple avis, je t'ai préparé une fiche analyse complète de 2 pages, avec mon avis tranché. Elle est entièrement gratuite, sur le lien juste en dessous. En bonus, tu rejoins ma newsletter privée et tu reçois mes prochaines analyses." },
+        { k: 'com', t: 'Commentaires', d: 'Tu l’as déjà eue en portefeuille ?', dur: 2.6, say: d => `Dis-moi en commentaire si tu as déjà eu ${d.name} en portefeuille.` }] },
+    valo: { name: '🎯 Valorisation', desc:'Tes 3 scénarios de « Prix par secteur » posés sur le cours', manual: true, p: { nom: '', sticker: '', gyrs: '2', verdictT: '', fin: '' },
       scenes: [{ k: 'intro', t: 'Le cours', d: 'Logo + cours actuel', dur: 2.4, say: d => `${d.nom} cote aujourd'hui ${money(d.cours, d.ccy)}. Quel est son prix juste ?` },
         { k: 'gcours', t: 'Le graphique', d: 'La courbe du cours se dessine', dur: 2.2, say: d => d.S ? `Voilà le cours sur ${d.gy} an${d.gy > 1 ? 's' : ''} : ${d.trend >= 0 ? '+' : '−'}${fr(Math.abs(d.trend), 0)} %.` : '', ok: d => !!(d && d.S) },
         { k: 'pess', t: 'Pessimiste', d: 'La ligne rouge apparaît sur le graphique', dur: 1.8, say: d => `Scénario pessimiste : ${money(d.sc.pess, d.ccy)}, soit ${sgn(pot(d, 'pess'))} par rapport au cours.` },
@@ -814,7 +821,7 @@ const SHORT = (() => {
   const dS = t => new Date(t * 1000).toLocaleDateString('fr-FR');
 
   let C = THEMES.beige, cfg = null, DATA = null, dataErr = null, dataFor = null, tt = 0, playing = false, raf = 0, LAY = 'bulle';
-  let cam = null, camVideo = null, scr = null, scrVideo = null, rec = null, recChunks = [], recording = false, countdown = 0, pubOv = { yt: null, fb: null }, coSugg = [], valoList = null, opsList = null;
+  let cam = null, camVideo = null, scr = null, scrVideo = null, rec = null, recChunks = [], recording = false, countdown = 0, pubOv = { yt: null, fb: null }, coSugg = [], valoList = null, opsList = null, ficheList = null;
   let sx;   // contexte du canvas du short
   const defFx = f => ({ scenes: FMT[f].scenes.map(s => ({ k: s.k, on: true, dur: s.dur })), texts: {}, manual: FMT[f].manual, p: JSON.parse(JSON.stringify(FMT[f].p)) });
   const defCfg = () => ({ fmt: 'hebdo', per: 'w0', layout: 'bulle', theme: 'beige', scenes: SCN_HEBDO.map(s => ({ k: s.k, on: true, dur: s.dur })), texts: {}, manual: false, fx: {} });
@@ -836,7 +843,7 @@ const SHORT = (() => {
 
   /* --- données --- */
   async function loadData(){
-    const f = getCfg().fmt, o = fc(); DATA = null; dataErr = null; const sig = f + JSON.stringify(f === 'hebdo' ? getCfg().per : [o.p.co, o.p.yrs, o.p.nom, o.p.op, o.p.gyrs, o.p.a, o.p.b, (o.p.items || []).map(z => z.sym), o.p.prog, o.p.item]); dataFor = sig;
+    const f = getCfg().fmt, o = fc(); DATA = null; dataErr = null; const sig = f + JSON.stringify(f === 'hebdo' ? getCfg().per : [o.p.co, o.p.yrs, o.p.nom, o.p.op, o.p.gyrs, o.p.a, o.p.b, (o.p.items || []).map(z => z.sym), o.p.prog, o.p.item, o.p.id]); dataFor = sig;
     let d = null;
     try { d = await LOAD[f](o.p); } catch(e){ if (dataFor === sig) dataErr = e.message || String(e); return; }
     if (dataFor !== sig) return;
@@ -871,6 +878,20 @@ const SHORT = (() => {
       return D2;
     },
     async ecran(p){ return { ok: true }; },
+    async fiche(p){
+      if (!window.FICHES_UI) throw new Error('le module des fiches thèse n’est pas chargé');
+      const FD = await FICHES_UI.load(true); if (!FD) throw new Error('fiches thèse illisibles (serveur à relancer ?)');
+      const L = ficheList = Object.values(FD.items || {}).sort((a, b) => String(b.date || b.createdAt || '').localeCompare(String(a.date || a.createdAt || '')));
+      if (!L.length) throw new Error('aucune fiche thèse enregistrée : fais-la avec le skill « wolf-fiche-these »');
+      const fi = L.find(z => z.id === p.id) || L[0]; if (!p.id) p.id = fi.id;
+      if (!fi.symbole) throw new Error('la fiche ' + fi.entreprise + ' n’a pas de symbole TradingView');
+      const co = { sym: fi.symbole, name: fi.entreprise }; await ensureLogo(co); if (co.logoid) await img(tvLogo(co.logoid));
+      await history(co.sym); const yrs = p.yrs === 'max' ? 99 : +p.yrs || 2, S = hs(co, yrs); if (S.length < 3) throw new Error('cours indisponibles pour ' + co.sym);
+      let im = 0; S.forEach((v, i) => { if (v > S[im]) im = i; }); const max = S[im], last = S[S.length - 1];
+      const sn = await snap(co.sym), ccy = (HIST[co.sym] && HIST[co.sym]._ccy) || (sn && sn.currency) || fi.devise || 'EUR';
+      const pages = (fi.pages || []).slice(0, 2).map(f => '/api/atelier/media?f=' + encodeURIComponent(f)); await Promise.all(pages.map(u => img(u)));
+      return { fiche: fi, co, name: fi.entreprise, S, im, max, last, drop: (last / max - 1) * 100, yrs: Math.min(yrs, availY(co)), ccy, cap: sn && isNum(sn.market_cap_basic) ? sn.market_cap_basic : null, capCcy: (sn && sn.currency) || ccy, pages };
+    },
     async explique(p){ if (p.co){ await ensureLogo(p.co); if (p.co.logoid) await img(tvLogo(p.co.logoid)); } return { ok: true }; },
     async chute(p){
       const co = p.co; if (!co || !co.sym) throw new Error('choisis une action (recherche TradingView)');
@@ -1203,7 +1224,73 @@ const SHORT = (() => {
     rows.forEach(([lab, v, color, txt0], i) => { const cxx = 330 + i * 420, a = ease(segp(p, 0.08 + i * 0.18, 0.5 + i * 0.18)), h = Math.max(8, H * Math.abs(v || 0) / mx * a);
       sx.fillStyle = C.track; R2(cxx - 110, top, 220, H, 22); sx.fill(); sx.fillStyle = color; R2(cxx - 110, base - h, 220, h, 22); sx.fill();
       T2(lab, cxx, base + 54 * k, 38 * k, C.ink2, 'center', BF, 800); sx.save(); sx.globalAlpha *= a; T2(txt0, cxx, base - h - 20, fit2(txt0, 64 * k, 400), C.ink); sx.restore(); }); return base; }
+  const capTxt = (v, ccy) => !isNum(v) ? '' : v >= 1e9 ? fr(v / 1e9, v < 1e10 ? 1 : 0) + ' Md' + (money(1, ccy).replace(/^[\d,\s ]+/, ' ')) : fr(v / 1e6, 0) + ' M' + (money(1, ccy).replace(/^[\d,\s ]+/, ' '));
   const DRAW2 = {
+    // Short « Fiche thèse » : prévu pour la webcam en haut (« Écran partagé ») ; marche aussi en bulle ou sans webcam.
+    fiche(k0, p, Rg, pp, d){
+      const k = Rg.k, Yf = q => Rg.y + Rg.h * q, cx = 540, co = d.co;
+      pp = Object.assign({}, pp); ['rapports', 'fcf', 'question', 'badge', 'gratuit', 'lien'].forEach(z => { if (!String(pp[z] || '').trim()) pp[z] = FMT.fiche.p[z]; });   // case vidée = texte par défaut
+      if (k0 === 'graph'){
+        // pastille logo + nom + capitalisation
+        const cap = pp.cap || capTxt(d.cap, d.capCcy), nm = up(d.name), nz = fit2(nm, 64 * k, 560);
+        const b = back(segp(p, 0, 0.25)); sx.save(); sx.translate(140, Yf(0.07)); sx.scale(b, b); logo2(co, 0, 0, 58 * k, true); sx.restore();
+        T2(nm, 220, Yf(0.07) + 22 * k, nz, C.ink, 'left'); if (cap){ sx.save(); sx.globalAlpha *= ease(segp(p, 0.1, 0.3)); T2(cap, 1010, Yf(0.07) + 20 * k, 50 * k, C.dim, 'right', BF, 800); sx.restore(); }
+        const S = d.S, n = S.length, X0 = 80, W = 900, top = Yf(0.2), bot = Yf(0.66), mn = Math.min(...S) * 0.96, mx = Math.max(...S) * 1.04, px = i => X0 + W * i / (n - 1), py = v => bot - (bot - top) * (v - mn) / (mx - mn);
+        const a = ease(segp(p, 0.05, 0.6)), m = Math.max(1, Math.floor(a * (n - 1)));
+        sx.fillStyle = C.card; R2(40, top - 50, 1000, bot - top + 90, 26); sx.fill();
+        sx.strokeStyle = C.ink; sx.lineWidth = 7; sx.lineJoin = 'round'; sx.lineCap = 'round'; sx.beginPath(); for (let i = 0; i <= Math.min(m, d.im); i++) i ? sx.lineTo(px(i), py(S[i])) : sx.moveTo(px(i), py(S[i])); sx.stroke();
+        if (m > d.im){ sx.strokeStyle = C.red; sx.lineWidth = 9; sx.beginPath(); for (let i = d.im; i <= m; i++) i === d.im ? sx.moveTo(px(i), py(S[i])) : sx.lineTo(px(i), py(S[i])); sx.stroke(); }
+        if (m >= d.im){ sx.setLineDash([14, 12]); sx.lineWidth = 4; sx.strokeStyle = C.red; sx.beginPath(); sx.moveTo(px(d.im), py(d.max)); sx.lineTo(px(n - 1), py(d.max)); sx.stroke(); sx.setLineDash([]);
+          sx.fillStyle = C.red; sx.beginPath(); sx.arc(px(d.im), py(d.max), 13, 0, 7); sx.fill(); T2('PLUS HAUT ' + money(d.max, d.ccy), Math.max(230, Math.min(px(d.im), 800)), py(d.max) - 24, 34 * k, C.red, 'center', BF, 800); }
+        if (a > 0.98){ sx.fillStyle = C.ink; sx.beginPath(); sx.arc(px(n - 1), py(d.last), 14, 0, 7); sx.fill(); T2(money(d.last, d.ccy), px(n - 1) - 18, py(d.last) + 56, 42 * k, C.ink, 'right', BF, 800); }
+        // tampon de la chute : arrive en grand puis se pose
+        const q = segp(p, 0.62, 0.82); if (q > 0){ const dt0 = sgn(d.drop, 0), sc = 1 + (1 - ease(q)) * 1.4, sy = Yf(0.86);
+          sx.save(); sx.globalAlpha *= Math.min(1, q * 3); sx.translate(330, sy); sx.rotate(-0.1); sx.scale(sc, sc); const z = 120 * k; sx.font = `400 ${z}px ${AF}`; const tw = sx.measureText(dt0).width + 50;
+          R2(-tw / 2, -z * 0.82, tw, z * 1.12, 18); sx.lineWidth = 10; sx.strokeStyle = C.red; sx.stroke(); T2(dt0, 0, z * 0.12, z, C.red); sx.restore();
+          sx.save(); sx.globalAlpha *= ease(segp(p, 0.78, 0.92)); T2('DEPUIS SES', 610, sy - 14 * k, 54 * k, C.ink, 'left'); T2('PLUS HAUTS', 610, sy + 44 * k, 54 * k, C.ink, 'left'); sx.restore(); }
+        T2((d.yrs >= 1.5 ? Math.round(d.yrs) + ' ans' : '1 an') + ' · cours TradingView', cx, Yf(0.985), 26 * k, C.dim, 'center', BF, 700); return; }
+      if (k0 === 'etude'){
+        // les rapports annuels s'empilent un par un
+        const bx = 300, by = Yf(0.24), pw = 170 * k, ph = 230 * k;
+        [[-0.16, -70, C.track], [-0.03, 0, C.card], [0.12, 70, '#FFFFFF']].forEach(([rot, dx, fill], i) => { const b = back(segp(p, i * 0.08, 0.25 + i * 0.08)); if (b <= 0) return;
+          sx.save(); sx.translate(bx + dx * k, by + (1 - b) * 120); sx.rotate(rot); sx.scale(b, b); sx.shadowColor = 'rgba(0,0,0,.3)'; sx.shadowBlur = 20; sx.fillStyle = fill; R2(-pw / 2, -ph / 2, pw, ph, 10); sx.fill(); sx.shadowColor = 'transparent';
+          sx.fillStyle = 'rgba(0,0,0,.12)'; for (let j = 0; j < 5; j++) sx.fillRect(-pw / 2 + 22, -ph / 2 + 60 + j * 30 * k, pw - 44 - (j % 2) * 30, 9);
+          if (i === 2){ T2('RAPPORT', 0, -ph / 2 + 40 * k, 26 * k, '#1C1813'); T2('ANNUEL', 0, ph / 2 - 20 * k, 26 * k, '#1C1813'); } sx.restore(); });
+        sx.save(); sx.globalAlpha *= ease(segp(p, 0.1, 0.3)); const L = wrap(up(pp.rapports), 520, 66 * k, AF, 400).slice(0, 4); L.forEach((l, i) => T2(l, 520, Yf(0.13) + 66 * k + i * 70 * k, 66 * k, C.ink, 'left')); sx.restore();
+        sx.save(); sx.globalAlpha *= ease(segp(p, 0.35, 0.5)); hl2(pp.fcf, cx, Yf(0.56), 62 * k); sx.restore();
+        const qa = ease(segp(p, 0.55, 0.75)); if (qa > 0){ const qt = up(pp.question); sx.save(); sx.globalAlpha *= qa; T2(qt, 640, Yf(0.82), fit2(qt, 92 * k, 700), C.ink, 'right');
+          const pul = 1 + Math.sin(tw * 4) * 0.06, b = back(segp(p, 0.6, 0.85)); sx.translate(820, Yf(0.8)); sx.scale(b * pul, b * pul); sx.rotate(Math.sin(tw * 2.5) * 0.06); T2('?', 0, 90 * k, 280 * k, C.gold); sx.restore(); }
+        return; }
+      if (k0 === 'fiche'){
+        hl2(pp.badge, cx, Yf(0.075), 60 * k);
+        // les 2 pages arrivent en éventail, puis « respirent » : grossissent, rétrécissent, se balancent un peu, avec une lueur qui va et vient
+        const pw = 330 * k, ph = pw * 1.414, cy = Yf(0.43), live = segp(p, 0.3, 0.4);
+        const pulse = 1 + Math.sin(tw * 3.4) * 0.045 * live, wob = Math.sin(tw * 2.1) * 0.025 * live, glow = (0.5 + 0.5 * Math.sin(tw * 3.4)) * live;
+        sx.save(); sx.translate(cx, cy); sx.scale(pulse, pulse); sx.rotate(wob); sx.translate(-cx, -cy);
+        [[0, -150, -0.12], [1, 150, 0.1]].forEach(([i, dx, rot]) => { const b = back(segp(p, 0.04 + i * 0.1, 0.32 + i * 0.1)); if (b <= 0) return; const im = imgNow(d.pages[i]);
+          sx.save(); sx.translate(cx + dx * k * b, cy + (1 - b) * 260); sx.rotate(rot * b); sx.shadowColor = glow > 0 ? C.gold : 'rgba(0,0,0,.45)'; sx.shadowBlur = 30 + glow * 40; sx.shadowOffsetY = glow > 0 ? 0 : 14;
+            sx.fillStyle = '#0d0f12'; R2(-pw / 2, -ph / 2, pw, ph, 12); sx.fill(); sx.shadowColor = 'transparent';
+            sx.save(); R2(-pw / 2, -ph / 2, pw, ph, 12); sx.clip(); if (im) sx.drawImage(im, -pw / 2, -ph / 2, pw, ph); else T2('PAGE ' + (i + 1), 0, 0, 50 * k, '#888'); sx.restore();
+            sx.lineWidth = 4 + glow * 4; sx.strokeStyle = C.gold; R2(-pw / 2, -ph / 2, pw, ph, 12); sx.stroke(); sx.restore(); });
+        sx.restore();
+        const ta = ease(segp(p, 0.42, 0.6)); if (ta <= 0) return; sx.save(); sx.globalAlpha *= ta;
+        const g = up(pp.gratuit || 'Gratuite'), gy = Yf(0.8); sx.font = `400 ${54 * k}px ${AF}`; const gw = sx.measureText(g).width + 44 * k; sx.font = `800 ${40 * k}px ${BF}`; const bw = pp.bonus ? sx.measureText(pp.bonus).width + 24 : 0, x0 = cx - (gw + bw) / 2;
+        R2(x0, gy - 52 * k, gw, 70 * k, 12); sx.fillStyle = C.green; sx.fill(); T2(g, x0 + gw / 2, gy + 4 * k, 54 * k, '#fff'); if (pp.bonus) T2(pp.bonus, x0 + gw + 24, gy, 40 * k, C.ink, 'left', BF, 800); sx.restore();
+        const la = ease(segp(p, 0.6, 0.78)); if (la > 0){ const lt = up(pp.lien || 'Lien juste en dessous'), z = fit2(lt, 74 * k, 820), ly = Yf(0.93); sx.save(); sx.globalAlpha *= la; sx.font = `400 ${z}px ${AF}`; const lw = sx.measureText(lt).width;
+          T2(lt, cx - 40, ly, z, C.ink); const ax = cx - 40 + lw / 2 + 50, bob = Math.sin(tw * 6) * 12 * k; sx.translate(ax, ly - z * 0.7 + bob); sx.strokeStyle = C.gold; sx.lineWidth = 12 * k; sx.lineCap = 'round'; sx.lineJoin = 'round';
+          sx.beginPath(); sx.moveTo(0, 0); sx.lineTo(0, z * 0.8); sx.moveTo(-24 * k, z * 0.5); sx.lineTo(0, z * 0.85); sx.lineTo(24 * k, z * 0.5); sx.stroke(); sx.restore(); }
+        return; }
+      if (k0 === 'com'){
+        const b = back(segp(p, 0, 0.3)); sx.save(); sx.translate(cx, Yf(0.13)); sx.scale(b, b); logo2(co, 0, 0, 92 * k, true); sx.restore();
+        sx.save(); sx.globalAlpha *= ease(segp(p, 0.1, 0.3)); const h = title(pp.com || `Tu as deja eu ${d.name} en portefeuille ?`, cx, Yf(0.36), 96 * k, 3); sx.restore();
+        const oy = Yf(0.36) + h + 40 * k;
+        [['OUI', C.green, -150], ['NON', C.red, 150]].forEach(([t0, c0, dx], i) => { const bb = back(segp(p, 0.35 + i * 0.08, 0.6 + i * 0.08)); if (bb <= 0) return; sx.save(); sx.translate(cx + dx * k, oy); sx.scale(bb, bb); R2(-120 * k, -60 * k, 240 * k, 110 * k, 20); sx.fillStyle = c0; sx.fill(); T2(t0, 0, 26 * k, 80 * k, '#fff'); sx.restore(); });
+        const ca = ease(segp(p, 0.6, 0.8)); if (ca > 0){ const pul = 1 + Math.sin(tw * 4) * 0.04, cy2 = oy + 170 * k, lab = 'Dis-le-moi en commentaire'; sx.save(); sx.globalAlpha *= ca; sx.translate(cx, cy2); sx.scale(pul, pul);
+          sx.font = `800 ${44 * k}px ${BF}`; const w2 = sx.measureText(lab).width + 130 * k; R2(-w2 / 2, -50 * k, w2, 100 * k, 50 * k); sx.fillStyle = C.card; sx.fill();
+          const ix = -w2 / 2 + 60 * k; sx.strokeStyle = C.gold; sx.lineWidth = 6; sx.lineJoin = 'round'; sx.beginPath(); sx.moveTo(ix - 26 * k, -22 * k); sx.lineTo(ix + 26 * k, -22 * k); sx.lineTo(ix + 26 * k, 14 * k); sx.lineTo(ix - 6 * k, 14 * k); sx.lineTo(ix - 22 * k, 28 * k); sx.lineTo(ix - 22 * k, 14 * k); sx.lineTo(ix - 26 * k, 14 * k); sx.closePath(); sx.stroke();
+          T2(lab, ix + 50 * k, 15 * k, 44 * k, C.ink, 'left', BF, 800); sx.restore(); }
+        return; }
+    },
     annonce(k0, p, Rg, pp, d){
       const k = Rg.k, Yf = q => Rg.y + Rg.h * q, kk = Math.min(1, k * 1.02), tw = 960 * kk, th = tw * 9 / 16, tx = 540 - tw / 2, ty = Yf(0.215), cy = ty + th / 2;
       const a0 = k0 === 'sortie' ? ease(segp(p, 0, 0.3)) : 1, tt0 = up(pp.titre || 'Nouvelle video'); sx.save(); sx.globalAlpha *= a0; T2(tt0, 540, Yf(0.085), fit2(tt0, 104 * k, 980), C.ink);
@@ -1411,9 +1498,10 @@ const SHORT = (() => {
     if (countdown > 0){ sx.fillStyle = 'rgba(0,0,0,.55)'; sx.fillRect(0, 0, 1080, 1920); T2(String(countdown), 540, 1040, 360, '#fff'); }
     if ($('sdSafe') && $('sdSafe').checked && !recording){ sx.fillStyle = 'rgba(255,40,40,.22)'; sx.fillRect(0, 1580, 1080, 340); sx.fillRect(930, 860, 150, 720); T2('Cache par YouTube', 540, 1700, 34, '#fff', 'center', BF, 800); }
   }
-  let last = 0;
+  let last = 0, tw = 0;
   // Mode « à la main » : chaque scène joue son animation puis RESTE affichée jusqu'à → (ou clic / télécommande).
   function loop(now){ const dtm = Math.min(0.1, (now - last) / 1000); last = now;
+    if (playing && countdown <= 0) tw += dtm;   // horloge des mouvements continus : tourne même quand l'étape est finie (mode à la main), s'arrête quand l'écran est figé
     if (playing && countdown <= 0){ const T0 = total();
       if (fc().manual){ const cur = at(tt); tt = Math.min(tt + dtm, (cur ? cur.b : T0) - 0.001); }
       else { tt += dtm; if (tt >= T0){ if (recording){ stopRec(); tt = T0 - 0.001; playing = false; } else tt = 0; } } }
@@ -1448,6 +1536,12 @@ const SHORT = (() => {
     if (f === 'explique') return txtIn('titre', 'Titre') + txtIn('sous', 'Encadré sous le titre') + area('points', 'Tes points (un par ligne, 5 au plus)', 'Un point par ligne') + coPick('Entreprise (logo, facultatif)', 'co') + stkSel('sticker', 'Loup du titre') + txtIn('fin', 'Encadré de fin', 'Pour la suite');
     if (f === 'chute') return coPick('Action', 'co') + `<label class="sd-f">Plus haut cherché sur<select data-sd-p="yrs">${[['1', '1 an'], ['2', '2 ans'], ['3', '3 ans'], ['5', '5 ans'], ['10', '10 ans'], ['max', 'Tout l’historique']].map(([v, l]) => `<option value="${v}" ${String(p.yrs) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`
       + stkSel('sticker', 'Loup du choc') + area('raisons', 'Pourquoi ça chute (une raison par ligne)') + txtIn('question', 'La question') + txtIn('verdict', 'Ton verdict (apparaît sous la question)') + stkSel('sticker2', 'Loup de la question') + txtIn('fin', 'Encadré de fin', 'Pour la suite');
+    if (f === 'fiche') return `<label class="sd-f">Fiche thèse à mettre en avant<select data-sd-p="id">${(ficheList || []).map(x => `<option value="${esc(x.id)}" ${p.id === x.id ? 'selected' : ''}>${esc(x.entreprise + ' · ' + String(x.date || '').split('-').reverse().join('/'))}</option>`).join('') || '<option value="">Chargement…</option>'}</select></label>
+      <p class="sd-sub">Nom, logo, capitalisation, cours, plus haut et chute : TradingView. Les 2 pages : aperçus enregistrés de la fiche (le verdict n'est jamais montré). Tous les textes ci-dessous sont communs à toutes les entreprises ; vide = texte par défaut. Conseil : Webcam « Écran partagé (toi en haut) ».</p>
+      <label class="sd-f">Plus haut cherché sur<select data-sd-p="yrs">${[['1', '1 an'], ['2', '2 ans'], ['3', '3 ans'], ['5', '5 ans'], ['10', '10 ans'], ['max', 'Tout l’historique']].map(([v, l]) => `<option value="${v}" ${String(p.yrs) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`
+      + ovIn('cap', 'Capitalisation affichée', DATA && DATA.cap ? capTxt(DATA.cap, DATA.capCcy) : '') + txtIn('rapports', 'Écran 2 : titre') + txtIn('fcf', 'Écran 2 : encadré jaune') + txtIn('question', 'Écran 2 : la question')
+      + txtIn('badge', 'Écran 3 : encadré au-dessus des pages') + txtIn('gratuit', 'Écran 3 : pastille verte') + txtIn('bonus', 'Écran 3 : à côté de la pastille') + txtIn('lien', 'Écran 3 : texte de la flèche')
+      + txtIn('com', 'Écran 4 : la question (vide = « Tu as déjà eu <entreprise> en portefeuille ? »)') + txtIn('url', 'Lien de la fiche (texte de publication)');
     if (f === 'valo') return `<label class="sd-f">Entreprise (fiches de « Prix par secteur »)<select data-sd-p="nom">${(valoList || []).map(x => `<option value="${esc(x.nom)}" ${p.nom === x.nom ? 'selected' : ''}>${esc(x.nom)}${isNum(x.sc.real) ? '' : ' (pas de scénario réaliste)'}</option>`).join('') || '<option>Chargement…</option>'}</select></label>
       <p class="sd-sub">Les 3 prix viennent de TA simulation dans « Prix par secteur » (rien n’est estimé ici). Annonce-les un par un avec → : chaque scénario devient une ligne sur le graphique du cours, avec le dégradé rouge → jaune → vert.</p>
       ${txtIn('verdictT', 'Titre du verdict (vide = automatique : « Trop chère ? », « En solde ? », « Au juste prix ? »)')}
@@ -1575,6 +1669,9 @@ const SHORT = (() => {
     if (f === 'explique'){ const L = lines(pp.points), t0 = pp.co ? tag(pp.co.name) : ''; return pack(pp.titre, `${pp.titre}\n\n${L.map((l, i) => (i + 1) + '. ' + l).join('\n')}`, `💡 ${pp.titre}\n\n${L.map(l => '👉 ' + l).join('\n')}`, '#educationfinanciere #apprendre ' + t0); }
     if (f === 'chute'){ const t0 = tag(d.name); return pack(`${d.name} : ${sgn(d.drop, 0)} depuis son plus haut`, `${d.name} a perdu ${fr(Math.abs(d.drop), 0)} % depuis son plus haut (${money(d.max, d.ccy)} → ${money(d.last, d.ccy)}).\n\nPourquoi ?\n${lines(pp.raisons).map(l => '• ' + l).join('\n')}\n\n${pp.question}${pp.verdict ? ' ' + pp.verdict + '.' : ''}`,
       `📉 ${d.name} : ${sgn(d.drop, 0)} depuis son plus haut.\n\n${lines(pp.raisons).map(l => '• ' + l).join('\n')}\n\n${pp.question}`, t0 + ' #krach #opportunite'); }
+    if (f === 'fiche'){ const t0 = tag(d.name), u = pp.url || 'https://masterclass.wolfacademy.fr/fiche-analyse', dd = fr(Math.abs(d.drop), 0);
+      if (k === 'yt') return `${d.name} : −${dd} % depuis ses plus hauts, le bon moment pour acheter ? #shorts\n\n${d.name} a perdu ${dd} % depuis ses plus hauts (${money(d.max, d.ccy)} → ${money(d.last, d.ccy)}). J'ai épluché les rapports annuels et calculé les free cash flow : vraie opportunité ou non ?\n\n🐺 Discord : https://masterclass.wolfacademy.fr/discord\n📄 Ma fiche analyse complète (2 pages, gratuite, avec mon avis tranché) : ${u}\n🎁 Kit Investisseur du Loup : https://share.google/9nPYZSa3sh1jdv1B5\n\nEn bonus, tu rejoins ma newsletter privée et tu reçois mes prochaines analyses de stock picking.\n💬 Dis-moi en commentaire si tu as déjà eu ${d.name} en portefeuille.\n\n${WARN}\n\n${BASE_TAGS} ${t0} #analyse #stockpicking`.trim();
+      return `📉 ${d.name} : −${dd} % depuis ses plus hauts. Opportunité ou piège ?\n\nJ'ai épluché les rapports annuels et calculé les free cash flow. Ma fiche analyse complète (2 pages) est gratuite ici 👉 ${u}\n\nTu as déjà eu ${d.name} en portefeuille ? Dis-le en commentaire 👇\n\n⚠️ Pas un conseil en investissement.\n#bourse #investissement ${t0}`.trim(); }
     if (f === 'valo'){ const t0 = tag(d.nom), q = pot(d, 'real'); return pack(`${d.nom} : mon prix juste${isNum(q) ? ' (' + sgn(q) + ')' : ''}`, `Cours actuel : ${money(d.cours, d.ccy)}\n\n🔴 Pessimiste : ${money(d.sc.pess, d.ccy)}\n🔵 Réaliste : ${money(d.sc.real, d.ccy)}\n🟢 Optimiste : ${money(d.sc.opt, d.ccy)}\n\nMon prix juste : ${money(d.sc.real, d.ccy)}.`,
       `🎯 ${d.nom} cote ${money(d.cours, d.ccy)}. Mon prix juste : ${money(d.sc.real, d.ccy)}${isNum(q) ? ' (' + sgn(q) + ')' : ''}.\n\nPessimiste ${money(d.sc.pess, d.ccy)} · Réaliste ${money(d.sc.real, d.ccy)} · Optimiste ${money(d.sc.opt, d.ccy)}`, t0 + ' #valorisation #prixjuste'); }
     if (f === 'trans'){ const t0 = tag(d.name), sell = d.type === 'SELL';
@@ -1602,11 +1699,11 @@ const SHORT = (() => {
     try { await navigator.clipboard.writeText(ta.value); } catch(e){ ta.select(); document.execCommand('copy'); }
     if (msg){ msg.textContent = (k === 'yt' ? 'Texte YouTube' : 'Texte Facebook') + ' copié ✔'; setTimeout(() => { if (msg.isConnected) msg.textContent = ''; }, 2500); } }
 
-  const DATA_KEYS = ['co', 'yrs', 'nom', 'op', 'gyrs', 'prog', 'item'];   // « une », montants, verdicts : redessinés sans recharger
+  const DATA_KEYS = ['co', 'yrs', 'nom', 'op', 'gyrs', 'prog', 'item', 'id'];   // « une », montants, verdicts : redessinés sans recharger
   return {
     view,
     // Ouvre un modèle de short avec des réglages (ex. depuis l'onglet Valorisation : { nom } pour le short Valorisation).
-    openFormat(fmt, pp){ if (recording || !FMT[fmt]) return; const c = getCfg(); c.fmt = fmt; const o = fc(); Object.assign(o.p, pp || {}); persist(); playing = false; pubOv = { yt: null, fb: null }; DATA = null; dataErr = null; tt = 0; ui.tab = 'short'; shell(); },
+    openFormat(fmt, pp){ if (recording || !FMT[fmt]) return; const c = getCfg(); if (fmt === 'fiche' && !c.fx.fiche) c.layout = 'split'; c.fmt = fmt; const o = fc(); Object.assign(o.p, pp || {}); persist(); playing = false; pubOv = { yt: null, fb: null }; DATA = null; dataErr = null; tt = 0; ui.tab = 'short'; shell(); },
     openProgramme(id){ if (recording) return; const c = getCfg(); c.fmt = 'programme'; const o = fc(); o.p.prog = id; persist(); playing = false; pubOv = { yt: null, fb: null }; DATA = null; dataErr = null; tt = 0; ui.tab = 'short'; shell(); },
     _seek(i, q){ const a = active(), s = a[Math.min(i, a.length - 1)]; let acc = 0; for (const z of a){ if (z === s) break; acc += +z.dur || 3; } tt = acc + (+s.dur || 3) * Math.min(q, 0.999); playing = false; frame(); return $('sdShortCv').toDataURL('image/jpeg', 0.6); },
     _n: () => active().length,
@@ -1626,7 +1723,8 @@ const SHORT = (() => {
       if (ds.sdItrm != null){ if (recording) return true; fc().p.items.splice(+ds.sdItrm, 1); persist(); reload(); return true; }
       if (ds.sdItup != null){ const L = fc().p.items, i = +ds.sdItup; if (i > 0 && !recording){ [L[i - 1], L[i]] = [L[i], L[i - 1]]; persist(); pubOv = { yt: null, fb: null }; view(); } return true; }
       if (ds.sdCopy){ copyPub(ds.sdCopy); return true; }
-      if (ds.sdFmt){ if (recording) return true; getCfg().fmt = ds.sdFmt; persist(); playing = false; reload(); return true; }
+      if (ds.sdFmt){ if (recording) return true; if (ds.sdFmt === 'fiche' && !getCfg().fx.fiche) getCfg().layout = 'split';   // 1re fois : ta webcam en grand en haut
+        getCfg().fmt = ds.sdFmt; persist(); playing = false; reload(); return true; }
       if (ds.sdCopick != null){ const [key, ix] = ds.sdCopick.split('|'), r = coSugg[+ix]; if (r){ const it = { sym: r.symbol, name: r.name, logoid: r.logoid || null }, o2 = fc();
           if (key === 'add'){ o2.p.items = o2.p.items || []; if (o2.p.items.length < 8 && !o2.p.items.some(z => z.sym === it.sym)) o2.p.items.push(Object.assign(it, { v: 'garde', why: '' })); } else o2.p[key] = it; persist(); reload(); } return true; }
       const o = fc();

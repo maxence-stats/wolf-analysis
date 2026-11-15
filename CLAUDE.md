@@ -1025,6 +1025,15 @@ https://claude.ai/artifact/B4bfYADeVQL6G83Q4kJ6WX (17 modèles, 45 mises en page
   flèche pleine `blockArrow`. Croix « barré » plus fine (0,055). Erreur à éviter : versions D / E logo au centre, flèche de C refaite.
   Toutes les miniatures : « Loup vers la droite » (`st.wx`, px) et « Filtre de couleur » (`st.flt` r/R/v/V, mode `screen` : le fond se colore,
   le loup blanc reste clair). Les modèles ne s'adressent plus par indice (`TP(id)`).
+- **Short « 📄 Fiche thèse » (2026-11-15, `FMT.fiche`, `LOAD.fiche`, `DRAW2.fiche`)** : pub d'une fiche thèse (store `fiches`,
+  maquette validée https://claude.ai/artifact/RMcsgjLGNBi2PBckEkGd8V). On CHOISIT la fiche (`p.id`) ; tout le reste est automatique et
+  identique pour toutes les entreprises (aucun texte propre à une entreprise écrit en dur) : 4 étapes = graphique (logo, nom, capitalisation
+  `market_cap_basic`, cours hebdo TradingView, plus haut, tampon de la chute) / « J'ai épluché ses rapports annuels · free cash flow · Vraie
+  opportunité ? » / les 2 aperçus de la fiche qui grossissent, rétrécissent et se balancent avec une lueur (verdict JAMAIS montré, pas de
+  « mon avis tranché ») + « Gratuite + newsletter » + flèche « Lien juste en dessous » / « Tu as déjà eu X en portefeuille ? Oui / Non ».
+  Textes modifiables (case vidée = texte par défaut). 1re ouverture = webcam « Écran partagé (toi en haut) ». Thèmes Beige / Nuit / Or.
+  Mouvements continus sur l'horloge `tw` (tourne même quand l'étape est finie en mode à la main ; `tt`, lui, s'arrête). Texte YouTube avec
+  les 3 liens (Discord, fiche `p.url`, kit).
 - **Sommaire de l'analyse hebdo (2026-11-13, onglet « 🗓 Sommaire hebdo » du Studio, module `PROG`)** : maquette validée
   https://claude.ai/artifact/PFPaha6LoET5dQJABiD8j9 (artboard Sommaire-Hebdo). Image 1920×1080 SANS loup en fond : titre « Au programme »,
   semaine, deux rectangles arrondis « Ma watchlist » / « Mon portefeuille », 10 entreprises au plus chacun, étiquette facultative
