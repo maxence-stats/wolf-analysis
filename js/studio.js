@@ -149,10 +149,21 @@ function tile(it, X, Yy, s, o = {}){
     else if (im) x.drawImage(im, X + s * 0.07, Yy + s * 0.07, s * 0.86, s * 0.86);
     else { x.fillStyle = '#20252C'; x.fillRect(X, Yy, s, s); x.fillStyle = Y; x.font = `400 ${s * 0.5}px ${AF}`; x.textAlign = 'center'; x.fillText(up(nameOf(it)).slice(0, 1) || '?', X + s / 2, Yy + s * 0.68); x.textAlign = 'left'; } }
   x.restore();
-  if (o.cross){ x.save(); x.strokeStyle = '#E5262E'; x.lineWidth = s * 0.09; x.lineCap = 'round'; x.beginPath(); x.arc(X + s / 2, Yy + s / 2, s * 0.42, 0, 7); x.stroke(); x.beginPath(); x.moveTo(X + s * 0.2, Yy + s * 0.2); x.lineTo(X + s * 0.8, Yy + s * 0.8); x.stroke(); x.restore(); }
+  if (o.cross){ x.save(); x.strokeStyle = '#E5262E'; x.lineWidth = s * 0.055; x.lineCap = 'round'; x.shadowColor = 'rgba(0,0,0,.45)'; x.shadowBlur = 6; x.beginPath(); x.arc(X + s / 2, Yy + s / 2, s * 0.42, 0, 7); x.stroke(); x.beginPath(); x.moveTo(X + s * 0.2, Yy + s * 0.2); x.lineTo(X + s * 0.8, Yy + s * 0.8); x.stroke(); x.restore(); }
   if (o.q){ const r = s * 0.2; x.beginPath(); x.arc(X + s - r * 0.4, Yy + r * 0.4, r, 0, 7); x.fillStyle = Y; x.fill(); x.lineWidth = 3; x.strokeStyle = '#000'; x.stroke(); x.fillStyle = '#000'; x.font = `400 ${r * 1.4}px ${AF}`; x.textAlign = 'center'; x.fillText('?', X + s - r * 0.4, Yy + r * 0.4 + r * 0.5); x.textAlign = 'left'; }
 }
 function qtile(X, Yy, t){ x.fillStyle = Y; rr(X, Yy, t, t, t * 0.16); x.fill(); x.lineWidth = 3; x.strokeStyle = '#000'; x.stroke(); x.fillStyle = '#000'; x.font = `400 ${t * 0.75}px ${AF}`; x.textAlign = 'center'; x.fillText('?', X + t / 2, Yy + t * 0.78); x.textAlign = 'left'; }
+// flèche droite « pleine » (corps + pointe), jaune contour noir : nette, jamais biscornue
+function blockArrow(x1, y1, x2, y2, o = {}){ const a = Math.atan2(y2 - y1, x2 - x1), L = Math.hypot(x2 - x1, y2 - y1), w = o.w || 34, hw = o.head || w * 1.9, hl = Math.min(L * 0.55, o.hl || w * 1.7);
+  x.save(); x.translate(x1, y1); x.rotate(a); x.beginPath(); x.moveTo(0, -w / 2); x.lineTo(L - hl, -w / 2); x.lineTo(L - hl, -hw / 2); x.lineTo(L, 0); x.lineTo(L - hl, hw / 2); x.lineTo(L - hl, w / 2); x.lineTo(0, w / 2); x.closePath();
+  x.shadowColor = 'rgba(0,0,0,.55)'; x.shadowBlur = 14; x.shadowOffsetY = 4; x.fillStyle = o.color || Y; x.fill(); x.shadowColor = 'transparent'; x.lineJoin = 'round'; x.lineWidth = 5; x.strokeStyle = '#000'; x.stroke(); x.restore(); }
+// logo dans un grand rond blanc, anneau doré (barré en option)
+function discLogo(it, cx, cy, R, o = {}){ x.save(); x.shadowColor = 'rgba(0,0,0,.6)'; x.shadowBlur = 30; x.beginPath(); x.arc(cx, cy, R, 0, 7); x.fillStyle = '#fff'; x.fill(); x.restore();
+  const im = imgNow(logoUrl(it)); x.save(); x.beginPath(); x.arc(cx, cy, R - 16, 0, 7); x.clip();
+  if (im){ const k2 = it && it.logoid ? 1 : 0.72; x.drawImage(im, cx - (R - 16) * k2, cy - (R - 16) * k2, 2 * (R - 16) * k2, 2 * (R - 16) * k2); }
+  else { x.fillStyle = '#20252C'; x.fillRect(cx - R, cy - R, 2 * R, 2 * R); x.fillStyle = Y; x.font = `400 ${R}px ${AF}`; x.textAlign = 'center'; x.fillText(up(nameOf(it)).slice(0, 1) || '?', cx, cy + R * 0.36); x.textAlign = 'left'; }
+  x.restore(); x.lineWidth = 12; x.strokeStyle = o.ring || Y; x.beginPath(); x.arc(cx, cy, R - 4, 0, 7); x.stroke(); x.lineWidth = 3; x.strokeStyle = '#000'; x.beginPath(); x.arc(cx, cy, R + 2, 0, 7); x.stroke();
+  if (o.cross){ x.save(); x.strokeStyle = '#E5262E'; x.lineCap = 'round'; x.lineWidth = R * 0.11; x.shadowColor = 'rgba(0,0,0,.45)'; x.shadowBlur = 6; x.beginPath(); x.arc(cx, cy, R * 0.86, 0, 7); x.stroke(); x.beginPath(); x.moveTo(cx - R * 0.6, cy - R * 0.6); x.lineTo(cx + R * 0.6, cy + R * 0.6); x.stroke(); x.restore(); } }
 function arrow(x1, y1, x2, y2, bend = 0.3){ const mx = (x1 + x2) / 2 + (y2 - y1) * bend, my = (y1 + y2) / 2 - (x2 - x1) * bend; x.save(); x.lineCap = 'round'; x.lineJoin = 'round';
   for (const [c, w] of [['#000', 20], ['#fff', 11]]){ x.strokeStyle = c; x.lineWidth = w; x.beginPath(); x.moveTo(x1, y1); x.quadraticCurveTo(mx, my, x2, y2); x.stroke();
     const a = Math.atan2(y2 - my, x2 - mx), L = 34; x.beginPath(); x.moveTo(x2 - L * Math.cos(a - 0.5), y2 - L * Math.sin(a - 0.5)); x.lineTo(x2, y2); x.lineTo(x2 - L * Math.cos(a + 0.5), y2 - L * Math.sin(a + 0.5)); x.stroke(); } x.restore(); }
@@ -191,7 +202,13 @@ function bg(st){
     if (z < 1){ x.save(); x.filter = 'blur(10px) brightness(.75)'; x.drawImage(im, 0, 0, im.width * 0.3, im.height, -20, -20, 1320, 760); x.restore(); }
     // Images de la banque en 3:2 : plus hautes que le cadre 16:9. On garde le HAUT (oreilles, tête) par défaut ; « Position du loup » descend le cadrage.
     const wy = st.wy === '' || st.wy == null ? 0 : +st.wy, top = h > 720 ? -(h - 720) * wy : 720 - h;
-    x.drawImage(im, 1280 - w, top, w, h); }
+    x.drawImage(im, 1280 - w + (+st.wx || 0), top, w, h); }
+  // filtre de couleur translucide (rouge = baisse, vert = hausse), plus marqué côté texte que sur le loup
+  const FL = { r: [229, 38, 46], v: [27, 190, 96] }[String(st.flt || '').toLowerCase()];
+  // mode « écran » : les zones sombres (le fond) prennent la couleur, les zones claires (le loup blanc) restent claires
+  if (FL){ const k = st.flt === st.flt.toUpperCase() ? 1 : 0.6, gf = x.createLinearGradient(0, 0, 1280, 0), c = FL.join(',');
+    gf.addColorStop(0, `rgba(${c},${0.55 * k})`); gf.addColorStop(0.55, `rgba(${c},${0.42 * k})`); gf.addColorStop(1, `rgba(${c},${0.32 * k})`);
+    x.save(); x.globalCompositeOperation = 'screen'; x.fillStyle = gf; x.fillRect(0, 0, 1280, 720); x.restore(); }
   const g = x.createLinearGradient(0, 0, 700, 0); g.addColorStop(0, 'rgba(0,0,0,.6)'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, 700, 720);
 }
 
@@ -199,6 +216,7 @@ function bg(st){
 const S_ = (sym, name, logoid) => ({ sym, name, logoid: logoid || null });
 const K_ = k => ({ k });
 const NEED = { hist: 1, yield: 2, wolf: 3, tier: 4 };
+const TP = id => T.find(z => z.id === id);
 const T = [
  { id: 'question4', name: 'Lequel je vends ?', vid: 'Analyse hebdo · Portefeuille', pose: 'pointe',
   f: [['l1', 'Ligne blanche', 't'], ['l2', 'Encadré jaune', 'y'], ['logos', 'Logos', 'L', 4]], d: { l1: 'Lequel', l2: 'Je vends ?', logos: [S_('EURONEXT:ASML', 'ASML', 'asml'), S_('EURONEXT:TTE', 'TotalEnergies', 'total'), S_('EURONEXT:AI', 'Air Liquide', 'liquide'), S_('EURONEXT:BNP', 'BNP Paribas', 'paribas')] },
@@ -234,7 +252,7 @@ const T = [
       treemap(W.items.slice(0, 9).map(i => [i, i.w]).concat(W.cashW > 1 ? [[K_('EUR'), W.cashW]] : []).sort((a, b) => b[1] - a[1]), 40, 232, 580, 456).forEach(([e, X, Yy, w, h]) => {
         x.fillStyle = e[0].k === 'EUR' ? '#16181c' : 'rgba(255,255,255,.08)'; rr(X + 3, Yy + 3, w - 6, h - 6, 12); x.fill(); x.strokeStyle = 'rgba(238,255,65,.55)'; x.lineWidth = 2; x.stroke();
         const t = Math.min(130, w * 0.62, h * 0.5), fz = Math.min(46, h * 0.2, w * 0.24); tile(e[0], X + w / 2 - t / 2, Yy + h / 2 - t * 0.66, t); txt(e[0].k === 'EUR' ? OV(s, 'cashP', fr(e[1], e[1] < 10 ? 1 : 0) + ' %') : fr(e[1], e[1] < 10 ? 1 : 0) + ' %', X + w / 2, Yy + h / 2 + t * 0.34 + fz + 4, fz, { align: 'center', max: w - 12 }); }); }],
-     ['B', 'Top 5 en barres', (s, c) => { ybox(s.l1, 40, 100, 92); txt(OV(s, 'v', T[4].auto.v(s, c)), 40, 215, 100); pct(OV(s, 'g', T[4].auto.g(s, c)), 40, 280, 54); const W = c.wolf; if (!W) return; const mx = Math.max(...W.items.slice(0, 5).map(i => i.w), 1);
+     ['B', 'Top 5 en barres', (s, c) => { ybox(s.l1, 40, 100, 92); txt(OV(s, 'v', TP('portefeuille').auto.v(s, c)), 40, 215, 100); pct(OV(s, 'g', TP('portefeuille').auto.g(s, c)), 40, 280, 54); const W = c.wolf; if (!W) return; const mx = Math.max(...W.items.slice(0, 5).map(i => i.w), 1);
       W.items.slice(0, 5).forEach((it, i) => { const yy = 320 + i * 76; tile(it, 40, yy, 64); const bw = 380 * it.w / mx; x.fillStyle = Y; rr(120, yy + 14, bw, 36, 8); x.fill(); x.strokeStyle = '#000'; x.lineWidth = 3; x.stroke(); txt(fr(it.w, 1) + ' %', 134 + bw, yy + 48, 40, { max: 150 }); }); }],
      ['C', 'Grand camembert, logos dedans', (s, c) => { ybox(s.l1, 40, 96, 88); txt(s.l2, 40, 180, 70); const W = c.wolf; if (!W) return; const cx = 305, cy = 455, R = 240, r = 128; let a = -Math.PI / 2;
       const cols = ['#F2B33D', '#4A86C5', '#2EBD6B', '#B06BD0', '#E07A3A', '#3AA7B8', '#E5262E', '#8F7A5A', '#6E7F96', '#C46FA0'];
@@ -245,7 +263,7 @@ const T = [
           if (mode !== 'none' && v >= 3) tile(it, cx + Math.cos(m) * rt - ts / 2, cy + Math.sin(m) * rt - ts / 2, ts);
           if (mode === 'pct' && v >= 3) txt(OV(s, 'cashP', fr(v, v < 10 ? 1 : 0) + ' %'), cx + Math.cos(m) * (rm - 34), cy + Math.sin(m) * (rm - 34) + 10, 28, { align: 'center', max: 70 }); }
         else if (v >= 5) tile(it, cx + Math.cos(m) * rm - 25, cy + Math.sin(m) * rm - 25, 50); a += sw; });
-      txt(OV(s, 'v', T[4].auto.v(s, c)), cx, cy + 10, 50, { align: 'center', max: 220 }); pct(OV(s, 'g', T[4].auto.g(s, c)), cx, cy + 56, 36, { align: 'center', max: 200 }); }]] },
+      txt(OV(s, 'v', TP('portefeuille').auto.v(s, c)), cx, cy + 10, 50, { align: 'center', max: 220 }); pct(OV(s, 'g', TP('portefeuille').auto.g(s, c)), cx, cy + 56, 36, { align: 'center', max: 200 }); }]] },
  { id: 'duel', name: 'Duel', vid: 'Analyse express · Duel', pose: 'boxe', need: [NEED.hist], auto: { na: s => nameOf(s.a[0]), nb: s => nameOf(s.b[0]), pa: s => sgn(perf(s.a[0], duelY(s))), pb: s => sgn(perf(s.b[0], duelY(s))) },
   f: [['a', 'Action A', 'L', 1], ['b', 'Action B', 'L', 1], ['na', 'Nom affiché A (raccourci)', 'ov'], ['nb', 'Nom affiché B (raccourci)', 'ov'], ['yrs', 'Période', 'sel', [1, 2, 3, 5, 7, 10, 15, 20, 25, [99, 'Max (historique commun)']]], ['pa', 'Chiffre A', 'ov'], ['pb', 'Chiffre B', 'ov']], d: { a: [S_('EURONEXT:MC', 'LVMH', 'lvmh')], b: [S_('EURONEXT:RMS', 'Hermès', 'hermes')], yrs: 10, na: '', nb: '', pa: '', pb: '' },
   v: [['A', 'Le ring : barres qui montent', s => { const Y2 = duelY(s), va = perf(s.a[0], Y2) || 0, vb = perf(s.b[0], Y2) || 0, pa = OV(s, 'pa', sgn(va)), pb = OV(s, 'pb', sgn(vb)), mx = Math.max(Math.abs(va), Math.abs(vb), 1);
@@ -292,7 +310,7 @@ const T = [
   d: { l2: MOIS[new Date().getMonth()] + ' ' + new Date().getFullYear(), l1: 'Depuis le debut', per: 'since', cmp: 'cac', pw: '' },
   v: [['A', 'Wolf contre les indices', (s, c) => { ybox(s.l2, 40, 110, 100); txt(s.l1, 40, 210, 64); const p = c.wolf && c.wolf[s.per]; if (!p) return;
       const rows = [[K_('WOLF'), p.wolf, OV(s, 'pw', sgn(p.wolf, 1))], [K_('CAC'), p.cac]]; if (s.cmp === 'both') rows.push([K_('SPX'), p.spx]); bars(rows, 40, 260, 130, 300); }],
-     ['B', 'Le chiffre du mois', (s, c) => { tile(K_('WOLF'), 40, 40, 150); txt('Wolf', 215, 110, 86); txt('Portfolio', 215, 185, 70); ybox(s.l2, 40, 330, 96); pct(OV(s, 'pw', T[11].auto.pw(s, c)), 40, 560, 220, { max: 600 }); txt(s.l1, 40, 640, 56); }]] },
+     ['B', 'Le chiffre du mois', (s, c) => { tile(K_('WOLF'), 40, 40, 150); txt('Wolf', 215, 110, 86); txt('Portfolio', 215, 185, 70); ybox(s.l2, 40, 330, 96); pct(OV(s, 'pw', TP('resultat').auto.pw(s, c)), 40, 560, 220, { max: 600 }); txt(s.l1, 40, 640, 56); }]] },
  { id: 'analyse', name: 'Analyse express', vid: 'Analyse express', pose: 'loupe',
   f: [['logo', 'Entreprise', 'L', 1], ['l1', 'Verdict (jaune)', 'y'], ['l2', 'Ligne blanche', 't'], ['l3', 'Ligne du bas', 't']], d: { logo: [S_('EURONEXT:SU', 'Schneider Electric', 'schneider')], l1: 'Sous-evaluee ?', l2: 'Analyse', l3: "A ce prix, j'achete ?" },
   v: [['A', 'Logo + verdict', s => { tile(s.logo[0], 40, 40, 230); txt(s.l2, 300, 170, 96, { max: 320 }); ybox(s.l1, 40, 430, 120); txt(s.l3, 40, 550, 64); }],
@@ -304,6 +322,16 @@ const T = [
      ['C', 'Tampon « à acheter ? »', s => { tile(s.logo[0], 40, 60, 260); txt(s.l2, 330, 190, 92, { max: 290 }); txt(nameOf(s.logo[0]), 330, 270, 64, { max: 290, color: Y });
       x.save(); x.translate(330, 470); x.rotate(-0.12); x.lineWidth = 10; x.strokeStyle = '#FF3B3B'; rr(-290, -80, 580, 150, 18); x.stroke(); x.lineWidth = 4; rr(-276, -66, 552, 122, 12); x.stroke();
       const st = up(s.l1 && /achet/i.test(s.l1) ? s.l1 : 'A acheter ?'); x.fillStyle = '#FF3B3B'; x.textAlign = 'center'; x.font = `400 ${fitSize(st, 104, 520)}px ${AF}`; x.fillText(st, 0, 30); x.textAlign = 'left'; x.restore(); txt('A ce prix ?', 40, 670, 70); }]] },
+ { id: 'focus', name: 'Entreprise à la une', vid: 'Analyse d’une entreprise', pose: 'loupe', note: 'Logo et nom en très grand. Chiffre facultatif (vide = rien).',
+  auto: { nom: s => nameOf(s.logo[0]) },
+  f: [['logo', 'Entreprise', 'L', 1], ['nom', 'Nom affiché (raccourci)', 'ov'], ['l1', 'Encadré jaune', 'y'], ['l2', 'Ligne blanche', 't'], ['p', 'Chiffre (ex. −35 %, x10, 250 €)', 't']],
+  d: { logo: [S_('EURONEXT:SU', 'Schneider Electric', 'schneider')], nom: '', l1: 'Je l’achète ?', l2: '', p: '', wx: '80' },
+  v: [['A', 'Logo géant + nom', s => { const nm = OV(s, 'nom', nameOf(s.logo[0])); tile(s.logo[0], 40, 40, 380);
+        if (s.p) bigFig(s.p, 450, 260, 130, 250); txt(nm, 40, 555, 130, { max: 660 }); ybox(s.l1, 40, 685, 92, { max: 660 }); if (s.l2) txt(s.l2, 450, 395, 60, { max: 260 }); }],
+     ['B', 'Logo dans un grand rond', s => { const nm = OV(s, 'nom', nameOf(s.logo[0])); discLogo(s.logo[0], 285, 290, 245);
+        txt(nm, 40, 625, 112, { max: 660 }); if (s.l1) ybox(s.l1, 40, 700, 62, { max: 640 }); if (s.p) bigFig(s.p, 560, 150, 110, 220); if (s.l2) txt(s.l2, 560, 225, 50, { max: 220 }); }],
+     ['C', 'Nom en très grand, logo + chiffre', s => { const nm = OV(s, 'nom', nameOf(s.logo[0])); txt(nm, 40, 175, 170, { max: 680 }); tile(s.logo[0], 40, 225, 290);
+        if (s.p) bigFig(s.p, 360, 420, 150, 340); else if (s.l2) txt(s.l2, 360, 400, 80, { max: 340 }); ybox(s.l1, 40, 685, 100, { max: 660 }); if (s.p && s.l2) txt(s.l2, 360, 500, 54, { max: 340 }); }]] },
  { id: 'radar', name: 'Sur mon radar', vid: 'Analyse hebdo · Watchlist', pose: 'jumelles',
   f: [['l1', 'Encadré jaune', 'y'], ['logos', 'Entreprises', 'L', 4], ['l2', 'Ligne blanche', 't']], d: { l1: 'Sur mon radar', logos: [S_('EURONEXT:ASML', 'ASML', 'asml'), S_('MIL:RACE', 'Ferrari', 'ferrari'), S_('NASDAQ:NVDA', 'Nvidia', 'nvidia')], l2: "J'achete ?" },
   v: [['A', '3 logos à surveiller', s => { ybox(s.l1, 40, 120, 110); s.logos.slice(0, 3).forEach((k, i) => tile(k, 40 + i * 200, 190, 176, { q: 1 })); txt(s.l2, 40, 560, 120); }],
@@ -319,12 +347,15 @@ const T = [
   f: [['l1', 'Encadré jaune', 'y'], ['l2', 'Ligne blanche', 't'], ['logo', 'Objet barré', 'L', 1]], d: { l1: "L'erreur", l2: 'Qui coute cher', logo: [K_('EUR')] },
   v: [['A', 'Objet barré sous le texte', s => { ybox(s.l1, 40, 170, 150); txt(s.l2, 40, 310, 100); tile(s.logo[0], 40, 370, 240, { cross: 1 }); }],
      ['B', 'Objet barré en haut', s => { tile(s.logo[0], 40, 40, 230, { cross: 1 }); ybox(s.l1, 40, 470, 150); txt(s.l2, 40, 610, 100); }],
-     ['C', 'Objet barré à droite du texte', s => { ybox(s.l1, 40, 160, 140); txt(s.l2, 40, 290, 90); tile(s.logo[0], 330, 330, 250, { cross: 1 }); txt('A eviter', 40, 470, 80, { color: '#FF3B3B', max: 270 }); arrow(260, 520, 320, 470, 0.3); }]] },
+     ['C', 'Objet barré à droite du texte', s => { ybox(s.l1, 40, 160, 140); txt(s.l2, 40, 290, 90); tile(s.logo[0], 360, 330, 250, { cross: 1 }); const w = txt('A eviter', 40, 480, 80, { color: '#FF3B3B', max: 210 });
+      blockArrow(40 + w + 14, 452, 348, 452, { w: 26 }); }],
+     ['D', 'Logo au centre, texte au-dessus', s => { ybox(s.l1, 640, 150, 130, { align: 'center', max: 900 }); tile(s.logo[0], 640 - 150, 200, 300, { cross: 1 }); txt(s.l2, 640, 650, 96, { align: 'center', max: 900 }); }],
+     ['E', 'Logo au centre, texte en dessous', s => { tile(s.logo[0], 640 - 160, 30, 320, { cross: 1 }); ybox(s.l1, 640, 500, 130, { align: 'center', max: 900 }); txt(s.l2, 640, 640, 96, { align: 'center', max: 900 }); }]] },
  { id: 'investi', name: 'Si tu avais investi', vid: 'Analyse express · Pédagogie', pose: 'billets', need: [NEED.hist],
   auto: { r: s => { const m = mult(s.logo[0], s.yrs); return m == null ? '—' : fr(Math.round(s.m * m / 10) * 10) + ' €'; } },
   f: [['logo', 'Action (calcul réel)', 'L', 1], ['m', 'Montant de départ', 'sel', [[1000, '1 000 €'], [5000, '5 000 €'], [10000, '10 000 €']]], ['yrs', 'Il y a', 'sel', [3, 5, 10]], ['r', 'Résultat', 'ov']], d: { logo: [S_('EURONEXT:RMS', 'Hermès', 'hermes')], m: 1000, yrs: 10, r: '' },
-  v: [['A', 'Montant de départ → résultat', s => { const r = OV(s, 'r', T[16].auto.r(s)); ybox(fr(+s.m) + ' €', 40, 150, 120); const dw = txt('dans', 40, 270, 90); tile(s.logo[0], 40 + dw + 44, 190, 110); txt('il y a ' + s.yrs + ' ans', 40, 380, 90); pct('= ' + r, 40, 560, 150); txt('hors dividendes', 40, 630, 40, { color: '#C9CED6' }); }],
-     ['B', 'Résultat en très grand', s => { const r = OV(s, 'r', T[16].auto.r(s)); tile(s.logo[0], 40, 40, 170); txt(fr(+s.m) + ' € il y a ' + s.yrs + ' ans', 240, 150, 70, { max: 400 }); ybox(r, 40, 420, 190); txt("aujourd'hui", 40, 560, 90); }]] },
+  v: [['A', 'Montant de départ → résultat', s => { const r = OV(s, 'r', TP('investi').auto.r(s)); ybox(fr(+s.m) + ' €', 40, 150, 120); const dw = txt('dans', 40, 270, 90); tile(s.logo[0], 40 + dw + 44, 190, 110); txt('il y a ' + s.yrs + ' ans', 40, 380, 90); pct('= ' + r, 40, 560, 150); txt('hors dividendes', 40, 630, 40, { color: '#C9CED6' }); }],
+     ['B', 'Résultat en très grand', s => { const r = OV(s, 'r', TP('investi').auto.r(s)); tile(s.logo[0], 40, 40, 170); txt(fr(+s.m) + ' € il y a ' + s.yrs + ' ans', 240, 150, 70, { max: 400 }); ybox(r, 40, 420, 190); txt("aujourd'hui", 40, 560, 90); }]] },
  { id: 'hebdoW', name: 'Analyse hebdo', vid: 'Analyse hebdo (samedi)', pose: 'casque', need: [NEED.wolf], note: 'Loup au casque : version DORÉE si le Wolf monte cette semaine, ROUGE s’il baisse (réglage « Ambiance »). Chiffres de la semaine en cours.',
   auto: { sem: (s, c) => c.wolf ? 'Semaine ' + c.wolf.wk : 'Semaine', p: (s, c) => c.wolf && c.wolf.week ? sgn(c.wolf.week.wolf, 1) : '—', cac: (s, c) => c.wolf && c.wolf.week ? 'CAC 40 : ' + sgn(c.wolf.week.cac, 1) : '' },
   poseOf: (s, c) => { if (s.pose !== 'casque' && s.pose !== 'casque_rouge') return s.pose; if (s.amb === 'or') return 'casque'; if (s.amb === 'rouge') return 'casque_rouge'; const v = c.wolf && c.wolf.week ? c.wolf.week.wolf : 0; return v >= 0 ? 'casque' : 'casque_rouge'; },
@@ -359,16 +390,24 @@ const T = [
      ['C', 'Question + logos « ? »', (s, c) => { const L = progItems(s, c), n = L.length, cols = n <= 2 ? Math.max(1, n) : n <= 4 ? 2 : 3, rows = Math.ceil(n / cols), t = n <= 2 ? 190 : n <= 4 ? 165 : 155, g = t + 24, tg = s.tags !== 'off';
         txt(OV(s, 'sem', T.find(z => z.id === 'progW').auto.sem(s, c)), 40, 100, 74); ybox(s.q, 40, 230, 120);
         L.forEach((k, i) => { const X = 40 + (i % cols) * g, Yy = 280 + Math.floor(i / cols) * (rows > 1 ? (690 - 280 - t) / (rows - 1) : 0); tile(k, X, Yy, t, { q: !tg || !k.tag }); if (tg) tagChip(k.tag, X + t / 2, Yy + t - 18, 26); }); }]] },
- { id: 'progOps', name: 'Mes mouvements de la semaine', vid: 'Analyse hebdo (Sommaire) · Portefeuille', pose: 'portefeuille', prog: 1, note: 'Lignes du portefeuille étiquetées Achetée / Vendue / Renforcée / Allégée dans le « 🗓 Sommaire hebdo ».',
+ { id: 'progOps', name: 'Mes mouvements de la semaine', vid: 'Analyse hebdo (Sommaire) · Portefeuille', pose: 'portefeuille', progOpt: 1, note: 'Je vends → j’achète. Cases vides = lignes étiquetées Vendue / Allégée et Achetée / Renforcée dans le « 🗓 Sommaire hebdo ».',
   auto: { sem: (s, c) => (c.prog && c.prog.sem) || '' },
-  f: [['prog', 'Programme', 'prog'], ['l1', 'Titre', 't'], ['l2', 'Encadré jaune', 'y'], ['sem', 'Semaine', 'ov']],
-  d: { prog: '', l1: 'Cette semaine', l2: "J'ai bouge !", sem: '' },
-  v: [['A', 'Une ligne par mouvement', (s, c) => { const L = progOps(c).slice(0, 4);
-        txt(s.l1, 40, 95, 84); L.forEach((k, i) => { const Yy = 128 + i * 124, tg = PROG.TAGS[k.tag || ''] || []; tile(k, 40, Yy, 108); txt(tg[1] ? tg[0] : nameOf(k), 172, Yy + 80, 70, { color: tg[1] || '#fff', max: 430 }); });
-        ybox(s.l2, 40, 700, 70); }],
-     ['B', 'Logos cochés / barrés', (s, c) => { const L = progOps(c).slice(0, 6), n = L.length, t = n <= 3 ? 175 : 150, g = t + 26;
-        txt(OV(s, 'sem', T.find(z => z.id === 'progOps').auto.sem(s, c)) || s.l1, 40, 100, 80); ybox(s.l2, 40, 220, 100);
-        L.forEach((k, i) => { const X = 40 + (i % 3) * g, Yy = 265 + Math.floor(i / 3) * (t + 40); tile(k, X, Yy, t, { cross: k.tag === 'vente' }); if (k.tag === 'achat' || k.tag === 'renfo') check(X + t - t * 0.32, Yy - t * 0.1, t * 0.42); tagChip(k.tag, X + t / 2, Yy + t + 6, 24); }); }]] },
+  f: [['sell', 'Je vends (barré)', 'L', 1], ['buy', "J'achète", 'L', 1], ['prog', 'Programme (cases vides)', 'prog'], ['l1', 'Titre', 't'], ['ls', 'Étiquette vente', 't'], ['lb', 'Étiquette achat', 't'], ['l2', 'Ligne du bas (vide = rien)', 't']],
+  d: { sell: [], buy: [], prog: '', l1: 'Cette semaine', ls: 'Je vends', lb: "J'achete", l2: '', wx: '60' },
+  v: [['A', 'Je vends → j’achète', (s, c) => { const [S, B] = moveLogos(s, c), t = 310, y0 = 165, X2 = 480;
+        ybox(s.l1, 40, 125, 100, { max: 760 });
+        if (S) tile(S, 40, y0, t, { cross: 1 }); if (B) tile(B, X2, y0, t); blockArrow(40 + t + 14, y0 + t / 2, X2 - 14, y0 + t / 2, { w: 30, head: 64, hl: 46 });
+        ybox(s.ls, 40 + t / 2, y0 + t + 100, 80, { align: 'center', bg: '#E5262E', ink: '#fff', max: 380 }); ybox(s.lb, X2 + t / 2, y0 + t + 100, 80, { align: 'center', bg: '#3DFF7A', max: 380 });
+        if (s.l2) txt(s.l2, 40, 700, 64, { max: 760 }); else [[S, 40], [B, X2]].forEach(([k, X]) => { if (k) txt(nameOf(k), X + t / 2, 690, 54, { align: 'center', max: 400 }); }); }],
+     ['B', 'Logos en grand, nom dessous', (s, c) => { const [S, B] = moveLogos(s, c), t = 290;
+        txt(s.l1, 40, 105, 96, { max: 660 });
+        [[S, 40, s.ls, '#FF3B3B', 1], [B, 410, s.lb, '#3DFF7A', 0]].forEach(([k, X, lab, col, cr]) => { if (!k) return; tile(k, X, 150, t, { cross: cr }); if (!cr) check(X + t - 70, 130, 96);
+          txt(lab, X + t / 2, 540, 74, { align: 'center', color: col, max: 320 }); txt(nameOf(k), X + t / 2, 610, 48, { align: 'center', max: 320 }); });
+        blockArrow(40 + t + 10, 295, 410 - 10, 295, { w: 24, head: 52, hl: 40 }); if (s.l2) ybox(s.l2, 40, 690, 64, { max: 660 }); }],
+     ['C', 'Flèche en arc, titre en bas', (s, c) => { const [S, B] = moveLogos(s, c), t = 250;
+        if (S) tile(S, 40, 60, t, { cross: 1 }); if (B) tile(B, 420, 190, t);
+        ybox(s.ls, 40 + t / 2, 60 + t + 70, 56, { align: 'center', bg: '#E5262E', ink: '#fff', max: 300 }); ybox(s.lb, 420 + t / 2, 190 + t + 70, 56, { align: 'center', bg: '#3DFF7A', max: 300 });
+        arrow(40 + t + 12, 120, 410, 250, -0.28); txt(s.l1, 40, 650, 100, { max: 660 }); if (s.l2) txt(s.l2, 40, 705, 46, { max: 660, color: '#C9CED6' }); }]] },
  { id: 'progCount', name: 'X actions à la loupe', vid: 'Analyse hebdo (Sommaire)', pose: 'loupe', prog: 1, note: 'Le nombre et les logos viennent du programme du « 🗓 Sommaire hebdo ».',
   auto: { l0: (s, c) => progItems(s, c).length + ' actions', sem: (s, c) => (c.prog && c.prog.sem) || '' },
   f: [['prog', 'Programme', 'prog'], ['src', 'Entreprises', 'sel', [['all', 'Watchlist + portefeuille'], ['watch', 'Watchlist seulement'], ['port', 'Portefeuille seulement']]], ['n', 'Combien', 'sel', [[3, '3'], [4, '4'], [5, '5'], [6, '6']]],
@@ -392,6 +431,11 @@ function tagChip(tag, cx, Yy, size){ const tg = PROG.TAGS[tag || '']; if (!tg ||
   const w = x.measureText(s).width + size * 0.6, h = size * 1.15; rr(cx - w / 2, Yy, w, h, size * 0.18); x.fillStyle = tg[1]; x.fill(); x.lineWidth = 3; x.strokeStyle = '#000'; x.stroke();
   x.fillStyle = tg[2]; x.textAlign = 'center'; x.fillText(s, cx, Yy + h * 0.8); x.textAlign = 'left'; }
 
+// « Mes mouvements » : logos choisis, sinon ceux du programme (Vendue / Allégée → vente, Achetée / Renforcée → achat)
+function moveLogos(s, c){ const p = (c.prog && c.prog.port) || [], f = tags => p.find(z => tags.includes(z.tag)) || null;
+  return [(s.sell && s.sell[0]) || f(['vente', 'allege']), (s.buy && s.buy[0]) || f(['achat', 'renfo'])]; }
+// chiffre en gros : vert / rouge s'il est signé, sinon encadré jaune
+function bigFig(v, X, Yy, size, max){ return /^\s*[+−-]/.test(v) ? pct(v, X, Yy, size, { max }) : ybox(v, X, Yy, size, { max }); }
 // logos de la miniature hebdo : ceux choisis, sinon les opérations de la semaine, sinon les 3 plus grosses lignes
 function hebdoLogos(s, c){ if (s.logos && s.logos.length) return s.logos.slice(0, 6); const w = c.wolf; if (!w) return []; return (w.weekOps && w.weekOps.length ? w.weekOps : w.items.slice(0, 3)).slice(0, 6); }
 
@@ -401,7 +445,7 @@ async function prep(t, s){
   const items = [];
   t.f.forEach(([k, , ty]) => { if (ty === 'L' && Array.isArray(s[k])) items.push(...s[k]); });
   if (t.id === 'resultat' || t.id === 'portefeuille') items.push(K_('WOLF'));
-  if (t.prog){ const pr = progOf(s); ctx.prog = pr; if (!pr || !((pr.watch || []).length + (pr.port || []).length)) ctx.err = 'Programme vide : compose-le dans l’onglet « 🗓 Sommaire hebdo » (watchlist + portefeuille).'; else items.push(...(pr.watch || []), ...(pr.port || [])); }
+  if (t.prog || t.progOpt){ const pr = progOf(s); ctx.prog = pr; if (t.prog && (!pr || !((pr.watch || []).length + (pr.port || []).length))) ctx.err = 'Programme vide : compose-le dans l’onglet « 🗓 Sommaire hebdo » (watchlist + portefeuille).'; else if (pr) items.push(...(pr.watch || []), ...(pr.port || [])); }
   if ((t.need || []).includes(NEED.tier)){ ctx.tier = tierData(); ctx.tier.forEach(r => items.push(...r[1])); if (!ctx.tier.some(r => r[1].length)) ctx.err = 'Ta Tier list est vide : classe tes entreprises dans Screener > Tier List, elles apparaîtront ici.'; }
   await Promise.all(items.map(it => ensureLogo(it).catch(() => {})));
   items.forEach(it => { const u = logoUrl(it); if (u) jobs.push(img(u)); });
@@ -456,7 +500,7 @@ window.addEventListener('beforeunload', e => { if (dirty && D && !conflict){ sav
 
 /* ======================= INTERFACE ======================= */
 const ui = { tab: 'thumb', cur: 0, st: null, itemId: null, wolfTab: 'fav', bankQ: '', sugg: {}, err: null, busy: false };
-const newState = i => Object.assign({ pose: T[i].pose, vi: 0, wz: '', wy: '' }, JSON.parse(JSON.stringify(T[i].d)));
+const newState = i => Object.assign({ pose: T[i].pose, vi: 0, wz: '', wy: '', wx: '', flt: '' }, JSON.parse(JSON.stringify(T[i].d)));
 let drawSeq = 0;
 async function draw(){
   const t = T[ui.cur], s = ui.st, cv = $('sdBig'); if (!cv || !t) return;
@@ -504,7 +548,7 @@ function thumbView(){
     <div class="sd-panel" id="sdPanel"></div>
    </div>
    <div class="sd-gal" id="sdGal"><h3>Tous les modèles <small>clique sur un modèle pour l'ouvrir</small></h3>
-    <div class="sd-tplgrid">${T.map((t, i) => [t, i]).sort((a, b) => { const r = t => t.id === 'hebdoW' ? 0 : t.prog ? 1 : 2; return r(a[0]) - r(b[0]) || a[1] - b[1]; }).map(([t, i]) => `<button type="button" data-sd-tpl="${i}" class="${i === ui.cur ? 'on' : ''}"><canvas data-sd-th="${i}" width="320" height="180"></canvas><b>${esc(t.name)}</b><small>${esc(t.vid)} · ${t.v.length} mise${t.v.length > 1 ? 's' : ''} en page</small></button>`).join('')}</div></div>
+    <div class="sd-tplgrid">${T.map((t, i) => [t, i]).sort((a, b) => { const r = t => t.id === 'hebdoW' ? 0 : (t.prog || t.progOpt) ? 1 : 2; return r(a[0]) - r(b[0]) || a[1] - b[1]; }).map(([t, i]) => `<button type="button" data-sd-tpl="${i}" class="${i === ui.cur ? 'on' : ''}"><canvas data-sd-th="${i}" width="320" height="180"></canvas><b>${esc(t.name)}</b><small>${esc(t.vid)} · ${t.v.length} mise${t.v.length > 1 ? 's' : ''} en page</small></button>`).join('')}</div></div>
    <div class="sd-lib"><h3>Ma bibliothèque de miniatures</h3><div id="sdLib"></div></div>`;
   panel(); lib(); draw(); galThumbs();
 }
@@ -556,6 +600,8 @@ function panel(){
     ${ui.wolfTab === 'mine' ? '<label class="sd-upl">＋ Ajouter une image (fichier, ou Ctrl+V ici)<input type="file" id="sdUpload" accept="image/png,image/jpeg,image/webp" hidden></label>' : ''}
     <div class="sd-poses" id="sdPoses">${ui.wolfTab === 'fav' ? ((D && D.fav.length ? '<p class="sd-sub sd-full">★ Mes favoris</p>' + D.fav.map(r => poseBtn(r, String(r).split('/').pop())).join('') + '<p class="sd-sub sd-full">Poses de base</p>' : '') + fav.map(k => poseBtn(k, k.replace('_', ' '), false)).join('')) : ui.wolfTab === 'mine' ? (D && D.custom.length ? D.custom.map(c => poseBtn('media:' + c.f, c.name || 'image')).join('') : '<p class="sd-sub">Aucune image ajoutée.</p>') : '<p class="sd-sub">Chargement…</p>'}</div>
     <label class="sd-f">Taille du loup<select data-sd-k="wz">${[['', 'Normale'], ['.92', '92 %'], ['.86', '86 %'], ['.8', '80 %']].map(([v, l]) => `<option value="${v}" ${String(s.wz) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    <label class="sd-f">Loup vers la droite<select data-sd-k="wx">${[['', 'Non (bord droit de l’image)'], ['40', 'Un peu'], ['80', 'Plus'], ['130', 'Beaucoup'], ['190', 'Au maximum']].map(([v, l]) => `<option value="${v}" ${String(s.wx || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    <label class="sd-f">Filtre de couleur (fond translucide)<select data-sd-k="flt">${[['', 'Aucun'], ['r', 'Rouge léger'], ['R', 'Rouge fort'], ['v', 'Vert léger'], ['V', 'Vert fort']].map(([v, l]) => `<option value="${v}" ${String(s.flt || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     <label class="sd-f">Position du loup (si l’image est plus haute que la miniature)<select data-sd-k="wy">${[['', 'Haut de l’image (tête entière)'], ['.25', 'Un peu plus bas'], ['.5', 'Centré'], ['1', 'Bas de l’image']].map(([v, l]) => `<option value="${v}" ${String(s.wy == null ? '' : s.wy) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
    </div>`;
   if (ui.wolfTab === 'bank') bankGrid();
@@ -742,6 +788,9 @@ const SHORT = (() => {
       scenes: [{ k: 'titre', t: 'Le titre', d: 'Toutes les cartes face visible', dur: 2.2, say: (d, p) => p.titre }].concat([1, 2, 3, 4, 5, 6, 7, 8].map(i => ({ k: 'c' + i, t: 'Carte ' + i, d: 'La carte, puis ton verdict', dur: 2.4, say: (d, p) => { const it = (p.items || [])[i - 1]; return it ? `${it.name} : ${VERD[it.v || 'garde'][1].toLowerCase()}. ${it.why || ''}` : ''; }, ok: (d, p) => (p.items || []).length >= i })))
         .concat([{ k: 'recap', t: 'Le récap', d: 'Toutes les cartes avec leur verdict', dur: 2.4, say: () => 'Le récap.' },
           { k: 'une', t: "Si je n'en gardais qu'une", d: 'Ta préférée avec la couronne', dur: 2.4, say: (d, p) => { const it = (p.items || []).find(z => z.sym === p.une); return it ? `Si je ne devais en garder qu'une : ${it.name}.` : ''; }, ok: (d, p) => (p.items || []).some(z => z.sym === p.une) }, FIN]) },
+    annonce: { name: '📣 Nouvelle vidéo', desc: 'Annonce la sortie : ta miniature + flèche « clique »', manual: true, p: { item: '', titre: 'Nouvelle video', sous: "C'est sorti !", cta: 'Clique sur la video', fin: '' },
+      scenes: [{ k: 'sortie', t: "C'est sorti", d: 'Titre + la miniature arrive', dur: 2.4, say: d => `Nouvelle vidéo : ${d.title}. C'est sorti !` },
+        { k: 'clic', t: 'Clique', d: 'Flèche qui bouge et pointe la miniature', dur: 3, say: () => 'Clique sur la vidéo, juste ici : elle t’attend.' }, FIN] },
     programme: { name: '🗓 Au programme', desc: 'Les entreprises de ton analyse hebdo, une par une', manual: true, p: { prog: '', fin: 'Analyse complète ce samedi' },
       scenes: [{ k: 'titre', t: 'Titre', d: 'Au programme + semaine', dur: 2, say: d => `Cette semaine dans l'analyse hebdo : ${d.watch.length + d.port.length} entreprises.` }]
         .concat([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => ({ k: 'w' + i, t: 'Watchlist ' + i, d: 'Une entreprise de la watchlist de plus', dur: 0.9, say: d => { const z = d.watch[i - 1]; return z ? z.name + (z.tag && PROG.TAGS[z.tag] && PROG.TAGS[z.tag][1] ? ' : ' + PROG.TAGS[z.tag][0].toLowerCase() : '') : ''; }, ok: d => d && d.watch.length >= i })))
@@ -787,7 +836,7 @@ const SHORT = (() => {
 
   /* --- données --- */
   async function loadData(){
-    const f = getCfg().fmt, o = fc(); DATA = null; dataErr = null; const sig = f + JSON.stringify(f === 'hebdo' ? getCfg().per : [o.p.co, o.p.yrs, o.p.nom, o.p.op, o.p.gyrs, o.p.a, o.p.b, (o.p.items || []).map(z => z.sym), o.p.prog]); dataFor = sig;
+    const f = getCfg().fmt, o = fc(); DATA = null; dataErr = null; const sig = f + JSON.stringify(f === 'hebdo' ? getCfg().per : [o.p.co, o.p.yrs, o.p.nom, o.p.op, o.p.gyrs, o.p.a, o.p.b, (o.p.items || []).map(z => z.sym), o.p.prog, o.p.item]); dataFor = sig;
     let d = null;
     try { d = await LOAD[f](o.p); } catch(e){ if (dataFor === sig) dataErr = e.message || String(e); return; }
     if (dataFor !== sig) return;
@@ -912,6 +961,16 @@ const SHORT = (() => {
       await Promise.all(compo.map(it => img(tvLogo(it.logoid))));
       return { compo, cashW: F0.cashW, since: F0.since, best: byP[0], worst: byP[byP.length - 1], n: compo.length };
     },
+    // miniature ENREGISTRÉE dans le Studio, redessinée en grand (repli : l'aperçu gardé)
+    async annonce(p){
+      const its = D ? Object.entries(D.items).sort((a, b) => (b[1].updatedAt || '').localeCompare(a[1].updatedAt || '')) : [];
+      if (!its.length) throw new Error('aucune miniature enregistrée : crée-la dans « Miniatures » puis « 💾 Enregistrer »');
+      const e = its.find(z => z[0] === p.item) || its[0], it = e[1]; if (!p.item) p.item = e[0];
+      const t = T.find(z => z.id === it.tpl), cv = document.createElement('canvas'); cv.width = 1280; cv.height = 720;
+      try { if (!t) throw 0; const st = Object.assign(newState(T.indexOf(t)), JSON.parse(JSON.stringify(it.state || {}))); const ctx = await prep(t, st); render(cv, t, st, ctx); }
+      catch(err){ const im = await img(it.preview); if (!im) throw new Error('miniature illisible'); cv.getContext('2d').drawImage(im, 0, 0, 1280, 720); }
+      return { cv, title: it.title || (t && t.name) || 'Nouvelle vidéo' };
+    },
     async programme(p){
       const L = PROG.list(), prog = (p.prog && PROG.get(p.prog)) || L[0]; if (!prog) throw new Error('aucun programme : crée-le dans l’onglet « 🗓 Sommaire hebdo »');
       if (!p.prog) p.prog = prog.id; await PROG.preload(prog);
@@ -952,7 +1011,12 @@ const SHORT = (() => {
     const r = im.width / im.height, w = r >= 1 ? size : size * r, h = r >= 1 ? size / r : size;
     sx.save(); sx.translate(cx, cy + dy); sx.rotate(rot); sx.scale(b, b); sx.drawImage(im, -w / 2, -h / 2, w, h); sx.restore(); }
   const col = v => v >= 0 ? C.green : C.red;
-  function region(){ if (LAY === 'split') return { x: 0, y: 720, w: 1080, h: 860, k: 0.78 }; if (LAY === 'bulle') return { x: 0, y: 110, w: 1080, h: 1170, k: 1 }; return { x: 0, y: 150, w: 1080, h: 1330, k: 1.05 }; }
+  function region(){ if (LAY === 'bulle' && getCfg().fmt === 'annonce') return { x: 0, y: 415, w: 1080, h: 1145, k: 1 }; if (LAY === 'split') return { x: 0, y: 720, w: 1080, h: 860, k: 0.78 }; if (LAY === 'bulle') return { x: 0, y: 110, w: 1080, h: 1170, k: 1 }; return { x: 0, y: 150, w: 1080, h: 1330, k: 1.05 }; }
+  // bulle de la webcam : à droite par défaut (en bas à gauche, YouTube écrit le titre et la chaîne par-dessus) ;
+  // jamais sous les boutons YouTube (x > 930). Short « Nouvelle vidéo » : ta tête en haut, au centre.
+  function bubble(){ const c = getCfg(); if (c.fmt === 'annonce') return { x: 400, y: 115, d: 280 };
+    const P = { g: { x: 70, y: 1300, d: 300, tx: 400, ty: 1430, al: 'left' }, c: { x: 390, y: 1280, d: 300 }, d: { x: 610, y: 1270, d: 300, tx: 70, ty: 1410, al: 'left' }, h: { x: 610, y: 1110, d: 300, tx: 70, ty: 1250, al: 'left' } };
+    return P[c.bpos] || P.d; }
   function camDraw(X, Yy, w, h, round, rad){
     sx.save(); sx.beginPath(); if (round) sx.arc(X + w / 2, Yy + h / 2, w / 2, 0, 7); else if (rad) R2(X, Yy, w, h, rad); else sx.rect(X, Yy, w, h); sx.clip();
     if (camVideo && camVideo.readyState >= 2){ const vw = camVideo.videoWidth, vh = camVideo.videoHeight, k = Math.max(w / vw, h / vh); sx.translate(X + w / 2, Yy + h / 2); sx.scale(-1, 1); sx.drawImage(camVideo, -vw * k / 2, -vh * k / 2, vw * k, vh * k); }
@@ -1140,6 +1204,26 @@ const SHORT = (() => {
       sx.fillStyle = C.track; R2(cxx - 110, top, 220, H, 22); sx.fill(); sx.fillStyle = color; R2(cxx - 110, base - h, 220, h, 22); sx.fill();
       T2(lab, cxx, base + 54 * k, 38 * k, C.ink2, 'center', BF, 800); sx.save(); sx.globalAlpha *= a; T2(txt0, cxx, base - h - 20, fit2(txt0, 64 * k, 400), C.ink); sx.restore(); }); return base; }
   const DRAW2 = {
+    annonce(k0, p, Rg, pp, d){
+      const k = Rg.k, Yf = q => Rg.y + Rg.h * q, kk = Math.min(1, k * 1.02), tw = 960 * kk, th = tw * 9 / 16, tx = 540 - tw / 2, ty = Yf(0.215), cy = ty + th / 2;
+      const a0 = k0 === 'sortie' ? ease(segp(p, 0, 0.3)) : 1, tt0 = up(pp.titre || 'Nouvelle video'); sx.save(); sx.globalAlpha *= a0; T2(tt0, 540, Yf(0.085), fit2(tt0, 104 * k, 980), C.ink);
+      if (pp.sous) hl2(pp.sous, 540, Yf(0.16), 70 * k); sx.restore();
+      // la miniature : entre avec un rebond, puis « respire » doucement
+      const b = k0 === 'sortie' ? back(segp(p, 0.15, 0.55)) : 1, pulse = k0 === 'clic' ? 1 + Math.sin(tt * 4) * 0.012 : 1;
+      if (b > 0){ sx.save(); sx.translate(540, cy); sx.scale(b * pulse, b * pulse); sx.translate(-540, -cy);
+        sx.save(); sx.shadowColor = 'rgba(0,0,0,.45)'; sx.shadowBlur = 40; sx.shadowOffsetY = 14; sx.fillStyle = '#000'; R2(tx, ty, tw, th, 26); sx.fill(); sx.restore();
+        sx.save(); R2(tx, ty, tw, th, 26); sx.clip(); if (d.cv) sx.drawImage(d.cv, tx, ty, tw, th); sx.restore();
+        sx.lineWidth = 8; sx.strokeStyle = C.gold; R2(tx, ty, tw, th, 26); sx.stroke();
+        // bouton lecture (rond, sans logo de marque)
+        const pa = k0 === 'clic' ? 0.9 : ease(segp(p, 0.5, 0.75)) * 0.9; sx.save(); sx.globalAlpha *= pa; sx.beginPath(); sx.arc(540, cy, 62 * kk, 0, 7); sx.fillStyle = 'rgba(0,0,0,.55)'; sx.fill(); sx.lineWidth = 5; sx.strokeStyle = '#fff'; sx.stroke();
+        sx.beginPath(); sx.moveTo(522, cy - 30 * kk); sx.lineTo(522 + 52 * kk, cy); sx.lineTo(522, cy + 30 * kk); sx.closePath(); sx.fillStyle = '#fff'; sx.fill(); sx.restore(); sx.restore(); }
+      // la flèche : monte et descend en pointant la miniature
+      const fa = k0 === 'clic' ? ease(segp(p, 0, 0.25)) : 0; if (fa <= 0) return;
+      const bob = Math.sin(tt * 6) * 18 * k, tip = ty + th + 22 * k + bob, len = 160 * k, w0 = 54 * k, hw = 130 * k, hl = 92 * k, cx = 540;
+      sx.save(); sx.globalAlpha *= fa; sx.beginPath(); sx.moveTo(cx, tip); sx.lineTo(cx + hw / 2, tip + hl); sx.lineTo(cx + w0 / 2, tip + hl); sx.lineTo(cx + w0 / 2, tip + len); sx.lineTo(cx - w0 / 2, tip + len); sx.lineTo(cx - w0 / 2, tip + hl); sx.lineTo(cx - hw / 2, tip + hl); sx.closePath();
+      sx.shadowColor = 'rgba(0,0,0,.35)'; sx.shadowBlur = 18; sx.fillStyle = C.hlBg; sx.fill(); sx.shadowColor = 'transparent'; sx.lineJoin = 'round'; sx.lineWidth = 6; sx.strokeStyle = C.hlInk; sx.stroke();
+      const ct = up(pp.cta || 'Clique sur la video'); T2(ct, cx, tip + len + 80 * k, fit2(ct, 80 * k, 960), C.ink); sx.restore();
+    },
     programme(k0, p, Rg, pp, d){
       const k = Rg.k, Yf = q => Rg.y + Rg.h * q, pr = d.prog || {};
       if (k0 === 'titre'){ const im = imgNow('data/wolf-tete.png'), b = back(segp(p, 0, 0.35)); if (im){ sx.save(); sx.translate(540, Yf(0.2)); sx.scale(b, b); sx.drawImage(im, -130 * k, -130 * k, 260 * k, 260 * k); sx.restore(); }
@@ -1319,8 +1403,8 @@ const SHORT = (() => {
       if (LAY === 'split') camDraw(0, 0, 1080, 700, false);
       if (cur){ sx.save(); sx.beginPath(); sx.rect(Rg.x, Rg.y, Rg.w, Rg.h); sx.clip(); const p = cur.p, ain = ease(segp(p, 0, 0.1)), aout = (manual || cur.s.k === 'end' || cur.s.k === 'fin') ? 1 : 1 - segp(p, 0.93, 1);
         sx.globalAlpha = Math.min(ain, aout); sx.translate(0, (1 - ain) * 30); try { sceneDraw(scn(cur.s.k), p, Rg); } catch(e){ console.warn('Short', e); } sx.restore(); sx.globalAlpha = 1; }
-      if (LAY === 'bulle'){ camDraw(70, 1300, 300, 300, true); sx.beginPath(); sx.arc(220, 1450, 156, 0, 7); sx.strokeStyle = C.gold; sx.lineWidth = 8; sx.stroke();
-        T2('WOLF', 400, 1430, 64, C.ink, 'left'); T2('ACADEMY INVEST', 400, 1490, 42, C.ink2, 'left'); T2(getCfg().fmt === 'hebdo' ? 'Chaque semaine, le vrai portefeuille' : 'La bourse, simplement', 400, 1534, 28, C.dim, 'left', BF, 700); }
+      if (LAY === 'bulle'){ const B = bubble(); camDraw(B.x, B.y, B.d, B.d, true); sx.beginPath(); sx.arc(B.x + B.d / 2, B.y + B.d / 2, B.d / 2 + 6, 0, 7); sx.strokeStyle = C.gold; sx.lineWidth = 8; sx.stroke();
+        if (B.tx != null){ T2('WOLF', B.tx, B.ty, 64, C.ink, B.al); T2('ACADEMY INVEST', B.tx, B.ty + 60, 42, C.ink2, B.al); T2(getCfg().fmt === 'hebdo' ? 'Chaque semaine, le vrai portefeuille' : 'La bourse, simplement', B.tx, B.ty + 104, 28, C.dim, B.al, BF, 700); } }
       else { const im = imgNow('data/wolf-tete.png'), y = LAY === 'split' ? 1640 : 1560; if (im) sx.drawImage(im, 350, y - 38, 52, 52); T2('Wolf Academy Invest', 565, y - 2, 32, C.sig, 'center', BF, 700); } }
     const a = active(); let acc = 0; const gp = 8, W = (1080 - 120 - gp * (a.length - 1)) / Math.max(1, a.length);
     a.forEach((s, i) => { const X = 60 + i * (W + gp); sx.fillStyle = C.track; R2(X, 40, W, 10, 5); sx.fill(); const fq = clamp((tt - acc) / (+s.dur || 3)); if (fq > 0){ sx.fillStyle = C.gold; R2(X, 40, Math.max(10, W * fq), 10, 5); sx.fill(); } acc += +s.dur || 3; });
@@ -1380,6 +1464,10 @@ const SHORT = (() => {
     if (f === 'investi') return coPick('Entreprise', 'co') + txtIn('nomA', 'Nom affiché (raccourci, vide = nom TradingView)', '') + txtIn('montant', 'Montant de départ (€)', '1000') + yrsSel('yrs', 'Il y a', [1, 2, 3, 5, 10, 15, 20]) + txtIn('fin', 'Encadré de fin', 'Pour la suite');
     if (f === 'programme') return `<label class="sd-f">Programme<select data-sd-p="prog">${PROG.list().map(q => `<option value="${esc(q.id)}" ${p.prog === q.id ? 'selected' : ''}>${esc((q.sem || '') + ' · ' + ((q.watch || []).length + (q.port || []).length) + ' entreprises')}</option>`).join('') || '<option value="">Aucun programme</option>'}</select></label>
       <p class="sd-sub">Le programme se compose dans l’onglet « 🗓 Sommaire hebdo » (watchlist + portefeuille, étiquettes). Une entreprise apparaît à chaque →.</p>` + txtIn('fin', 'Encadré de fin', 'Analyse complète ce samedi');
+    if (f === 'annonce'){ const its = D ? Object.entries(D.items).sort((a, b) => (b[1].updatedAt || '').localeCompare(a[1].updatedAt || '')) : [];
+      return `<label class="sd-f">Miniature de la vidéo (enregistrées dans « Miniatures »)<select data-sd-p="item">${its.map(([id, it]) => `<option value="${esc(id)}" ${p.item === id ? 'selected' : ''}>${esc((it.title || 'Miniature') + ' · ' + new Date(it.updatedAt || Date.now()).toLocaleDateString('fr-FR'))}</option>`).join('') || '<option value="">Aucune miniature enregistrée</option>'}</select></label>
+      <p class="sd-sub">Ta tête est en haut (bulle), la miniature au milieu, une flèche animée la pointe. Avec « Écran partagé (toi en haut) », ta webcam prend tout le haut.</p>`
+        + txtIn('titre', 'Titre', 'Nouvelle video') + txtIn('sous', 'Encadré jaune', "C'est sorti !") + txtIn('cta', 'Texte de la flèche', 'Clique sur la video') + txtIn('fin', 'Encadré de fin', 'Pour la suite'); }
     if (f === 'portef') return `<p class="sd-sub">Wolf Portfolio uniquement (jamais le PEA ni le CTO) : performance depuis le lancement, composition, plus grosses lignes, meilleure et pire ligne. Aucun montant en euros.</p>` + txtIn('fin', 'Encadré de fin', 'Pour la suite');
     if (f === 'garde'){ const its = p.items || [];
       return txtIn('titre', 'Titre', 'Je garde ou je jette ?') + coPick('Ajouter une entreprise (8 au plus)', 'add')
@@ -1403,6 +1491,7 @@ const SHORT = (() => {
           <label class="sd-tog"><input type="checkbox" id="sdManual" ${o.manual ? 'checked' : ''}> Avancer à la main (→ / clic), sinon les étapes défilent seules</label></div>
         <div class="sd-card"><h3>Réglages</h3>
           <label class="sd-f">Webcam<select data-sd-sc="layout">${[['bulle', 'Bulle en bas'], ['split', 'Écran partagé (toi en haut)'], ['none', 'Sans webcam']].map(([v, l]) => `<option value="${v}" ${c.layout === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+          ${c.layout === 'bulle' && c.fmt !== 'annonce' ? `<label class="sd-f">Place de la bulle<select data-sd-sc="bpos">${[['d', 'À droite (hors du texte YouTube)'], ['h', 'À droite, plus haut'], ['c', 'Au centre'], ['g', 'À gauche (ancienne place)']].map(([v, l]) => `<option value="${v}" ${(c.bpos || 'd') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>` : ''}
           <label class="sd-f">Thème<select data-sd-sc="theme">${[['beige', 'Beige'], ['nuit', 'Nuit'], ['or', 'Or']].map(([v, l]) => `<option value="${v}" ${c.theme === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
           <div class="sd-devs"><button type="button" data-sd-s="cam">${cam ? '📷 Webcam et micro activés' : '📷 Activer webcam et micro'}</button><select id="sdCamSel" aria-label="Caméra"></select><select id="sdMicSel" aria-label="Micro"></select></div>
           <label class="sd-tog"><input type="checkbox" id="sdSafe"> Montrer les zones cachées par YouTube</label>
@@ -1504,6 +1593,7 @@ const SHORT = (() => {
     if (f === 'programme'){ const pr = d.prog || {}, nm = z => z.name + (z.tag && PROG.TAGS[z.tag] && PROG.TAGS[z.tag][1] ? ' (' + PROG.TAGS[z.tag][0].toLowerCase() + ')' : '');
       return pack(`Au programme de l'analyse hebdo · ${pr.sem || ''}`, `Dans l'analyse hebdo de cette semaine :\n\n👀 Ma watchlist\n${d.watch.map(z => '• ' + nm(z)).join('\n') || '—'}\n\n🐺 Mon portefeuille\n${d.port.map(z => '• ' + nm(z)).join('\n') || '—'}\n\nL'analyse complète arrive samedi.`,
         `🗓 Au programme de l'analyse hebdo (${pr.sem || ''}) : ${d.watch.concat(d.port).map(z => z.name).join(', ')}.\n\nRendez-vous samedi sur YouTube !`, d.watch.concat(d.port).slice(0, 3).map(z => tag(z.name)).join(' ') + ' #analysehebdo'); }
+    if (f === 'annonce') return pack(`Nouvelle vidéo : ${d.title}`, `La nouvelle vidéo est en ligne : ${d.title}.\n\n👉 Clique sur la vidéo liée à ce short pour la regarder en entier.`, `🎬 Nouvelle vidéo en ligne : ${d.title} !\n\nLe lien est en commentaire 👇`, '#nouvellevideo #youtube');
     if (f === 'garde'){ const its = pp.items || [], une = its.find(z => z.sym === pp.une); return pack(pp.titre || 'Je garde ou je jette ?', its.map(it => `${it.name} : ${VERD[it.v || 'garde'][1]}${it.why ? ' (' + it.why + ')' : ''}`).join('\n') + (une ? `\n\nSi je ne devais en garder qu'une : ${une.name}.` : ''),
       `🗑 ${pp.titre || 'Je garde ou je jette ?'}\n\n${its.map(it => (it.v === 'poubelle' ? '❌ ' : it.v === 'surveille' ? '👀 ' : '✅ ') + it.name).join('\n')}`, its.slice(0, 3).map(it => tag(it.name)).join(' ')); }
     return '';
@@ -1512,7 +1602,7 @@ const SHORT = (() => {
     try { await navigator.clipboard.writeText(ta.value); } catch(e){ ta.select(); document.execCommand('copy'); }
     if (msg){ msg.textContent = (k === 'yt' ? 'Texte YouTube' : 'Texte Facebook') + ' copié ✔'; setTimeout(() => { if (msg.isConnected) msg.textContent = ''; }, 2500); } }
 
-  const DATA_KEYS = ['co', 'yrs', 'nom', 'op', 'gyrs', 'prog'];   // « une », montants, verdicts : redessinés sans recharger
+  const DATA_KEYS = ['co', 'yrs', 'nom', 'op', 'gyrs', 'prog', 'item'];   // « une », montants, verdicts : redessinés sans recharger
   return {
     view,
     // Ouvre un modèle de short avec des réglages (ex. depuis l'onglet Valorisation : { nom } pour le short Valorisation).

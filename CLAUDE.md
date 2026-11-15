@@ -985,6 +985,14 @@ https://claude.ai/artifact/B4bfYADeVQL6G83Q4kJ6WX (17 modèles, 45 mises en page
   portefeuille en 30 s (Wolf seul, aucun montant en €), Garde ou poubelle (`p.items` ≤ 8 : verdict garde / poubelle / surveille /
   renforce, raison, nom modifiable ; tampon, la carte tombe dans la poubelle, récap, « Si je ne devais en garder qu'une » + couronne).
   `pp.nomA` = nom affiché raccourci. Recherche d'entreprise par champ (`coPick(label, clé)`, clé `add` = ajouter à la liste).
+- **2026-11-15** : bulle webcam des shorts À DROITE par défaut (`bubble()`, réglage « Place de la bulle » `cfg.bpos` : droite / droite plus haut /
+  centre / gauche) car en bas à gauche YouTube écrit titre et chaîne par-dessus. Short **« 📣 Nouvelle vidéo »** (`annonce`) : ta tête en bulle EN
+  HAUT, une miniature ENREGISTRÉE du Studio (choix `p.item`, redessinée en grand via `prep`/`render`, repli sur l'aperçu), flèche qui bouge sous la
+  miniature + « Clique sur la vidéo ». Miniature **« Entreprise à la une »** (`focus`, 3 versions : logo géant / grand rond `discLogo` / nom géant).
+  **« Mes mouvements de la semaine » refait** : 2 logos « Je vends → J'achète » (`sell`/`buy`, vides = étiquettes du programme, `progOpt`),
+  flèche pleine `blockArrow`. Croix « barré » plus fine (0,055). Erreur à éviter : versions D / E logo au centre, flèche de C refaite.
+  Toutes les miniatures : « Loup vers la droite » (`st.wx`, px) et « Filtre de couleur » (`st.flt` r/R/v/V, mode `screen` : le fond se colore,
+  le loup blanc reste clair). Les modèles ne s'adressent plus par indice (`TP(id)`).
 - **Sommaire de l'analyse hebdo (2026-11-13, onglet « 🗓 Sommaire hebdo » du Studio, module `PROG`)** : maquette validée
   https://claude.ai/artifact/PFPaha6LoET5dQJABiD8j9 (artboard Sommaire-Hebdo). Image 1920×1080 SANS loup en fond : titre « Au programme »,
   semaine, deux rectangles arrondis « Ma watchlist » / « Mon portefeuille », 10 entreprises au plus chacun, étiquette facultative
