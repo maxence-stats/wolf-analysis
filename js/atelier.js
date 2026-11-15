@@ -1485,10 +1485,36 @@ function regSeriesFoot(c, big){
   return items.slice(0, big ? 99 : 1).map(r => pastille(r.item, r.kind)).join('') + (!big && items.length > 1 ? '<span class="at-faint">+' + (items.length - 1) + ' séries</span>' : '') + rup.filter(x => { if (seen.has(x)) return false; seen.add(x); return true; }).slice(0, big ? 20 : 1).join('');
 }
 // Cours retenu : celui du relevé TradingView de la version (figé à sa date).
+// Cours EN DIRECT (2026-11-15) : chargé par la vue « Écrans » pour montrer le cours du jour du tournage. Gardé en mémoire
+// seulement (jamais écrit dans le fichier) ; tant qu'il n'est pas là, c'est le relevé de la version qui sert.
 function coursNow(){
   const v = ver(), t = v && v.tvData, ttm = t && t.self && t.self.ttm, p = t && t.prices;
+  const lv = liveOf(v);
+  if (lv && isFinite(lv.last)) return { v: lv.last, at: lv.at, ccy: lv.ccy || (p && p.ccy) || 'EUR', live: true };
   const val = ttm && isFinite(ttm.prixActuel) ? ttm.prixActuel : p && p.closes.length ? p.closes[p.closes.length - 1] : null;
   return { v: val, at: t ? t.at : null, ccy: (p && p.ccy) || (t && t.self && t.self.devise) || 'EUR' };
+}
+const scrLive = {};   // symbole → { at, dates, closes, last, ccy, loading, err }
+function liveSym(v){ v = v || ver(); const d = doc(); return (v && v.tvData && v.tvData.sym) || (d && d.tv) || ''; }
+function liveOf(v){ const s = liveSym(v), l = s && scrLive[s]; return l && l.closes ? l : null; }
+async function loadLive(force){
+  const sym = liveSym(); if (!sym || RO) return;
+  const cur = scrLive[sym];
+  if (cur && (cur.loading || (!force && cur.t && Date.now() - cur.t < 5 * 60e3))) return;
+  scrLive[sym] = Object.assign({}, cur || {}, { loading: true });
+  try {
+    const from = new Date(Date.now() - 12 * 365.25 * 864e5).toISOString().slice(0, 10);
+    const r = await fetch('/api/tv/history?symbols=' + encodeURIComponent(sym) + '&from=' + from + '&adj=1&fresh=1', { cache: 'no-store' }); const j = await r.json();
+    const h = j.ok && j.data && j.data[sym]; if (!h || !h.bars || h.bars.length < 5) throw new Error('cours indisponible');
+    const iso = ts => new Date(ts * 1000).toISOString().slice(0, 10);
+    const w = typeof resampleWeekly === 'function' ? resampleWeekly(h.bars.map(b => iso(b[0])), h.bars.map(b => b[1])) : { dates: h.bars.map(b => iso(b[0])), closes: h.bars.map(b => b[1]) };
+    let last = h.bars[h.bars.length - 1][1];
+    if (typeof tvFetchSnapshot === 'function'){ try { const s = await tvFetchSnapshot(sym); if (s && s.close > 0) last = s.close; } catch(e){} }
+    w.closes[w.closes.length - 1] = last;
+    scrLive[sym] = { t: Date.now(), at: new Date().toISOString(), dates: w.dates, closes: w.closes, last, ccy: h.ccy || '' };
+  } catch(e){ scrLive[sym] = Object.assign({}, cur || {}, { loading: false, err: e.message || 'erreur', t: Date.now() }); return; }
+  // réaffiche l'écran en cours si la vue « Écrans » est ouverte
+  if (ui.view === 'ecrans' && $('awEcrStage') && ui.scr) scrGo(ui.scr.i);
 }
 // Valeur courante d'une hypothèse / donnée pour la carte (curseur compris).
 function workVal(c, id){
@@ -1676,15 +1702,31 @@ function pictoFor(txt){
 }
 const nb = s => String(s).replace(/ (?=(%|€|\$|Md|M€|M\$|x\b))/g, ' ');
 // Toutes les cartes « écran » de la version, dans l'ordre des sections.
-function ecranList(v){ v = v || ver(); return v ? orderedSections(v).flatMap(s => s.cards.map(id => v.cards[id]).filter(c => c && c.type === 'ecran')) : []; }
+/* Intercalaires (2026-11-15, demande de l'utilisateur : « on ne comprend pas qu'on passe d'un métier à l'autre ») :
+   un écran à fond uni avec le titre en grand est inséré AUTOMATIQUEMENT avant le premier écran de chaque chapitre.
+   Ce ne sont pas des cartes (rien n'est écrit dans le fichier) ; « Intercalaires » dans la barre les retire (v.scrInter = false). */
+function ecranList(v){
+  v = v || ver(); if (!v) return [];
+  const cards = orderedSections(v).flatMap(s => s.cards.map(id => v.cards[id]).filter(c => c && c.type === 'ecran'));
+  if (v.scrInter === false) return cards;
+  const out = []; let last = null;
+  cards.forEach(c => { if (c.chap && c.chap !== last) out.push({ id: 'inter_' + c.chap, type: 'ecran', inter: true, chap: c.chap }); last = c.chap; out.push(c); });
+  return out;
+}
+const poleTitle = t => String(t || '').replace(/^p[oô]le\s+/i, '');
 function scrCtx(c){
   const v = ver(), P = PQ(), reg = v && v.reg; if (!P || !reg) return null;
+  if (c.inter){
+    const chaps = (reg.recit && reg.recit.chapitres) || [], ci = chaps.findIndex(k => k.id === c.chap), ch = chaps[ci]; if (!ch) return null;
+    return { reg, ch, ci, inter: true, m: { phrase: 'Chapitre ' + (ci + 1) + ' : ' + poleTitle(ch.titre), a_dire: 'Transition : on passe au chapitre « ' + poleTitle(ch.titre) + ' ».' } };
+  }
   const mm = P.messageOf(reg, c.chap, c.msg); if (!mm) return null;
   const chaps = (reg.recit && reg.recit.chapitres) || [], ci = chaps.indexOf(mm.ch);
   return { reg, ch: mm.ch, m: mm.m, ci, model: P.screenModel(reg, mm.m) };
 }
 function scrFoot(x){
-  const src = x.model.sources.map(s => esc(s.titre + (s.pages.length ? ', p. ' + s.pages.join(', ') : ''))).join(' · ');
+  // légende discrète sur UNE ligne (titres des sources seulement ; le détail des pages reste dans « 📊 Données »)
+  const src = [...new Set(x.model.sources.map(s => s.titre))].map(esc).join(' · ');
   const img = x.c && (x.c.imgs || [])[0];
   return '<div class="sc-foot">' + (x.model.hyp ? '<span class="sc-pill">Hypothèse d\'analyste</span>' : '') + '<span>' + (src || '') + (img && img.leg ? (src ? ' · ' : '') + 'Image : ' + esc(img.leg) : '') + '</span></div>';
 }
@@ -1704,6 +1746,10 @@ function scrKpis(x, items, cls){
     return '<div><b class="sc-num' + (t.length > 11 ? ' longer' : t.length > 8 ? ' long' : '') + '">' + esc(t) + '</b><span>' + esc(lab) + (per && !lab.includes(per) ? ' · ' + esc(per) : '') + '</span></div>'; }).join('') + '</div>';
 }
 const LV_L = { faible: 'faible', moyenne: 'moyenne', forte: 'forte' };
+const LV_N = { faible: 1, moyenne: 2, forte: 3 };
+// jauge à 3 points (faible / moyenne / forte), couleur selon le niveau
+const dots = lv => '<span class="sx-dots l' + (LV_N[lv] || 0) + '">' + [1, 2, 3].map(n => '<i' + (n <= (LV_N[lv] || 0) ? ' class="on"' : '') + '></i>').join('') + '</span>';
+const cap = s => { s = String(s || '').trim(); return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; };
 function scrBlocks(x){
   const m = x.m, b = (x.reg && x.reg.blocs) || {}, P = PQ();
   if (m.acquisition){
@@ -1714,16 +1760,23 @@ function scrBlocks(x){
         '<div class="sc-acq-body"><p class="sc-acq-log">' + esc(a.logique || '') + '</p>' + scrKpis(x, x.model.items, 'sm') + '</div></div>';
     }
   }
+  // risques : une ligne par risque (titre + jauges à gauche, mécanisme en grand à droite), sans cadre
   if ((m.risques || []).length){
     const rs = m.risques.map(id => (b.risques || []).find(r => r.id === id)).filter(Boolean);
-    if (rs.length) return '<div class="sc-cards n' + rs.length + '">' + rs.map(r => '<div class="sc-card"><b>' + esc(r.titre || '') + '</b><div class="sc-badges"><span class="sc-lv l-' + esc(r.probabilite || '') + '">probabilité ' + esc(LV_L[r.probabilite] || '?') + '</span><span class="sc-lv l-' + esc(r.gravite || '') + '">gravité ' + esc(LV_L[r.gravite] || '?') + '</span></div>' +
-      '<p><em>Comment</em>' + esc(r.mecanisme || '') + '</p><p><em>Effet</em>' + esc(r.impact || '') + '</p>' + ((r.indicateurs || []).length ? '<p><em>À surveiller</em>' + esc(r.indicateurs.join(' · ')) + '</p>' : '') + '</div>').join('') + '</div>' + scrKpis(x, x.model.items, 'sm');
+    if (rs.length) return '<div class="sx-risks n' + rs.length + '">' + rs.map(r => '<div class="sx-risk"><div class="sx-rl"><h3>' + esc(r.titre || '') + '</h3>' +
+      '<div class="sx-meter"><span>Probabilité</span>' + dots(r.probabilite) + '</div><div class="sx-meter"><span>Gravité</span>' + dots(r.gravite) + '</div></div>' +
+      '<div class="sx-rr"><p class="sx-main">' + esc(cap(r.mecanisme)) + '</p><p class="sx-eff">→ ' + esc(cap(r.impact)) + '</p>' + ((r.indicateurs || []).length ? '<p class="sx-watch">À surveiller : ' + esc(r.indicateurs.join(', ')) + '</p>' : '') + '</div></div>').join('') + '</div>';
   }
+  // marchés : un seul = trois colonnes ; plusieurs = un tableau (une ligne par marché)
   if ((m.marches || []).length){
     const ms = m.marches.map(id => (b.marches || []).find(k => k.id === id)).filter(Boolean);
-    const cyc = { faible: 'cycle faible', moyenne: 'cycle moyen', forte: 'très cyclique' };
-    if (ms.length) return '<div class="sc-cards n' + ms.length + '">' + ms.map(k => '<div class="sc-card"><b>' + esc(k.nom || '') + '</b><div class="sc-badges"><span class="sc-lv l-' + esc(k.cyclicite === 'forte' ? 'forte' : k.cyclicite === 'faible' ? 'faible' : 'moyenne') + '">' + esc(cyc[k.cyclicite] || 'cycle ?') + '</span>' + (k.pole ? '<span class="sc-lv">' + esc(P.poleName(x.reg, k.pole)) + '</span>' : '') + '</div>' +
-      '<p><em>Moteurs</em>' + esc((k.moteurs || []).join(' · ')) + '</p><p><em>Capacité</em>' + esc(k.capacite || '') + '</p><p><em>Ce qui peut ralentir</em>' + esc(k.risque_ralentissement || '') + '</p></div>').join('') + '</div>';
+    const cyc = { faible: 'Peu cyclique', moyenne: 'Cycle moyen', forte: 'Très cyclique' };
+    if (ms.length === 1){ const k = ms[0];
+      return '<div class="sx-mk1"><div class="sx-mk1-h"><b>' + esc(k.nom || '') + '</b><div class="sx-meter"><span>' + esc(cyc[k.cyclicite] || 'Cycle') + '</span>' + dots(k.cyclicite) + '</div></div>' +
+        '<div class="sx-cols3"><div><em>Ce qui pousse</em><p>' + esc((k.moteurs || []).join(', ')) + '</p></div><div><em>Ce qui limite</em><p>' + esc(cap(k.capacite)) + '</p></div><div><em>Ce qui peut freiner</em><p>' + esc(cap(k.risque_ralentissement)) + '</p></div></div></div>';
+    }
+    if (ms.length) return '<div class="sx-mtab"><div class="sx-mtr hd"><span>Marché</span><span>Cycle</span><span>Ce qui pousse</span><span>Ce qui peut freiner</span></div>' +
+      ms.map(k => '<div class="sx-mtr"><b>' + esc(k.nom || '') + (k.pole ? '<small>' + esc(P.poleName(x.reg, k.pole)) + '</small>' : '') + '</b><span>' + dots(k.cyclicite) + '</span><span>' + esc((k.moteurs || []).join(', ')) + '</span><span>' + esc(cap(k.risque_ralentissement)) + '</span></div>').join('') + '</div>';
   }
   if (m.score && b.score && (b.score.criteres || []).length){
     const cs = b.score.criteres, tot = cs.reduce((t, c) => t + (+c.note || 0), 0);
@@ -1749,6 +1802,65 @@ function scrBlocks(x){
     }
   }
   return '';
+}
+/* Écran « échelle de prix » = COURS DE L'ACTION + les 3 prix maximum posés dessus (2026-11-15, demande de l'utilisateur).
+   Module retenu : B (on garde la croissance réaliste, on fait varier le MULTIPLE : bas / central / haut), sauf si le message
+   dit valo_module:"A". Le texte sous le graphique est CALCULÉ (le texte du paquet citait le module A : 64 / 80 €). */
+function scrValoPts(x){
+  const vc = Object.values(ver().cards).find(k => k.type === 'valorisation'), r = vc ? valoRes(vc) : null;
+  if (!r || r.incomplete) return null;
+  const mod = String(x.m.valo_module || 'B').toUpperCase() === 'A' ? 'A' : 'B';
+  const pc = g => (g >= 0 ? '+' : '') + fr(g, 0) + ' %/an';
+  const pts = (mod === 'B' ? [['Multiple haut', r.B.haut], ['Multiple central', r.B.central], ['Multiple bas', r.B.bas]] : [['Optimiste', r.A.optimiste], ['Réaliste', r.A.realiste], ['Pessimiste', r.A.pessimiste]])
+    .filter(p => p[1] && isFinite(p[1].Pmax)).map(([l, s], i) => ({ l, s, tag: mod === 'B' ? fr(s.M, 0) + 'x' : pc(s.g), key: ['haut', 'central', 'bas'][i] }));
+  return pts.length ? { r, mod, pts } : null;
+}
+function valoSentence(x){
+  const o = scrValoPts(x); if (!o) return '';
+  const { r, mod, pts } = o, s0 = pts[0].s, eur = v => nb(fr(v, 0) + ' €'), cr = coursNow();
+  const lst = pts.slice().reverse().map(p => eur(p.s.Pmax) + (mod === 'B' ? ' à ' + p.tag : ' (' + p.tag + ')')).join(', ');
+  const mid = pts.find(p => p.key === 'central');
+  let t = 'Prix maximum à payer aujourd\'hui pour gagner ' + r.r + ' % par an pendant ' + r.n + ' ans (hors dividendes), avec ' + nb(fr(r.F0, 2) + ' €') + ' de FCF par action ' +
+    (mod === 'B' ? 'qui croît de ' + nb((s0.g >= 0 ? '+' : '') + fr(s0.g, 0) + ' %') + ' par an' : 'et un multiple de ' + nb(fr(s0.M, 0) + 'x')) + ' : ' + lst + '.';
+  if (mid && cr.v != null){ const e = (cr.v / mid.s.Pmax - 1) * 100; t += ' Au cours de ' + nb(fr(cr.v, 2) + ' ' + curSym(cr.ccy)) + ', l\'action est ' + nb(fr(Math.abs(e), 0) + ' %') + (e >= 0 ? ' au-dessus' : ' en dessous') + ' du prix central.'; }
+  return t;
+}
+function scrValoChart(x){
+  const o = scrValoPts(x); if (!o) return '';
+  loadLive();
+  const v = ver(), lv = liveOf(v), p = lv || (v.tvData && v.tvData.prices), cr = coursNow();
+  if (!p || !p.closes || p.closes.length < 10 || cr.v == null) return '';
+  const yrs = +x.m.periode_ans > 0 ? +x.m.periode_ans : 3, lim = new Date(Date.now() - yrs * 365.25 * 864e5).toISOString().slice(0, 10);
+  let k0 = p.dates.findIndex(d => d >= lim); if (k0 < 0) k0 = 0;
+  const D = p.dates.slice(k0), C = p.closes.slice(k0); if (!lv) { D.push(String(cr.at || '').slice(0, 10) || D[D.length - 1]); C.push(cr.v); }
+  const W = 1432, H = 470, L = 66, R = 1130, T = 18, B = 420;
+  const lv3 = o.pts.map(q => q.s.Pmax), lo = Math.min(...C, ...lv3) * 0.9, hi = Math.max(...C, ...lv3) * 1.06;
+  const Y = val => B - (val - lo) / (hi - lo) * (B - T), X = i => L + i / Math.max(1, C.length - 1) * (R - L);
+  const col = { haut: 'var(--s-neg)', central: 'var(--s-mid)', bas: 'var(--s-pos)' };
+  const yH = Y(o.pts[0].s.Pmax), yC = Y((o.pts[1] || o.pts[0]).s.Pmax);
+  let svg = '<rect x="' + L + '" y="' + T + '" width="' + (R - L) + '" height="' + Math.max(0, yH - T).toFixed(1) + '" fill="var(--s-neg)" opacity=".10"/>' +
+    '<rect x="' + L + '" y="' + yH.toFixed(1) + '" width="' + (R - L) + '" height="' + Math.max(0, yC - yH).toFixed(1) + '" fill="var(--s-mid)" opacity=".16"/>' +
+    '<rect x="' + L + '" y="' + yC.toFixed(1) + '" width="' + (R - L) + '" height="' + Math.max(0, B - yC).toFixed(1) + '" fill="var(--s-pos)" opacity=".16"/>' +
+    '<text x="' + (R - 14) + '" y="' + (B - 14) + '" text-anchor="end" class="vc-zone" fill="var(--s-pos)">Zone d\'achat</text>';
+  // graduations : 4 valeurs rondes
+  const stp = (() => { const raw = (hi - lo) / 4, p10 = Math.pow(10, Math.floor(Math.log10(raw))); return [1, 2, 2.5, 5, 10].map(m => m * p10).find(m => m >= raw) || raw; })();
+  for (let g = Math.ceil(lo / stp) * stp; g <= hi; g += stp) svg += '<line x1="' + L + '" x2="' + R + '" y1="' + Y(g).toFixed(1) + '" y2="' + Y(g).toFixed(1) + '" stroke="var(--s-line)"/><text x="' + (L - 10) + '" y="' + (Y(g) + 7).toFixed(1) + '" text-anchor="end" class="vc-tick">' + esc(fr(g, 0)) + '</text>';
+  // années sous l'axe
+  D.forEach((d, i) => { if (i > 0 && d.slice(0, 4) !== D[i - 1].slice(0, 4)) svg += '<line x1="' + X(i).toFixed(1) + '" x2="' + X(i).toFixed(1) + '" y1="' + B + '" y2="' + (B + 8) + '" stroke="var(--s-faint)"/><text x="' + X(i).toFixed(1) + '" y="' + (B + 36) + '" text-anchor="middle" class="vc-tick">' + d.slice(0, 4) + '</text>'; });
+  // lignes des 3 prix
+  o.pts.forEach(q => { const y = Y(q.s.Pmax).toFixed(1); svg += '<line x1="' + L + '" x2="' + R + '" y1="' + y + '" y2="' + y + '" stroke="' + col[q.key] + '" stroke-width="3" stroke-dasharray="12 8"/>'; });
+  // cours
+  svg += '<polyline fill="none" stroke="var(--s-text)" stroke-width="3.5" stroke-linejoin="round" points="' + C.map((c, i) => X(i).toFixed(1) + ',' + Y(c).toFixed(1)).join(' ') + '"/>';
+  const cy = Y(cr.v), above = cr.v >= o.pts[0].s.Pmax;
+  svg += '<circle cx="' + R + '" cy="' + cy.toFixed(1) + '" r="10" fill="' + (above ? 'var(--s-neg)' : cr.v <= (o.pts[1] || o.pts[0]).s.Pmax ? 'var(--s-pos)' : 'var(--s-mid)') + '" stroke="var(--s-bg)" stroke-width="4"/>';
+  // étiquettes à droite, écartées pour ne jamais se chevaucher
+  const labs = o.pts.map(q => ({ y: Y(q.s.Pmax), html: '<tspan class="vc-l" style="fill:' + col[q.key] + '">' + esc(q.l.replace('Multiple ', '') + ' · ' + q.tag) + '</tspan><tspan class="vc-v" x="' + (R + 22) + '" dy="34">' + esc(nb(fr(q.s.Pmax, 0) + ' €')) + '</tspan>' }))
+    .concat([{ y: cy, cours: true, html: '<tspan class="vc-l">' + esc('Cours du ' + (cr.at ? frDate(cr.at) : '?')) + '</tspan><tspan class="vc-v cours" x="' + (R + 22) + '" dy="34">' + esc(nb(fr(cr.v, 2) + ' ' + curSym(cr.ccy))) + '</tspan>' }]).sort((a, b) => a.y - b.y);
+  const GAP = 70; labs.forEach((l, i) => { l.ty = Math.max(l.y - 26, i ? labs[i - 1].ty + GAP : T - 6); });
+  const over = labs.length ? labs[labs.length - 1].ty - (B - 40) : 0; if (over > 0) labs.forEach(l => { l.ty -= over; });
+  labs.forEach(l => { svg += '<text x="' + (R + 22) + '" y="' + l.ty.toFixed(1) + '"' + (l.cours ? ' class="vc-cours" fill="' + (above ? 'var(--s-neg)' : 'var(--s-text)') + '"' : '') + '>' + l.html + '</text>'; });
+  x.explOverride = [valoSentence(x)];
+  return '<svg class="sc-vchart" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" aria-label="Cours de l\'action et prix maximum">' + svg + '</svg>';
 }
 function scrVisual(x){
   const md = x.model, m = x.m, gold = '#D9A441';
@@ -1777,6 +1889,7 @@ function scrVisual(x){
       return '<div class="sc-cmp">' + ps.map((p, i) => '<span class="sc-cl">' + esc((m.libelles || {})[(md.items[i] || {}).id] || p.label) + '</span><div class="sc-track">' + (p.v == null ? '<div class="sc-empty"></div>' : '<div style="width:' + Math.round(p.w * 100) + '%;background:' + (i ? SERIES_COLORS[i % SERIES_COLORS.length] : gold) + '"></div>') + '</div><b>' + esc(p.v == null ? 'non fourni' : nb(p.txt)) + '</b>').join('') + '</div>';
     }
     case 'echelle_prix': {
+      const ch = scrValoChart(x); if (ch) return ch;
       const vc = Object.values(ver().cards).find(k => k.type === 'valorisation');
       const r = vc ? valoRes(vc) : null, cr = coursNow();
       const pts = r ? [['Pessimiste', r.A.pessimiste], ['Réaliste', r.A.realiste], ['Optimiste', r.A.optimiste]].filter(p => p[1]) : [];
@@ -1809,7 +1922,9 @@ function scrVisual(x){
 function scrHtml(c){
   const x = scrCtx(c); if (!x) return '<div class="aw-scr"><div class="sc-in"><p class="sc-nd">Écran introuvable dans le récit importé.</p></div></div>';
   x.c = c;
-  const m = x.m, kick = 'CHAPITRE ' + (x.ci + 1) + ' · ' + String(x.ch.titre || '').toUpperCase(), img = (c.imgs || [])[0];
+  const th0 = (ver() && ver().scrTheme) === 'gris' ? 'gris' : 'beige';
+  if (x.inter) return interHtml(x, th0);
+  const m = x.m, kick ='CHAPITRE ' + (x.ci + 1) + ' · ' + String(x.ch.titre || '').toUpperCase(), img = (c.imgs || [])[0];
   const expl = (m.explication || []).filter(Boolean);
   const head = '<div class="sc-top"><span class="sc-kick">' + esc(kick) + '</span><span style="flex:1"></span><img src="data/wolf-tete.png" alt="" class="sc-logo"></div>';
   const media = img ? '<img src="' + esc(mediaUrl(img.f)) + '" alt="' + esc(m.image_voulue || '') + '">' : '<div class="sc-picto">' + pictoFor((m.image_voulue || '') + ' ' + m.phrase + ' ' + x.ch.titre) + (isRo() ? '' : '<span>Image à trouver : ' + esc(m.image_voulue || 'à définir') + '</span>') + '</div>';
@@ -1819,21 +1934,36 @@ function scrHtml(c){
       (expl.length ? '<ol class="sc-pts">' + expl.map((t, i) => '<li><b>' + (i + 1) + '</b><span>' + esc(nb(t)) + '</span></li>').join('') + '</ol>' : '') + scrKpis(x, x.model.items, 'sm') + scrFoot(x) + '</div><div class="sc-media">' + media + '</div></div>';
   } else {
     const vis = scrVisual(x), side = !vis;
+    if (x.explOverride){ expl.length = 0; x.explOverride.filter(Boolean).forEach(t => expl.push(t)); }
     // l'explication sert d'étapes au schéma seulement quand le message n'a pas d'« etapes » propres
     const hasBlock = !!(m.acquisition || (m.risques || []).length || (m.marches || []).length || m.score || m.valo_modules || m.valo_rendement);
-    const showExpl = expl.length && !(m.visuel === 'schema' && !(m.etapes || []).length && !hasBlock);
+    const showExpl = expl.length &&!(m.visuel === 'schema' && !(m.etapes || []).length && !hasBlock);
     inner = '<div class="sc-col">' + head + '<h1 class="sc-h1">' + esc(nb(m.phrase)) + '</h1>' +
       (side ? '<ol class="sc-pts big">' + expl.map((t, i) => '<li><b>' + (i + 1) + '</b><span>' + esc(nb(t)) + '</span></li>').join('') + '</ol>' : '<div class="sc-vis">' + vis + '</div>' + (showExpl ? '<p class="sc-expl">' + expl.map(t => esc(nb(t))).join(' ') + '</p>' : '')) + scrFoot(x) + '</div>';
   }
-  return '<div class="aw-scr v-' + esc(m.visuel || '') + '"><div class="sc-in">' + inner + '</div></div>';
+  const th = (ver() && ver().scrTheme) === 'gris' ? 'gris' : 'beige';   // fond uni : beige (texte noir) ou gris
+  return '<div class="aw-scr th-' + th + ' v-' + esc(m.visuel || '') + '"><div class="sc-in">' + inner + '</div></div>';
+}
+// Intercalaire : fond uni sombre, numéro et titre du chapitre en très grand, frise des chapitres en bas.
+function interHtml(x, th){
+  const chaps = (x.reg.recit && x.reg.recit.chapitres) || [], poles = chaps.filter(k => k.pole), pi = poles.indexOf(x.ch);
+  const sub = pi >= 0 ? 'Métier ' + (pi + 1) + ' sur ' + poles.length : '';
+  return '<div class="aw-scr th-' + th + ' v-inter"><div class="sc-in sc-inter">' +
+    '<div class="si-top"><span class="sc-kick">CHAPITRE ' + (x.ci + 1) + ' SUR ' + chaps.length + '</span><span style="flex:1"></span><img src="data/wolf-tete.png" alt="" class="sc-logo"></div>' +
+    '<div class="si-mid"><b class="si-num">' + String(x.ci + 1).padStart(2, '0') + '</b><div><h1 class="si-h1">' + esc(nb(poleTitle(x.ch.titre))) + '</h1>' + (sub ? '<p class="si-sub">' + esc(sub) + '</p>' : '') + '</div></div>' +
+    '<div class="si-prog">' + chaps.map((k, i) => '<i class="' + (i < x.ci ? 'done' : i === x.ci ? 'on' : '') + '"></i>').join('') + '</div></div></div>';
 }
 function scrBox(c, cls){ return '<div class="aw-scrbox ' + (cls || '') + '">' + scrHtml(c) + '</div>'; }
 function fitScreens(root){
   (root || document).querySelectorAll('.aw-scrbox').forEach(box => {
     const scr = box.firstElementChild; if (!scr) return;
-    const fs = box.classList.contains('fs'), W = box.clientWidth, H = fs ? box.clientHeight : 0;
+    const fs = box.classList.contains('fs'), stage = !fs && box.classList.contains('stage');
+    // vue « Écrans » : l'écran entier doit tenir dans la fenêtre (avant, le bas passait sous le bord)
+    const W = stage ? (box.parentElement || box).clientWidth : box.clientWidth, H = fs ? box.clientHeight : 0;
     if (!W){ watchScreen(box); return; }   // pas encore visible (onglet caché, section repliée) : refait dès qu'il a une taille
-    const k = fs && H ? Math.min(W / 1600, H / 900) : W / 1600;
+    let k = fs && H ? Math.min(W / 1600, H / 900) : W / 1600;
+    if (stage){ const top = Math.max(0, box.parentElement.getBoundingClientRect().top), avail = window.innerHeight - top - 70;
+      if (avail > 200) k = Math.min(k, avail / 900); box.style.width = Math.round(1600 * k) + 'px'; box.style.margin = '0 auto'; }
     scr.style.transform = 'scale(' + k + ')';
     if (!fs) box.style.height = Math.round(900 * k) + 'px'; else { scr.style.left = Math.round((W - 1600 * k) / 2) + 'px'; scr.style.top = Math.round((H - 900 * k) / 2) + 'px'; }
   });
@@ -1847,6 +1977,7 @@ function renderEcrans(host){
   const v = ver(), list = ecranList(v), d = doc();
   if (!list.length){ host.innerHTML = '<p class="at-empty big">Cette version n\'a pas d\'écrans (import au contrat wolf-atelier/3 seulement).</p>'; return; }
   ui.scr = ui.scr && ui.scr.doc === d.id && ui.scr.ver === v.id ? ui.scr : { doc: d.id, ver: v.id, i: 0 };
+  loadLive();   // cours du jour du tournage (écran de valorisation)
   const i = Math.max(0, Math.min(list.length - 1, ui.scr.i)); ui.scr.i = i;
   const c = list[i], x = scrCtx(c), chaps = (v.reg.recit && v.reg.recit.chapitres) || [];
   const first = {}; list.forEach((k, j) => { if (first[k.chap] == null) first[k.chap] = j; });
@@ -1854,13 +1985,18 @@ function renderEcrans(host){
     '<div class="aw-tour-line" role="tablist">' + chaps.filter(ch => first[ch.id] != null).map((ch, k) => '<button type="button" role="tab" aria-selected="' + (x && ch.id === x.ch.id) + '" class="aw-step' + (x && ch.id === x.ch.id ? ' on' : '') + '" data-scr-go="' + first[ch.id] + '" title="' + esc(ch.titre) + '"><i>' + (k + 1) + '</i><span>' + esc(ch.titre) + '</span></button>').join('') + '</div>' +
     '<div class="aw-ecr-stage" id="awEcrStage">' + scrBox(c, 'stage') + '</div>' +
     '<div class="aw-tour-nav"><button type="button" class="at-btn" data-scr="-1"' + (i ? '' : ' disabled') + '>← Précédent</button><span class="at-faint">Écran ' + (i + 1) + ' sur ' + list.length + '</span>' +
-    '<button type="button" class="at-btn" data-scr-fs title="Plein écran (Échap pour sortir)">⛶ Plein écran</button>' + (isRo() ? '' : '<button type="button" class="at-btn" data-scr-edit title="Ajouter ou changer l\'image de cet écran">🖼 Image</button>') +
+    '<button type="button" class="at-btn" data-scr-fs title="Plein écran (Échap pour sortir)">⛶ Plein écran</button>' + (isRo() ? '' : (c.inter ? '' : '<button type="button" class="at-btn" data-scr-edit title="Ajouter ou changer l\'image de cet écran">🖼 Image</button>') +
+      '<button type="button" class="at-btn sm' + (v.scrInter === false ? '' : ' on') + '" data-scr-inter title="Écran de transition au début de chaque chapitre">Intercalaires</button>' +
+      '<span class="aw-seg">' + [['beige', 'Fond beige'], ['gris', 'Fond gris']].map(([k, l]) => '<button type="button" class="at-btn sm' + ((v.scrTheme === 'gris' ? 'gris' : 'beige') === k ? ' on' : '') + '" data-scr-th="' + k + '">' + l + '</button>').join('') + '</span>') +
     '<button type="button" class="at-btn gold" data-scr="1"' + (i < list.length - 1 ? '' : ' disabled') + '>Suivant →</button></div></div>';
   fitScreens(host); updatePrompteur();
   host.onclick = e => {
     const g = e.target.closest('[data-scr-go],[data-scr]'); if (g){ scrGo(g.dataset.scrGo != null ? +g.dataset.scrGo : ui.scr.i + +g.dataset.scr); return; }
     if (e.target.closest('[data-scr-fs]')){ const st = $('awEcrStage'); if (st && st.requestFullscreen){ st.querySelector('.aw-scrbox').classList.add('fs'); st.requestFullscreen().catch(() => {}); } return; }
-    if (e.target.closest('[data-scr-edit]')){ ui.edit = list[ui.scr.i].id; renderEditor(); return; }
+    if (e.target.closest('[data-scr-edit]')){ if (list[ui.scr.i].inter) return; ui.edit = list[ui.scr.i].id; renderEditor(); return; }
+    if (e.target.closest('[data-scr-inter]')){ const vv = ver(), cur = list[ui.scr.i]; vv.scrInter = vv.scrInter === false; touch();
+      const nl = ecranList(vv); let k = nl.indexOf(cur); if (k < 0) k = nl.findIndex(q => q.chap === cur.chap && !q.inter); ui.scr.i = Math.max(0, k); renderEcrans(host); return; }
+    const th = e.target.closest('[data-scr-th]'); if (th){ ver().scrTheme = th.dataset.scrTh; touch(); renderEcrans(host); return; }
     if (document.fullscreenElement && e.target.closest('#awEcrStage')) scrGo(ui.scr.i + 1);
   };
 }
@@ -1884,7 +2020,8 @@ function updatePrompteur(){
   if (!promptWin || promptWin.closed || !ui.scr) return;
   const list = ecranList(), c = list[ui.scr.i], nx = list[ui.scr.i + 1], x = c && scrCtx(c), xn = nx && scrCtx(nx);
   const b = promptWin.document.body; if (!b || !x) return;
-  b.innerHTML = '<h1>Écran ' + (ui.scr.i + 1) + ' / ' + list.length + ' · ' + esc(x.ch.titre) + '</h1><h2>' + esc(x.m.phrase) + '</h2><p class="dire">' + esc(x.m.a_dire || '— (pas de note)') + '</p>' + (xn ? '<p class="next">Ensuite : ' + esc(xn.m.phrase) + '</p>' : '<p class="next">Dernier écran.</p>');
+  const vs = !x.inter && x.m.visuel === 'echelle_prix' ? valoSentence(x) : '';   // chiffres recalculés (le paquet peut citer le mauvais module)
+  b.innerHTML = '<h1>Écran ' + (ui.scr.i + 1) + ' / ' + list.length + ' · ' + esc(x.ch.titre) + '</h1><h2>' + esc(x.m.phrase) + '</h2>' + (vs ? '<p class="dire">' + esc(vs) + '</p>' : '') + '<p class="dire"' + (vs ? ' style="font-size:20px;color:#8B93A0"' : '') + '>' + esc(x.m.a_dire || '— (pas de note)') + '</p>' + (xn ? '<p class="next">Ensuite : ' + esc(xn.m.phrase) + '</p>' : '<p class="next">Dernier écran.</p>');
 }
 
 /* ---------- Fenêtre « 📥 Importer » : lots JSON → contrôle → nouvelle version (rien n'est remplacé) ---------- */

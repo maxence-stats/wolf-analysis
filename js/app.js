@@ -590,10 +590,20 @@ function handleTvAnalyseData(data){
 let tvPublishedLogos = {};
 // Cours hebdomadaires TradingView d'une entreprise : serveur local (/api/tv/history) sur le PC, copie publiée
 // (data/public/prices/) sur le site en ligne. Renvoie { dates:['AAAA-MM-JJ'], closes:[], ccy } ou null.
+// Mémoire de 10 min (2026-11-15) : la fiche se redessine plusieurs fois à l'ouverture (cache puis direct) et chaque
+// graphique redemandait le même historique (4 lancements de tv_history.py constatés, le serveur local en file d'attente).
+const tvWeeklyMemo = {};
 async function loadTvWeeklyPrices(nom){
   const hist = companies[nom]; const last = hist && hist[hist.length - 1];
   const sym = (last ? (String(last.ticker || '').includes(':') ? last.ticker : last.tvSymbol) : null) || ((typeof rankingByName !== 'undefined' && rankingByName[nom]) || {}).symbol || null;
   if (!sym) return null;
+  const m = tvWeeklyMemo[sym];
+  if (!m || Date.now() - m.at > 600000) tvWeeklyMemo[sym] = { at: Date.now(), p: loadTvWeeklyPricesRaw(sym) };
+  const w = await tvWeeklyMemo[sym].p;
+  if (!w){ delete tvWeeklyMemo[sym]; return null; }
+  return Object.assign({}, w, { dates: w.dates.slice(), closes: w.closes.slice() });   // copie : un appelant peut modifier ses tableaux
+}
+async function loadTvWeeklyPricesRaw(sym){
   const iso = ts => new Date(ts * 1000).toISOString().slice(0, 10);
   try{
     if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)){
@@ -786,6 +796,9 @@ function tvOnDemandRestore(){
   Object.keys(store).forEach(nom => { const e = store[nom]; if (e && e.tv && tvFullNameForTicker(e.tv)){ if (companies[nom] && companies[nom][0] && companies[nom][0].tvPartial) delete companies[nom]; delete store[nom]; pruned = true; } });
   if (pruned) tvOnDemandWrite(store);
   Object.keys(store).forEach(nom => { const e = store[nom]; if (e && e.snap && !companies[nom]) companies[nom] = tvRowsFromSnapshot(e.tv, e.snap); });
+  // 2026-11-15 : plus de relecture de TOUTES les fiches au démarrage (une demande TradingView par fiche, en file sur le serveur
+  // local qui ne traite qu'une demande à la fois) : une fiche est actualisée quand on l'ouvre (tvLiveRefresh).
+  return;
   Object.keys(store).forEach(nom => {
     const e = store[nom];
     if (!e || !e.tv || (Date.now() - (e.at || 0)) < 6 * 3600 * 1000) return;   // déjà frais (< 6 h)
@@ -926,6 +939,9 @@ function finishCompaniesLoad(){
   document.getElementById('dashboard').style.display = 'block';
   setSync('ok');
   if (typeof tvUniverseRelink === 'function') tvUniverseRelink();   // univers TradingView : noms des entreprises suivies
+  if (!rankingLoadStarted){ rankingLoadStarted = true; setTimeout(loadRankingSummary, 1500); }   // après le premier affichage
+  // Mes portefeuilles : préchargé en arrière-plan (fichier + cours de tous les titres), le reste des onglets reste à la demande
+  if (window.MP_UI && MP_UI.preload) setTimeout(() => MP_UI.preload().catch(e => console.warn('Préchargement du portefeuille :', e)), 800);
 
   // Les sources secondaires (Portfolio, historique de prix, macro...) ne sont PLUS
   // déclenchées ici — voir loadAllDataFromAppsScript() : un seul appel réseau les
@@ -4885,6 +4901,7 @@ function sectorBucketsGridHtml(buckets){
   }).join('');
 }
 function renderSectorView(){
+  if (deferIfHidden('sectorGrid', renderSectorView)) return;
   const grid = document.getElementById('sectorGrid');
   if (!grid) return;
   populateSectorWatchlistFilter();
@@ -4966,6 +4983,7 @@ function renderScreenerFilters(){
   list.innerHTML = screenerFilters.map((f, idx) => screenerFilterRowHtml(f, idx)).join('');
 }
 function renderScreenerGrid(){
+  if (deferIfHidden('screenerGrid', renderScreenerGrid)) return;
   const grid = document.getElementById('screenerGrid');
   const countEl = document.getElementById('screenerResultCount');
   if (!grid) return;
@@ -5248,6 +5266,7 @@ async function tvScan(body){
   const j = await r.json();
   return (j.data || []).map(row => { const o = {}; TV_UNIVERSE_COLS.forEach((c, k) => { o[c] = row.d[k]; }); return [row.s, o]; });
 }
+let rankingLoadStarted = false;
 async function loadRankingSummary(){
   tvUniverseStatus = { state:'loading', at:null, error:null };
   try{
@@ -5514,6 +5533,7 @@ function classementApplyTopN(list){
 let classementValoSortDir = 1; // 1 = cas les plus extrêmes en premier (défaut) ; -1 = inversé
 
 function renderClassement(){
+  if (deferIfHidden('classementDivLeft', renderClassement)) return;
   const divLeftBox = document.getElementById('classementDivLeft');
   const divRightBox = document.getElementById('classementDivRight');
   const valoSousBox = document.getElementById('classementValoSous');
@@ -6496,9 +6516,25 @@ const NAV_GROUPS = [
   { key:'screener', subnavId:'screenerSubnav', pages:SCREENER_GROUP_PAGES },
   { key:'macro', subnavId:'macroSubnav', pages:MACRO_GROUP_PAGES }
 ];
+// RENDU DIFFÉRÉ (2026-11-15) : un onglet caché n'est dessiné qu'à son ouverture. Avant, le démarrage dessinait aussi
+// Filtres / Secteur / Classement / Watchlist / Tier list : le navigateur téléchargeait ~2 600 logos TradingView (deux fois)
+// et la Tier list interrogeait TradingView, pour des onglets que l'utilisateur n'avait pas ouverts.
+const deferredPageRenders = {};
+function deferIfHidden(elId, fn){
+  const el = document.getElementById(elId), page = el && el.closest('.page');
+  if (!page || page.classList.contains('active')) return false;
+  (deferredPageRenders[page.id] = deferredPageRenders[page.id] || new Set()).add(fn);
+  return true;
+}
+function runDeferredRenders(pageId){
+  const set = deferredPageRenders[pageId]; if (!set) return;
+  delete deferredPageRenders[pageId];
+  set.forEach(fn => { try{ fn(); }catch(e){ console.error('Rendu différé', pageId, e); } });
+}
 function switchPage(pageId){
   if (MACRO_GROUP_PAGES.includes(pageId)) ensureMacroData();
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === pageId));
+  runDeferredRenders(pageId);
   if (pageId === 'pageValorisation' && typeof scheduleValoFan === 'function') scheduleValoFan();   // éventail : dessiné à la taille réelle
   document.querySelectorAll('.page-nav-btn').forEach(b => b.classList.toggle('active',
     b.dataset.page === pageId ||
@@ -13820,6 +13856,7 @@ function populateWatchlistExportSelect(){
   });
 }
 function renderWatchlist(){
+  if (deferIfHidden('watchlistPool', renderWatchlist)) return;
   const pool = document.getElementById('watchlistPool');
   const grid = document.getElementById('watchlistGrid');
   if (!pool || !grid) return;
@@ -14334,6 +14371,7 @@ function tierListCardHtml(nom){
   </div>`;
 }
 function renderTierList(){
+  if (deferIfHidden('tierListBoard', renderTierList)) return;
   const board = document.getElementById('tierListBoard');
   const pool = document.getElementById('tierListPool');
   const selection = document.getElementById('tierListSelection');
@@ -21719,6 +21757,6 @@ document.getElementById('persoBlurToggleBtn').addEventListener('click', function
   loadAllDataFromAppsScript();
   // macro (Google Sheet, FRED, ETF sectoriels) : seulement à l'ouverture de l'onglet Macroéconomie, voir ensureMacroData()
   loadLogosManifest();
-  loadRankingSummary();
+  // univers TradingView (~2 600 actions) : lancé APRÈS le premier affichage, voir finishCompaniesLoad()
 })();
 

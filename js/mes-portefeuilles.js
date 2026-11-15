@@ -1573,9 +1573,16 @@ function wire(){
   page.querySelectorAll('[data-mp-restore]').forEach(b => b.addEventListener('click', () => restore(b.dataset.mpRestore)));
 }
 
+// Préchargement (2026-11-15, demande de l'utilisateur : « mon portefeuille doit charger tout seul, le reste quand je le demande ») :
+// fichier + cours de tous les titres lus en arrière-plan juste après le démarrage (preload, appelé par app.js), l'onglet s'ouvre
+// alors tout de suite. Une seule lecture en vol : un clic pendant le préchargement attend la même demande au lieu d'en relancer une.
+let loadP = null, histP = null;
+function ensureLoaded(){ if (!loadP) loadP = load().finally(() => { if (!D) loadP = null; }); return loadP; }
+function ensureHistory(){ if (!histP && D && !RO) histP = loadHistory(); return histP || Promise.resolve(); }
+async function preload(){ await ensureLoaded(); await ensureHistory(); }
 async function onShow(){
-  if (!D){ await load(); render(); if (D) loadHistory(); }
-  else render();
+  if (!D){ await ensureLoaded(); render(); if (D) ensureHistory(); }
+  else { render(); ensureHistory(); }
 }
 document.addEventListener('click', e => {
   const b = e.target.closest && e.target.closest('[data-page="' + PAGE_ID + '"]');
@@ -1597,5 +1604,5 @@ async function publicSnapshot(){
   return { version: 1, at: new Date().toISOString(), hist,
     D: { version: 1, revision: 0, config: D.config, symbols, accounts: { pea: { label: 'PEA', ops: [] }, cto: { label: 'CTO', ops: [] }, wolf: { label: wolf.label || 'Wolf Portfolio', ops, public: true } }, trash: [] } };
 }
-window.MP_UI = { onShow, render, publicSnapshot, reload: async () => { await load(); await loadHistory(); }, _state: () => ({ D, S, histErr, ui }) };
+window.MP_UI = { onShow, preload, render, publicSnapshot, reload: async () => { await load(); await loadHistory(); }, _state: () => ({ D, S, histErr, ui }) };
 })();

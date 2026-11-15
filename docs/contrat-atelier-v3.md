@@ -129,6 +129,15 @@ dessine le visuel.
 | `c_direction` | Direction et solidité financière | 2-3 |
 | `c_valorisation` | Valorisation et décision | 3-4 : à quel prix acheter → ce qu'il faudrait croire → décision |
 
+**Ce que l'appli fait toute seule (ne rien fournir pour ça, 2026-11-15) :**
+- **Intercalaires** : un écran de transition (fond uni, numéro et titre du chapitre en grand, « Métier 2 sur 4 » pour un
+  pôle) est inséré avant chaque chapitre. Ne PAS écrire de message « transition » ou « on passe à… ».
+- **Écran `echelle_prix` de la valorisation** = graphique du COURS DE L'ACTION (3 ans, cours du jour du tournage relu sur
+  TradingView) avec les 3 prix maximum posés dessus. Par défaut ce sont ceux du **module B** (croissance réaliste, multiple
+  bas / central / haut), le choix de l'auteur ; `"valo_module": "A"` pour montrer les 3 croissances à la place,
+  `"periode_ans": 5` pour une autre période. Le texte sous le graphique et la note du prompteur sont **calculés** par
+  l'appli : `explication` et `a_dire` de ce message ne doivent citer AUCUN prix (ils seraient remplacés de toute façon).
+
 ## 5. Livraison par lots
 
 | Lot | Contenu |

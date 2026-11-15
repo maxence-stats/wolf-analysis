@@ -369,6 +369,18 @@ différents du même fichier — les deux sont codés en dur en haut de `app.js`
     supposition de Claude : vérifier reste la bonne pratique par défaut, quelle que
     soit la source de l'information sur la structure d'un Sheet.
 
+15. **Démarrage lent (corrigé le 2026-11-15) : ne jamais dessiner un onglet caché au démarrage.** Le serveur local
+    (`static-server.ps1`) traite UNE demande à la fois (`GetContext()` en boucle) : chaque appel TradingView (snapshot,
+    `tv_history.py`) met en file tout le reste, même `app.js`. Et des `<img>` dans un onglet `display:none` sont quand même
+    téléchargées : l'onglet Filtres sans filtre affichait les ~2 600 logos de l'univers TradingView à chaque démarrage
+    (mesuré : 2 797 images, 183+ requêtes TradingView en 15 s ; après : 15 images, 2 requêtes, tableau de bord 0,9 s au lieu
+    de 1,6 s). En place : `deferIfHidden(elId, fn)` en tête de `renderScreenerGrid / renderSectorView / renderTierList /
+    renderWatchlist / renderClassement` (rendu fait par `switchPage` à l'ouverture) ; univers TradingView chargé 1,5 s APRÈS
+    le premier affichage ; plus de relecture de toutes les fiches à la demande au démarrage ; `loadTvWeeklyPrices` mémorisé
+    10 min. **Tout nouvel onglet lourd doit utiliser `deferIfHidden`.** EXCEPTION voulue par l'utilisateur : **Mes portefeuilles
+    est préchargé** 0,8 s après le premier affichage (`MP_UI.preload()` : fichier + cours de tous les titres, une seule lecture
+    en vol partagée avec `onShow`) — mesuré : onglet affiché en 0,02 s au lieu de ~8 s (cours après ~14 s) auparavant.
+
 ## Design system
 
 Thème sombre inspiré de Finary (captures fournies par l'utilisateur : page marketing +
@@ -847,6 +859,14 @@ lus par `scrBlocks` (atelier.js) : `risques:[ids]`, `marches:[ids]`, `acquisitio
 `valo_rendement:true` (rendement annuel en achetant au cours), `etapes:[…]` (schéma, l'explication reste affichée), `libelles:{id:nom}`.
 `chiffre` affiche toutes ses données en tuiles. Un paquet `type:"images"` n'exige plus `meta.entreprise`. Édition complétée Prysmian
 (lots 1-5 + images + script `enrich.py`) : `Téléchargements\Prysmian_Atelier_v3_complete_par_Claude\` ; version « Import ChatGPT + Claude ».
+**Retours sur le diaporama Prysmian (2026-11-15)** : (1) **intercalaires automatiques** : `ecranList()` insère un écran virtuel
+`{inter:true, chap}` avant chaque chapitre (fond uni sombre, numéro géant, titre, « Métier n sur N » pour un pôle, frise des
+chapitres — `interHtml`), rien d'écrit dans le fichier, bouton « Intercalaires » (`v.scrInter = false` pour les retirer).
+(2) **Écran `echelle_prix` = cours de l'action + les 3 prix maximum** (`scrValoChart`, SVG) : MODULE B par défaut (croissance
+réaliste, multiple bas / central / haut : 52 / 64 / 76 € pour Prysmian — le module A 45 / 64 / 80 € était affiché à tort),
+`valo_module:"A"` sinon ; cours du JOUR DU TOURNAGE (`loadLive` : `/api/tv/history …&fresh=1` + snapshot, en mémoire seulement,
+repris aussi par `coursNow()`), texte sous le graphique et note du prompteur CALCULÉS (`valoSentence`), le texte du paquet est ignoré.
+Pas besoin de redonner une trame à ChatGPT : le contrat v3 §4 dit ce que l'appli fait seule.
 Le texte ci-dessous décrit l'ancienne carte mentale (historique).
 
 Nouvel onglet principal (`#pageAtelier`, `js/atelier.js`, CSS `.at-*` en fin de `style.css`), À CÔTÉ du Cerveau numérique (qui
