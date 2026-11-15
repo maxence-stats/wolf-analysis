@@ -4131,3 +4131,15 @@ body.tp-noscroll{overflow:hidden;}
 .mp-sz-out small{color:var(--text-dim);}
 .mp-sz-cap{display:block;color:var(--gold)!important;margin-top:2px;}
 @media (max-width:560px){.mp-sz-grid{grid-template-columns:1fr 1fr;}.mp-sz-grid>div:first-child{grid-column:1/-1;}}
+
+/* Valorisation : « Prix d'achat pour viser X %/an » + marge de sécurité (2026-11-15) */
+.vv-tgt{background:rgba(242,196,61,0.06);border:1px solid rgba(242,196,61,0.22);border-radius:14px;padding:12px 14px;margin:-6px 0 16px;display:flex;flex-direction:column;gap:10px;}
+.vv-tgt-in{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:12px;color:var(--text-dim);}
+.vv-tgt-in label{display:flex;align-items:center;gap:6px;}
+.vv-tgt-in input.scenario-number{width:64px;padding:4px 6px;}
+.vv-tgt-out{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.vv-tgt-out .r-k{font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;}
+.vv-tgt-out .r-v{font-family:var(--font-mono);font-weight:700;font-size:16px;color:var(--text);}
+.vv-tgt-out .r-v.vv-tgt-gold{color:#F2C43D;}
+.vv-tgt-out .vv-vs{font-size:11px;font-weight:700;margin-top:2px;}
+.scenario-card-zoomed .vv-tgt-out .r-v{font-size:20px;}

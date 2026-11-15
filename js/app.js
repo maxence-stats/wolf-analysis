@@ -11364,7 +11364,17 @@ function scenarioCardHtml(s){
         <div><div class="r-k">Prix est. (5a)</div><div class="r-v" id="vo-${s.key}-prixEst">—</div></div>
         <div><div class="r-k">Rendement (5a)</div><div class="r-v" id="vo-${s.key}-rendement">—</div></div>
       </div>`}
-      <div class="scenario-chart-holder"><canvas id="vo-${s.key}-chart"></canvas><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(scenarioCharts['${s.key}'], '${s.label}', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
+      <div class="vv-tgt" data-key="${s.key}">
+        <div class="vv-tgt-in">
+          <label>Je veux gagner <input type="number" class="scenario-number vv-tgt-r" step="0.5" value="${valoCible.r}"> %/an</label>
+          <label>Marge de sécurité <input type="number" class="scenario-number vv-tgt-m" step="1" min="0" max="90" value="${valoCible.m}"> %</label>
+        </div>
+        <div class="vv-tgt-out">
+          <div><div class="r-k" id="vo-${s.key}-tgtK">Prix d'achat max</div><div class="r-v" id="vo-${s.key}-tgtPx">—</div><div class="vv-vs" id="vo-${s.key}-tgtVs"></div></div>
+          <div><div class="r-k" id="vo-${s.key}-tgtMK">Avec ma marge</div><div class="r-v vv-tgt-gold" id="vo-${s.key}-tgtMPx">—</div><div class="vv-vs" id="vo-${s.key}-tgtMVs"></div></div>
+        </div>
+      </div>
+      <div class="scenario-chart-holder"><canvas id="vo-${s.key}-chart"><button class="chart-card-cart-btn" onclick="addChartInstanceToCart(scenarioCharts['${s.key}'], '${s.label}', this)" title="Ajouter au panier d'export" aria-label="Ajouter au panier d'export">🧺</button></div>
       <div class="macro-export-row">
         <button onclick="exportScenarioChartAsPdf('${s.key}')">PDF</button>
         <button onclick="exportScenarioChartAsImage('${s.key}','png')">PNG</button>
@@ -13302,8 +13312,51 @@ function updateScenarioCard(s, hist, prixActuel){
   rendEl.textContent = rendement5A == null ? 'N/D' : (rendement5A >= 0 ? '+' : '') + rendement5A.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + '%' + (isEv ? '/an' : '');
   rendEl.className = 'r-v ' + (rendement5A != null && rendement5A >= 0 ? 'pos' : 'neg');
 
+  valoCibleCache[s.key] = { prixEst5A, prixActuel };
+  updateScenarioTarget(s.key);
   renderScenarioChart(s, hist, prixJusteSim, prixEst5A);
 }
+
+// « Si je veux gagner X % par an, je dois l'acheter combien ? » — prix d'achat max =
+// prix estimé à 5 ans ÷ (1 + X %)^5 (même horizon et même prix 5 ans que « Rendement (5a) »,
+// donc cohérent : à ce prix, le rendement affiché serait exactement X %). Puis la marge de
+// sécurité de l'utilisateur : × (1 − marge). Réglages communs aux 3 scénarios.
+let valoCible = (() => {
+  try { const o = JSON.parse(localStorage.getItem('wolfValoCible') || 'null');
+    if (o && isFinite(o.r) && isFinite(o.m)) return { r: +o.r, m: +o.m }; } catch(e){}
+  return { r: 12, m: 0 };
+})();
+const valoCibleCache = {};
+function fmtValoCiblePct(v){ return String(+(+v).toFixed(2)).replace('.', ','); }
+function updateScenarioTarget(key){
+  const c = valoCibleCache[key];
+  const set = (id, t, cls) => { const el = document.getElementById('vo-' + key + '-' + id); if (el){ el.textContent = t; if (cls != null) el.className = cls; } };
+  const r = valoCible.r, m = Math.min(90, Math.max(0, valoCible.m));
+  set('tgtK', "Prix d'achat max pour " + fmtValoCiblePct(r) + ' %/an');
+  set('tgtMK', 'Avec ma marge de ' + fmtValoCiblePct(m) + ' %');
+  if (!c || !(c.prixEst5A > 0) || !(r > -100)){ ['tgtPx','tgtMPx'].forEach(k => set(k, 'N/D')); set('tgtVs', ''); set('tgtMVs', ''); return; }
+  const px = c.prixEst5A / Math.pow(1 + r / 100, 5);
+  const pxM = px * (1 - m / 100);
+  set('tgtPx', fmtEUR(px)); set('tgtMPx', fmtEUR(pxM));
+  const vs = (p, id) => {
+    if (!(c.prixActuel > 0)) { set(id, ''); return; }
+    const e = (p / c.prixActuel - 1) * 100;
+    set(id, e >= 0 ? 'Le cours est en dessous : ✔ achetable' : 'Le cours doit baisser de ' + Math.abs(e).toLocaleString('fr-FR', { maximumFractionDigits: 0 }) + ' %',
+      'vv-vs ' + (e >= 0 ? 'pos' : 'neg'));
+  };
+  vs(px, 'tgtVs'); vs(pxM, 'tgtMVs');
+}
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (!t.classList || !(t.classList.contains('vv-tgt-r') || t.classList.contains('vv-tgt-m'))) return;
+  const v = parseFloat(String(t.value).replace(',', '.'));
+  if (!isFinite(v)) return;
+  const isR = t.classList.contains('vv-tgt-r');
+  valoCible[isR ? 'r' : 'm'] = v;
+  document.querySelectorAll(isR ? '.vv-tgt-r' : '.vv-tgt-m').forEach(i => { if (i !== t) i.value = v; });
+  try { localStorage.setItem('wolfValoCible', JSON.stringify(valoCible)); } catch(err){}
+  Object.keys(valoCibleCache).forEach(updateScenarioTarget);
+});
 
 function buildScenarioChartConfig(s, hist, prixJusteSim, prixEst5A){
   const years = hist.map(r => r.annee);

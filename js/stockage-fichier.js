@@ -18,7 +18,7 @@ const KEYS = ['wolfAnalysisWatchlist', 'wolfAnalysisWatchlistCustom', 'wolfAnaly
   'wolfAnalysisIdeesLastMonth', 'wolfAnalysisRevue', 'wolfAnalysisDividendPortfolio', 'wolfAnalysisTierList', 'wolfAnalysisTierListHistory',
   'wolfTierListLogos', 'wolfAnalysisConstruction', 'wolfAnalysisCompetiteurs', 'wolfAnalysisAnalyseScores', 'wolfAnalysisLaboDrawings',
   'wolfAnalysisLaboExperiments', 'wolfAnalysisLaboLists', 'wolfAnalysisLaboSketches', 'wolfAnalysisLaboStylePresets', 'wolfAnalysisLaboChartStyle',
-  'wolfAnalysisValoFcfOverrides', 'wolfAnalysisValoMetric', 'wolfMultiplesHisto', 'wolfIaAchatsEnAttente', 'wolfPubPrefs', 'wolfAnalyseV3'];
+  'wolfAnalysisValoFcfOverrides', 'wolfAnalysisValoMetric', 'wolfMultiplesHisto', 'wolfIaAchatsEnAttente', 'wolfPubPrefs', 'wolfAnalyseV3', 'wolfValoCible'];
 const TRACK = new Set(KEYS);
 const META = 'wolfFichierSyncMeta';          // { rubrique: date (ms) de la dernière modification connue dans CE navigateur }
 const RELOADED = 'wolfFichierRecharge';
