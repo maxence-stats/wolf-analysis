@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Tests — taille de position</title>
+<style>body{font:14px system-ui,sans-serif;background:#0D1013;color:#E9EBEE;padding:20px}.ok{color:#4FD1A5}.ko{color:#E5636B}</style>
+</head>
+<body>
+<h1>Tests du calculateur de taille de position</h1>
+<p>À ouvrir via le serveur local (http://localhost:&lt;port&gt;/tests/taille-position.test.html). Données d'essai uniquement.</p>
+<div id="out">…</div>
+<script src="../js/taille-position.js"></script>
+<script>
+const res = window.RISK_TESTS.run();
+const ok = res.filter(r => r.ok).length;
+document.getElementById('out').innerHTML = `<h2 class="${ok === res.length ? 'ok' : 'ko'}">${ok}/${res.length} réussis</h2><ul>` +
+  res.map(r => `<li class="${r.ok ? 'ok' : 'ko'}">${r.ok ? '✔' : '✖'} ${r.name}${r.ok ? '' : ' — ' + r.msg}</li>`).join('') + '</ul>';
+window.__result = { ok, total: res.length };
+</script>
+</body>
+</html>

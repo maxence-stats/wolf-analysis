@@ -361,7 +361,15 @@ async function load(){
     loadErr = null;
   } catch(e){ loadErr = e.message; D = null; }
 }
-async function save(deleted){
+// Les enregistrements passent l'un après l'autre (le calculateur de taille de position enregistre aussi dans ce fichier) :
+// deux envois simultanés partiraient de la même révision et le second serait refusé.
+let saveChain = Promise.resolve();
+function save(deleted){
+  const p = saveChain.then(() => saveNow(deleted));
+  saveChain = p.catch(() => {});
+  return p;
+}
+async function saveNow(deleted){
   if (RO) throw new Error('Lecture seule : cette page est la copie publiée.');
   if (!serverOk || !D) throw new Error('Serveur local injoignable : rien n\'a été enregistré.');
   const body = Object.assign({}, D, { revision: (D.revision || 0) + 1, baseRevision: D.revision || 0, deleted: deleted || [], savedAt: new Date().toISOString() });
@@ -493,6 +501,7 @@ function titleHtml(){
       <p>${RO ? 'Wolf Portfolio · copie publiée le ' + (publishedAt ? new Date(publishedAt).toLocaleDateString('fr-FR') + ' à ' + new Date(publishedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '') + ' · lecture seule' : 'Fichier sur ton PC, sauvegardé à chaque saisie (copies datées + copie dans Documents) · cours TradingView'}</p></div>
     <div class="mp-title-right">${histLoading ? '<span class="mp-pill">⏳ Cours TradingView…</span>' : histAt ? `<span class="mp-pill">Cours de ${histAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : ''}
       ${nErr ? `<span class="mp-pill warn" title="${esc(Object.keys(histErr).join(', '))}">⚠ ${nErr} cours manquant(s)</span>` : ''}
+      ${RO ? '' : '<button class="mp-ghost mp-sizebtn" data-mp-sizing title="Combien acheter selon ton stop et le risque accepté">📐 Taille de position</button>'}
       <button class="mp-ghost" data-mp-refresh title="Relire les cours TradingView">↻ Cours</button></div></div>
     ${ui.msg ? `<div class="mp-banner ${ui.msg.err ? 'err' : 'ok'}"><span>${esc(ui.msg.text)}</span><span>${ui.msg.undo ? `<button class="mp-ghost" data-mp-restore="${esc(ui.msg.undo)}">↶ Annuler</button>` : ''}<button class="mp-x" data-mp-msgx>✕</button></span></div>` : ''}`;
 }
@@ -1255,7 +1264,7 @@ function openEdit(id){
   const s2 = v => v == null ? '' : String(v).replace('.', ',');
   const gbx = o.ccy === 'GBX';
   const f = { type: o.type, date: o.date, ccy: o.ccy || 'EUR', mirror: true, sugg: [], editId: id, symbol: o.symbol || null, symName: o.symbol ? symName(o.symbol) : null,
-    qty: s2(o.qty), px: s2(o.px), fx: o.fx ? s2(+(gbx ? o.fx * 100 : o.fx).toFixed(8)) : '', fee: s2(o.fee), note: o.note || '', dps: s2(o.dps), pru: s2(o.pruEur) };
+    qty: s2(o.qty), px: s2(o.px), fx: o.fx ? s2(+(gbx ? o.fx * 100 : o.fx).toFixed(8)) : '', fee: s2(o.fee), note: o.note || '', dps: s2(o.dps), pru: s2(o.pruEur), szStop: s2(o.stop), szType: 'price' };
   if (o.type === 'BUY' || o.type === 'SELL'){
     const auto = E.netAmount(o.type, o.qty, o.px, o.fx || 1, o.fee || 0);
     if (Math.abs(Math.abs(auto) - Math.abs(o.eur)) > 0.02) f.amount = s2(Math.abs(o.eur));
@@ -1286,6 +1295,7 @@ function modalHtml(){
       ${trade || t === 'INIT' ? fld('px', 'Cours (' + esc(f.ccy || 'EUR') + ')', f.px) + `<div><label>Devise</label><select data-f="ccy">${CCYS.map(x => `<option ${x === (f.ccy || 'EUR') ? 'selected' : ''}>${x}</option>`).join('')}</select></div>` : ''}
       ${trade && f.ccy && f.ccy !== 'EUR' ? fld('fx', 'Taux : 1 ' + esc(f.ccy === 'GBX' ? 'GBP' : f.ccy) + ' = ? €', f.fx) : ''}
       ${trade ? fld('fee', 'Frais (€)', f.fee) : ''}
+      ${t === 'BUY' ? sizingBlockHtml() : ''}
       ${t === 'DIV' ? fld('dps', 'Dividende par action (facultatif)', f.dps) : ''}
       ${t === 'INIT' ? fld('pru', 'Prix de revient / action (€)', f.pru) : ''}
       ${t !== 'ATTRIB' ? fld('amount', trade ? 'Montant net (€) — vide = automatique' : t === 'INIT' ? 'Valeur à cette date (€)' : t === 'DIV' ? 'Montant net reçu (€)' : 'Montant (€)', f.amount, `placeholder="${esc(f.autoAmount || '')}"`) : ''}
@@ -1350,8 +1360,63 @@ function recapHtml(){
     ${mirror ? `<label class="mp-mirror"><input type="checkbox" data-f="mirror" ${f.mirror !== false ? 'checked' : ''}><span><b>🐺 Reproduire sur le Wolf Portfolio</b><small>× ${String(ratio).replace('.', ',')} : ${esc(mirrorTxt || 'saisis une quantité')}</small></span></label>` : ''}
   </div>`;
 }
+/* ---------- 📐 TAILLE DE POSITION SELON LE STOP (fenêtre d'achat) ----------
+   Moteur : window.RISK_ENGINE (js/taille-position.js). Risque accepté et plafond retenus par compte dans le fichier
+   (D.sizing.quick[compte]) ; le stop saisi est gardé sur l'achat (op.stop). Le plafond tient compte de ce qui est déjà
+   investi sur la ligne dans ce compte. */
+function sizingPrefs(acc){
+  const q = (D.sizing && D.sizing.quick && D.sizing.quick[acc]) || {};
+  return { risk: q.risk != null ? q.risk : '50', cap: q.cap != null ? q.cap : '' };
+}
+function sizingBlockHtml(){
+  const f = ui.modal, pr = sizingPrefs(ui.acc);
+  if (f.szRisk == null) f.szRisk = pr.risk;
+  if (f.szCap == null) f.szCap = pr.cap;
+  if (!f.szType) f.szType = 'price';
+  const open = f.szOpen !== false && !!window.RISK_ENGINE;
+  return `<div class="mp-f-full mp-sz ${open ? 'open' : ''}">
+    <button class="mp-sz-head" data-mp-sztoggle type="button"><span>📐 Taille de position selon le stop</span><small>${open ? 'masquer' : 'calculer la quantité'}</small></button>
+    ${open ? `<div class="mp-sz-grid">
+      <div><label>Stop</label><div class="mp-sz-stop"><select data-f="szType"><option value="price" ${f.szType !== 'pct' ? 'selected' : ''}>Prix</option><option value="pct" ${f.szType === 'pct' ? 'selected' : ''}>% sous</option></select><input inputmode="decimal" data-f="szStop" value="${esc(f.szStop || '')}" placeholder="${f.szType === 'pct' ? 'ex. 8' : 'prix du stop'}"></div></div>
+      <div><label>Perte acceptée (€)</label><input inputmode="decimal" data-f="szRisk" value="${esc(f.szRisk)}"></div>
+      <div><label>Plafond de la ligne (€)</label><input inputmode="decimal" data-f="szCap" value="${esc(f.szCap)}" placeholder="sans plafond"></div>
+    </div><div class="mp-sz-res" id="mpSz">${sizingResultHtml()}</div>` : ''}
+  </div>`;
+}
+function sizingCalc(){
+  const f = ui.modal, R = window.RISK_ENGINE; if (!R || !f) return null;
+  const v = formValues();
+  const risk = parseNum(f.szRisk), cap = parseNum(f.szCap);
+  if (!v.px || !(parseNum(f.szStop) > 0)) return { wait: true };
+  if (!(risk > 0)) return { wait: true, msg: 'Indique la perte acceptée.' };
+  if (!v.fx) return { wait: true, msg: 'Indique le taux de change.' };
+  const held = f.symbol ? heldPositions()[f.symbol] : null;
+  const already = held ? held.cost : 0;
+  const pos = { ccy: f.ccy === 'EUR' ? 'EUR' : f.ccy || 'EUR', refCcy: 'EUR', fx: f.ccy === 'EUR' ? 1 : 1 / v.fx, lot: 'whole', entries: [] };
+  const st = { riskMode: 'eur', riskEur: risk, cap: cap > 0 ? cap : '', feeFixed: v.fee || 0, feePct: 0, slipPct: 0, gapPct: 10, sizeOn: 'inv' };
+  const capLeft = cap > 0 ? cap - already : null;
+  const sz = R.sizeNewEntry(pos, st, { price: v.px, invType: f.szType === 'pct' ? 'pct' : 'price', invValue: f.szStop }, risk, capLeft);
+  return Object.assign(sz, { already, cap: cap > 0 ? cap : null, risk });
+}
+function sizingResultHtml(){
+  const r = sizingCalc(), f = ui.modal;
+  if (!r) return '<span class="mp-hint">Calculateur indisponible (js/taille-position.js).</span>';
+  if (r.wait) return `<span class="mp-hint">${esc(r.msg || 'Saisis le cours d\'achat et le stop : la quantité se calcule toute seule.')}</span>`;
+  if (!r.ok) return `<span class="mp-err">${esc(r.errs.join(' · '))}</span>`;
+  const ccy = f.ccy || 'EUR';
+  const stopTxt = `stop ${num(r.inv, 4)} ${esc(ccy)} (−${num(r.distPct, 1)} %)`;
+  if (r.code === 'cap') return `<span class="mp-err">Plafond atteint : ${eur(r.already)} déjà investis sur cette ligne.</span>`;
+  if (r.code === 'unlimited') return `<span class="mp-hint">Le stop est au-dessus du cours : le risque ne limite pas la taille. Fixe un plafond.</span>`;
+  if (r.code !== 'ok') return `<span class="mp-err">${r.code === 'fees' ? 'Les frais dépassent la perte acceptée.' : 'Moins d\'une action possible avec ce stop.'}</span>`;
+  const same = parseNum(f.qty) === r.qty;
+  return `<div class="mp-sz-out"><div><b class="mp-sz-q">${num(r.qty, 0)} action${r.qty > 1 ? 's' : ''}</b> <span>≈ ${eur(r.amount)}</span><br>
+      <small>${stopTxt} · perte au stop <b class="neg">${eur(r.loss)}</b> · avec un gap de 10 % : ${eur(r.lossGap)}${r.already ? ' · déjà investi ' + eur(r.already) : ''}</small>
+      ${r.capped ? `<small class="mp-sz-cap">🧢 Plafond appliqué : le risque permettait ${num(r.qRisk, 0)} actions.</small>` : ''}</div>
+    <button class="refresh-btn" type="button" data-mp-szuse ${same ? 'disabled' : ''}>${same ? '✔ Quantité utilisée' : 'Utiliser ' + num(r.qty, 0)}</button></div>`;
+}
 function refreshModalBits(){
   const f = ui.modal; if (!f) return;
+  const szBox = document.getElementById('mpSz'); if (szBox){ szBox.innerHTML = sizingResultHtml(); wireSizingUse(); }
   const v = formValues();
   f.autoAmount = v.auto != null ? String(Math.abs(+v.auto.toFixed(2))).replace('.', ',') : '';
   const a = document.querySelector('#mpModal [data-f="amount"]'); if (a) a.placeholder = f.autoAmount;
@@ -1372,6 +1437,7 @@ function buildOp(){
     Object.assign(o, { qty: v.qty, px: v.px, ccy: f.ccy || 'EUR', fx: +v.fx.toFixed(8), fee: v.fee });
     const net = v.amount != null ? Math.abs(v.amount) : Math.abs(v.auto);
     o.eur = +(f.type === 'BUY' ? -net : net).toFixed(2);
+    if (f.type === 'BUY' && f.szOpen !== false && parseNum(f.szStop) > 0){ const sz = sizingCalc(); if (sz && sz.inv > 0) o.stop = +sz.inv.toFixed(4); }   // stop prévu, en devise de cotation
   } else if (f.type === 'INIT'){
     if (!v.qty) throw new Error('Quantité obligatoire.');
     o.qty = v.qty; if (v.px){ o.px = v.px; o.ccy = f.ccy || 'EUR'; }
@@ -1400,6 +1466,10 @@ async function submit(){
     const heldBefore = (E.replay(ops, op.date).pos[op.symbol] || {}).qty;
     const m = E.mirrorOp(Object.assign({}, op, { _acc: acc }), D.config.wolfRatio || 0.7, D.accounts.wolf.ops, heldBefore);
     if (m){ delete m._acc; m.id = newId('wolf'); if (E.validate(D.accounts.wolf.ops.concat([m])).ok) added.push(['wolf', m]); }
+  }
+  if (op.type === 'BUY' && f.szRisk != null){   // risque accepté et plafond retenus pour ce compte
+    D.sizing = D.sizing || {}; D.sizing.quick = D.sizing.quick || {};
+    D.sizing.quick[acc] = { risk: String(f.szRisk || ''), cap: String(f.szCap || '') };
   }
   const newSym = op.symbol && !D.symbols[op.symbol];
   if (newSym) D.symbols[op.symbol] = Object.assign({ nom: f.symName || op.symbol, ccy: f.ccyQuote || f.ccy || 'EUR' }, f.logoid ? { logoid: f.logoid } : {});
@@ -1500,6 +1570,14 @@ function wireSugg(){
     const q = document.querySelector('#mpModal [data-f="qty"]'); if (q) q.focus();
   }));
 }
+function wireSizingUse(){
+  const b = document.querySelector('#mpModal [data-mp-szuse]'); if (!b) return;
+  b.addEventListener('click', () => {
+    const r = sizingCalc(), f = ui.modal; if (!r || r.code !== 'ok') return;
+    f.qty = String(r.qty); render();
+    const q = document.querySelector('#mpModal [data-f="qty"]'); if (q) q.focus();
+  });
+}
 function wireModal(){
   const m = document.getElementById('mpModal'), f = ui.modal;
   document.getElementById('mpModalBg').addEventListener('mousedown', e => { if (e.target.id === 'mpModalBg'){ ui.modal = null; render(); } });
@@ -1509,6 +1587,8 @@ function wireModal(){
   const un = m.querySelector('[data-mp-unpick]'); if (un) un.addEventListener('click', () => { f.symbol = null; f.symName = null; render(); setTimeout(() => { const s = m.ownerDocument.querySelector('#mpModal [data-f="symbol-search"]'); if (s) s.focus(); }, 20); });
   const sa = m.querySelector('[data-mp-sellall]'); if (sa) sa.addEventListener('click', () => { f.qty = String(heldPositions()[f.symbol].qty).replace('.', ','); render(); });
   m.querySelector('[data-mp-submit]').addEventListener('click', submit);
+  const szt = m.querySelector('[data-mp-sztoggle]'); if (szt) szt.addEventListener('click', () => { f.szOpen = !m.querySelector('.mp-sz.open'); render(); });
+  wireSizingUse();
   wireSugg();
   m.querySelectorAll('[data-f]').forEach(el => {
     const k = el.dataset.f;
@@ -1523,11 +1603,49 @@ function wireModal(){
       if (k === 'ccy'){ f.fx = fxDefault(f.ccy, f.date); render(); return; }
       refreshModalBits();
     });
-    if (el.tagName === 'INPUT') el.addEventListener('keydown', e => { if (e.key === 'Enter' && k !== 'symbol-search') submit(); if (e.key === 'Escape'){ ui.modal = null; render(); } });
+    if (el.tagName === 'INPUT') el.addEventListener('keydown', e => { if (e.key === 'Enter' && k !== 'symbol-search' && !k.startsWith('sz')) submit(); if (e.key === 'Escape'){ ui.modal = null; render(); } });
   });
   refreshModalBits();
 }
 
+/* Calculateur complet (fenêtre de js/taille-position.js). Ses positions et réglages sont rangés dans CE fichier
+   (D.sizing.calc), avec les mêmes sauvegardes que les opérations. Verrouillé (code Perso absent) : rien n'est lu ni
+   enregistré, et les lignes détenues du PEA / CTO ne sont pas proposées. */
+function openSizing(){
+  if (!window.TAILLE_UI) return;
+  const acc = ['pea', 'cto', 'wolf'].includes(ui.acc) ? ui.acc : 'pea';
+  const locked = isLockedAcc('pea');
+  const today = E.isoToday();
+  const fx = ccy => { const v = E.at(S['FX_IDC:EUR' + (ccy === 'GBX' ? 'GBP' : ccy)], today); return v || null; };
+  const accs = ui.acc === 'wolf' ? ['wolf'] : locked ? ['wolf'] : ['pea', 'cto', 'wolf'];
+  const held = [];
+  accs.forEach(k => {
+    const pos = E.replay(D.accounts[k].ops).pos;
+    Object.keys(pos).forEach(sym => {
+      let ccy = symCcy(sym).toUpperCase(), div = 1;
+      if (ccy === 'GBX'){ ccy = 'GBP'; div = 100; }
+      const cur = E.at(S[sym], today), r = ccy === 'EUR' ? 1 : fx(ccy);
+      const q = pos[sym].qty, pruEur = q > 0 ? pos[sym].cost / q : null;
+      held.push({ nom: symName(sym) + ' · ' + D.accounts[k].label, ticker: sym, ccy, qty: q, current: cur ? +(cur / div).toFixed(4) : null,
+        pru: pruEur != null && r ? pruEur * r : null });
+    });
+  });
+  TAILLE_UI.open({
+    fx, held,
+    store: locked || RO ? null : { get: () => D.sizing && D.sizing.calc, set: async st => { D.sizing = D.sizing || {}; D.sizing.calc = st; await save(); } },
+    memoNote: locked ? '🔒 Verrouillé : rien n\'est enregistré (code Perso)' : null,
+    onUse: r => {
+      const target = acc === 'wolf' || !locked ? acc : 'wolf';
+      const sym = r.ticker && D.symbols[r.ticker] ? r.ticker : null;
+      ui.acc = target;
+      ui.modal = { type: 'BUY', date: E.isoToday(), ccy: sym ? (symCcy(sym) === 'GBX' ? 'GBX' : symCcy(sym)) : (r.ccy || 'EUR'), mirror: true, sugg: [],
+        symbol: sym, symName: sym ? symName(sym) : null, qty: String(r.qty), px: String(+r.price.toFixed(4)).replace('.', ','),
+        szStop: String(+r.stop.toFixed(4)).replace('.', ','), szType: 'price', q: sym ? '' : (r.nom && r.nom !== 'Nouvelle position' ? r.nom : '') };
+      if (ui.modal.ccy !== 'EUR') ui.modal.fx = fxDefault(ui.modal.ccy, ui.modal.date);
+      ui.msg = null; render();
+    }
+  });
+}
 function wire(){
   const page = document.getElementById(PAGE_ID);
   page.querySelectorAll('[data-mp-acc]').forEach(b => b.addEventListener('click', () => { ui.acc = b.dataset.mpAcc; ui.msg = null; ui.delConfirm = null; render(); }));
@@ -1544,6 +1662,7 @@ function wire(){
   });
   page.querySelectorAll('[data-mp-add]').forEach(b => b.addEventListener('click', () => openModal(b.dataset.mpAdd)));
   const rf = page.querySelector('[data-mp-refresh]'); if (rf) rf.addEventListener('click', () => loadHistory(true));
+  const szb = page.querySelector('[data-mp-sizing]'); if (szb) szb.addEventListener('click', openSizing);
   const mx = page.querySelector('[data-mp-msgx]'); if (mx) mx.addEventListener('click', () => { ui.msg = null; render(); });
   const lk = page.querySelector('#mpLockBtn');
   if (lk){ const go = () => { const inp = page.querySelector('#mpLockInput'), v = inp.value.trim();

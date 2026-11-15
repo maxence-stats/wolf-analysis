@@ -1,4 +1,4 @@
-/* Fiches thèse du loup (2026-11-15) — bloc « 📄 Mes fiches thèse » de l'onglet Valorisation.
+/* Fiches thèse du loup (2026-11-15) — bloc « 📄 Mes fiches thèse » de l'onglet Analyse › Vue d'ensemble (sous les graphiques).
    Les fiches sont faites par le skill wolf-fiche-these (generer_fiche.py), qui envoie le PDF et les 2 aperçus au serveur
    (/api/atelier/media, jamais supprimés) et ajoute une entrée dans le fichier data/mes-portefeuilles/fiches.json (store « fiches ») :
    { version, revision, items:{ id:{ id, entreprise, symbole, date, createdAt, pdf, pages:[png, png], cours, devise, verdict,

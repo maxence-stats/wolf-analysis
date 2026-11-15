@@ -614,5 +614,12 @@
   "fmp": "",
   "secteur": "Industrie",
   "sousSecteur": "Terminaux portuaires"
+ },
+ "Melexis": {
+  "tv": "EURONEXT:MELE",
+  "yahoo": "MELE.BR",
+  "fmp": "",
+  "secteur": "Technologies de l'information",
+  "sousSecteur": "Semi-conducteurs (capteurs automobiles)"
  }
 }

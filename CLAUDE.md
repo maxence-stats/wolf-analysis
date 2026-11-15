@@ -725,6 +725,18 @@ Les anciennes pages Sheet (Wolf Portfolio, Perso) sont conservées telles quelle
   investi en actions, plus grosse ligne, revenus passifs par mois) ; tableau Composition « Par classe / Par enveloppe / Ligne par ligne »
   (gardé : l'utilisateur l'aime). Barre empilée, 5 tuiles à bordure colorée et double anneau RETIRÉS (jugés moches). Pas de courbe
   d'évolution : l'épargne n'a pas d'historique (un seul relevé). Hors Wolf Portfolio. Verrouillé = rien d'affiché.
+- **📐 Taille de position selon le stop (2026-11-15, `js/taille-position.js`, CSS `.tp-*` / `.mp-sz-*`)** : repris du prototype
+  https://claude.ai/artifact/GKJC757RZ512EwxyPPucUi (moteur `window.RISK_ENGINE` identique + risque FIXE en € par position et
+  PLAFOND investi par position ; 23 tests `tests/taille-position.test.html`, via le serveur). Taille = perte acceptée ÷ distance au
+  stop, arrondie à la baisse, jamais au-dessus du plafond (ce qui est déjà investi sur la ligne compte). Deux accès : (1) bloc
+  repliable dans la fenêtre d'ACHAT de tous les comptes (stop en prix ou %, perte acceptée, plafond ; « Utiliser N » remplit la
+  quantité ; le stop est gardé sur l'opération `op.stop` en devise de cotation ; perte/plafond retenus par compte dans
+  `D.sizing.quick[compte]`) ; (2) bouton « 📐 Taille de position » en tête de Mes portefeuilles = calculateur complet en fenêtre
+  (entrées multiples, stop par entrée ou commun, glissement, gap, change TradingView, frais, risque du portefeuille, « Partir d'une
+  ligne détenue », « ↗ Saisir cet achat »), positions rangées dans `D.sizing.calc` du MÊME fichier (positions supprimées gardées
+  dans `D.sizing.calc.trash`). Verrouillé (code Perso absent) : seules les lignes Wolf proposées, rien d'enregistré. `save()` est
+  désormais en file d'attente (`saveChain`) pour que deux enregistrements ne partent jamais de la même révision.
+  Un portefeuille TRADING (swing) a été envisagé puis ABANDONNÉ par l'utilisateur le 2026-11-15 : ne pas le recréer sans demande.
 - **Corbeille** : une opération supprimée part dans `D.trash` (même fichier) avec sa copie Wolf ; « ↶ Annuler » juste après,
   ou « ↶ Restaurer » depuis la corbeille sous le journal (`restore(group)`).
 - **Copie MENSUELLE** (serveur v=11, `Ensure-MonthlySnapshot`) : au premier accès de chaque mois (démarrage, lecture ou
@@ -1243,8 +1255,9 @@ champs déjà présents dans `companies` (aucune nouvelle colonne `COL` nécessa
   explicitement après discussion des options avec l'utilisateur, voir aussi la contrainte
   "pas de backend" du projet).
 
-### Fiches thèse du loup dans l'onglet Valorisation (fait, 2026-11-15)
-Bloc « 📄 Mes fiches thèse » (`#fichesThese`, `js/fiches-these.js`, CSS `.ft-*`, appelé par `renderValorisation`) : dernière fiche en grand
+### Fiches thèse du loup dans Analyse › Vue d'ensemble (fait, 2026-11-15)
+Bloc « 📄 Mes fiches thèse » sous les graphiques Cours & régression / Valorisation (`#fichesThese`, `js/fiches-these.js`, CSS `.ft-*`,
+appelé par `renderCompany` ; d'abord dans l'onglet Valorisation, déplacé à la demande de l'utilisateur) : dernière fiche en grand
 (aperçus des 2 pages, verdict, cours, 3 prix justes, décision, « 📄 Ouvrir le PDF »), versions précédentes, puces des autres entreprises.
 Données = store `fiches` (`data/mes-portefeuilles/fiches.json`, serveur v=24 : un `items.<id>` ne disparaît pas sans `deleted`), PDF et
 PNG dans `atelier-media`. Remplies par le skill `wolf-fiche-these` (`generer_fiche.py` les envoie à chaque génération). Corbeille `trash`.
