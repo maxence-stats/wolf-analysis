@@ -67,7 +67,7 @@ async function fetchTvRatios(it){
 }
 function coursOf(it){ const c = company(it.nom); return c && c.cours != null ? { v: c.cours, auto: true } : { v: num(it.cours), auto: false }; }
 function calc(it, k){
-  const s = (it.sc || {})[k] || {}, base = num(it.base), mult = num(s.mult), cagr = num(s.cagr), dette = num(it.dette) || 0, cours = coursOf(it).v;
+  const s = (it.sc || {})[k] || {}, base = num(s.base) != null ? num(s.base) : num(it.base), mult = num(s.mult), cagr = num(s.cagr), dette = num(it.dette) || 0, cours = coursOf(it).v;
   if (base == null || mult == null) return null;
   const juste = base * mult - dette, p5 = cagr == null ? null : base * Math.pow(1 + cagr / 100, 5) * mult - dette;
   return { juste, p5, mult, cagr, ecart: cours && juste > 0 ? cours / juste - 1 : null, rdt: cours && p5 > 0 ? Math.pow(p5 / cours, 1 / 5) - 1 : null };
@@ -134,7 +134,7 @@ function rowHtml(it){
     '<td class="lp-num"><b>' + fmt(c.v, 2) + ' ' + d + '</b><small>' + (c.v == null ? 'à saisir' : c.auto ? 'cours de l\'appli' : 'saisi') + '</small></td>' +
     '<td class="lp-num lp-r"><b>' + (rt.div == null ? '—' : fmt(rt.div, 2) + ' %') + '</b><small>rendement</small></td>' +
     '<td class="lp-num lp-r"><b>' + (rt.pfcf == null ? '—' : fmt(rt.pfcf, 1) + 'x') + '</b><small>P/FCF actuel</small></td>' +
-    '<td class="lp-num"><b>' + fmt(num(it.base), 2) + ' ' + d + '</b><small>' + esc(it.metric || '') + (num(it.dette) ? ' · dette ' + fmt(num(it.dette), 2) : '') + '</small></td>' +
+    '<td class="lp-num"><b>' + fmt(num(it.base), 2) + ' ' + d + '</b><small>' + esc(it.metric || '') + (Object.values(it.sc || {}).some(x => x && num(x.base) != null) ? ' · base propre à un scénario' : '') + (num(it.dette) ? ' · dette ' + fmt(num(it.dette), 2) : '') + '</small></td>' +
     SC.map(s => cell(it, s[0], s[2], d)).join('') +
     '<td class="lp-acts">' + (known ? '<button type="button" data-a="analyse" title="Ouvrir dans l\'onglet Analyse">📊</button>' : '') +
     (RO && !hasDoc ? '' : '<button type="button" data-a="dossier" title="' + (hasDoc ? 'Ouvrir le dossier dans l\'Atelier d\'analyses' : 'Créer le dossier dans l\'Atelier d\'analyses') + '">🗂' + (hasDoc ? '' : '＋') + '</button>') +
@@ -217,12 +217,13 @@ function renderModal(){
     '<label>Dette nette par action à retirer (EV/EBITDA seulement, sinon vide)<input type="text" inputmode="decimal" class="at-in" id="lpDette" value="' + v(it.dette) + '" placeholder="vide = 0"></label>' +
     '<div class="lp-scs">' + SC.map(s => { const x = (it.sc || {})[s[0]] || {};
       return '<div class="lp-scf" style="--c:' + s[2] + '"><b>' + s[1] + '</b><label>Croissance par an (%)<input type="text" inputmode="decimal" class="at-in" data-sc="' + s[0] + '" data-f="cagr" value="' + v(x.cagr) + '"></label>' +
-        '<label>Multiple<input type="text" inputmode="decimal" class="at-in" data-sc="' + s[0] + '" data-f="mult" value="' + v(x.mult) + '"></label><div class="lp-prev" data-prev="' + s[0] + '"></div></div>'; }).join('') + '</div>' +
+        '<label>Multiple<input type="text" inputmode="decimal" class="at-in" data-sc="' + s[0] + '" data-f="mult" value="' + v(x.mult) + '"></label><label title="Vide = la base commune ci-dessus">Base propre à ce scénario<input type="text" inputmode="decimal" class="at-in" data-sc="' + s[0] + '" data-f="base" value="' + v(x.base) + '" placeholder="vide = base commune"></label><div class="lp-prev" data-prev="' + s[0] + '"></div></div>'; }).join('') + '</div>' +
     '<label>Note (facultatif)<input type="text" class="at-in" id="lpNote" value="' + esc(it.note || '') + '" placeholder="ex. multiple = médiane P/FCF sur 10 ans"></label>' +
     '<div class="at-mbtns"><span class="at-warn" id="lpErr"></span><span style="flex:1"></span><button type="button" class="at-btn" id="lpCancel">Annuler</button><button type="button" class="at-btn gold" id="lpOk">Enregistrer</button></div></div></div>';
   const bg = host.firstElementChild, close = () => { ui.modal = null; host.innerHTML = ''; };
   const read = () => { const o = Object.assign({}, it, { nom: $('lpNom').value.trim(), secteur: $('lpSec').value, sousSecteur: $('lpSub').value.trim(), devise: $('lpDev').value, cours: num($('lpCours').value), metric: $('lpMetric').value, base: num($('lpBase').value), dette: num($('lpDette').value), note: $('lpNote').value.trim(), sc: {} });
-    SC.forEach(s => { o.sc[s[0]] = { cagr: num(bg.querySelector('[data-sc="' + s[0] + '"][data-f="cagr"]').value), mult: num(bg.querySelector('[data-sc="' + s[0] + '"][data-f="mult"]').value) }; }); return o; };
+    SC.forEach(s => { o.sc[s[0]] = { cagr: num(bg.querySelector('[data-sc="' + s[0] + '"][data-f="cagr"]').value), mult: num(bg.querySelector('[data-sc="' + s[0] + '"][data-f="mult"]').value) };
+    const bs = num(bg.querySelector('[data-sc="' + s[0] + '"][data-f="base"]').value); if (bs != null) o.sc[s[0]].base = bs; }); return o; };
   const preview = () => { const o = read(), d = devSym(o.devise); SC.forEach(s => { const r = calc(o, s[0]), el = bg.querySelector('[data-prev="' + s[0] + '"]');
     el.innerHTML = r ? 'Prix juste <b>' + fmt(r.juste, 2) + ' ' + d + '</b><br>Dans 5 ans <b>' + fmt(r.p5, 2) + ' ' + d + '</b>' + (r.rdt != null ? '<br>Rendement <b>' + fmt(r.rdt * 100, 1) + ' %/an</b>' : '') : '<span class="at-faint">base et multiple à saisir</span>'; }); };
   bg.addEventListener('input', preview); bg.addEventListener('change', preview); preview();

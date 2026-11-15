@@ -11326,8 +11326,9 @@ function scenarioCardHtml(s){
         <div class="scenario-row-head"><span>${vl.fixed} Actuel</span><span class="val" id="vo-${s.key}-fcf">—</span></div>
         <div class="scenario-fcf-edit-row">
           <input type="number" class="scenario-number" id="vo-${s.key}-fcf-input" step="0.01">
-          <button type="button" class="scenario-fcf-reset" id="vo-${s.key}-fcf-reset" title="Revenir à la valeur automatique" aria-label="Revenir à la valeur automatique">↺</button>
+          <button type="button" class="scenario-fcf-reset" id="vo-${s.key}-fcf-reset" title="Revenir à la base commune aux 3 scénarios" aria-label="Revenir à la base commune aux 3 scénarios">↺</button>
         </div>
+        <div class="scenario-ev-note" id="vo-${s.key}-fcf-note"></div>
       </div>
       <div class="scenario-row">
         <div class="scenario-row-head"><span>CAGR ${vl.growth} Prévu (%)</span><span class="val" id="vo-${s.key}-cagrVal">—</span></div>
@@ -12533,6 +12534,9 @@ function wireFcfNorm(nom){
     const h = V.getFcfNorm(nom) || {}, st = V.fcfNormStats(Object.assign({}, fcfTvByYear(nom), h.years || {})), pick = (document.getElementById('fcfNormPick') || {}).value || h.pick || 'median';
     const val = pick === 'median' ? st.median : pick === 'median10' ? st.median10 : st.avgs && st.avgs[+pick.slice(3)];
     if (val == null || !fcfCtx || fcfCtx.nom !== nom) return;
+    // « Utiliser » = sur les 3 scénarios : les FCF propres à un scénario sont retirés
+    SCENARIOS.forEach(s => { if (scenarioValues[s.key]) scenarioValues[s.key].fcf = null; });
+    markScenarioEdited();
     applyFcfOverride(nom, fcfCtx.hist, fcfCtx.prixActuel, fcfCtx.fcfActuelAuto, +val.toFixed(4));
     const m = msg(); if (m) m.textContent = '✔ FCF des 3 scénarios = ' + fmtEUR(val) + ' (↺ dans une carte pour revenir au FCF actuel)';
   });
@@ -12853,11 +12857,11 @@ function renderValorisation(nom){
     // optimiste = plus haute des moyennes (demande de l'utilisateur, 2026-11-08).
     const evPick = valorisationMetric === 'ev' && vInputs.evStats ? { pessimiste: vInputs.evStats.minAvg, realiste: vInputs.evStats.medianAvg, optimiste: vInputs.evStats.maxAvg }[s.key] : null;
     const cur = (currentScenarioFor(nom, valorisationMetric) || {})[s.key];
-    if (cur && isFinite(cur.multiple) && isFinite(cur.cagr)){ scenarioValues[s.key] = { cagr: cur.cagr, multiple: cur.multiple, rachat: cur.rachat || 0, detteFuture: cur.detteFuture != null ? cur.detteFuture : null }; return; }
-    scenarioValues[s.key] = saved ? { cagr: saved.cagr, multiple: saved.multiple, rachat: saved.rachat || 0, detteFuture: saved.detteFuture != null ? saved.detteFuture : null } : {
+    if (cur && isFinite(cur.multiple) && isFinite(cur.cagr)){ scenarioValues[s.key] = { cagr: cur.cagr, multiple: cur.multiple, rachat: cur.rachat || 0, detteFuture: cur.detteFuture != null ? cur.detteFuture : null, fcf: cur.fcf != null && isFinite(cur.fcf) ? cur.fcf : null }; return; }
+    scenarioValues[s.key] = saved ? { cagr: saved.cagr, multiple: saved.multiple, rachat: saved.rachat || 0, detteFuture: saved.detteFuture != null ? saved.detteFuture : null, fcf: saved.fcf != null && isFinite(saved.fcf) ? saved.fcf : null } : {
       cagr: cagrHist != null ? +(cagrHist + s.deltaCagr).toFixed(1) : 0,
       multiple: evPick != null ? +evPick.toFixed(1) : medianeHist != null ? Math.max(0, +(medianeHist + dMult).toFixed(dec)) : 0,
-      rachat: 0, detteFuture: null
+      rachat: 0, detteFuture: null, fcf: null
     };
   });
 
@@ -12913,9 +12917,9 @@ function valoScenarioEstimates(){
   const prix = hist[hist.length - 1].prixActuel, out = {};
   SCENARIOS.forEach(s => {
     const v = scenarioValues[s.key];
-    if (!v || activeFcfActuel == null || prix == null) return;
+    if (!v || scenarioFcf(s.key) == null || prix == null) return;
     const detteArg = valorisationMetric === 'ev' ? { actuelle: activeValoDetteNetteParAction || 0, future: v.detteFuture } : activeValoDetteNetteParAction;
-    out[s.key] = computeScenario(activeFcfActuel, prix, v.cagr, v.multiple, v.rachat, detteArg);
+    out[s.key] = computeScenario(scenarioFcf(s.key), prix, v.cagr, v.multiple, v.rachat, detteArg);
   });
   return out;
 }
@@ -13141,8 +13145,23 @@ function renderDcfTiles(name){
 // valorisationFcfOverrides (localStorage) ; les éléments sont clonés à chaque rendu pour
 // repartir sans les listeners de l'entreprise précédente (fermés sur un nom périmé sinon).
 function fcfActuelEditableIds(){
-  return [{ input:'voFcfActuelInput', reset:'voFcfActuelReset' }]
-    .concat(SCENARIOS.map(s => ({ input:'vo-' + s.key + '-fcf-input', reset:'vo-' + s.key + '-fcf-reset' })));
+  return [{ input:'voFcfActuelInput', reset:'voFcfActuelReset' }];
+}
+// FCF (ou OCF / BPA / EBITDA / actif net) PROPRE A UN SCENARIO (2026-11-15, demande de l'utilisateur) : le champ de
+// chaque carte ne touche plus que ce scénario (scenarioValues[clé].fcf). Vide / ↺ = base commune (tuile du haut,
+// valeur TradingView ou corrigée, FCF normalisé). Gardé dans l'objectif enregistré et dans les réglages en cours.
+function scenarioFcf(key){
+  const v = scenarioValues[key];
+  return v && v.fcf != null && isFinite(v.fcf) ? v.fcf : activeFcfActuel;
+}
+function syncScenarioFcfDisplay(key){
+  const v = scenarioValues[key], own = !!(v && v.fcf != null && isFinite(v.fcf)), val = scenarioFcf(key);
+  const input = document.getElementById('vo-' + key + '-fcf-input'), reset = document.getElementById('vo-' + key + '-fcf-reset');
+  const fcfEl = document.getElementById('vo-' + key + '-fcf'), note = document.getElementById('vo-' + key + '-fcf-note');
+  if (input){ if (document.activeElement !== input) input.value = val != null ? +(+val).toFixed(4) : ''; input.classList.toggle('overridden', own); }
+  if (reset) reset.classList.toggle('visible', own);
+  if (fcfEl){ fcfEl.textContent = val != null ? fmtEUR(val) : 'N/D'; fcfEl.classList.toggle('overridden', own); }
+  if (note) note.textContent = own ? 'Propre à ce scénario (base commune : ' + (activeFcfActuel != null ? fmtEUR(activeFcfActuel) : 'N/D') + ')' : '';
 }
 function syncFcfActuelDisplays(nom){
   const overridden = !!(valorisationFcfOverrides[nom] && valorisationFcfOverrides[nom][valorisationMetric] != null);
@@ -13156,13 +13175,7 @@ function syncFcfActuelDisplays(nom){
     }
     if (reset) reset.classList.toggle('visible', overridden);
   });
-  SCENARIOS.forEach(s => {
-    const fcfEl = document.getElementById('vo-' + s.key + '-fcf');
-    if (fcfEl){
-      fcfEl.textContent = activeFcfActuel != null ? fmtEUR(activeFcfActuel) : 'N/D';
-      fcfEl.classList.toggle('overridden', overridden);
-    }
-  });
+  SCENARIOS.forEach(s => syncScenarioFcfDisplay(s.key));
 }
 function applyFcfOverride(nom, hist, prixActuel, fcfActuelAuto, newVal){
   if (!valorisationFcfOverrides[nom]) valorisationFcfOverrides[nom] = {};
@@ -13225,6 +13238,19 @@ function wireScenarioCard(s, hist, prixActuel){
   }
   cagrInput.addEventListener('input', update);
   multInput.addEventListener('input', update);
+  const fcfInput = document.getElementById('vo-' + s.key + '-fcf-input');
+  const fcfReset = document.getElementById('vo-' + s.key + '-fcf-reset');
+  if (fcfInput) fcfInput.addEventListener('change', () => {
+    const v = parseFloat(String(fcfInput.value).replace(',', '.'));
+    scenarioValues[s.key].fcf = isFinite(v) && (activeFcfActuel == null || Math.abs(v - activeFcfActuel) > 1e-9) ? v : null;
+    updateScenarioCard(s, hist, prixActuel);
+    markScenarioEdited();
+  });
+  if (fcfReset) fcfReset.addEventListener('click', () => {
+    scenarioValues[s.key].fcf = null;
+    updateScenarioCard(s, hist, prixActuel);
+    markScenarioEdited();
+  });
   rachatInput.addEventListener('input', update);
   syncQuickButtons();
   // EV/EBITDA : dette nette future par action, propre à chaque scénario (null = hypothèse « dette actuelle »).
@@ -13261,9 +13287,8 @@ function wireScenarioCard(s, hist, prixActuel){
 
 function updateScenarioCard(s, hist, prixActuel){
   const { cagr, multiple, rachat } = scenarioValues[s.key];
-  const fcfActuel = activeFcfActuel;
-  const fcfEl = document.getElementById('vo-' + s.key + '-fcf');
-  if (fcfEl) fcfEl.textContent = fcfActuel != null ? fmtEUR(fcfActuel) : 'N/D';
+  const fcfActuel = scenarioFcf(s.key);
+  syncScenarioFcfDisplay(s.key);
   document.getElementById('vo-' + s.key + '-cagrVal').textContent = cagr.toLocaleString('fr-FR', {minimumFractionDigits:1}) + '%';
   document.getElementById('vo-' + s.key + '-multVal').textContent = multiple.toLocaleString('fr-FR', {minimumFractionDigits:1}) + 'x';
   document.getElementById('vo-' + s.key + '-rachatVal').textContent = (rachat >= 0 ? '+' : '') + rachat.toLocaleString('fr-FR', {minimumFractionDigits:1}) + '%';
@@ -13565,6 +13590,7 @@ function saveObjectif(nom){
   SCENARIOS.forEach(s => {
     snapshot[s.key] = { cagr: scenarioValues[s.key].cagr, multiple: scenarioValues[s.key].multiple, rachat: scenarioValues[s.key].rachat || 0 };
     if (valorisationMetric === 'ev' && scenarioValues[s.key].detteFuture != null) snapshot[s.key].detteFuture = scenarioValues[s.key].detteFuture;
+    if (scenarioValues[s.key].fcf != null) snapshot[s.key].fcf = scenarioValues[s.key].fcf;
   });
   objectifsStore[nom].push({ date: new Date().toISOString().slice(0, 10), scenarios: snapshot, metric: valorisationMetric });
   persistObjectifsLocal();
@@ -13616,7 +13642,7 @@ function applyObjectif(nom, idx){
   SCENARIOS.forEach(s => {
     const v = entry.scenarios[s.key];
     if (!v) return;
-    scenarioValues[s.key] = { cagr: v.cagr, multiple: v.multiple, rachat: v.rachat || 0, detteFuture: v.detteFuture != null ? v.detteFuture : null };
+    scenarioValues[s.key] = { cagr: v.cagr, multiple: v.multiple, rachat: v.rachat || 0, detteFuture: v.detteFuture != null ? v.detteFuture : null, fcf: v.fcf != null && isFinite(v.fcf) ? v.fcf : null };
     const detteInput = document.getElementById('vo-' + s.key + '-dette');
     if (detteInput) detteInput.value = v.detteFuture != null ? v.detteFuture : '';
     const cagrInput = document.getElementById('vo-' + s.key + '-cagr');
@@ -13628,6 +13654,7 @@ function applyObjectif(nom, idx){
   });
   const hist = companies[nom];
   const latest = hist[hist.length - 1];
+  syncFcfActuelDisplays(nom);
   SCENARIOS.forEach(s => updateScenarioCard(s, hist, latest.prixActuel));
   markScenarioEdited();
 }
@@ -21777,7 +21804,7 @@ document.getElementById('sendToPrixBtn').addEventListener('click', async () => {
   const hist = companies[nom] || [], latest = hist[hist.length - 1] || {};
   const METHODE = { fcf: ['FCF par action', 'FCF'], ocf: ['OCF par action', 'OCF'], per: ['BPA (bénéfice par action)', 'PER'], ev: ['EBITDA par action', 'EV/EBITDA'], pb: ['Actif net par action', 'P/B'] }[valorisationMetric] || ['FCF par action', 'FCF'];
   const k = { pess: 'pessimiste', real: 'realiste', opt: 'optimiste' }, sc = {};
-  Object.keys(k).forEach(x => { const v = scenarioValues[k[x]]; if (v) sc[x] = { cagr: +(+v.cagr).toFixed(2), mult: +(+v.multiple).toFixed(2) }; });
+  Object.keys(k).forEach(x => { const v = scenarioValues[k[x]]; if (v){ sc[x] = { cagr: +(+v.cagr).toFixed(2), mult: +(+v.multiple).toFixed(2) }; if (v.fcf != null && isFinite(v.fcf)) sc[x].base = +(+v.fcf).toFixed(4); } });
   let dette = null;
   if (valorisationMetric === 'ev'){ try { dette = multiplesValoInputs(latest, nom).detteNetteParAction || 0; } catch(e){ dette = null; } }
   if (activeFcfActuel == null || !Object.keys(sc).length){ if (msg) msg.textContent = '⚠ Rien à envoyer : base ou scénarios manquants.'; return; }
