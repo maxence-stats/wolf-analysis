@@ -495,14 +495,21 @@ function render(){
   if (!patri && c && histAt && typeof Chart !== 'undefined'){ drawPerfChart(c); drawDonut(c, locked); }
   if (ui.modal) wireModal();
 }
+// Pastille de l'heure des cours : la DATE est écrite dès que ce n'est plus aujourd'hui (avant : « Cours de 22:53 » sans date).
+function histPillHtml(){
+  const hm = histAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const today = histAt.toDateString() === new Date().toDateString();
+  const old = Date.now() - histAt.getTime() > 60 * 60 * 1000;
+  return `<span class="mp-pill${old ? ' warn' : ''}" title="Heure de la dernière lecture des cours sur TradingView">Cours ${today ? 'de ' + hm : 'du ' + histAt.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) + ' à ' + hm}</span>`;
+}
 function titleHtml(){
   const nErr = Object.keys(histErr).length;
   return `<div class="mp-title"><div><div class="section-label" style="margin:0;">📒 Mes portefeuilles</div>
       <p>${RO ? 'Wolf Portfolio · copie publiée le ' + (publishedAt ? new Date(publishedAt).toLocaleDateString('fr-FR') + ' à ' + new Date(publishedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '') + ' · lecture seule' : 'Fichier sur ton PC, sauvegardé à chaque saisie (copies datées + copie dans Documents) · cours TradingView'}</p></div>
-    <div class="mp-title-right">${histLoading ? '<span class="mp-pill">⏳ Cours TradingView…</span>' : histAt ? `<span class="mp-pill">Cours de ${histAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : ''}
+    <div class="mp-title-right">${histLoading ? '<span class="mp-pill">⏳ Mise à jour des cours TradingView…</span>' : histAt ? histPillHtml() : ''}
       ${nErr ? `<span class="mp-pill warn" title="${esc(Object.keys(histErr).join(', '))}">⚠ ${nErr} cours manquant(s)</span>` : ''}
       ${RO ? '' : '<button class="mp-ghost mp-sizebtn" data-mp-sizing title="Combien acheter selon ton stop et le risque accepté">📐 Taille de position</button>'}
-      <button class="mp-ghost" data-mp-refresh title="Relire les cours TradingView">↻ Cours</button></div></div>
+      ${RO ? '' : `<button class="refresh-btn" data-mp-refresh ${histLoading ? 'disabled' : ''} title="Relire tous les cours sur TradingView, tout de suite">🔄 Mettre à jour maintenant</button>`}</div></div>
     ${ui.msg ? `<div class="mp-banner ${ui.msg.err ? 'err' : 'ok'}"><span>${esc(ui.msg.text)}</span><span>${ui.msg.undo ? `<button class="mp-ghost" data-mp-restore="${esc(ui.msg.undo)}">↶ Annuler</button>` : ''}<button class="mp-x" data-mp-msgx>✕</button></span></div>` : ''}`;
 }
 const PATRI_GROUP = ['patri', 'pea', 'cto', 'perso'];
@@ -1661,7 +1668,7 @@ function wire(){
     if (f && t && f < t){ ui.period = { k: 'custom', from: f, to: t }; render(); }
   });
   page.querySelectorAll('[data-mp-add]').forEach(b => b.addEventListener('click', () => openModal(b.dataset.mpAdd)));
-  const rf = page.querySelector('[data-mp-refresh]'); if (rf) rf.addEventListener('click', () => loadHistory(true));
+  const rf = page.querySelector('[data-mp-refresh]'); if (rf) rf.addEventListener('click', forceRefresh);
   const szb = page.querySelector('[data-mp-sizing]'); if (szb) szb.addEventListener('click', openSizing);
   const mx = page.querySelector('[data-mp-msgx]'); if (mx) mx.addEventListener('click', () => { ui.msg = null; render(); });
   const lk = page.querySelector('#mpLockBtn');
@@ -1697,12 +1704,37 @@ function wire(){
 // alors tout de suite. Une seule lecture en vol : un clic pendant le préchargement attend la même demande au lieu d'en relancer une.
 let loadP = null, histP = null;
 function ensureLoaded(){ if (!loadP) loadP = load().finally(() => { if (!D) loadP = null; }); return loadP; }
-function ensureHistory(){ if (!histP && D && !RO) histP = loadHistory(); return histP || Promise.resolve(); }
+// Cours relus dès qu'ils ont plus de 10 minutes (2026-11-20 : avant, ils n'étaient lus qu'UNE fois par ouverture de la page ;
+// un onglet resté ouvert ou un PC sorti de veille gardait les cours de l'avant-veille).
+const HIST_MAX_AGE = 10 * 60 * 1000;
+const histStale = () => !histAt || Date.now() - histAt.getTime() > HIST_MAX_AGE;
+function ensureHistory(force){
+  if (!D || RO) return Promise.resolve();
+  if (histP && !force) return histP;
+  if (!force && !histStale()) return Promise.resolve();
+  const prev = histP || Promise.resolve();
+  const p = prev.then(() => loadHistory(!!force)).finally(() => { if (histP === p) histP = null; });
+  histP = p; return p;
+}
+// Bouton « Mettre à jour maintenant » : relit TOUS les cours sur TradingView, sans passer par le cache du serveur.
+async function forceRefresh(){
+  if (histLoading) return;
+  await ensureHistory(true);
+  const nErr = Object.keys(histErr).length;
+  ui.msg = histErr._ ? { err: true, text: 'Mise à jour impossible : ' + histErr._ }
+    : { text: 'Cours TradingView mis à jour à ' + histAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) + (nErr ? ' · ' + nErr + ' cours manquant(s)' : '') };
+  render();
+}
 async function preload(){ await ensureLoaded(); await ensureHistory(); }
 async function onShow(){
   if (!D){ await ensureLoaded(); render(); if (D) ensureHistory(); }
   else { render(); ensureHistory(); }
 }
+const pageActive = () => { const pg = document.getElementById(PAGE_ID); return !!(pg && pg.classList.contains('active')); };
+// Retour sur l'onglet du navigateur / sortie de veille : cours relus s'ils sont trop vieux.
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && D && histStale()) ensureHistory(); });
+// Page ouverte longtemps : relecture toutes les 10 minutes (cache du serveur 30 min, donc sans surcharger TradingView).
+setInterval(() => { if (document.visibilityState === 'visible' && pageActive() && D && histStale()) ensureHistory(); }, 60 * 1000);
 document.addEventListener('click', e => {
   const b = e.target.closest && e.target.closest('[data-page="' + PAGE_ID + '"]');
   if (b) setTimeout(onShow, 0);
