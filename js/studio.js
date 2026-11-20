@@ -54,6 +54,33 @@ const tvLogo = id => id ? 'https://s3-symbol-logo.tradingview.com/' + id + '--bi
 const SPECIAL = { chatgpt: ['ChatGPT', 'data/ai-logos/chatgpt.svg'], claude: ['Claude', 'data/ai-logos/claude.svg'], gemini: ['Gemini', 'data/ai-logos/gemini.svg'], grok: ['Grok', 'data/ai-logos/grok.svg'], WOLF: ['Wolf Portfolio', 'data/wolf-tete.png'], EUR: ['Euro', ''], CAC: ['CAC 40', ''], SPX: ['S&P 500', ''] };
 const logoUrl = it => !it ? '' : it.k ? (SPECIAL[it.k] ? SPECIAL[it.k][1] : '') : tvLogo(it.logoid);
 const nameOf = it => !it ? '' : it.k ? (SPECIAL[it.k] ? SPECIAL[it.k][0] : it.k) : (it.name || (it.sym || '').split(':')[1] || '');
+// Matières premières (2026-11-20) : la recherche du serveur ne renvoie que des actions et des ETF ; ces lignes sont proposées
+// EN PREMIER quand le texte tapé correspond (nom français ou anglais, sans accents). Symboles et logos vérifiés sur TradingView.
+const COMMOS = [
+  ['TVC:GOLD', 'Or', 'metal/gold', 'or gold xau'], ['TVC:SILVER', 'Argent', 'metal/silver', 'argent silver xag'],
+  ['TVC:USOIL', 'Pétrole WTI', 'crude-oil', 'petrole wti oil brut crude'], ['TVC:UKOIL', 'Pétrole Brent', 'crude-oil', 'petrole brent oil brut crude'],
+  ['COMEX:HG1!', 'Cuivre', 'metal/copper', 'cuivre copper'], ['NYMEX:NG1!', 'Gaz naturel', 'natural-gas', 'gaz naturel natural gas'],
+  ['TVC:PLATINUM', 'Platine', 'metal/platinum', 'platine platinum'], ['TVC:PALLADIUM', 'Palladium', 'metal/palladium', 'palladium'],
+  ['CBOT:ZW1!', 'Blé', 'commodity/wheat', 'ble wheat'], ['CBOT:ZC1!', 'Maïs', 'commodity/corn', 'mais corn'],
+  ['CBOT:ZS1!', 'Soja', 'commodity/soybean', 'soja soybean'], ['ICEUS:KC1!', 'Café', 'commodity/coffee', 'cafe coffee'],
+  ['ICEUS:CC1!', 'Cacao', 'cocoa', 'cacao cocoa'], ['ICEUS:SB1!', 'Sucre', 'commodity/sugar', 'sucre sugar'],
+  ['BITSTAMP:BTCUSD', 'Bitcoin', 'crypto/XTVCBTC', 'bitcoin btc crypto'], ['BITSTAMP:ETHUSD', 'Ethereum', 'crypto/XTVCETH', 'ethereum eth ether crypto']
+].map(([symbol, name, logoid, kw]) => ({ symbol, name, logoid, type: 'commodity', kw: kw + ' matieres premieres commodities' }));
+// Raccourcis du Sommaire hebdo (boutons « ＋ » sous la recherche)
+const QUICK = ['TVC:GOLD', 'TVC:SILVER', 'TVC:USOIL', 'TVC:UKOIL', 'COMEX:HG1!', 'NYMEX:NG1!', 'TVC:PLATINUM', 'BITSTAMP:BTCUSD', 'BITSTAMP:ETHUSD'];
+const noAcc = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+function commoMatches(q){
+  const t = noAcc(q); if (t.length < 2) return [];
+  return COMMOS.filter(c => noAcc(c.name).startsWith(t) || c.kw.split(' ').some(w => w.startsWith(t)) || (t.length >= 3 && c.kw.includes(t)))
+    .map(({ symbol, name, logoid, type }) => ({ symbol, name, logoid, type }));
+}
+// Recherche TradingView (actions + ETF via le serveur) + matières premières en tête. Même forme de résultat partout.
+async function tvSearch(q){
+  const mine = commoMatches(q);
+  let rest = [];
+  try { const r = await fetch('/api/tv/search?all=1&q=' + encodeURIComponent(q.trim().slice(0, 50)), { cache: 'no-store' }); const j = await r.json(); rest = j.ok ? (j.results || []) : []; } catch(e){ if (!mine.length) throw e; }
+  return mine.concat(rest.filter(r => !mine.some(m => m.symbol === r.symbol))).slice(0, 8);
+}
 async function ensureLogo(it){
   if (!it || it.k) return;
   if (!it.logoid && it.sym){ const s = await snap(it.sym); if (s && s.logoid) it.logoid = s.logoid; }
@@ -651,7 +678,7 @@ async function search(k, q, slot){
   const bk = slot != null && slot !== '' ? k + '_' + slot : k; k = bk;
   const box = $('sdSugg_' + bk); if (!box) return;
   if (q.trim().length < 2){ box.innerHTML = ''; return; }
-  try { const r = await fetch('/api/tv/search?all=1&q=' + encodeURIComponent(q.trim().slice(0, 50)), { cache: 'no-store' }); const j = await r.json(); ui.sugg[k] = j.ok ? (j.results || []).slice(0, 8) : []; }
+  try { ui.sugg[k] = await tvSearch(q); }
   catch(e){ ui.sugg[k] = []; }
   box.innerHTML = ui.sugg[k].length ? ui.sugg[k].map((r, i) => `<button type="button" data-sd-pick="${k}|${i}">${r.logoid ? `<img src="${esc(tvLogo(r.logoid))}" alt="">` : '<i></i>'}<b>${esc(r.name)}</b><span>${esc(r.symbol)}</span></button>`).join('') : '<p class="sd-sub">Aucun résultat (serveur local ?).</p>';
 }
@@ -1607,7 +1634,7 @@ const SHORT = (() => {
   }
   function reload(){ pubOv = { yt: null, fb: null }; DATA = null; dataErr = null; if (!recording){ tt = 0; } view(); }
   async function coSearch(q, key){ const box = $('sdCoSugg_' + key); if (!box) return; if (q.trim().length < 2){ box.innerHTML = ''; return; }
-    try { const r = await fetch('/api/tv/search?all=1&q=' + encodeURIComponent(q.trim().slice(0, 50)), { cache: 'no-store' }); const j = await r.json(); coSugg = j.ok ? (j.results || []).slice(0, 8) : []; } catch(e){ coSugg = []; }
+    try { coSugg = await tvSearch(q); } catch(e){ coSugg = []; }
     box.innerHTML = coSugg.length ? coSugg.map((r, i) => `<button type="button" data-sd-copick="${key}|${i}">${r.logoid ? `<img src="${esc(tvLogo(r.logoid))}" alt="">` : '<i></i>'}<b>${esc(r.name)}</b><span>${esc(r.symbol)}</span></button>`).join('') : '<p class="sd-sub">Aucun résultat (serveur local ?).</p>'; }
   async function devices(){ if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
     try { const ds = await navigator.mediaDevices.enumerateDevices(), cs = $('sdCamSel'), ms = $('sdMicSel'); if (!cs || !ms) return;
@@ -1805,7 +1832,7 @@ const PROG = (() => {
   async function draw(){ const p = cur(), cv = $('pgCv'); if (!cv) return; await preload(p); if ($('pgCv') === cv) render(cv, p); }
 
   /* --- interface --- */
-  function chips(p, col){ return (p[col] || []).map((it, i) => `<span class="pg-chip">${it.logoid ? `<img src="${esc(tvLogo(it.logoid))}" alt="">` : '<i></i>'}<b>${esc(it.name)}</b>
+  function chips(p, col){ return (p[col] || []).map((it, i) => `<span class="pg-chip">${it.logoid ? `<img src="${esc(tvLogo(it.logoid))}" alt="">` : '<i></i>'}<input class="pg-name" data-pg-name="${col}|${i}" value="${esc(it.name)}" placeholder="${esc(it.fullName || it.name)}" title="Nom affiché sur l'image (vide = ${esc(it.fullName || it.name)})" aria-label="Nom affiché de ${esc(it.fullName || it.name)}">
       <select data-pg-tag="${col}|${i}" aria-label="Étiquette de ${esc(it.name)}">${Object.entries(TAGS).map(([k, v]) => `<option value="${k}" ${(it.tag || '') === k ? 'selected' : ''}>${esc(v[0])}</option>`).join('')}</select>
       <button type="button" data-pg-up="${col}|${i}" aria-label="Avancer">‹</button><button type="button" data-pg-rm="${col}|${i}" aria-label="Retirer">✕</button></span>`).join('') || '<p class="sd-sub">Aucune entreprise pour l’instant.</p>'; }
   async function picks(col){
@@ -1820,7 +1847,8 @@ const PROG = (() => {
         <label class="sd-f">Semaine<input data-pg="sem" value="${esc(p.sem || '')}"></label>
         ${['watch', 'port'].map(col => `<div class="pg-col"><div class="pg-colh"><b>${col === 'watch' ? '👀 Ma watchlist' : '🐺 Mon portefeuille'}</b><span>${(p[col] || []).length} / ${MAXN}</span></div>
           <div class="pg-chips">${chips(p, col)}</div>
-          <input class="sd-search" data-pg-q="${col}" placeholder="Chercher une action ou un ETF (TradingView)…" autocomplete="off"><div class="sd-sugg" id="pgSugg_${col}"></div>
+          <input class="sd-search" data-pg-q="${col}" placeholder="Action, ETF, or, pétrole, cuivre… (TradingView)" autocomplete="off"><div class="sd-sugg" id="pgSugg_${col}"></div>
+          <div class="pg-picks"><span class="sd-sub">Matières premières & crypto :</span>${COMMOS.filter(c => QUICK.includes(c.symbol)).filter(c => !(p[col] || []).some(z => z.sym === c.symbol)).map(c => `<button type="button" data-pg-pick="${col}|${esc(c.symbol)}|${esc(c.name)}|${esc(c.logoid)}">＋ ${esc(c.name)}</button>`).join('')}</div>
           <div class="pg-picks" id="pgPicks_${col}"><span class="sd-sub">${col === 'watch' ? 'Depuis ton onglet Watchlist :' : 'Depuis le Wolf Portfolio :'}</span></div></div>`).join('')}
         <div class="sd-vars">${[['nuit', 'Nuit'], ['beige', 'Beige'], ['or', 'Or']].map(([k, l]) => `<button type="button" data-pg-theme="${k}" class="${p.theme === k ? 'on' : ''}">${l}</button>`).join('')}</div>
       </aside>
@@ -1837,7 +1865,7 @@ const PROG = (() => {
   function add(col, it){ const p = cur(); p[col] = p[col] || []; if (p[col].length >= MAXN){ msg('10 entreprises au plus par colonne'); return; } if (p[col].some(z => z.sym === it.sym)) return; p[col].push(Object.assign({ tag: '' }, it)); touch(p); view(); }
   function savePreview(p){ const cv = $('pgCv'); if (!cv) return; const c = document.createElement('canvas'); c.width = 320; c.height = 180; c.getContext('2d').drawImage(cv, 0, 0, 320, 180); try { p.preview = c.toDataURL('image/jpeg', 0.7); } catch(e){} }
   async function search(col, q){ const box = $('pgSugg_' + col); if (!box) return; if (q.trim().length < 2){ box.innerHTML = ''; return; }
-    try { const r = await fetch('/api/tv/search?all=1&q=' + encodeURIComponent(q.trim().slice(0, 50)), { cache: 'no-store' }); const j = await r.json(); sugg[col] = j.ok ? (j.results || []).slice(0, 8) : []; } catch(e){ sugg[col] = []; }
+    try { sugg[col] = await tvSearch(q); } catch(e){ sugg[col] = []; }
     box.innerHTML = (sugg[col] || []).map((r, i) => `<button type="button" data-pg-sug="${col}|${i}">${r.logoid ? `<img src="${esc(tvLogo(r.logoid))}" alt="">` : '<i></i>'}<b>${esc(r.name)}</b><span>${esc(r.symbol)}</span></button>`).join('') || '<p class="sd-sub">Aucun résultat (serveur local ?).</p>'; }
   return {
     view, render, preload, list: () => list(), get: id => all()[id] || null, TAGS,
@@ -1858,6 +1886,8 @@ const PROG = (() => {
       if (ds.pgAct === 'short'){ savePreview(p); touch(p); SHORT.openProgramme(p.id); return true; }
       return false; },
     input(e){ const t = e.target; if (t.dataset.pg){ const p = cur(); p[t.dataset.pg] = t.value; touch(p); draw(); return true; }
+      // nom affiché modifiable (2026-11-20) : le nom TradingView d'origine est gardé dans fullName, case vidée = on y revient
+      if (t.dataset.pgName){ const [c, i] = t.dataset.pgName.split('|'), p = cur(), it = p[c] && p[c][+i]; if (it){ if (!it.fullName) it.fullName = it.name; it.name = t.value.trim() || it.fullName; touch(p); draw(); } return true; }
       if (t.dataset.pgQ){ clearTimeout(t._tm); t._tm = setTimeout(() => search(t.dataset.pgQ, t.value), 250); return true; } return false; },
     change(e){ const t = e.target; if (t.dataset && t.dataset.pgTag){ const [c, i] = t.dataset.pgTag.split('|'), p = cur(); if (p[c] && p[c][+i]){ p[c][+i].tag = t.value; touch(p); draw(); } return true; } return false; }
   };

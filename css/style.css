@@ -3486,6 +3486,10 @@
 .pg-chip{display:grid;grid-template-columns:24px minmax(0,1fr) auto auto auto;gap:6px;align-items:center;background:var(--panel-2);border:1px solid var(--hair);border-radius:10px;padding:5px 7px}
 .pg-chip img,.pg-chip i{width:24px;height:24px;border-radius:50%;background:#fff;object-fit:contain}
 .pg-chip b{font:700 13px var(--font-body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pg-chip .pg-name{font:700 13px var(--font-body);color:var(--text);background:transparent;border:1px solid transparent;border-bottom:1px dashed var(--text-faint);border-radius:7px;padding:3px 5px;min-width:0;width:100%;text-overflow:ellipsis;cursor:text}
+.pg-chip select[data-pg-tag]{max-width:104px}
+.pg-chip .pg-name:hover{border-color:var(--hair)}
+.pg-chip .pg-name:focus{outline:none;border-color:var(--gold);background:var(--bg)}
 .pg-chip select{font:600 12px var(--font-body);color:var(--text);background:var(--bg);border:1px solid var(--hair);border-radius:7px;padding:3px 4px;max-width:130px}
 .pg-chip button{border:1px solid var(--hair);background:var(--bg);color:var(--text);border-radius:7px;padding:3px 7px;cursor:pointer}
 .pg-picks{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
