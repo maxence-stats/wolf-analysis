@@ -30,7 +30,7 @@ REM Un serveur deja lance mais PERIME (demarre avant une mise a jour de static-s
 REM ne connait pas /api/ia/ping : le Portefeuille IA afficherait "Sauvegarde impossible".
 REM On le detecte et on le remplace, sans intervention manuelle.
 if "%SERVER_UP%"=="1" (
-  powershell -NoProfile -Command "try { $r = Invoke-WebRequest -UseBasicParsing http://localhost:%PORT%/api/ia/ping -TimeoutSec 4; if ($r.Content -match 'v.:24') { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
+  powershell -NoProfile -Command "try { $r = Invoke-WebRequest -UseBasicParsing http://localhost:%PORT%/api/ia/ping -TimeoutSec 4; if ($r.Content -match 'v.:25') { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
   if errorlevel 1 (
     powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='powershell.exe'\" | Where-Object { $_.CommandLine -match 'static-server' -and $_.CommandLine -notmatch '-Port' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }" >nul 2>&1
     timeout /t 2 /nobreak >nul
@@ -44,4 +44,14 @@ if "%SERVER_UP%"=="0" (
   if exist "%PORTFILE%" set /p PORT=<"%PORTFILE%"
 )
 
-start "" "http://localhost:%PORT%/"
+REM Ouvre dans Google Chrome (demande de l'utilisateur), quel que soit le navigateur
+REM par defaut de Windows. Repli sur le navigateur par defaut si Chrome est absent.
+set CHROME=
+if exist "%ProgramFiles%\Google\Chrome\Application\chrome.exe" set "CHROME=%ProgramFiles%\Google\Chrome\Application\chrome.exe"
+if not defined CHROME if exist "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" set "CHROME=%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"
+if not defined CHROME if exist "%LocalAppData%\Google\Chrome\Application\chrome.exe" set "CHROME=%LocalAppData%\Google\Chrome\Application\chrome.exe"
+if defined CHROME (
+  start "" "%CHROME%" "http://localhost:%PORT%/"
+) else (
+  start "" "http://localhost:%PORT%/"
+)

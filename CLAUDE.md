@@ -14,7 +14,9 @@ définitif : un raccourci Bureau **« Wolf Analysis »** (créé via PowerShell/
 pointe vers `Lancer Wolf Analysis.bat` à la racine du dépôt) lance un petit serveur HTTP
 local (`.claude/static-server.ps1`, port préféré 8189, démarré en arrière-plan s'il ne
 tourne pas déjà — vérifié par un test de connexion TCP avant de le relancer) puis ouvre
-`http://localhost:<port>/` dans le navigateur par défaut. Le serveur envoie
+`http://localhost:<port>/` dans **Google Chrome** (demande de l'utilisateur, 2026-11-21 : jamais Edge ; repli sur le
+navigateur par défaut si Chrome est absent). Le bouton « 🌐 Publier en ligne » pousse sur `master` (`push origin HEAD:master`,
+serveur v=25) : c'est `master` que GitHub Pages sert au téléphone, quelle que soit la branche de travail. Le serveur envoie
 `Cache-Control: no-cache, no-store, must-revalidate` sur CHAQUE réponse : une version
 périmée devient structurellement impossible tant que ce raccourci est utilisé.
 **L'utilisateur doit désormais toujours utiliser ce raccourci, plus jamais `index.html`

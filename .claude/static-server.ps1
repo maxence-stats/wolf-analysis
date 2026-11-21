@@ -446,7 +446,7 @@ function Handle-PublishGo($req, $res){
     $log += (& $git -C $root add -- "data/public" 2>&1 | Out-String)
     $pending = (& $git -C $root status --porcelain -- "data/public" 2>&1 | Out-String).Trim()
     if ($pending){ $log += (& $git -C $root commit -m ("Publication en ligne du " + (Get-Date -Format "dd/MM/yyyy HH:mm")) -- "data/public" 2>&1 | Out-String) }
-    $push = (& $git -C $root push origin HEAD 2>&1 | Out-String)
+    $push = (& $git -C $root push origin HEAD:master 2>&1 | Out-String)
     $pushed = ($LASTEXITCODE -eq 0)
     $log += $push
     if (-not $pushed){ Send-Json $res 502 @{ ok = $false; error = "envoi sur GitHub refuse ou impossible"; log = $log }; return }
@@ -859,7 +859,7 @@ while ($listener.IsListening) {
     $path = [System.Uri]::UnescapeDataString($req.Url.AbsolutePath)
     if ($path -eq "/api/ia/ping") {
       New-Item -ItemType Directory -Force -Path $iaDirPath | Out-Null
-      Send-Json $res 200 @{ ok = $true; writable = $true; v = 24; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
+      Send-Json $res 200 @{ ok = $true; writable = $true; v = 25; store = $storeDirPath; dataFile = $iaFile; backups = $iaBackups; extBackup = $extBackup }
     } elseif ($path -eq "/api/ia/save") {
       Handle-IaSave $req $res
     } elseif ($path -eq "/api/ia/refresh") {
